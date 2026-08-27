@@ -25,19 +25,23 @@ import {
 } from "@phosphor-icons/react";
 
 /**
- * The 5 apps pinned to the dock. `id` doubles as the appId passed to
- * `windowStore.openWindow`.
+ * The 5 apps always present in the dock — a fixed baseline, not the whole
+ * pinned list. `id` doubles as the appId passed to `windowStore.openWindow`.
  *
  * This exact list is the shared contract with the App Store and Demo Apps
  * workstreams: they register their apps under these same ids via
  * `registerApp` (see ARCHITECTURE.md's "app registry" section), which is
  * what makes a tile here resolve to a real app once those workstreams land.
- * Until then, opening one of these shows Window.tsx's registry fallback
- * ("No app is registered for X") — expected, not a bug in this workstream.
  * Keep this list's ids/shape exactly as specified; other workstreams depend
  * on them matching byte for byte.
+ *
+ * Renamed from `pinnedApps` to `builtInApps` when the App Menu workstream
+ * added `pinnedAppsStore.ts`'s growable, ADDITIONALLY-pinned list — with
+ * both a fixed baseline and a growable list in play, "pinnedApps" stopped
+ * being an accurate name for just this static half. There is deliberately
+ * no way to remove one of these 5 this pass — see pinnedAppsStore.ts.
  */
-export const pinnedApps = [
+export const builtInApps = [
   { id: "files", title: "Files", icon: "Folder" },
   { id: "notes", title: "Notes", icon: "NotePencil" },
   { id: "browser", title: "Browser", icon: "Globe" },
@@ -45,12 +49,12 @@ export const pinnedApps = [
   { id: "app-store", title: "App Store", icon: "SquaresFour" },
 ] as const;
 
-export type PinnedApp = (typeof pinnedApps)[number];
+export type PinnedApp = (typeof builtInApps)[number];
 
 /**
  * Resolves each entry's `icon` field to the actual Phosphor component that
  * renders it. Kept as a separate map (rather than storing the component
- * itself on `pinnedApps`) so `pinnedApps` stays plain, framework-agnostic
+ * itself on `builtInApps`) so `builtInApps` stays plain, framework-agnostic
  * data — a plain string is also what's specified by the shared contract.
  */
 export const pinnedAppIcons: Record<PinnedApp["icon"], Icon> = {

@@ -3,11 +3,11 @@
 import { useState } from "react";
 import { MagnifyingGlassIcon } from "@phosphor-icons/react";
 import { ScrollArea, Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui";
-import { useWindowStore } from "@/components/window-manager";
-import { appCatalog, appCategories, appIcons } from "./appCatalog";
+import { appCatalog, appCategories } from "./appCatalog";
 import { AppCategoryRow } from "./AppCategoryRow";
+import { runAppPrimaryAction } from "./appActions";
 import { useInstalledAppsStore } from "./installedAppsStore";
-import type { AppCategoryId, AppListing } from "./types";
+import type { AppCategoryId } from "./types";
 
 type CategoryFilter = "all" | AppCategoryId;
 
@@ -33,40 +33,6 @@ export function AppStoreApp({ windowId }: { windowId: string }) {
   // multiple instances) reads/writes this same store, unlike the old
   // per-instance useState it replaces.
   const installedIds = useInstalledAppsStore((s) => s.installedIds);
-  const installApp = useInstalledAppsStore((s) => s.installApp);
-  const uninstallApp = useInstalledAppsStore((s) => s.uninstallApp);
-
-  const openWindow = useWindowStore((s) => s.openWindow);
-
-  function toggleInstalled(id: string) {
-    if (installedIds[id]) uninstallApp(id);
-    else installApp(id);
-  }
-
-  /**
-   * The Install/Open button's single click handler, for every card. For a
-   * fictional entry (no `url`) this is exactly the pre-existing behavior:
-   * flip shared install state, nothing else, since there's no real window
-   * content behind it either way.
-   *
-   * A REAL entry (has `url`) installs the same way on its first click, but
-   * once installed, clicking "Open" opens the real window instead of
-   * uninstalling it — real apps don't disappear from the Home screen the
-   * way toggling this mocked catalog's fictional entries does.
-   */
-  function handlePrimaryAction(app: AppListing) {
-    if (installedIds[app.id] && app.url) {
-      const IconGlyph = appIcons[app.icon];
-      openWindow("web-app", {
-        title: app.name,
-        icon: <IconGlyph />,
-        url: app.url,
-        embeddable: app.embeddable,
-      });
-      return;
-    }
-    toggleInstalled(app.id);
-  }
 
   const trimmedQuery = query.trim();
   const searchResults = trimmedQuery
@@ -116,7 +82,7 @@ export function AppStoreApp({ windowId }: { windowId: string }) {
                   title={`Results for "${trimmedQuery}"`}
                   apps={searchResults}
                   installedIds={installedIds}
-                  onToggleInstall={handlePrimaryAction}
+                  onToggleInstall={runAppPrimaryAction}
                 />
                 {searchResults.length === 0 && (
                   <p className="text-ink-faint px-1 text-[13px]">
@@ -131,7 +97,7 @@ export function AppStoreApp({ windowId }: { windowId: string }) {
                     title="Featured"
                     apps={featuredApps}
                     installedIds={installedIds}
-                    onToggleInstall={handlePrimaryAction}
+                    onToggleInstall={runAppPrimaryAction}
                   />
                   {appCategories.map((cat) => (
                     <AppCategoryRow
@@ -139,7 +105,7 @@ export function AppStoreApp({ windowId }: { windowId: string }) {
                       title={cat.label}
                       apps={appCatalog.filter((app) => app.category === cat.id)}
                       installedIds={installedIds}
-                      onToggleInstall={handlePrimaryAction}
+                      onToggleInstall={runAppPrimaryAction}
                     />
                   ))}
                 </TabsContent>
@@ -149,7 +115,7 @@ export function AppStoreApp({ windowId }: { windowId: string }) {
                       title={cat.label}
                       apps={appCatalog.filter((app) => app.category === cat.id)}
                       installedIds={installedIds}
-                      onToggleInstall={handlePrimaryAction}
+                      onToggleInstall={runAppPrimaryAction}
                     />
                   </TabsContent>
                 ))}

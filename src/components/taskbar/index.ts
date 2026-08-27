@@ -4,5 +4,5 @@
 // itself.
 
 export { Dock } from "./Dock";
-export { pinnedApps, pinnedAppIcons } from "./pinnedApps";
+export { builtInApps, pinnedAppIcons } from "./pinnedApps";
 export type { PinnedApp } from "./pinnedApps";
