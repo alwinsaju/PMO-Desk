@@ -1,10 +1,20 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { motion } from "motion/react";
 import { ArrowSquareOutIcon, CircleNotchIcon, GlobeIcon } from "@phosphor-icons/react";
 import { Button } from "@/components/ui";
 import { cn } from "@/lib/cn";
+import { easeStandard } from "@/lib/motion";
 import { EMBEDDABLE_IFRAME_SANDBOX, useEmbeddableUrl } from "@/lib/useEmbeddableUrl";
+
+/** Shared by this file's 3 mutually-exclusive return states (checking /
+ *  blocked / embeddable) so each one fades in on mount instead of hard-
+ *  cutting from the last — a plain mount animation, not an animated exit:
+ *  whichever state was showing simply disappears the instant the next one
+ *  mounts, same as before this existed (see AICursor.tsx's doc comment for
+ *  why this project avoids AnimatePresence's `exit` here). */
+const STATE_TRANSITION = { duration: 0.15, ease: easeStandard };
 
 interface UrlPageProps {
   url: string;
@@ -52,20 +62,32 @@ export function UrlPage({ url, knownEmbeddable, onEmbeddableResolved }: UrlPageP
 
   if (check.status !== "checked") {
     return (
-      <div className="flex h-full w-full items-center justify-center gap-2">
+      <motion.div
+        key="checking"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={STATE_TRANSITION}
+        className="flex h-full w-full items-center justify-center gap-2"
+      >
         <CircleNotchIcon
           size={16}
           weight="bold"
           className="text-ink-faint animate-spin"
         />
         <span className="text-ink-faint text-[13px]">Loading {host}…</span>
-      </div>
+      </motion.div>
     );
   }
 
   if (!check.embeddable) {
     return (
-      <div className="flex h-full w-full flex-col items-center justify-center gap-4 p-8 text-center">
+      <motion.div
+        key="blocked"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={STATE_TRANSITION}
+        className="flex h-full w-full flex-col items-center justify-center gap-4 p-8 text-center"
+      >
         <span className="text-ink-muted inline-flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-neutral-100 [&_svg]:h-7 [&_svg]:w-7">
           <GlobeIcon size={28} />
         </span>
@@ -87,12 +109,18 @@ export function UrlPage({ url, knownEmbeddable, onEmbeddableResolved }: UrlPageP
           Open in new tab
           <ArrowSquareOutIcon size={15} weight="bold" />
         </Button>
-      </div>
+      </motion.div>
     );
   }
 
   return (
-    <div className="relative h-full w-full">
+    <motion.div
+      key="frame"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={STATE_TRANSITION}
+      className="relative h-full w-full"
+    >
       {isFrameLoading && (
         <div className="bg-surface-elevated absolute inset-0 flex items-center justify-center gap-2">
           <CircleNotchIcon
@@ -115,6 +143,6 @@ export function UrlPage({ url, knownEmbeddable, onEmbeddableResolved }: UrlPageP
           isFrameLoading ? "opacity-0" : "opacity-100",
         )}
       />
-    </div>
+    </motion.div>
   );
 }

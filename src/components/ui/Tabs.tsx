@@ -3,6 +3,7 @@
 import * as React from "react";
 import * as TabsPrimitive from "@radix-ui/react-tabs";
 import { cn } from "@/lib/cn";
+import { tabContentEnter } from "@/lib/motion";
 
 export const Tabs = TabsPrimitive.Root;
 
@@ -29,7 +30,7 @@ export const TabsTrigger = React.forwardRef<
     ref={ref}
     className={cn(
       "rounded-pill text-ink-muted px-3.5 py-1.5 text-[13px] font-medium outline-none",
-      "ease-standard transition-colors duration-150",
+      "ease-standard transition-[color,background-color,box-shadow] duration-150",
       "hover:text-ink",
       "data-[state=active]:bg-surface-elevated data-[state=active]:text-ink data-[state=active]:shadow-float-sm",
       "focus-visible:ring-accent focus-visible:ring-2",
@@ -49,6 +50,7 @@ export const TabsContent = React.forwardRef<
     ref={ref}
     className={cn(
       "focus-visible:ring-accent outline-none focus-visible:ring-2",
+      tabContentEnter,
       className,
     )}
     {...props}

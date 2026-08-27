@@ -65,7 +65,7 @@ export function StepTracker({ task }: StepTrackerProps) {
                 tabIndex={0}
                 className={cn(
                   "relative flex h-5 w-5 shrink-0 items-center justify-center rounded-full outline-none",
-                  "ease-standard transition-transform duration-150 hover:scale-110",
+                  "ease-standard transition-[transform,background-color,border-color,box-shadow] duration-150 hover:scale-110",
                   "focus-visible:ring-accent focus-visible:ring-offset-surface focus-visible:ring-2 focus-visible:ring-offset-2",
                   DOT_CLASS[status],
                 )}
@@ -90,7 +90,7 @@ export function StepTracker({ task }: StepTrackerProps) {
             {!isLast && (
               <span
                 className={cn(
-                  "rounded-pill mx-1.5 h-1.5 flex-1",
+                  "rounded-pill ease-standard mx-1.5 h-1.5 flex-1 transition-colors duration-150",
                   status === "done" ? "bg-ink" : "bg-neutral-150",
                 )}
               />

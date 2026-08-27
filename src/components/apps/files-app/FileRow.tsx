@@ -63,7 +63,7 @@ export function FileRow({ node, isSelected, onSelect, onActivate }: FileRowProps
           }
         }}
         className={cn(
-          "rounded-control grid w-full items-center gap-3 px-2.5 py-1.5 text-left outline-none",
+          "rounded-control ease-standard grid w-full items-center gap-3 px-2.5 py-1.5 text-left transition-colors duration-150 outline-none",
           FILE_ROW_GRID,
           "focus-visible:ring-accent focus-visible:ring-2",
           isSelected ? "bg-accent-subtle" : "hover:bg-neutral-100",
@@ -81,7 +81,10 @@ export function FileRow({ node, isSelected, onSelect, onActivate }: FileRowProps
           <Glyph
             size={17}
             weight={node.type === "folder" ? "fill" : "regular"}
-            className={cn("shrink-0", isSelected ? "text-accent-800" : "text-ink-muted")}
+            className={cn(
+              "ease-standard shrink-0 transition-colors duration-150",
+              isSelected ? "text-accent-800" : "text-ink-muted",
+            )}
           />
           <span className="text-ink line-clamp-1 font-mono text-[13px]">{node.name}</span>
         </span>

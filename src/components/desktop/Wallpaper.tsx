@@ -10,12 +10,19 @@
  * accent hue (the indigo/violet here is decorative wallpaper art, not the
  * app's one interactive accent color — see tokens.css).
  *
- * The two variants are both always in the DOM; only one is ever visible,
- * switched purely by CSS via the `dark:` variant tokens.css defines
- * (`@custom-variant dark`, keyed off `data-theme="dark"` on <html>). That
- * means this stays a pure server-rendered swap with zero client JS/state —
- * safe as a server component, same as before (it's the one piece of
- * Desktop.tsx that doesn't need "use client").
+ * The two variants are both always in the DOM, stacked exactly on top of
+ * each other (`absolute inset-0` on both), and cross-fade via CSS opacity
+ * keyed off the same `dark:` variant tokens.css defines (`@custom-variant
+ * dark`, keyed off `data-theme="dark"` on <html>) — a plain
+ * `transition-opacity`, not `hidden`/`block` (display can't be
+ * transitioned), so toggling dark mode dissolves the whole backdrop
+ * instead of snapping between the two moods instantly. Still a pure CSS
+ * swap with zero client JS/state either way — safe as a server component,
+ * same as before (it's the one piece of Desktop.tsx that doesn't need
+ * "use client"). 500ms — slower than the UI kit's small-control
+ * transitions (150ms) since this is the single biggest surface on screen
+ * changing at once; matches LoginScreen.tsx's own "atmosphere" transition
+ * durations rather than a quick button-press one.
  */
 export function Wallpaper() {
   return (
@@ -23,7 +30,7 @@ export function Wallpaper() {
       {/* ---------------------------------------------------------------
        * Light: dusk over a lake.
        * ------------------------------------------------------------- */}
-      <div className="absolute inset-0 overflow-hidden bg-[#c3cdd6] dark:hidden">
+      <div className="ease-standard absolute inset-0 overflow-hidden bg-[#c3cdd6] transition-opacity duration-500 dark:pointer-events-none dark:opacity-0">
         {/* Base sky-to-lake gradient. A wide, softly-blurred radial "glow"
             (the dusk sun) sits slightly off-center in the upper-middle band;
             the linear gradient carries the overall cool -> warm -> cool read
@@ -81,7 +88,7 @@ export function Wallpaper() {
        * and a navy/indigo/violet wash fading to near-black instead of the
        * light pastel one.
        * ------------------------------------------------------------- */}
-      <div className="absolute inset-0 hidden overflow-hidden bg-[#05060f] dark:block">
+      <div className="ease-standard pointer-events-none absolute inset-0 overflow-hidden bg-[#05060f] opacity-0 transition-opacity duration-500 dark:pointer-events-auto dark:opacity-100">
         <div
           aria-hidden
           className="absolute inset-0"

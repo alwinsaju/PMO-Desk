@@ -39,12 +39,17 @@ export function TaskStateBadge({ state, className }: TaskStateBadgeProps) {
   return (
     <span
       className={cn(
-        "rounded-pill inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium whitespace-nowrap",
+        "rounded-pill ease-standard inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium whitespace-nowrap transition-colors duration-150",
         PILL_CLASS[state],
         className,
       )}
     >
-      <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", DOT_CLASS[state])} />
+      <span
+        className={cn(
+          "ease-standard h-1.5 w-1.5 shrink-0 rounded-full transition-colors duration-150",
+          DOT_CLASS[state],
+        )}
+      />
       {STATE_LABEL[state]}
     </span>
   );

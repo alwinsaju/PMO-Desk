@@ -56,12 +56,12 @@ export function AppMenuEntry({
       draggable={Boolean(pinning)}
       onDragStart={pinning?.onDragStart}
       className={cn(
-        "group rounded-control flex w-full flex-col items-center gap-1.5 p-2 outline-none",
-        "focus-visible:ring-accent hover:bg-neutral-100 focus-visible:ring-2",
+        "group rounded-control ease-standard flex w-full flex-col items-center gap-1.5 p-2 transition-colors duration-150 outline-none",
+        "focus-visible:ring-accent active:bg-neutral-150 hover:bg-neutral-100 focus-visible:ring-2",
         pinning && "cursor-grab active:cursor-grabbing",
       )}
     >
-      <span className="text-ink-muted group-hover:text-ink flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-neutral-100">
+      <span className="text-ink-muted ease-standard group-hover:text-ink flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-neutral-100 transition-colors duration-150">
         <IconGlyph size={24} />
       </span>
       <span className="text-ink w-full truncate text-center text-[12px] font-medium">

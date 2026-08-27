@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { DragEvent } from "react";
+import { motion } from "motion/react";
 import { PlusIcon } from "@phosphor-icons/react";
 import { appCatalog, appIcons } from "@/components/app-store/appCatalog";
 import { runAppPrimaryAction } from "@/components/app-store/appActions";
@@ -9,6 +10,7 @@ import type { AppListing } from "@/components/app-store/types";
 import { useWindowStore } from "@/components/window-manager";
 import { IconButton, Tooltip } from "@/components/ui";
 import { cn } from "@/lib/cn";
+import { springSnappy } from "@/lib/motion";
 import { AppMenu } from "./AppMenu";
 import { DockTile } from "./DockTile";
 import { builtInApps, pinnedAppIcons, type PinnedApp } from "./pinnedApps";
@@ -100,12 +102,26 @@ export function Dock() {
         ))}
 
         {pinnedCatalogApps.map((app) => (
-          <DockTile
+          // Newly-pinned tiles pop in rather than snapping into existence,
+          // and `layout` lets the rest of this row settle into its new
+          // position smoothly when a tile is added/removed next to it — no
+          // exit animation on removal (see AICursor.tsx's doc comment: an
+          // unmount-driven `exit` isn't reliable in this project's React 19
+          // + motion setup), so unpinning still just removes the tile
+          // instantly, same as before, while its neighbors slide over.
+          <motion.div
             key={app.id}
-            label={app.name}
-            icon={appIcons[app.icon]}
-            onClick={() => runAppPrimaryAction(app)}
-          />
+            layout
+            initial={{ opacity: 0, scale: 0.5 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={springSnappy}
+          >
+            <DockTile
+              label={app.name}
+              icon={appIcons[app.icon]}
+              onClick={() => runAppPrimaryAction(app)}
+            />
+          </motion.div>
         ))}
 
         <div aria-hidden className="bg-border mx-1 h-6 w-px" />

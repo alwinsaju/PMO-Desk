@@ -23,7 +23,7 @@ export function MockLink({ onClick, children, className }: MockLinkProps) {
       type="button"
       onClick={onClick}
       className={cn(
-        "text-accent decoration-accent/40 hover:decoration-accent cursor-pointer underline underline-offset-2",
+        "text-accent decoration-accent/40 hover:decoration-accent ease-standard cursor-pointer underline underline-offset-2 transition-colors duration-150",
         className,
       )}
     >

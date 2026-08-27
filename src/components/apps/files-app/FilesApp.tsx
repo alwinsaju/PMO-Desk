@@ -1,9 +1,11 @@
 "use client";
 
 import { useState } from "react";
+import { motion } from "motion/react";
 import { ArrowUpIcon, CaretRightIcon } from "@phosphor-icons/react";
 import { IconButton, ScrollArea } from "@/components/ui";
 import { cn } from "@/lib/cn";
+import { easeStandard } from "@/lib/motion";
 import { fileSystemRoot } from "./mockFileSystem";
 import type { FileSystemFolder } from "./mockFileSystem";
 import { FILE_ROW_GRID, FileRow } from "./FileRow";
@@ -99,7 +101,18 @@ export function FilesApp({ windowId }: { windowId: string }) {
       </div>
 
       <ScrollArea className="min-h-0 flex-1">
-        <ul className="flex flex-col gap-0.5 p-2">
+        {/* Keyed by the current folder so navigating (breadcrumb, "up", or
+         *  double-click into a folder) gives the new listing a brief fade
+         *  in rather than an instant swap — a plain mount animation, not an
+         *  animated exit, so the previous folder's rows still disappear
+         *  the instant the new ones mount, same as before this existed. */}
+        <motion.ul
+          key={currentFolder.id}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.15, ease: easeStandard }}
+          className="flex flex-col gap-0.5 p-2"
+        >
           {children.map((node) => (
             <FileRow
               key={node.id}
@@ -116,7 +129,7 @@ export function FilesApp({ windowId }: { windowId: string }) {
               This folder is empty.
             </li>
           )}
-        </ul>
+        </motion.ul>
       </ScrollArea>
 
       <div className="border-border/60 text-ink-faint flex items-center justify-between gap-3 border-t px-3 py-1.5 text-[11px]">

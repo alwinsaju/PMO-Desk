@@ -70,3 +70,27 @@ export const overlayEnter =
   "data-[state=open]:[animation:overlay-in_160ms_var(--ease-entrance)_forwards]";
 export const overlayExit =
   "data-[state=closed]:[animation:overlay-out_120ms_var(--ease-exit)_forwards]";
+
+/**
+ * Entrance-only counterpart to `overlayEnter`, for the one Radix part that
+ * keys its Presence-driven mount off `data-state="active"|"inactive"`
+ * instead of `"open"|"closed"` — Tabs' `Content` (see
+ * `src/components/ui/Tabs.tsx`). Reuses the exact same `overlay-in`
+ * keyframe as `overlayEnter` (same fade + settle), just matched to Tabs'
+ * own attribute value, so a tab's content arrives with the same "weight"
+ * as every other overlay in the kit.
+ *
+ * No `tabContentExit` counterpart: unlike a popover/menu/dialog, switching
+ * tabs mounts the newly-selected panel and unmounts the previous one in
+ * the same instant, and both panels are plain block boxes in normal flow
+ * — animating the outgoing one out over even 120ms would leave both
+ * visible at once and stack/jump instead of cross-fading cleanly. So the
+ * outgoing panel disappears immediately, same as before this existed, and
+ * only the incoming one gets a soft entrance. Radix's own Presence
+ * suppresses this animation for whichever tab is already active at the
+ * moment the whole Tabs tree first mounts (see `TabsContent`'s internal
+ * `isMountAnimationPreventedRef`), so this never plays as an unwanted
+ * flash on first paint — only on an actual switch.
+ */
+export const tabContentEnter =
+  "data-[state=active]:[animation:overlay-in_160ms_var(--ease-entrance)_forwards]";
