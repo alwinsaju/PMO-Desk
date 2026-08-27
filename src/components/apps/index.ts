@@ -9,7 +9,9 @@
 // only calls `getAppComponent(appId)` from `./registry`.
 //
 // This file is imported once, for its side effects, from
-// src/components/desktop/Desktop.tsx.
+// src/components/window-manager/WindowManager.tsx — NOT from Desktop.tsx.
+// See ARCHITECTURE.md's "The app registry" gotcha for why that distinction
+// matters.
 //
 // import "./notes-app";
 // import "./files-app";

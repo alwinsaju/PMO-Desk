@@ -191,6 +191,47 @@ rendering in the browser's default system-font stack). If a later phase adds
 another font or a theme variable that references a next/font variable, keep
 the variable class on `<html>`.
 
+## A third gotcha worth knowing: Server Components and client-only icon/library imports
+
+`src/components/taskbar/pinnedApps.ts` is a plain data file — no component,
+no hook of its own — but it still carries a `"use client"` directive at the
+top, because it imports live Phosphor icon **component values**
+(`FolderIcon`, `NotePencilIcon`, etc. — not just the `Icon` type) into its
+`pinnedAppIcons` lookup map. Without that directive, `pnpm dev`,
+`pnpm typecheck`, and `pnpm lint` all stay completely silent, but `pnpm
+build` fails at "Collecting page data" with `(0 , d.createContext) is not a
+function` and no stack frame pointing at any of this project's own code.
+
+Why: `Desktop.tsx` (a Server Component) reaches `pinnedApps.ts` by importing
+`Dock` from `src/components/taskbar/index.ts`'s barrel, and that same
+barrel also re-exports `pinnedApps`/`pinnedAppIcons` directly
+(`export { pinnedApps, pinnedAppIcons } from "./pinnedApps"`). The barrel
+file itself has no `"use client"` of its own, so by default it (and
+anything it re-exports that also lacks the directive) is compiled as more
+server code. Phosphor's icon components call React's `createContext`
+internally (for their shared `IconContext`) — fine on the client, but there
+is no client React runtime to call into during server/RSC compilation, so
+evaluating that module server-side crashes outright. This is the same
+"Server Component boundary" family of bug as the app-registry gotcha above,
+but the failure mode is a hard build-time crash rather than a silently
+empty registry — and it's triggered by importing a live value from _any_
+client-oriented library at module scope (icon sets here, but the same
+applies to anything else that assumes a browser/client React runtime), not
+just icons specifically.
+
+The rule going forward, applied throughout this pass's `ai-layer/*` (the
+Phosphor-icon-heavy status badges, the AI cursor, the presence avatars, and
+the one Zustand store, `agentStore.ts`): **a file needs its own `"use
+client"` the moment it renders JSX, uses a hook, or imports a live
+icon/component value — even if, today, it also happens to only ever be
+reached through a path that already crossed a client boundary earlier.**
+Don't rely on "something upstream already has the directive" — new
+barrels/imports get added later and that guarantee is easy to break by
+accident. The only files that should stay directive-free are genuinely
+framework-agnostic data/logic with no live client-library imports of their
+own (plain types, constants, or a store like `agentStore.ts`/`windowStore.ts`
+that only imports `zustand` + local types).
+
 ## The UI primitives kit (`src/components/ui/`)
 
 Thin, fully-restyled wrappers around Radix Primitives — Radix's unstyled
