@@ -16,4 +16,4 @@
 // import "./notes-app";
 // import "./files-app";
 // import "./browser-app";
-// import "../app-store"; // the App Store is also opened as a window
+import "../app-store"; // the App Store is also opened as a window
