@@ -86,12 +86,41 @@ export function FileRow({ node, isSelected, onSelect, onActivate }: FileRowProps
               isSelected ? "text-accent-800" : "text-ink-muted",
             )}
           />
-          <span className="text-ink line-clamp-1 font-mono text-[13px]">{node.name}</span>
+          {/* Selected state uses text-accent-800 rather than text-ink — same
+              convention the glyph above already follows, and the same
+              convention every other bg-accent-subtle consumer in the app
+              follows (Badge, PresenceAvatars, TaskStateBadge, Dropdown/
+              ContextMenu). accent-subtle is one of the accent-* tokens,
+              which are deliberately NOT redefined per-theme (see
+              tokens.css), so it stays a light mint tint in dark mode too —
+              pairing it with text-ink (which DOES invert to near-white in
+              dark mode) made the selected row's filename unreadable there
+              (~1:1 contrast). accent-800/700 are themselves theme-invariant,
+              so they stay legible against accent-subtle in both themes
+              (~11:1 / ~9:1). */}
+          <span
+            className={cn(
+              "line-clamp-1 font-mono text-[13px]",
+              isSelected ? "text-accent-800" : "text-ink",
+            )}
+          >
+            {node.name}
+          </span>
         </span>
-        <span className="text-ink-faint line-clamp-1 text-[12px]">
+        <span
+          className={cn(
+            "line-clamp-1 text-[12px]",
+            isSelected ? "text-accent-700" : "text-ink-faint",
+          )}
+        >
           {node.modifiedLabel}
         </span>
-        <span className="text-ink-faint line-clamp-1 text-right text-[12px]">
+        <span
+          className={cn(
+            "line-clamp-1 text-right text-[12px]",
+            isSelected ? "text-accent-700" : "text-ink-faint",
+          )}
+        >
           {node.type === "file" ? node.sizeLabel : "—"}
         </span>
       </button>

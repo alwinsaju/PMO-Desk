@@ -68,18 +68,20 @@ export function NotesApp({ windowId }: { windowId: string }) {
         </div>
         <ScrollArea className="min-h-0 flex-1">
           <ul className="flex flex-col gap-0.5 p-1.5">
-            {notes.map((note) => (
-              <li key={note.id} className="group relative min-w-0">
-                <button
-                  type="button"
-                  onClick={() => setSelectedId(note.id)}
-                  className={cn(
-                    "rounded-control ease-standard flex w-full min-w-0 flex-col gap-0.5 px-2.5 py-2 pr-8 text-left transition-colors duration-150 outline-none",
-                    "focus-visible:ring-accent focus-visible:ring-2",
-                    note.id === selectedId ? "bg-accent-subtle" : "hover:bg-neutral-100",
-                  )}
-                >
-                  {/* line-clamp-1 (not `truncate`) deliberately: `truncate`'s
+            {notes.map((note) => {
+              const isSelected = note.id === selectedId;
+              return (
+                <li key={note.id} className="group relative min-w-0">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedId(note.id)}
+                    className={cn(
+                      "rounded-control ease-standard flex w-full min-w-0 flex-col gap-0.5 px-2.5 py-2 pr-8 text-left transition-colors duration-150 outline-none",
+                      "focus-visible:ring-accent focus-visible:ring-2",
+                      isSelected ? "bg-accent-subtle" : "hover:bg-neutral-100",
+                    )}
+                  >
+                    {/* line-clamp-1 (not `truncate`) deliberately: `truncate`'s
                       `white-space: nowrap` makes this text's min-content
                       width equal its full unwrapped width, which the
                       ScrollArea's internal content-measuring wrapper
@@ -89,24 +91,47 @@ export function NotesApp({ windowId }: { windowId: string }) {
                       no `min-w-0` upstream fixes that. `line-clamp-1` still
                       allows normal wrapping for min-content purposes, so it
                       clips to one line without the blowup. */}
-                  <span className="text-ink line-clamp-1 text-[13px] font-semibold">
-                    {noteTitle(note)}
-                  </span>
-                  <span className="text-ink-faint line-clamp-1 text-[12px]">
-                    {note.updatedLabel} — {notePreview(note)}
-                  </span>
-                </button>
-                <IconButton
-                  aria-label={`Delete "${noteTitle(note)}"`}
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => handleDelete(note.id)}
-                  className="absolute top-1.5 right-1.5 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
-                >
-                  <TrashIcon size={13} />
-                </IconButton>
-              </li>
-            ))}
+                    {/* Selected state uses text-accent-800/700 rather than
+                      text-ink/text-ink-faint — same convention every other
+                      bg-accent-subtle consumer already follows (Badge,
+                      PresenceAvatars, TaskStateBadge, Dropdown/ContextMenu).
+                      accent-subtle is one of the accent-* tokens, which are
+                      deliberately NOT redefined per-theme (see tokens.css),
+                      so it stays a light mint tint in dark mode too — pairing
+                      it with text-ink (which DOES invert to near-white in
+                      dark mode) made the selected row's title unreadable
+                      there (~1:1 contrast). accent-800/700 are themselves
+                      theme-invariant, so they stay legible against
+                      accent-subtle in both themes (~11:1 / ~9:1). */}
+                    <span
+                      className={cn(
+                        "line-clamp-1 text-[13px] font-semibold",
+                        isSelected ? "text-accent-800" : "text-ink",
+                      )}
+                    >
+                      {noteTitle(note)}
+                    </span>
+                    <span
+                      className={cn(
+                        "line-clamp-1 text-[12px]",
+                        isSelected ? "text-accent-700" : "text-ink-faint",
+                      )}
+                    >
+                      {note.updatedLabel} — {notePreview(note)}
+                    </span>
+                  </button>
+                  <IconButton
+                    aria-label={`Delete "${noteTitle(note)}"`}
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleDelete(note.id)}
+                    className="absolute top-1.5 right-1.5 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                  >
+                    <TrashIcon size={13} />
+                  </IconButton>
+                </li>
+              );
+            })}
             {notes.length === 0 && (
               <li className="text-ink-faint px-3 py-6 text-center text-[13px]">
                 No notes yet.
