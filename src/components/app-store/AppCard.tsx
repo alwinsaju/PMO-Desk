@@ -19,8 +19,7 @@ interface AppCardProps {
  * separate sibling control — two independent interactive elements, never
  * a `<button>` nested inside another `<button>`. Grouping elements inside
  * the row button use `<span>` (not `<div>`) so the DOM stays valid
- * phrasing content, mirroring `src/components/desktop/DesktopIcons.tsx`'s
- * own icon-button markup.
+ * phrasing content.
  */
 export function AppCard({
   app,

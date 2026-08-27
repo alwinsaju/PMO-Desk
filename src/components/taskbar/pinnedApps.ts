@@ -24,18 +24,17 @@ import {
 } from "@phosphor-icons/react";
 
 /**
- * The 4 apps pinned to the dock — and, for V1, the desktop icon grid's
- * contents too (see `src/components/desktop/DesktopIcons.tsx`). `id` doubles
- * as the appId passed to `windowStore.openWindow`.
+ * The 4 apps pinned to the dock. `id` doubles as the appId passed to
+ * `windowStore.openWindow`.
  *
  * This exact list is the shared contract with the App Store and Demo Apps
  * workstreams: they register their apps under these same ids via
  * `registerApp` (see ARCHITECTURE.md's "app registry" section), which is
- * what makes a tile/icon here resolve to a real app once those workstreams
- * land. Until then, opening one of these shows Window.tsx's registry
- * fallback ("No app is registered for X") — expected, not a bug in this
- * workstream. Keep this list's ids/shape exactly as specified; other
- * workstreams depend on them matching byte for byte.
+ * what makes a tile here resolve to a real app once those workstreams land.
+ * Until then, opening one of these shows Window.tsx's registry fallback
+ * ("No app is registered for X") — expected, not a bug in this workstream.
+ * Keep this list's ids/shape exactly as specified; other workstreams depend
+ * on them matching byte for byte.
  */
 export const pinnedApps = [
   { id: "files", title: "Files", icon: "Folder" },

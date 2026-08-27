@@ -294,9 +294,11 @@ themselves, not a task list.
 1. **Desktop Shell & Chrome** (`src/components/desktop/*`,
    `src/components/taskbar/*`) — the top floating dock (`Dock.tsx` and
    `DockTile.tsx`, driven by the shared `{ id, title, icon }` contract in
-   `taskbar/pinnedApps.ts`) and the desktop icon grid and right-click
-   context menu (`DesktopIcons.tsx`, `DesktopContextMenu.tsx`), mounted as
-   siblings of `<WindowManager />` in `Desktop.tsx` at the `z-chrome` layer.
+   `taskbar/pinnedApps.ts`) and a right-click context menu on the desktop
+   background (`DesktopContextMenu.tsx`), mounted as siblings of
+   `<WindowManager />` in `Desktop.tsx` at the `z-chrome` layer. There is no
+   desktop icon grid — the dock is the only app launcher; an earlier V1 had
+   a `DesktopIcons.tsx` mirroring the dock's 4 pinned apps, since removed.
 
 2. **AI Agent Layer** (`src/components/ai-layer/*`) — the bottom command
    bar (`CommandBar.tsx`), the AI cursor overlay (`AICursor.tsx`, riding
