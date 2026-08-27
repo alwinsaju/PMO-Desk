@@ -5,6 +5,7 @@ import { ArrowSquareOutIcon, CircleNotchIcon, GlobeIcon } from "@phosphor-icons/
 import { Button } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { useWindowStore } from "@/components/window-manager";
+import { EMBEDDABLE_IFRAME_SANDBOX, useEmbeddableUrl } from "@/lib/useEmbeddableUrl";
 
 /**
  * The one generic window for every REAL web app in the App Store catalog
@@ -31,6 +32,14 @@ export function WebAppWindow({ windowId }: { windowId: string }) {
   const win = useWindowStore((s) => s.windows[windowId]);
   const [isLoading, setIsLoading] = useState(true);
   const [justOpened, setJustOpened] = useState(false);
+  // `win.embeddable` is always a hand-verified flag here (see this
+  // component's own doc comment above), never something to actually check
+  // over the network — coalescing `undefined` to `false` preserves this
+  // component's exact original semantics (no flag -> treated as blocked)
+  // while still routing through the hook shared with the Browser app's
+  // real-URL navigation. Called unconditionally, before the early return
+  // below, same as the useState calls above it (rules of hooks).
+  const embedCheck = useEmbeddableUrl(win?.url, win?.embeddable ?? false);
 
   if (!win?.url) {
     return (
@@ -43,9 +52,10 @@ export function WebAppWindow({ windowId }: { windowId: string }) {
     );
   }
 
-  const { url, embeddable, title, icon } = win;
+  const { url, title, icon } = win;
+  const isEmbeddable = embedCheck.status === "checked" && embedCheck.embeddable;
 
-  if (embeddable) {
+  if (isEmbeddable) {
     return (
       <div data-window-id={windowId} className="relative h-full w-full">
         {isLoading && (
@@ -58,16 +68,14 @@ export function WebAppWindow({ windowId }: { windowId: string }) {
             <span className="text-ink-faint text-[13px]">Loading {title}…</span>
           </div>
         )}
-        {/* Conservative on purpose: allow-same-origin/allow-scripts/allow-forms/
-            allow-popups let a real site actually function (sign-in flows,
-            forms, "open in new tab" links inside the page), but there is no
-            allow-top-navigation (or -by-user-activation) here — an embedded
-            page can never navigate or hijack this parent OS window. */}
+        {/* Sandbox permissions (and the reasoning behind them) live in
+            EMBEDDABLE_IFRAME_SANDBOX's doc comment — shared verbatim with
+            the Browser app's real-URL navigation, see src/lib/useEmbeddableUrl.ts. */}
         <iframe
           src={url}
           title={title}
           onLoad={() => setIsLoading(false)}
-          sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+          sandbox={EMBEDDABLE_IFRAME_SANDBOX}
           className={cn(
             "h-full w-full border-0 transition-opacity duration-150",
             isLoading ? "opacity-0" : "opacity-100",
