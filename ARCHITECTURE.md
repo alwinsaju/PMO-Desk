@@ -2,18 +2,19 @@
 
 This document is for the next engineer or agent working on this repo — it
 explains the module boundaries this foundation pass established, the public
-contracts other code should go through, and where the next four workstreams
-fit in. If you're building the dock, the command bar, the app store, or a
-demo app, start here.
+contracts other code should go through, and where the four workstreams
+built on top of it ended up living. If you're working on the dock, the
+command bar, the app store, or a demo app, start here.
 
 ## What "foundation layer" means here
 
 This pass built: design tokens, the window manager (state + chrome +
 drag/resize), the app registry contract, a full Radix-based UI primitives
 kit, and an empty desktop shell (wallpaper + window layer, nothing else). It
-deliberately does **not** include the dock, the command bar, presence
-avatars, any demo app, or the app store — those are four separate,
-parallel workstreams described at the bottom of this file.
+deliberately did **not** include the dock, the command bar, presence
+avatars, any demo app, or the app store — those were four separate,
+parallel workstreams, all now complete; see "V1 status" at the bottom of
+this file for where each one landed.
 
 ## File/module boundaries
 
@@ -282,43 +283,53 @@ in `tokens.ts`'s `zIndex`:
 - **overlay** (3000) — anything portaled: dialogs, popovers, menus, tooltips.
   Already wired into every overlay-based UI kit primitive.
 
-## What's next: four parallel workstreams
+## V1 status: the shell is feature-complete
 
-These own disjoint directories and can be built fully in parallel, with no
-coordination beyond each adding its own import line to
-`src/components/apps/index.ts` once it's ready (or, for the AI layer's
-future scripts, an equivalent small registry file it creates itself).
+Earlier revisions of this doc described four parallel workstreams still
+to be built. All four have since landed, and nothing is currently
+outstanding — the section below is now a map of where each one lives and
+what it consumes, kept for the next engineer or agent orienting
+themselves, not a task list.
 
-1. **Desktop Shell & Chrome** — owns `src/components/desktop/*` (beyond the
-   placeholder built here) and a new `src/components/taskbar/*` for the top
-   floating dock. Mounts as a sibling of `<WindowManager />` in
-   `Desktop.tsx` (there's a commented `<Dock />` placeholder already there),
-   using the `z-chrome` layer. Consumes `windowStore` (mainly for a future
-   taskbar listing minimized windows via `useAllWindowIds`) + the UI kit.
+1. **Desktop Shell & Chrome** (`src/components/desktop/*`,
+   `src/components/taskbar/*`) — the top floating dock (`Dock.tsx` and
+   `DockTile.tsx`, driven by the shared `{ id, title, icon }` contract in
+   `taskbar/pinnedApps.ts`) and the desktop icon grid and right-click
+   context menu (`DesktopIcons.tsx`, `DesktopContextMenu.tsx`), mounted as
+   siblings of `<WindowManager />` in `Desktop.tsx` at the `z-chrome` layer.
 
-2. **AI Agent Layer** — owns a new `src/components/ai-layer/*`: the bottom
-   command bar, the AI cursor overlay, an inline annotation-bubble
-   component, the corner presence avatars (`<Avatar presence="active">`
-   from the UI kit), and a collapsible (not default-visible) task/agent
-   detail panel. Consumes `windowStore`'s public actions — especially
-   `setWindowControlledBy`, the mechanism for handing a window between human
-   and AI control — plus the UI kit. The cursor-follow effect should reach
-   for `springTrailing` in `src/lib/motion.ts`, built for exactly this.
+2. **AI Agent Layer** (`src/components/ai-layer/*`) — the bottom command
+   bar (`CommandBar.tsx`), the AI cursor overlay (`AICursor.tsx`, riding
+   `springTrailing` from `src/lib/motion.ts`), an inline annotation bubble
+   (`AIAnnotationBubble.tsx`), the corner presence avatars
+   (`PresenceAvatars.tsx`, using the UI kit's `<Avatar presence="active">`),
+   and a collapsible task history panel (`TaskList.tsx`/`TaskListItem.tsx`).
+   Drives `windowStore`'s `setWindowControlledBy` to hand a window between
+   human and AI control, plus its own single Zustand store (`agentStore.ts`)
+   for task/cursor/annotation state.
 
-3. **App Store** — owns a new `src/components/app-store/*`: a mocked catalog
-   browser that opens as a window (via `windowStore.openWindow`). Register it
-   like any other app (`registerApp("app-store", AppStoreApp)` + one import
-   line in `apps/index.ts`).
+3. **App Store** (`src/components/app-store/*`) — `AppStoreApp`, registered
+   under `"app-store"`: a mocked, browsable catalog (search, category tabs,
+   and a full-screen detail view) with local Install/Open state, no real
+   backend.
 
-4. **Demo Apps bundle** — owns new
-   `src/components/apps/{files-app,notes-app,browser-app}/*`: a file
-   browser, a notes/text editor, and a fake browser-in-a-window. Each
-   registers itself into the app registry (one `registerApp` call + one
-   import line in `apps/index.ts`) and consumes the `AppComponent` contract
-   - the UI kit. `IBM_Plex_Mono` (wired via `--font-mono`/`font-mono`) is
-     there for the files app's file names/paths.
+4. **Demo Apps bundle**
+   (`src/components/apps/{files-app,notes-app,browser-app}/*`) — a file
+   browser (breadcrumb navigation over a static mock tree, file names/paths
+   in `font-mono`), a notes editor (sidebar list and a `<textarea>` pane,
+   local create/select/edit/delete), and a fake browser-in-a-window (mocked
+   address-bar chrome around 3 static internal page templates, with
+   in-page links wired to the same navigation as the chrome). Each
+   registers under its own id (`"files"` / `"notes"` / `"browser"`) via the
+   same one-line-in-`apps/index.ts` pattern as the App Store.
 
-None of these four need to touch `windowStore.ts`, `Window.tsx`, the gesture
-hooks, or each other's directories. If a change to one of those does seem
-necessary, that's a sign it should be discussed rather than made silently —
-they're the shared foundation the other three depend on.
+All four consume only the public contracts documented earlier in this
+file (`windowStore`'s actions, `registerApp`/`getAppComponent`, the UI
+kit) — none of them needed to touch `windowStore.ts`, `Window.tsx`, the
+gesture hooks, or each other's directories. That constraint doesn't
+disappear now that everything's merged: a future change to any of those
+shared foundation pieces still affects every app package built on top of
+it, so treat it as worth discussing rather than changing silently.
+
+The next planned step for this repo is a final visual QA pass across
+everything above, not new feature work.
