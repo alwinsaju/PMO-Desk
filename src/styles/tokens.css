@@ -1,0 +1,169 @@
+/**
+ * Design tokens — the single source of truth for color, radius, shadow,
+ * semantic sizing, z-index, and easing primitives.
+ *
+ * This is a Tailwind CSS v4 CSS-first theme: every `--<namespace>-<name>`
+ * variable below is picked up by Tailwind automatically and turned into
+ * utility classes (e.g. `--color-accent` -> `bg-accent`, `text-accent`,
+ * `border-accent`, `ring-accent`, ...). See globals.css for how this file
+ * is imported.
+ *
+ * JS/TS code that needs these same values OUTSIDE of className strings
+ * (animation math, canvas/DOM measurements, computing a minimize-to-dock
+ * target, etc.) should import the mirror in `src/lib/tokens.ts` instead of
+ * trying to read computed CSS at runtime. The two files are hand-kept in
+ * sync — if you change a value here, change it there too.
+ *
+ * Design-spec anchors (do not casually drift from these): neutrals are
+ * near-white/near-black with light-gray borders; there is exactly ONE
+ * accent color (a deep teal) reserved for AI/interactive moments — the
+ * command-bar send button, AI annotation bubbles, presence-indicator
+ * active rings, and focus states. Do not add a second accent color and do
+ * not use the accent decoratively.
+ */
+
+@theme {
+  /* ---------------------------------------------------------------------
+   * Neutrals — near-white surfaces through near-black text. Overrides
+   * Tailwind's built-in `neutral` scale so `bg-neutral-900` etc. resolve
+   * to OUR ramp, plus a couple of extra in-between stops (0, 25, 150).
+   * ------------------------------------------------------------------- */
+  --color-neutral-0: #ffffff;
+  --color-neutral-25: #fafafa;
+  --color-neutral-50: #f5f5f4;
+  --color-neutral-100: #ededeb;
+  --color-neutral-150: #e8e8e6;
+  --color-neutral-200: #dadad8;
+  --color-neutral-300: #c4c4c1;
+  --color-neutral-400: #a7a7a5;
+  --color-neutral-500: #8a8a8c;
+  --color-neutral-600: #6b6b6e;
+  --color-neutral-700: #4d4d50;
+  --color-neutral-800: #2f2f32;
+  --color-neutral-900: #181818;
+  --color-neutral-950: #0e0e10;
+
+  /* ---------------------------------------------------------------------
+   * Semantic surface / text aliases — components should reach for these
+   * instead of raw `neutral-*` steps so intent stays legible.
+   * ------------------------------------------------------------------- */
+  --color-surface: var(--color-neutral-25); /* desktop-level base panels */
+  --color-surface-elevated: var(--color-neutral-0); /* windows, cards, menus, dialogs */
+  --color-border: var(--color-neutral-150);
+  --color-ink: var(--color-neutral-900); /* primary text */
+  --color-ink-muted: var(--color-neutral-600); /* secondary text */
+  --color-ink-faint: var(
+    --color-neutral-500
+  ); /* tertiary / placeholder / disabled text */
+
+  /* ---------------------------------------------------------------------
+   * Accent — the ONE accent color in the whole system (deep teal). Reserve
+   * for AI / interactive moments only: command-bar send button, AI inline
+   * annotation bubbles, presence-indicator active rings, focus states.
+   * `accent` (bare) is the default shade; `-hover`/`-active` are for
+   * interaction states; `-subtle` is a light tint for backgrounds (e.g. an
+   * annotation bubble fill); `-contrast` is the text/icon color to place
+   * on top of a solid accent fill.
+   * ------------------------------------------------------------------- */
+  --color-accent-50: #eaf3f1;
+  --color-accent-100: #d2e6e1;
+  --color-accent-200: #a7ccc3;
+  --color-accent-300: #79b0a4;
+  --color-accent-400: #4f8f82;
+  --color-accent-500: #2f7367;
+  --color-accent-600: #245c50;
+  --color-accent-700: #1e4b44;
+  --color-accent-800: #163832;
+  --color-accent-900: #0f2723;
+
+  --color-accent: var(--color-accent-600);
+  --color-accent-hover: var(--color-accent-700);
+  --color-accent-active: var(--color-accent-800);
+  --color-accent-subtle: var(--color-accent-50);
+  --color-accent-contrast: var(--color-neutral-0);
+
+  /* ---------------------------------------------------------------------
+   * Radius — generous throughout. This overrides Tailwind's default `lg`
+   * through `3xl` steps to be softer/bigger, plus two semantic aliases for
+   * the two shapes named explicitly in the design spec.
+   * ------------------------------------------------------------------- */
+  --radius-sm: 0.5rem; /* 8px */
+  --radius-md: 0.625rem; /* 10px */
+  --radius-lg: 0.75rem; /* 12px */
+  --radius-xl: 1rem; /* 16px */
+  --radius-2xl: 1.25rem; /* 20px */
+  --radius-3xl: 1.75rem; /* 28px */
+  --radius-window: 1rem; /* window / card corners (~16px) */
+  --radius-control: 0.625rem; /* buttons, inputs, menu items */
+  --radius-pill: 9999px; /* dock, command bar, pill buttons, avatars */
+
+  /* ---------------------------------------------------------------------
+   * Shadows — soft, diffused, neutral (never color-tinted). `float` is the
+   * primary shadow shared by every piece of floating chrome (dock, command
+   * bar, windows) so they all read as lifted off the wallpaper the same
+   * amount. `-sm`/`-lg` are lighter/heavier siblings for smaller floating
+   * elements (tooltips, popovers, menus) and bigger ones (dialogs).
+   * ------------------------------------------------------------------- */
+  --shadow-float-sm: 0 6px 16px rgba(0, 0, 0, 0.12), 0 2px 6px rgba(0, 0, 0, 0.06);
+  --shadow-float: 0 12px 32px rgba(0, 0, 0, 0.14), 0 4px 10px rgba(0, 0, 0, 0.08);
+  --shadow-float-lg: 0 20px 48px rgba(0, 0, 0, 0.18), 0 8px 16px rgba(0, 0, 0, 0.1);
+
+  /* ---------------------------------------------------------------------
+   * Semantic layout sizing — named additions to Tailwind's spacing scale,
+   * so `h-titlebar` etc. are self-documenting instead of a bare number.
+   * `dock` and `command-bar` are reserved now for the phases that build
+   * those (Desktop Shell & Chrome / AI Agent Layer) so every phase agrees
+   * on the same heights before either exists.
+   * ------------------------------------------------------------------- */
+  --spacing-titlebar: 2.75rem; /* 44px — window title bar height */
+  --spacing-dock: 3.5rem; /* 56px — reserved for the top floating dock */
+  --spacing-command-bar: 3.25rem; /* 52px — reserved for the bottom command bar */
+
+  /* ---------------------------------------------------------------------
+   * Easing — cubic-beziers mirrored as JS tuples in src/lib/motion.ts for
+   * use with the `motion` library. Use these Tailwind utilities directly
+   * for plain CSS transitions; use `var(--ease-*)` inside arbitrary
+   * `animation:` values (see the overlay-in/overlay-out keyframes in
+   * globals.css, used by the Radix-based overlay primitives).
+   * ------------------------------------------------------------------- */
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1); /* default — most transitions */
+  --ease-entrance: cubic-bezier(
+    0.16,
+    1,
+    0.3,
+    1
+  ); /* decelerate — menus/tooltips/dialogs opening */
+  --ease-exit: cubic-bezier(
+    0.4,
+    0,
+    1,
+    1
+  ); /* accelerate — menus/tooltips/dialogs closing */
+
+  /* ---------------------------------------------------------------------
+   * Fonts — wired to the next/font/google CSS variables set in
+   * src/app/layout.tsx. Figtree (variable weight) is the sans throughout;
+   * IBM Plex Mono is reserved for technical/file-path text.
+   * ------------------------------------------------------------------- */
+  --font-sans: var(--font-figtree), ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: var(--font-ibm-plex-mono), ui-monospace, "SFMono-Regular", monospace;
+}
+
+/**
+ * Static z-index layers. NOT a Tailwind @theme namespace — Tailwind v4
+ * ships z-index as fixed utilities (z-0, z-10, ...), not an extensible
+ * scale the way color/radius/shadow/spacing are, so these are plain
+ * custom properties instead. Consume them with the arbitrary-value +
+ * var() pattern, e.g. `z-[var(--z-chrome)]`. Mirrored in src/lib/tokens.ts
+ * as `zIndex` for JS usage (windowStore's zIndex counter starts at
+ * `--z-window-base`).
+ *
+ *   desktop (wallpaper)  <  window-base.. (per-window, dynamic)  <  chrome
+ *   (dock / command bar / presence avatars)  <  overlay (dialogs, popovers,
+ *   menus, tooltips — anything portaled)
+ */
+:root {
+  --z-window-base: 100;
+  --z-chrome: 2000;
+  --z-overlay: 3000;
+}
