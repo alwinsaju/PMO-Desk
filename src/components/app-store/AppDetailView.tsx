@@ -1,6 +1,5 @@
 "use client";
 
-import type { ReactNode } from "react";
 import {
   ArrowLeftIcon,
   CheckIcon,
@@ -19,23 +18,15 @@ interface AppDetailViewProps {
   onToggleInstall: () => void;
 }
 
-function Stat({
-  label,
-  value,
-  icon,
-}: {
-  label: string;
-  value: string;
-  icon?: ReactNode;
-}) {
+/** Decorative middot separator for the metadata line below the tagline —
+ *  the same plain-text join TaskDetailDialog.tsx uses for its own history
+ *  rows (`"Completed · agentName"`), rather than boxing each fact into its
+ *  own cell. `aria-hidden` since it's punctuation, not content. */
+function Dot() {
   return (
-    <div className="flex flex-col items-center gap-1 px-2 py-2">
-      <span className="text-ink flex items-center gap-1 text-[13px] font-semibold">
-        {icon}
-        {value}
-      </span>
-      <span className="text-ink-faint text-[11px]">{label}</span>
-    </div>
+    <span aria-hidden className="text-ink-faint">
+      ·
+    </span>
   );
 }
 
@@ -43,7 +34,15 @@ function Stat({
  * Full-window detail screen for one catalog entry, replacing the browse
  * view entirely while open (see AppStoreApp.tsx — it renders either the
  * browse layout or this, never both). Its own back button is the only way
- * out, a conventional store-detail layout per this package's visual brief.
+ * out.
+ *
+ * Rating/category/size/price used to live in a bordered, column-divided
+ * stat grid (four boxes with vertical rules between them) — a very
+ * literal lift of the generic app-store-detail template rather than this
+ * product's own voice, and not a pattern used anywhere else in the shell.
+ * They're one quiet, middot-joined line under the tagline instead, same
+ * as the meta line under a card's title elsewhere in the shell (see
+ * AppCard.tsx's own rating line, and TaskDetailDialog.tsx's history rows).
  */
 export function AppDetailView({
   app,
@@ -71,6 +70,18 @@ export function AppDetailView({
               <h1 className="text-ink text-lg font-semibold">{app.name}</h1>
               <p className="text-ink-muted text-[13px]">{app.developer}</p>
               <p className="text-ink-muted mt-1 text-[13px]">{app.tagline}</p>
+              <p className="text-ink-faint mt-2.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[12px]">
+                <span className="inline-flex items-center gap-1 whitespace-nowrap">
+                  <StarIcon size={12} weight="fill" />
+                  {app.rating.toFixed(1)} ({app.ratingCount.toLocaleString()})
+                </span>
+                <Dot />
+                <span>{categoryLabel}</span>
+                <Dot />
+                <span>{app.sizeLabel}</span>
+                <Dot />
+                <span>{app.price}</span>
+              </p>
             </div>
             <Button
               variant={isInstalled ? "secondary" : "solid"}
@@ -91,24 +102,10 @@ export function AppDetailView({
             </Button>
           </div>
 
-          <div className="border-border/60 divide-border/60 grid grid-cols-4 divide-x rounded-2xl border">
-            <Stat
-              label="Rating"
-              value={app.rating.toFixed(1)}
-              icon={<StarIcon size={12} weight="fill" />}
-            />
-            <Stat label="Category" value={categoryLabel} />
-            <Stat label="Size" value={app.sizeLabel} />
-            <Stat label="Price" value={app.price} />
-          </div>
-
           <div className="flex flex-col gap-2">
             <h2 className="text-ink text-[13px] font-semibold">About</h2>
             <p className="text-ink-muted text-[13px] leading-relaxed">
               {app.description}
-            </p>
-            <p className="text-ink-faint text-[11px]">
-              {app.ratingCount.toLocaleString()} ratings
             </p>
           </div>
         </div>
