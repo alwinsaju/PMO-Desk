@@ -278,11 +278,18 @@ glow (`AIGlowBorder.tsx`) Window.tsx draws around a window when
 `controlledBy === "ai"` (not explicitly listed in the original spec's
 examples, but squarely in the same category — it's arguably the single most
 important "this is AI-driven" signal in the whole product). It started as a
-static ring and became a breathing/traveling glow (still single-hue — only
-opacity/blur/spread vary, per globals.css's `.ai-glow-halo`/`.ai-glow-sweep`
-comment) for a more "alive" AI-presence signal. Don't add a second accent
-color, and don't reach for `bg-accent` just because something needs visual
-emphasis — that's what the neutral scale's contrast is for.
+static single-hue ring, then became a breathing/traveling glow (still
+single-hue), and — by explicit design direction, after feedback that the
+single-hue version read as flat and needed to match Apple's own Siri/Apple
+Intelligence glow — is now a full-spectrum "Siri / Apple Intelligence"-style
+treatment: blue through violet, magenta, crimson, orange, and gold,
+continuously rotating around the window's border plus a separate breathing
+intensity pulse (see globals.css's `.ai-glow-halo`/`.ai-glow-sweep` comment
+for the exact mechanism and color-stop rationale). This is a deliberate,
+one-off exception scoped to that single effect, not a precedent — don't add
+a second accent color anywhere else, and don't reach for `bg-accent` just
+because something needs visual emphasis — that's what the neutral scale's
+contrast is for.
 
 ## Z-index layers
 
@@ -330,9 +337,16 @@ themselves, not a task list.
    for task/cursor/annotation state.
 
 3. **App Store** (`src/components/app-store/*`) — `AppStoreApp`, registered
-   under `"app-store"`: a mocked, browsable catalog (search, category tabs,
-   and a full-screen detail view) with local Install/Open state, no real
-   backend.
+   under `"app-store"`: a mocked, browsable catalog (search + category
+   tabs; no per-app detail view — cards show just a name/icon and an
+   Install/Open control). Install state lives in `installedAppsStore.ts`,
+   a small `persist`-backed Zustand store shaped like `windowStore.ts`/
+   `agentStore.ts`, shared across every open App Store window and
+   surviving reloads. It's the intended cross-directory contract for
+   anything else that needs to know which catalog entries are installed —
+   `useInstalledAppsStore` for reactive reads, plus plain
+   `isAppInstalled`/`installApp`/`uninstallApp` helpers — e.g. a future App
+   Menu listing installed apps. No real backend.
 
 4. **Demo Apps bundle**
    (`src/components/apps/{files-app,notes-app,browser-app}/*`) — a file

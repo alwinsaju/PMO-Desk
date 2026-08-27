@@ -33,31 +33,53 @@
    than Tailwind utilities/`motion` for the same reason overlay-in/out do —
    this needs a real `@keyframes`/`@property`, and it must run entirely on
    the CSS/compositor timeline rather than re-rendering React on every
-   frame. Two layers, both single-hue (accent teal only, opacity/blur/spread
-   vary) per tokens.css's "ONE accent color" rule:
+   frame.
 
-     .ai-glow-halo  — a tight breathing box-shadow (several teal layers at
-                      once, all growing/fading together) for a crisp,
-                      pulsing edge right at the window's border.
+   DELIBERATE, SCOPED EXCEPTION to tokens.css's "ONE accent color" rule:
+   this is the one place in the whole OS allowed to use more than the
+   accent teal, by explicit design direction. It's meant to read as the
+   same kind of multi-color "Siri / Apple Intelligence" signature glow
+   Apple uses for its own on-device-AI moments — that reference is
+   inherently a full spectrum, not a tint of one hue, so reproducing it
+   faithfully requires breaking the one-accent-color rule right here.
+   Nowhere else should follow this example: every other AI/interactive
+   moment in the product (focus rings, `Button`/`Switch`/`Slider` states,
+   AICursor.tsx's drop-shadow, etc.) stays the single accent teal.
+
+     .ai-glow-halo  — a tight breathing box-shadow: three layers at fixed,
+                      distinct hues (cool blue-violet tight at the edge,
+                      magenta at the mid bloom, gold/orange at the outer
+                      bloom) that grow/brighten together, then relax, for a
+                      pulsing edge right at the window's border. The pulse
+                      is intensity-only — alpha/blur/spread animate, each
+                      layer's own hue never changes — so stacking three
+                      saturated colors can't drift into a muddy gray.
      .ai-glow-sweep — a larger, heavily blurred conic-gradient sitting
                       behind the window (see AIGlowBorder.tsx for why a
                       sibling element, not a child, of the clipped chrome).
                       Only the sliver that pokes out past the window's own
-                      opaque body is ever visible, so bands of brighter/
-                      dimmer teal read as light traveling around the
-                      border. `--ai-glow-angle` (not a plain `transform:
-                      rotate()`) is what animates: rotating the WHOLE
-                      element would spin its rounded-rect shape off-axis
-                      from the window's actual (non-square) corners at
-                      every angle except 0/90/180/270; sweeping the
-                      gradient's own origin angle instead keeps the shape
-                      fixed and only moves the light within it.
+                      opaque body is ever visible, so the full color
+                      spectrum below reads as light continuously
+                      traveling around the border as it rotates.
+                      `--ai-glow-angle` (not a plain `transform: rotate()`)
+                      is what animates: rotating the WHOLE element would
+                      spin its rounded-rect shape off-axis from the
+                      window's actual (non-square) corners at every angle
+                      except 0/90/180/270; sweeping the gradient's own
+                      origin angle instead keeps the shape fixed and only
+                      moves the light within it.
 
-   The rgba tuple below (36, 92, 80) is tokens.css's `--color-accent-600`
-   (`#245c50`) hand-converted — same reason AICursor.tsx already hardcodes
-   it for its own drop-shadow: box-shadow/filter values can't apply their
-   own alpha on top of a CSS variable that resolves to a hex string. Keep
-   in sync with tokens.css by hand, same as tokens.ts.
+   The sweep's color stops move around the wheel in ONE direction only:
+   blue -> violet -> magenta -> crimson -> orange -> gold -> back through
+   pink/magenta -> blue. That return leg through pink/magenta (rather than
+   jumping straight from gold to blue) is deliberate — it's what keeps
+   every adjacent pair a clean blend instead of crossing the muddy
+   gray/green that a direct yellow-to-blue interpolation would produce.
+   Green/cyan never appear anywhere in the loop, same as the real Apple
+   Intelligence glow this is modeled on. Keep any future edit to these
+   stops (or to `.ai-glow-halo`'s three hues) within that same shape —
+   values are hand-picked sRGB, not derived from tokens.css, since this
+   effect is explicitly exempt from the token-driven accent system.
 
    Both `.ai-glow-halo`/`.ai-glow-sweep`'s base rules below are the
    prefers-reduced-motion fallback (a still glow, no animation) — the
@@ -75,15 +97,15 @@
   0%,
   100% {
     box-shadow:
-      0 0 0 1px rgba(36, 92, 80, 0.55),
-      0 0 14px 2px rgba(36, 92, 80, 0.32),
-      0 0 30px 6px rgba(36, 92, 80, 0.18);
+      0 0 0 1px rgba(94, 90, 255, 0.6),
+      0 0 16px 3px rgba(230, 55, 200, 0.36),
+      0 0 34px 8px rgba(255, 150, 40, 0.24);
   }
   50% {
     box-shadow:
-      0 0 0 1.5px rgba(36, 92, 80, 0.85),
-      0 0 22px 4px rgba(36, 92, 80, 0.48),
-      0 0 46px 12px rgba(36, 92, 80, 0.28);
+      0 0 0 1.5px rgba(94, 90, 255, 0.92),
+      0 0 26px 5px rgba(230, 55, 200, 0.55),
+      0 0 52px 14px rgba(255, 150, 40, 0.36);
   }
 }
 
@@ -95,24 +117,26 @@
 
 .ai-glow-halo {
   box-shadow:
-    0 0 0 1px rgba(36, 92, 80, 0.55),
-    0 0 14px 2px rgba(36, 92, 80, 0.32),
-    0 0 30px 6px rgba(36, 92, 80, 0.18);
+    0 0 0 1px rgba(94, 90, 255, 0.6),
+    0 0 16px 3px rgba(230, 55, 200, 0.36),
+    0 0 34px 8px rgba(255, 150, 40, 0.24);
 }
 
 .ai-glow-sweep {
   background: conic-gradient(
     from var(--ai-glow-angle),
-    transparent 0deg,
-    rgba(36, 92, 80, 0.65) 30deg,
-    transparent 90deg,
-    transparent 165deg,
-    rgba(36, 92, 80, 0.45) 205deg,
-    transparent 260deg,
-    transparent 360deg
+    rgb(56, 124, 255) 0%,
+    rgb(130, 84, 255) 13%,
+    rgb(213, 62, 235) 27%,
+    rgb(255, 63, 150) 40%,
+    rgb(255, 55, 78) 52%,
+    rgb(255, 135, 34) 63%,
+    rgb(255, 197, 61) 73%,
+    rgb(255, 93, 172) 86%,
+    rgb(56, 124, 255) 100%
   );
-  filter: blur(20px);
-  opacity: 0.85;
+  filter: blur(20px) saturate(1.25);
+  opacity: 0.92;
 }
 
 @media (prefers-reduced-motion: no-preference) {
