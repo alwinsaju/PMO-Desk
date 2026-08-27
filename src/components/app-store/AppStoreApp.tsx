@@ -3,10 +3,11 @@
 import { useState } from "react";
 import { MagnifyingGlassIcon } from "@phosphor-icons/react";
 import { ScrollArea, Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui";
-import { appCatalog, appCategories } from "./appCatalog";
+import { useWindowStore } from "@/components/window-manager";
+import { appCatalog, appCategories, appIcons } from "./appCatalog";
 import { AppCategoryRow } from "./AppCategoryRow";
 import { AppDetailView } from "./AppDetailView";
-import type { AppCategoryId } from "./types";
+import type { AppCategoryId, AppListing } from "./types";
 
 type CategoryFilter = "all" | AppCategoryId;
 
@@ -39,6 +40,8 @@ export function AppStoreApp({ windowId }: { windowId: string }) {
     () => new Set<string>(),
   );
 
+  const openWindow = useWindowStore((s) => s.openWindow);
+
   function toggleInstalled(id: string) {
     setInstalledIds((previous) => {
       const next = new Set(previous);
@@ -46,6 +49,31 @@ export function AppStoreApp({ windowId }: { windowId: string }) {
       else next.add(id);
       return next;
     });
+  }
+
+  /**
+   * The Install/Open button's single click handler, for every card and the
+   * detail view alike. For a fictional entry (no `url`) this is exactly the
+   * pre-existing behavior: flip local install state, nothing else, since
+   * there's no real window content behind it either way.
+   *
+   * A REAL entry (has `url`) installs the same way on its first click, but
+   * once installed, clicking "Open" opens the real window instead of
+   * uninstalling it — real apps don't disappear from the Home screen the
+   * way toggling this mocked catalog's fictional entries does.
+   */
+  function handlePrimaryAction(app: AppListing) {
+    if (installedIds.has(app.id) && app.url) {
+      const IconGlyph = appIcons[app.icon];
+      openWindow("web-app", {
+        title: app.name,
+        icon: <IconGlyph />,
+        url: app.url,
+        embeddable: app.embeddable,
+      });
+      return;
+    }
+    toggleInstalled(app.id);
   }
 
   const selectedApp = selectedAppId
@@ -59,7 +87,7 @@ export function AppStoreApp({ windowId }: { windowId: string }) {
           app={selectedApp}
           isInstalled={installedIds.has(selectedApp.id)}
           onBack={() => setSelectedAppId(null)}
-          onToggleInstall={() => toggleInstalled(selectedApp.id)}
+          onToggleInstall={() => handlePrimaryAction(selectedApp)}
         />
       </div>
     );
@@ -114,7 +142,7 @@ export function AppStoreApp({ windowId }: { windowId: string }) {
                   apps={searchResults}
                   installedIds={installedIds}
                   onSelect={setSelectedAppId}
-                  onToggleInstall={toggleInstalled}
+                  onToggleInstall={handlePrimaryAction}
                 />
                 {searchResults.length === 0 && (
                   <p className="text-ink-faint px-1 text-[13px]">
@@ -130,7 +158,7 @@ export function AppStoreApp({ windowId }: { windowId: string }) {
                     apps={featuredApps}
                     installedIds={installedIds}
                     onSelect={setSelectedAppId}
-                    onToggleInstall={toggleInstalled}
+                    onToggleInstall={handlePrimaryAction}
                   />
                   {appCategories.map((cat) => (
                     <AppCategoryRow
@@ -139,7 +167,7 @@ export function AppStoreApp({ windowId }: { windowId: string }) {
                       apps={appCatalog.filter((app) => app.category === cat.id)}
                       installedIds={installedIds}
                       onSelect={setSelectedAppId}
-                      onToggleInstall={toggleInstalled}
+                      onToggleInstall={handlePrimaryAction}
                     />
                   ))}
                 </TabsContent>
@@ -150,7 +178,7 @@ export function AppStoreApp({ windowId }: { windowId: string }) {
                       apps={appCatalog.filter((app) => app.category === cat.id)}
                       installedIds={installedIds}
                       onSelect={setSelectedAppId}
-                      onToggleInstall={toggleInstalled}
+                      onToggleInstall={handlePrimaryAction}
                     />
                   </TabsContent>
                 ))}

@@ -34,6 +34,20 @@ export interface WindowState {
   aiTaskId?: string;
   /** Floor for resizeWindow; defaults to the global minimum (360x240). */
   minSize?: WindowSize;
+  /** The URL a "web-app" window (src/components/apps/web-app/) should
+   *  render. Unused by every other appId — set only when opening that one
+   *  generic app (see app-store's appCatalog.ts for the real catalog
+   *  entries that do this). */
+  url?: string;
+  /** Whether `url`'s site allows itself to be embedded in a cross-origin
+   *  iframe. Deliberately NOT detected at runtime: a blocked cross-origin
+   *  iframe can't be introspected from JS, and a blocked frame often fires
+   *  no distinguishing load/error event either way. So this is a static
+   *  flag, hand-verified once against the real site's actual response
+   *  headers (`X-Frame-Options` / CSP `frame-ancestors` — see
+   *  appCatalog.ts's comments) and passed in at openWindow time. Only
+   *  meaningful alongside `url`. */
+  embeddable?: boolean;
   /** Position/size to return to when un-maximizing. Internal to the store —
    *  set by maximizeWindow, consumed by maximizeWindow on toggle-off. Not
    *  meant to be read or written by feature code. */
@@ -48,4 +62,8 @@ export interface OpenWindowOptions {
   minSize?: WindowSize;
   controlledBy?: ControlledBy;
   aiTaskId?: string;
+  /** See WindowState.url. */
+  url?: string;
+  /** See WindowState.embeddable. */
+  embeddable?: boolean;
 }

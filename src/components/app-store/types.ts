@@ -16,7 +16,10 @@ export interface AppCategory {
 }
 
 /** Keys into `appCatalog.ts`'s `appIcons` map — same split as
- *  `pinnedApps.ts`'s `PinnedApp["icon"]`. */
+ *  `pinnedApps.ts`'s `PinnedApp["icon"]`. The last 8 are only used by the
+ *  real web apps (see `AppListing.url`) — deliberately generic/functional
+ *  glyphs (an envelope, a chat bubble, ...) rather than any real brand's
+ *  actual logo; see appCatalog.ts's "Real web apps" section for why. */
 export type AppIconName =
   | "Kanban"
   | "Calendar"
@@ -29,7 +32,15 @@ export type AppIconName =
   | "LockKey"
   | "WifiHigh"
   | "ClipboardText"
-  | "ArrowsClockwise";
+  | "ArrowsClockwise"
+  | "EnvelopeSimple"
+  | "FileText"
+  | "ChatCircleText"
+  | "Notebook"
+  | "UsersThree"
+  | "Code"
+  | "BookOpenText"
+  | "PlayCircle";
 
 export interface AppListing {
   id: string;
@@ -43,7 +54,8 @@ export interface AppListing {
   rating: number;
   ratingCount: number;
   /** Pre-formatted, e.g. "24 MB" — this is a mocked catalog, there is no
-   *  real binary behind any entry to measure. */
+   *  real binary behind any entry to measure (least of all the real web
+   *  apps below, which are just a URL). */
   sizeLabel: string;
   /** Pre-formatted, e.g. "Free" or "$2.99". Purely cosmetic: Install/Open
    *  (see AppCard.tsx / AppDetailView.tsx) only ever flip local component
@@ -51,4 +63,18 @@ export interface AppListing {
   price: string;
   /** Shown in the "Featured" row atop the browse view. */
   featured?: boolean;
+  /**
+   * Present only on the small set of REAL, working web apps in the catalog
+   * (see appCatalog.ts's "Real web apps" section) — undefined for every
+   * fictional entry above it. When set, the App Store's "Open" action
+   * (AppStoreApp.tsx) opens this URL in the generic "web-app" window
+   * (src/components/apps/web-app/) instead of just toggling local install
+   * state the way every fictional entry still does.
+   */
+  url?: string;
+  /** Whether `url`'s site allows itself to be framed — a static flag,
+   *  hand-verified against the real site's response headers, never
+   *  detected at runtime. See `WindowState.embeddable`'s doc comment for
+   *  why. Only meaningful alongside `url`. */
+  embeddable?: boolean;
 }

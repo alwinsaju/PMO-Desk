@@ -9,7 +9,11 @@ interface AppCategoryRowProps {
   apps: AppListing[];
   installedIds: ReadonlySet<string>;
   onSelect: (id: string) => void;
-  onToggleInstall: (id: string) => void;
+  /** Takes the full listing (not just its id) because the caller needs to
+   *  branch on `app.url` — a real catalog entry's primary action opens a
+   *  window instead of just toggling install state. See AppStoreApp.tsx's
+   *  `handlePrimaryAction`. */
+  onToggleInstall: (app: AppListing) => void;
 }
 
 /**
@@ -40,7 +44,7 @@ export function AppCategoryRow({
             icon={appIcons[app.icon]}
             isInstalled={installedIds.has(app.id)}
             onSelect={() => onSelect(app.id)}
-            onToggleInstall={() => onToggleInstall(app.id)}
+            onToggleInstall={() => onToggleInstall(app)}
           />
         ))}
       </ul>

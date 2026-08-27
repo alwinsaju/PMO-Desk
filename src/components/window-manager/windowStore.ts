@@ -119,6 +119,8 @@ export const useWindowStore = create<WindowStoreState>()((set) => ({
         controlledBy: options.controlledBy ?? "human",
         aiTaskId: options.aiTaskId,
         minSize: options.minSize ?? { ...windowDefaults.minSize },
+        url: options.url,
+        embeddable: options.embeddable,
       };
 
       const withNewWindow = { ...state.windows, [id]: newWindow };
