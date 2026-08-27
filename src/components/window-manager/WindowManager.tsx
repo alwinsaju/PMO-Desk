@@ -31,12 +31,20 @@ import { Window } from "./Window";
  * single unit at `z-window-base`, so no amount of window-focusing over a
  * long session can ever climb high enough to appear above the chrome/
  * overlay layers.
+ *
+ * `pointer-events-none` here is deliberate: this wrapper is full-viewport
+ * even when there are zero open windows (the common case now that the
+ * dock is the only launcher), and without this it would silently sit on
+ * top of the wallpaper/desktop layer and swallow every click meant for it
+ * — including the right-click that opens `DesktopContextMenu`. Each
+ * `Window`'s own OUTER element re-enables `pointer-events-auto` so window
+ * chrome/content stays fully interactive.
  */
 export function WindowManager() {
   const ids = useVisibleWindowIds();
 
   return (
-    <div className="absolute inset-0 z-[var(--z-window-base)]">
+    <div className="pointer-events-none absolute inset-0 z-[var(--z-window-base)]">
       {ids.map((id) => (
         <Window key={id} id={id} />
       ))}

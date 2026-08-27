@@ -34,6 +34,11 @@ interface WindowProps {
  * re-render) with zero risk of fighting `motion`'s own animation engine,
  * since `motion` only ever touches INNER, and INNER's position is always
  * `static` (0/0, 100%/100%) relative to OUTER.
+ *
+ * OUTER also carries `pointer-events-auto` to counteract the
+ * `pointer-events-none` on `WindowManager`'s full-viewport wrapper (see
+ * that file) — everything inside OUTER inherits `auto` back from there,
+ * so chrome/content stays fully interactive.
  */
 export function Window({ id }: WindowProps) {
   const liveWindow = useWindowStore((s) => s.windows[id]);
@@ -86,7 +91,7 @@ export function Window({ id }: WindowProps) {
     <div
       ref={outerRef}
       style={outerStyle}
-      className={cn("absolute", data.isMaximized && "inset-3")}
+      className={cn("pointer-events-auto absolute", data.isMaximized && "inset-3")}
       onPointerDown={() => focusWindow(id)}
     >
       <motion.div
