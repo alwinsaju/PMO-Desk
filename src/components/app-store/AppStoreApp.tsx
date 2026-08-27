@@ -6,7 +6,7 @@ import { ScrollArea, Tabs, TabsContent, TabsList, TabsTrigger } from "@/componen
 import { useWindowStore } from "@/components/window-manager";
 import { appCatalog, appCategories, appIcons } from "./appCatalog";
 import { AppCategoryRow } from "./AppCategoryRow";
-import { AppDetailView } from "./AppDetailView";
+import { useInstalledAppsStore } from "./installedAppsStore";
 import type { AppCategoryId, AppListing } from "./types";
 
 type CategoryFilter = "all" | AppCategoryId;
@@ -15,47 +15,39 @@ type CategoryFilter = "all" | AppCategoryId;
  * Root App Store window — matches the `AppComponent` contract
  * (`ComponentType<{ windowId: string }>`, see
  * src/components/apps/types.ts) and is registered under "app-store" in
- * `index.ts`. `windowId` isn't needed for any lookup here (every bit of
- * state below is plain per-instance React state — see the note on
- * `installedIds`) but is stamped onto the root as a data attribute so it's
- * still visibly "used" per the contract, e.g. for debugging multiple open
- * App Store windows at once.
+ * `index.ts`. `windowId` isn't needed for any lookup here (search/category
+ * are plain per-instance React state, and install state comes from the
+ * shared `installedAppsStore`) but is stamped onto the root as a data
+ * attribute so it's still visibly "used" per the contract, e.g. for
+ * debugging multiple open App Store windows at once.
  *
- * Renders one of two mutually exclusive screens: the browse view (search
- * + category tabs + grouped rows) or, once a card is clicked,
- * AppDetailView full-screen. Never both at once, mirroring a conventional
- * store app's own navigation.
+ * Just the browse view (search + category tabs + grouped rows) — there is
+ * no per-app detail screen.
  */
 export function AppStoreApp({ windowId }: { windowId: string }) {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<CategoryFilter>("all");
-  const [selectedAppId, setSelectedAppId] = useState<string | null>(null);
-  // Local, mocked install state — "Install"/"Open" only ever flip this set,
-  // never a real install. Deliberately per-instance (not a shared store):
-  // the same appId can be opened into multiple windows at once (see
-  // AppComponent's own doc comment), and this is a mocked catalog with no
-  // backend to reconcile against, so there's nothing to keep in sync across
-  // instances.
-  const [installedIds, setInstalledIds] = useState<ReadonlySet<string>>(
-    () => new Set<string>(),
-  );
+
+  // Shared, persisted install state — see installedAppsStore.ts. Every open
+  // App Store window instance (see AppComponent's own doc comment on
+  // multiple instances) reads/writes this same store, unlike the old
+  // per-instance useState it replaces.
+  const installedIds = useInstalledAppsStore((s) => s.installedIds);
+  const installApp = useInstalledAppsStore((s) => s.installApp);
+  const uninstallApp = useInstalledAppsStore((s) => s.uninstallApp);
 
   const openWindow = useWindowStore((s) => s.openWindow);
 
   function toggleInstalled(id: string) {
-    setInstalledIds((previous) => {
-      const next = new Set(previous);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+    if (installedIds[id]) uninstallApp(id);
+    else installApp(id);
   }
 
   /**
-   * The Install/Open button's single click handler, for every card and the
-   * detail view alike. For a fictional entry (no `url`) this is exactly the
-   * pre-existing behavior: flip local install state, nothing else, since
-   * there's no real window content behind it either way.
+   * The Install/Open button's single click handler, for every card. For a
+   * fictional entry (no `url`) this is exactly the pre-existing behavior:
+   * flip shared install state, nothing else, since there's no real window
+   * content behind it either way.
    *
    * A REAL entry (has `url`) installs the same way on its first click, but
    * once installed, clicking "Open" opens the real window instead of
@@ -63,7 +55,7 @@ export function AppStoreApp({ windowId }: { windowId: string }) {
    * way toggling this mocked catalog's fictional entries does.
    */
   function handlePrimaryAction(app: AppListing) {
-    if (installedIds.has(app.id) && app.url) {
+    if (installedIds[app.id] && app.url) {
       const IconGlyph = appIcons[app.icon];
       openWindow("web-app", {
         title: app.name,
@@ -74,23 +66,6 @@ export function AppStoreApp({ windowId }: { windowId: string }) {
       return;
     }
     toggleInstalled(app.id);
-  }
-
-  const selectedApp = selectedAppId
-    ? (appCatalog.find((app) => app.id === selectedAppId) ?? null)
-    : null;
-
-  if (selectedApp) {
-    return (
-      <div data-window-id={windowId} className="h-full w-full">
-        <AppDetailView
-          app={selectedApp}
-          isInstalled={installedIds.has(selectedApp.id)}
-          onBack={() => setSelectedAppId(null)}
-          onToggleInstall={() => handlePrimaryAction(selectedApp)}
-        />
-      </div>
-    );
   }
 
   const trimmedQuery = query.trim();
@@ -141,7 +116,6 @@ export function AppStoreApp({ windowId }: { windowId: string }) {
                   title={`Results for "${trimmedQuery}"`}
                   apps={searchResults}
                   installedIds={installedIds}
-                  onSelect={setSelectedAppId}
                   onToggleInstall={handlePrimaryAction}
                 />
                 {searchResults.length === 0 && (
@@ -157,7 +131,6 @@ export function AppStoreApp({ windowId }: { windowId: string }) {
                     title="Featured"
                     apps={featuredApps}
                     installedIds={installedIds}
-                    onSelect={setSelectedAppId}
                     onToggleInstall={handlePrimaryAction}
                   />
                   {appCategories.map((cat) => (
@@ -166,7 +139,6 @@ export function AppStoreApp({ windowId }: { windowId: string }) {
                       title={cat.label}
                       apps={appCatalog.filter((app) => app.category === cat.id)}
                       installedIds={installedIds}
-                      onSelect={setSelectedAppId}
                       onToggleInstall={handlePrimaryAction}
                     />
                   ))}
@@ -177,7 +149,6 @@ export function AppStoreApp({ windowId }: { windowId: string }) {
                       title={cat.label}
                       apps={appCatalog.filter((app) => app.category === cat.id)}
                       installedIds={installedIds}
-                      onSelect={setSelectedAppId}
                       onToggleInstall={handlePrimaryAction}
                     />
                   </TabsContent>

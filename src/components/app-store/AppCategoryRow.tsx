@@ -7,8 +7,10 @@ import type { AppListing } from "./types";
 interface AppCategoryRowProps {
   title: string;
   apps: AppListing[];
-  installedIds: ReadonlySet<string>;
-  onSelect: (id: string) => void;
+  /** Same shape as `installedAppsStore.ts`'s `installedIds` — passed
+   *  straight through from `AppStoreApp` rather than converted to a
+   *  `Set`, so this stays a plain lookup with no extra allocation. */
+  installedIds: Record<string, true>;
   /** Takes the full listing (not just its id) because the caller needs to
    *  branch on `app.url` — a real catalog entry's primary action opens a
    *  window instead of just toggling install state. See AppStoreApp.tsx's
@@ -28,7 +30,6 @@ export function AppCategoryRow({
   title,
   apps,
   installedIds,
-  onSelect,
   onToggleInstall,
 }: AppCategoryRowProps) {
   if (apps.length === 0) return null;
@@ -42,8 +43,7 @@ export function AppCategoryRow({
             key={app.id}
             app={app}
             icon={appIcons[app.icon]}
-            isInstalled={installedIds.has(app.id)}
-            onSelect={() => onSelect(app.id)}
+            isInstalled={Boolean(installedIds[app.id])}
             onToggleInstall={() => onToggleInstall(app)}
           />
         ))}

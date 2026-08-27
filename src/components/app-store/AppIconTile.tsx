@@ -3,45 +3,30 @@
 import type { Icon } from "@phosphor-icons/react";
 import { cn } from "@/lib/cn";
 
-export type AppIconTileSize = "sm" | "lg";
-
-const tileClassName: Record<AppIconTileSize, string> = {
-  sm: "h-11 w-11 rounded-xl",
-  lg: "h-16 w-16 rounded-2xl",
-};
-
-const glyphSize: Record<AppIconTileSize, number> = {
-  sm: 20,
-  lg: 28,
-};
-
 interface AppIconTileProps {
   icon: Icon;
-  size?: AppIconTileSize;
   className?: string;
 }
 
 /**
- * Neutral rounded icon tile shared by AppCard (row-sized) and
- * AppDetailView (header-sized). Deliberately neutral, not accent — the
- * design spec's one accent color is reserved for interactive moments (the
- * Install button here), not decorative app-icon backgrounds. See
- * ARCHITECTURE.md's "ONE accent color" section.
+ * Neutral rounded icon tile used by AppCard's row. Deliberately neutral,
+ * not accent — the design spec's one accent color is reserved for
+ * interactive moments (the Install button here), not decorative app-icon
+ * backgrounds. See ARCHITECTURE.md's "ONE accent color" section.
+ *
+ * Used to come in "sm"/"lg" sizes (the "lg" one for AppDetailView's
+ * header), back when the App Store had a per-app detail screen. Now that
+ * AppCard is the only consumer, it's just the one fixed size.
  */
-export function AppIconTile({
-  icon: IconGlyph,
-  size = "sm",
-  className,
-}: AppIconTileProps) {
+export function AppIconTile({ icon: IconGlyph, className }: AppIconTileProps) {
   return (
     <span
       className={cn(
-        "text-ink-muted inline-flex shrink-0 items-center justify-center bg-neutral-100",
-        tileClassName[size],
+        "text-ink-muted inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-neutral-100",
         className,
       )}
     >
-      <IconGlyph size={glyphSize[size]} />
+      <IconGlyph size={20} />
     </span>
   );
 }

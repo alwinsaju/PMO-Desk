@@ -45,22 +45,12 @@ export type AppIconName =
 export interface AppListing {
   id: string;
   name: string;
+  /** Not shown on the card (see AppCard.tsx) — kept because it's part of
+   *  what the search box matches against, alongside `name`/`developer`. */
   tagline: string;
-  description: string;
   developer: string;
   category: AppCategoryId;
   icon: AppIconName;
-  /** 0-5. */
-  rating: number;
-  ratingCount: number;
-  /** Pre-formatted, e.g. "24 MB" — this is a mocked catalog, there is no
-   *  real binary behind any entry to measure (least of all the real web
-   *  apps below, which are just a URL). */
-  sizeLabel: string;
-  /** Pre-formatted, e.g. "Free" or "$2.99". Purely cosmetic: Install/Open
-   *  (see AppCard.tsx / AppDetailView.tsx) only ever flip local component
-   *  state and never trigger a real purchase. */
-  price: string;
   /** Shown in the "Featured" row atop the browse view. */
   featured?: boolean;
   /**
@@ -68,7 +58,7 @@ export interface AppListing {
    * (see appCatalog.ts's "Real web apps" section) — undefined for every
    * fictional entry above it. When set, the App Store's "Open" action
    * (AppStoreApp.tsx) opens this URL in the generic "web-app" window
-   * (src/components/apps/web-app/) instead of just toggling local install
+   * (src/components/apps/web-app/) instead of just toggling shared install
    * state the way every fictional entry still does.
    */
   url?: string;
