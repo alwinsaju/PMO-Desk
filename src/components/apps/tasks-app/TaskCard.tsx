@@ -10,9 +10,6 @@ import type { Task } from "./types";
 
 interface TaskCardProps {
   task: Task;
-  /** Display name of the worker currently assigned to this task, or null
-   *  (idle/none assigned) — resolved by the caller from `agentsById`. */
-  workerName: string | null;
   canStart: boolean;
   /** Called after any action on this card settles, so the caller can
    *  refetch immediately instead of waiting for the next poll tick. */
@@ -27,13 +24,7 @@ interface TaskCardProps {
  * this project's own design tokens/UI kit. See taskPresenter.ts and
  * TaskActionBar.tsx for where the actual reference-frontend rules live.
  */
-export function TaskCard({
-  task,
-  workerName,
-  canStart,
-  onSettled,
-  onOpenDetail,
-}: TaskCardProps) {
+export function TaskCard({ task, canStart, onSettled, onOpenDetail }: TaskCardProps) {
   const action = useTaskAction(task.id, onSettled);
 
   return (
@@ -59,7 +50,7 @@ export function TaskCard({
         </div>
       ) : (
         <p className="text-ink-muted min-h-[1.25rem] text-[12px]">
-          {statusSentence(task, workerName)}
+          {statusSentence(task)}
         </p>
       )}
 

@@ -17,8 +17,6 @@ export type ConnectionStatus = "loading" | "online" | "offline";
 export interface AgentOfficeData {
   tasks: Task[];
   agents: Agent[];
-  /** id -> Agent, for the "<Agent> is running <step>" lookup. */
-  agentsById: Map<string, Agent>;
   /** True once at least one worker in the pool is idle. */
   canStart: boolean;
   connection: ConnectionStatus;
@@ -102,11 +100,7 @@ export function useAgentOfficeData(): AgentOfficeData {
     pollRef.current();
   }, []);
 
-  const agentsById = useMemo(
-    () => new Map(agents.map((agent) => [agent.id, agent])),
-    [agents],
-  );
   const canStart = useMemo(() => canStartFromAgents(agents), [agents]);
 
-  return { tasks, agents, agentsById, canStart, connection, hasLoadedOnce, refetch };
+  return { tasks, agents, canStart, connection, hasLoadedOnce, refetch };
 }

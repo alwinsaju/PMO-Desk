@@ -49,10 +49,11 @@ export interface Task {
   schedule: { daily: string } | null;
 }
 
-/** One pool worker. This app only ever uses it as an id -> displayName
- *  lookup (for the "<Agent> is running <step>" status sentence) and to
- *  compute whether any worker is idle — never rendered as a standalone
- *  panel (explicitly out of scope for this pass). */
+/** One pool worker. This app only ever uses it to compute whether any
+ *  worker is idle (see taskPresenter.ts's `canStartFromAgents`) — never
+ *  rendered as a standalone panel (explicitly out of scope for this pass),
+ *  and no longer used for an id -> displayName lookup now that task status
+ *  text doesn't name the assigned worker. */
 export interface Agent {
   id: string;
   displayName: string;

@@ -20,17 +20,12 @@ import { useAgentOfficeData } from "./useAgentOfficeData";
  * registry's usual convention (see AppStoreApp.tsx).
  */
 export function TasksApp({ windowId }: { windowId: string }) {
-  const { tasks, agentsById, canStart, connection, hasLoadedOnce, refetch } =
-    useAgentOfficeData();
+  const { tasks, canStart, connection, hasLoadedOnce, refetch } = useAgentOfficeData();
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
 
   const selectedTask = selectedTaskId
     ? (tasks.find((task) => task.id === selectedTaskId) ?? null)
     : null;
-  const selectedWorkerName =
-    selectedTask?.assignedAgentId != null
-      ? (agentsById.get(selectedTask.assignedAgentId)?.displayName ?? null)
-      : null;
 
   // Never blank the screen for a transient failure once we've shown real
   // data before — only the very first load (never yet succeeded) gets the
@@ -73,11 +68,6 @@ export function TasksApp({ windowId }: { windowId: string }) {
               <TaskCard
                 key={task.id}
                 task={task}
-                workerName={
-                  task.assignedAgentId != null
-                    ? (agentsById.get(task.assignedAgentId)?.displayName ?? null)
-                    : null
-                }
                 canStart={canStart}
                 onSettled={refetch}
                 onOpenDetail={() => setSelectedTaskId(task.id)}
@@ -89,7 +79,6 @@ export function TasksApp({ windowId }: { windowId: string }) {
 
       <TaskDetailDialog
         task={selectedTask}
-        workerName={selectedWorkerName}
         onOpenChange={(open) => {
           if (!open) setSelectedTaskId(null);
         }}

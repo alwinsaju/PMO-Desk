@@ -31,25 +31,27 @@ export function humanize(id: string | null | undefined): string {
 }
 
 /**
- * One-line status sentence for a task card, naming the assigned worker when
- * known — mirrors agentPresenter.js's `statusLabel` exactly, including its
- * one asymmetry: "error" resolves to an empty string here too, because that
- * state renders its own dedicated error box instead (see TaskCard) rather
- * than a status sentence.
+ * One-line status sentence for a task card — adapted from agentPresenter.js's
+ * `statusLabel`, which names the assigned worker (e.g. "Adam is running
+ * ..."); this app deliberately drops that framing (the person it's built
+ * for doesn't want agent names surfaced while a task is running) and just
+ * describes the state/step, but otherwise keeps the same one-line-per-state
+ * shape, including its one asymmetry: "error" resolves to an empty string
+ * here too, because that state renders its own dedicated error box instead
+ * (see TaskCard) rather than a status sentence.
  */
-export function statusSentence(task: Task, workerName: string | null): string {
-  const who = workerName || "An agent";
+export function statusSentence(task: Task): string {
   switch (task.state) {
     case "resting":
       return "Ready to run.";
     case "working":
-      return `${who} is running ${humanize(task.currentStep)}…`;
+      return `Running ${humanize(task.currentStep)}…`;
     case "finishing":
-      return `${who} is finishing up — ${humanize(task.currentStep)}…`;
+      return `Finishing up — ${humanize(task.currentStep)}…`;
     case "awaiting_review":
-      return `${who} is waiting on your review.`;
+      return "Waiting on your review.";
     case "awaiting_send":
-      return `${who} is waiting on your confirmation to send.`;
+      return "Waiting on your confirmation to send.";
     default:
       return "";
   }

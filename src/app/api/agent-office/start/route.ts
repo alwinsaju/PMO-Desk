@@ -17,7 +17,14 @@ export const dynamic = "force-dynamic";
  * commands. If the venv/repo ever move, update the two constants below
  * rather than parameterizing them from a request.
  */
-const PYTHON_EXE = "C:\\Projects\\Agents-workspace\\.venv\\Scripts\\python.exe";
+// `pythonw.exe`, not `python.exe` — same interpreter, but compiled as a
+// Windows GUI-subsystem binary instead of a console-subsystem one, i.e. it
+// never has (or tries to allocate) a console at all. See the note above
+// `child.unref()` below for why that distinction is exactly what lets this
+// route get both "no visible window" and "survives independently of this
+// dev server" at once, which turned out not to be possible with `python.exe`
+// no matter how `detached`/`windowsHide` were combined.
+const PYTHON_EXE = "C:\\Projects\\Agents-workspace\\.venv\\Scripts\\pythonw.exe";
 const AGENT_OFFICE_CWD = "C:\\Projects\\Agents-workspace\\agent-office";
 const UVICORN_ARGS = ["-m", "uvicorn", "backend.main:app", "--port", "8000"];
 
@@ -116,18 +123,64 @@ async function attemptStart(): Promise<StartResult> {
     exitCode = code;
   });
 
-  // Detach for real: this process must not keep the Next.js dev server's
-  // event loop alive on the child's account, and the child must keep
-  // running after a Fast Refresh/HMR reload from unrelated file edits.
-  // Verified live on Windows: detached+unref() survives the dev server
-  // being stopped via a plain kill of its PID (Ctrl+C, a crash, a normal
-  // Fast Refresh — which never touches this child at all) — but NOT an
-  // explicit recursive "kill this PID and every descendant" teardown
-  // (`taskkill /T`), because Windows still resolves the child's parent PID
-  // for tree-kill purposes regardless of `detached`. That's a difference
-  // between kill *mechanisms*, not a gap in this flag combination — the
-  // literal scenario this needs to survive (editing unrelated files while
-  // this stays running) never kills anything, so it's unaffected either way.
+  // This must not keep the Next.js dev server's event loop alive on the
+  // child's account, and the child must keep running after a Fast
+  // Refresh/HMR reload from unrelated file edits. unref() is what actually
+  // gets us the first half (this process can exit/idle without waiting on
+  // the still-running child); `detached: true` above is what gets us the
+  // second (see the GOTCHA below for why it has to be `detached`, not just
+  // "don't tie its stdio to us"). Verified live on Windows: this combo
+  // survives the dev server being stopped via a plain kill of its PID
+  // (Ctrl+C, a crash, a normal Fast Refresh — which never touches this
+  // child at all). It does NOT survive an explicit recursive "kill this
+  // PID and every descendant" teardown (`taskkill /T`), because Windows
+  // still resolves the child's parent PID for tree-kill purposes regardless
+  // of `detached` — but the literal scenario this needs to survive (editing
+  // unrelated files while this stays running) never does that, so it's
+  // unaffected either way.
+  //
+  // GOTCHA, worked out the hard way on this exact machine — read this
+  // before touching PYTHON_EXE or these spawn options:
+  //
+  // `detached: true` and `windowsHide: true` sound orthogonal (independence
+  // from the parent vs. a hidden window) but on Windows they collide.
+  // libuv (the native layer under `child_process.spawn`) implements
+  // `detached` as the creation flag `DETACHED_PROCESS`, OR'd into the same
+  // `CreateProcess` call as whatever `windowsHide` contributes
+  // (`CREATE_NO_WINDOW` + `SW_HIDE`). Per Microsoft's own docs,
+  // `CREATE_NO_WINDOW` "is ignored ... if it is used with either
+  // CREATE_NEW_CONSOLE or DETACHED_PROCESS" — so with a plain `python.exe`
+  // target and both options set, `windowsHide` was silently a no-op on the
+  // *direct* child. That alone would "only" mean the direct child inherits
+  // whatever console state it has by default, which usually wouldn't pop a
+  // new window — except this venv's direct child, `Scripts\python.exe`, is
+  // itself just a tiny native launcher stub (this is a Microsoft Store
+  // Python install; `pyvenv.cfg`'s `home` points at a WindowsApps alias)
+  // that relays to the real interpreter via its own internal, second
+  // `CreateProcess` call, entirely outside anything Node/libuv can pass
+  // flags to. `DETACHED_PROCESS` leaves that stub with no console at all,
+  // so when it then relaunches the real interpreter with no console to
+  // inherit and no special flags of its own, Windows falls back to its
+  // documented default for an orphaned console app: allocate a *new*,
+  // normally-visible console for it — one process hop below anything this
+  // route controls. That new console is the window that was actually
+  // showing up.
+  //
+  // The fix is NOT to drop `detached` — that removes the window but was
+  // verified live to reintroduce the opposite problem: without
+  // `CREATE_NEW_PROCESS_GROUP` (also part of what `detached` sets), the
+  // "child" stops being independent of this process's own lifetime on
+  // Windows and dies with it (confirmed with a plain, non-tree kill of just
+  // this process's PID — same scenario called out above as needing to
+  // survive). The actual fix is the executable switch above: `pythonw.exe`
+  // is a GUI-subsystem binary, so it never has a console to inherit or
+  // avoid in the first place — `DETACHED_PROCESS` becomes a no-op for it
+  // instead of a trap, `CREATE_NO_WINDOW`/`SW_HIDE` become moot rather than
+  // conflicting with anything, and `detached`'s actually-load-bearing part
+  // (`CREATE_NEW_PROCESS_GROUP`, i.e. surviving independently of this
+  // process) is free to work unopposed. Verified live: this combination
+  // produces no window at any hop AND survives a plain kill of this
+  // process's own PID.
   child.unref();
 
   console.log(`[agent-office] launching: ${PYTHON_EXE} ${UVICORN_ARGS.join(" ")}`);

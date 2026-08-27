@@ -39,8 +39,8 @@ export function fetchTasks(): Promise<Task[]> {
   return getJson<Task[]>("/tasks");
 }
 
-/** All pool workers with their live state — used only as an id ->
- *  displayName lookup and to derive whether any worker is idle; never
+/** All pool workers with their live state — used only to derive whether
+ *  any worker is idle (see taskPresenter.ts's `canStartFromAgents`); never
  *  rendered as its own panel. */
 export function fetchAgents(): Promise<Agent[]> {
   return getJson<Agent[]>("/agents");

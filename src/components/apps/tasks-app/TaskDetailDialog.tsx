@@ -27,7 +27,6 @@ const LOG_POLL_MS = 2000;
 interface TaskDetailDialogProps {
   /** null closes the dialog. */
   task: Task | null;
-  workerName: string | null;
   onOpenChange: (open: boolean) => void;
 }
 
@@ -43,11 +42,7 @@ interface TaskDetailDialogProps {
  * animation plays) even for the one render where `task` has already gone
  * back to null.
  */
-export function TaskDetailDialog({
-  task,
-  workerName,
-  onOpenChange,
-}: TaskDetailDialogProps) {
+export function TaskDetailDialog({ task, onOpenChange }: TaskDetailDialogProps) {
   const [lastTask, setLastTask] = useState<Task | null>(task);
   const [log, setLog] = useState<LogEntry[]>([]);
   const [history, setHistory] = useState<HistoryRun[]>([]);
@@ -122,7 +117,7 @@ export function TaskDetailDialog({
                 <span className="line-clamp-1">
                   {lastTask.state === "error" && lastTask.error
                     ? lastTask.error
-                    : statusSentence(lastTask, workerName)}
+                    : statusSentence(lastTask)}
                 </span>
               </div>
             </DialogDescription>
