@@ -4,7 +4,11 @@
 // `src/components/apps/index.ts` adds the one side-effect import for this
 // file; nothing here needs to be exported, since Window.tsx only ever
 // resolves app content through `getAppComponent(appId)`.
+//
+// Registers TasksAppGate (not TasksApp itself) — the gate auto-launches
+// the agent-office backend and shows a loading/error screen before handing
+// off to the real <TasksApp>. See TasksAppGate.tsx.
 import { registerApp } from "../registry";
-import { TasksApp } from "./TasksApp";
+import { TasksAppGate } from "./TasksAppGate";
 
-registerApp("tasks", TasksApp);
+registerApp("tasks", TasksAppGate);
