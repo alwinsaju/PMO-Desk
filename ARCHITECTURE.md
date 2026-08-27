@@ -123,6 +123,22 @@ that no longer exists mid-animation). `maximizeWindow` doesn't need this —
 it doesn't remove the window from the visible-ids list, so there's nothing to
 keep alive.
 
+**Maximize/restore is a different kind of animation-gated.** OUTER (the
+plain, ref-mutated div drag/resize depend on) is deliberately never a
+`motion.div`, so maximize/restore's spring can't be a reactive `animate`
+prop the way open/close/minimize's is; `Window.tsx`'s `handleMaximizeToggle`
+instead calls `motion`'s imperative `animate()` directly on OUTER's DOM
+node, the same "mutate the ref" category as the gesture hooks, just spring-
+rather than pointer-driven. The store commit (`maximizeWindow(id)`) happens
+immediately, for instant control-icon feedback either direction, while a
+local `transitionRect` (the current rect, frozen for the animation's
+duration, set via `flushSync` before `animate()` starts) takes over
+rendering OUTER's transform/width/height so React's own re-renders never
+have a different value to apply there and stomp on `animate()`'s
+in-progress ones. It clears on `animate()`'s `onComplete`, handing
+rendering back to the plain store-driven styles, which by then exactly
+match where the spring landed.
+
 ## The app registry (`src/components/apps/`)
 
 The contract: `registerApp(appId, Component)` / `getAppComponent(appId)`
@@ -257,13 +273,16 @@ AI Agent Layer's corner presence avatars later.
 The design spec is explicit that there is exactly one accent color (a deep
 teal), reserved for AI/interactive moments — not decorative use. In this
 pass it shows up in: focus rings across the whole UI kit, `Button`/`IconButton`'s
-`solid` variant, `Switch`/`Slider`'s checked/filled state, and a thin ring
-Window.tsx draws around a window when `controlledBy === "ai"` (not
-explicitly listed in the original spec's examples, but squarely in the same
-category — it's arguably the single most important "this is AI-driven"
-signal in the whole product). Don't add a second accent color, and don't
-reach for `bg-accent` just because something needs visual emphasis — that's
-what the neutral scale's contrast is for.
+`solid` variant, `Switch`/`Slider`'s checked/filled state, and an animated
+glow (`AIGlowBorder.tsx`) Window.tsx draws around a window when
+`controlledBy === "ai"` (not explicitly listed in the original spec's
+examples, but squarely in the same category — it's arguably the single most
+important "this is AI-driven" signal in the whole product). It started as a
+static ring and became a breathing/traveling glow (still single-hue — only
+opacity/blur/spread vary, per globals.css's `.ai-glow-halo`/`.ai-glow-sweep`
+comment) for a more "alive" AI-presence signal. Don't add a second accent
+color, and don't reach for `bg-accent` just because something needs visual
+emphasis — that's what the neutral scale's contrast is for.
 
 ## Z-index layers
 

@@ -28,6 +28,103 @@
   }
 }
 
+/* The AI "Siri glow" halo Window.tsx draws around a window when
+   `controlledBy === "ai"` (see AIGlowBorder.tsx). Lives in plain CSS rather
+   than Tailwind utilities/`motion` for the same reason overlay-in/out do —
+   this needs a real `@keyframes`/`@property`, and it must run entirely on
+   the CSS/compositor timeline rather than re-rendering React on every
+   frame. Two layers, both single-hue (accent teal only, opacity/blur/spread
+   vary) per tokens.css's "ONE accent color" rule:
+
+     .ai-glow-halo  — a tight breathing box-shadow (several teal layers at
+                      once, all growing/fading together) for a crisp,
+                      pulsing edge right at the window's border.
+     .ai-glow-sweep — a larger, heavily blurred conic-gradient sitting
+                      behind the window (see AIGlowBorder.tsx for why a
+                      sibling element, not a child, of the clipped chrome).
+                      Only the sliver that pokes out past the window's own
+                      opaque body is ever visible, so bands of brighter/
+                      dimmer teal read as light traveling around the
+                      border. `--ai-glow-angle` (not a plain `transform:
+                      rotate()`) is what animates: rotating the WHOLE
+                      element would spin its rounded-rect shape off-axis
+                      from the window's actual (non-square) corners at
+                      every angle except 0/90/180/270; sweeping the
+                      gradient's own origin angle instead keeps the shape
+                      fixed and only moves the light within it.
+
+   The rgba tuple below (36, 92, 80) is tokens.css's `--color-accent-600`
+   (`#245c50`) hand-converted — same reason AICursor.tsx already hardcodes
+   it for its own drop-shadow: box-shadow/filter values can't apply their
+   own alpha on top of a CSS variable that resolves to a hex string. Keep
+   in sync with tokens.css by hand, same as tokens.ts.
+
+   Both `.ai-glow-halo`/`.ai-glow-sweep`'s base rules below are the
+   prefers-reduced-motion fallback (a still glow, no animation) — the
+   `@media` block beneath is what turns motion on for everyone else, so a
+   user who has NOT asked for reduced motion is the one opting into the
+   extra rules, rather than reduced motion being a special case to opt out
+   of. */
+@property --ai-glow-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
+@keyframes ai-glow-breathe {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 1px rgba(36, 92, 80, 0.55),
+      0 0 14px 2px rgba(36, 92, 80, 0.32),
+      0 0 30px 6px rgba(36, 92, 80, 0.18);
+  }
+  50% {
+    box-shadow:
+      0 0 0 1.5px rgba(36, 92, 80, 0.85),
+      0 0 22px 4px rgba(36, 92, 80, 0.48),
+      0 0 46px 12px rgba(36, 92, 80, 0.28);
+  }
+}
+
+@keyframes ai-glow-rotate {
+  to {
+    --ai-glow-angle: 360deg;
+  }
+}
+
+.ai-glow-halo {
+  box-shadow:
+    0 0 0 1px rgba(36, 92, 80, 0.55),
+    0 0 14px 2px rgba(36, 92, 80, 0.32),
+    0 0 30px 6px rgba(36, 92, 80, 0.18);
+}
+
+.ai-glow-sweep {
+  background: conic-gradient(
+    from var(--ai-glow-angle),
+    transparent 0deg,
+    rgba(36, 92, 80, 0.65) 30deg,
+    transparent 90deg,
+    transparent 165deg,
+    rgba(36, 92, 80, 0.45) 205deg,
+    transparent 260deg,
+    transparent 360deg
+  );
+  filter: blur(20px);
+  opacity: 0.85;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .ai-glow-halo {
+    animation: ai-glow-breathe 3.4s ease-in-out infinite;
+  }
+
+  .ai-glow-sweep {
+    animation: ai-glow-rotate 8s linear infinite;
+  }
+}
+
 html {
   color-scheme: light;
 }

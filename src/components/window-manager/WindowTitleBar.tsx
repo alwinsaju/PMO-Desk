@@ -11,6 +11,15 @@ interface WindowTitleBarProps {
   icon?: ReactNode;
   isFocused: boolean;
   isMaximized: boolean;
+  /** True only while Window.tsx's own imperative maximize/restore spring is
+   *  mid-flight (see its `transitionRect` state). Separate from
+   *  `isMaximized` on purpose: `isMaximized` flips the instant the toggle is
+   *  clicked (so the control icon gives immediate feedback either
+   *  direction), but dragging/re-toggling has to stay blocked until OUTER's
+   *  rect animation actually finishes, or a drag gesture's ref-mutation
+   *  would start fighting that still-running animation over the same
+   *  `transform`/width/height — see Window.tsx's `handleMaximizeToggle`. */
+  dragDisabled?: boolean;
   /** Ref of the OUTER window element — see useWindowDrag for why. */
   rootRef: React.RefObject<HTMLElement | null>;
   onMinimize: () => void;
@@ -21,7 +30,7 @@ interface WindowTitleBarProps {
 /**
  * Thin near-white title bar: small app icon + name on the left, understated
  * minimize/maximize + always-visible close on the right. Doubles as the
- * window's drag handle (disabled while maximized).
+ * window's drag handle (disabled while maximized, or mid-maximize/restore).
  */
 export function WindowTitleBar({
   id,
@@ -29,20 +38,22 @@ export function WindowTitleBar({
   icon,
   isFocused,
   isMaximized,
+  dragDisabled = false,
   rootRef,
   onMinimize,
   onMaximizeToggle,
   onClose,
 }: WindowTitleBarProps) {
-  const bindDrag = useWindowDrag(id, rootRef, { disabled: isMaximized });
+  const dragBlocked = isMaximized || dragDisabled;
+  const bindDrag = useWindowDrag(id, rootRef, { disabled: dragBlocked });
 
   return (
     <div
-      {...(isMaximized ? {} : bindDrag())}
-      onDoubleClick={onMaximizeToggle}
+      {...(dragBlocked ? {} : bindDrag())}
+      onDoubleClick={dragDisabled ? undefined : onMaximizeToggle}
       className={cn(
         "group h-titlebar flex shrink-0 touch-none items-center gap-2 pr-2 pl-3 select-none",
-        isMaximized ? "cursor-default" : "cursor-grab active:cursor-grabbing",
+        dragBlocked ? "cursor-default" : "cursor-grab active:cursor-grabbing",
       )}
     >
       {icon ? (
