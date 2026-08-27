@@ -16,5 +16,6 @@
 import "./notes-app";
 import "./files-app";
 import "./browser-app";
+import "./tasks-app";
 import "./web-app"; // generic window every REAL App Store catalog entry opens into
 import "../app-store"; // the App Store is also opened as a window

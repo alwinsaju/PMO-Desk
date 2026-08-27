@@ -18,13 +18,14 @@
 import {
   FolderIcon,
   GlobeIcon,
+  ListChecksIcon,
   NotePencilIcon,
   SquaresFourIcon,
   type Icon,
 } from "@phosphor-icons/react";
 
 /**
- * The 4 apps pinned to the dock. `id` doubles as the appId passed to
+ * The 5 apps pinned to the dock. `id` doubles as the appId passed to
  * `windowStore.openWindow`.
  *
  * This exact list is the shared contract with the App Store and Demo Apps
@@ -40,6 +41,7 @@ export const pinnedApps = [
   { id: "files", title: "Files", icon: "Folder" },
   { id: "notes", title: "Notes", icon: "NotePencil" },
   { id: "browser", title: "Browser", icon: "Globe" },
+  { id: "tasks", title: "Tasks", icon: "ListChecks" },
   { id: "app-store", title: "App Store", icon: "SquaresFour" },
 ] as const;
 
@@ -55,5 +57,6 @@ export const pinnedAppIcons: Record<PinnedApp["icon"], Icon> = {
   Folder: FolderIcon,
   NotePencil: NotePencilIcon,
   Globe: GlobeIcon,
+  ListChecks: ListChecksIcon,
   SquaresFour: SquaresFourIcon,
 };
