@@ -13,7 +13,7 @@
 // See ARCHITECTURE.md's "The app registry" gotcha for why that distinction
 // matters.
 //
-// import "./notes-app";
-// import "./files-app";
-// import "./browser-app";
+import "./notes-app";
+import "./files-app";
+import "./browser-app";
 import "../app-store"; // the App Store is also opened as a window
