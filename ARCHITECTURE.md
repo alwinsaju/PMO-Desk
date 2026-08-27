@@ -21,8 +21,9 @@ parallel workstreams described at the bottom of this file.
 src/
   app/
     layout.tsx          Fonts (next/font/google) as CSS variables on <html>,
-                         metadata. No providers yet — add them here if a
-                         later phase needs one (e.g. a toast/notification root).
+                         metadata, and global providers (currently just
+                         Radix's TooltipProvider — add more here, e.g. a
+                         toast/notification root, if a later phase needs one).
     page.tsx             Renders <Desktop /> and nothing else.
     globals.css          @import "tailwindcss", then @import "../styles/tokens.css".
                          Also owns the two keyframes (`overlay-in`/`overlay-out`)

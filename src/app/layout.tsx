@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Figtree, IBM_Plex_Mono } from "next/font/google";
+import { TooltipProvider } from "@/components/ui/Tooltip";
 import "./globals.css";
 
 // Figtree is used as a true variable font (no `weight` list) so every
@@ -41,7 +42,13 @@ export default function RootLayout({
     // in that case — is what gets inherited downward) and every element
     // would silently fall back to Tailwind's default font stack.
     <html lang="en" className={`${figtree.variable} ${ibmPlexMono.variable}`}>
-      <body className="antialiased">{children}</body>
+      <body className="antialiased">
+        {/* Global provider: Radix's Tooltip.Root works without this, but a
+            single app-wide Provider is the recommended setup — it lets any
+            later phase share one delayDuration/skipDelayDuration config
+            instead of every tooltip user having to remember to add it. */}
+        <TooltipProvider delayDuration={300}>{children}</TooltipProvider>
+      </body>
     </html>
   );
 }
