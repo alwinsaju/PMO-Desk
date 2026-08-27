@@ -1,25 +1,41 @@
 /**
- * Lifecycle of one mocked agent task. There is at most one task "in
- * flight" at a time (see agentStore.ts's `currentTask`) — this is a mocked
- * single-agent shell, not a real multi-task scheduler.
+ * Lifecycle of one agent task. There is at most one task "in flight" at a
+ * time (see agentStore.ts's `currentTask`) — this is a single-agent shell
+ * (no queue, no parallel tasks), not a real multi-task scheduler.
+ *
+ * "thinking" is the one phase with genuinely unknown duration — it lasts
+ * exactly as long as the real `/api/ai/command` request takes (local
+ * inference latency varies a lot; see that route's own doc comment), not a
+ * fixed timer. "working" only applies to a validated ACTION decision, once
+ * the model has replied and the target note action is being applied/shown
+ * (see CommandBar.tsx) — a plain conversational reply goes straight from
+ * "thinking" to "completed" instead, since there's nothing further to
+ * apply.
  */
-export type AgentTaskStatus = "working" | "completed";
+export type AgentTaskStatus = "thinking" | "working" | "completed";
 
 export interface AgentTask {
   id: string;
-  /** The window this task ran against — see agentStore.ts's `startTask`.
-   *  Deliberately just an id: nothing in this layer reaches into a
-   *  specific app's DOM, it only ever reads generic window geometry
-   *  (position/size) via windowStore. */
+  /** The window that was focused when this task was submitted — see
+   *  agentStore.ts's `startTask`. Deliberately just an id: nothing in this
+   *  layer reaches into a specific app's DOM, it only ever reads generic
+   *  window geometry (position/size) via windowStore, plus (for Notes)
+   *  that app's own public store contract — see CommandBar.tsx. */
   windowId: string;
-  /** Raw text the user typed into CommandBar. Never parsed or "understood"
-   *  — this is a mocked shell, not a real agent, so this is stored purely
-   *  for display in TaskList. */
+  /** Raw text the user typed into CommandBar, sent to the AI verbatim.
+   *  Stored here purely as the TaskList row's fallback label — see
+   *  `summary` below for what actually happened. */
   prompt: string;
   status: AgentTaskStatus;
   createdAt: number;
-  /** Set the moment `status` flips from "working" to "completed". */
+  /** Set the moment `status` flips to "completed". */
   completedAt?: number;
+  /** A short, human-readable description of what actually happened, set
+   *  once the task completes — the real action taken (e.g. "Creating a
+   *  note: "Buy milk"…") or the AI's conversational reply text. TaskList
+   *  falls back to `prompt` when this is absent (there's no real outcome
+   *  text yet for a task still in flight). */
+  summary?: string;
 }
 
 /**

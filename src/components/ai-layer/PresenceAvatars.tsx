@@ -24,13 +24,19 @@ const collaborators = [
  * "collaborator" avatars bottom-left, and a single avatar bottom-right
  * representing the AI agent itself (`<Avatar presence="active|idle">`
  * from the UI kit — see src/components/ui/Avatar.tsx). The AI avatar's
- * presence ring reflects whether a task is currently "working" (read from
- * agentStore's `currentTask`), and clicking it expands/collapses the task
- * history panel — collapsed by default, per the reference product's clean
- * default screen.
+ * presence ring reflects whether a task is currently in flight — thinking
+ * or working, read from agentStore's `currentTask` — and clicking it
+ * expands/collapses the task history panel — collapsed by default, per the
+ * reference product's clean default screen.
  */
 export function PresenceAvatars() {
-  const isWorking = useAgentStore((s) => s.currentTask?.status === "working");
+  // "active" for either in-progress phase (thinking about a decision, or
+  // applying a validated action) — see types.ts's AgentTaskStatus doc
+  // comment; only "completed" (and idle, i.e. no task at all) reads as
+  // settled.
+  const isActive = useAgentStore(
+    (s) => s.currentTask !== null && s.currentTask.status !== "completed",
+  );
   const isTaskListExpanded = useAgentStore((s) => s.isTaskListExpanded);
   const toggleTaskList = useAgentStore((s) => s.toggleTaskList);
 
@@ -49,12 +55,14 @@ export function PresenceAvatars() {
       </div>
 
       <div className="absolute right-6 bottom-6 z-[var(--z-chrome)] flex flex-col items-end gap-3">
-        {/* Plain conditional mount, deliberately not animated via
-            framer-motion's AnimatePresence/`exit` — see AICursor.tsx's doc
-            comment: that mechanism didn't reliably unmount nodes in this
-            project's React 19 + motion setup, and this panel doesn't need
-            the polish enough to justify chasing that further. */}
-        {isTaskListExpanded && <TaskList />}
+        {/* Always mounted (see TaskList.tsx's own doc comment for why).
+            TaskList positions itself absolutely — this column is already
+            `position: absolute`, so it's TaskList's containing block for
+            free — which is what keeps its collapsed/expanded animation
+            from ever shifting the avatar row below: that row stays pinned
+            to `bottom-6` either way, since an absolutely-positioned child
+            doesn't participate in this column's own `flex`/`gap` layout. */}
+        <TaskList isExpanded={isTaskListExpanded} />
 
         <div className="flex items-center gap-2">
           <AgentStatusBadge />
@@ -68,7 +76,7 @@ export function PresenceAvatars() {
             >
               <Avatar
                 fallback="AI"
-                presence={isWorking ? "active" : "idle"}
+                presence={isActive ? "active" : "idle"}
                 className="bg-accent-subtle text-accent-700 font-semibold"
               />
             </button>

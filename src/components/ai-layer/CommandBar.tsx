@@ -1,17 +1,100 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { PaperPlaneRightIcon } from "@phosphor-icons/react";
+import { motion } from "motion/react";
+import { CircleNotchIcon, PaperPlaneRightIcon } from "@phosphor-icons/react";
 import { IconButton } from "@/components/ui";
 import { cn } from "@/lib/cn";
+import { easeEntrance, easeExit } from "@/lib/motion";
 import { useWindowStore, type WindowState } from "@/components/window-manager";
+import {
+  createNote,
+  deleteNote,
+  getNotes,
+  noteTitle,
+  updateNote,
+} from "@/components/apps/notes-app/notesStore";
+import type {
+  AiCommandAction,
+  AiCommandRequest,
+  AiCommandResult,
+} from "@/app/api/ai/command/types";
 import { useAgentStore } from "./agentStore";
 import {
+  ACTION_HOLD_MS,
   EMPTY_STATE_NOTICE_MS,
+  MESSAGE_HOLD_MS,
   TASK_SETTLE_MS,
-  TASK_WORKING_MS,
-  pickCannedAnnotation,
 } from "./constants";
+import type { AgentTaskStatus } from "./types";
+
+/** Client-side safety net on top of the route's own internal timeout (see
+ *  route.ts's REQUEST_TIMEOUT_MS) — deliberately a little longer, so the
+ *  route's own timeout is always what actually fires first; this only
+ *  guards against the request somehow hanging past that. */
+const CLIENT_TIMEOUT_MS = 65_000;
+
+type ApplyResult = { ok: true; summary: string } | { ok: false; reason: string };
+
+/**
+ * Applies a validated action decision to `notesStore` and returns a short,
+ * human-readable summary of what actually happened (used for both the
+ * annotation bubble and the eventual TaskList entry — see CommandBar's
+ * doc comment). The route already checked the target id against the notes
+ * list it was SENT, but real inference isn't instant, so this re-checks
+ * against the CURRENT store right before acting, in case a note was
+ * created/deleted from elsewhere while the request was in flight.
+ *
+ * An if-chain rather than a switch: TypeScript narrows `action.arguments`
+ * fully at each step this way, including the final, unconditional branch
+ * for "delete_note" (the only name left once the other two are ruled out).
+ */
+function applyNoteAction(action: AiCommandAction): ApplyResult {
+  if (action.name === "create_note") {
+    const note = createNote(action.arguments.content);
+    return { ok: true, summary: `Creating a note: "${noteTitle(note)}"…` };
+  }
+
+  if (action.name === "update_note") {
+    const existing = getNotes().find((n) => n.id === action.arguments.id);
+    if (!existing) {
+      return { ok: false, reason: "The note the AI tried to update no longer exists." };
+    }
+    updateNote(action.arguments.id, action.arguments.content);
+    return { ok: true, summary: `Updating "${noteTitle(existing)}"…` };
+  }
+
+  const existing = getNotes().find((n) => n.id === action.arguments.id);
+  if (!existing) {
+    return { ok: false, reason: "The note the AI tried to delete no longer exists." };
+  }
+  deleteNote(action.arguments.id);
+  return { ok: true, summary: `Deleting "${noteTitle(existing)}"…` };
+}
+
+/** Where a plain conversational reply's annotation bubble anchors — just
+ *  above the command bar pill itself, since (unlike an action) there's no
+ *  window for the AI to be "doing something" to. Falls back the same way
+ *  AICursor.tsx's own `home` point does if measured before CommandBar's
+ *  layout effect has ever run. */
+function messageAnnotationPoint(): { x: number; y: number } {
+  const anchor = useAgentStore.getState().commandBarAnchor;
+  const point = anchor ?? { x: window.innerWidth / 2, y: window.innerHeight - 48 };
+  return { x: point.x, y: point.y - 28 };
+}
+
+function placeholderFor(status: AgentTaskStatus | null): string {
+  switch (status) {
+    case "thinking":
+      return "Thinking…";
+    case "working":
+      return "Working…";
+    case "completed":
+      return "Done…";
+    case null:
+      return "Ask something…";
+  }
+}
 
 /**
  * The primary AI input surface: a floating pill, bottom-center of the
@@ -19,41 +102,61 @@ import {
  * `backdrop-blur-xl` chrome treatment (see Dock.tsx). Sits in the same
  * `z-chrome` layer as the dock.
  *
- * This component also owns the whole mocked demo sequence's orchestration
- * (reading the focused window, flipping `controlledBy`, driving
- * agentStore's cursor/annotation/task state on a timer) since it's the
- * one place the sequence begins. Every other ai-layer component only ever
- * READS agentStore reactively — this is the one writer of the
- * "working -> completed -> idle" timeline.
+ * This component owns the whole real agent sequence's orchestration
+ * (reading the focused window, calling `/api/ai/command`, flipping
+ * `controlledBy`, driving agentStore's cursor/annotation/task state) since
+ * it's the one place the sequence begins. Every other ai-layer component
+ * only ever READS agentStore reactively — this is the one writer of the
+ * "thinking -> working/completed -> idle" timeline.
  *
- * Deliberately generic: it never reaches into a specific app's DOM. It
- * only reads the focused window's id/position/size from `windowStore`'s
- * public surface, so the exact same code path works whether the focused
- * window is a real future app or today's registry-fallback "No app is
- * registered for X" placeholder.
+ * Mostly app-agnostic — it only reads the focused window's id/appId/
+ * position/size from `windowStore`'s public surface, so the same code path
+ * works for any focused app. The one deliberate exception: when the
+ * focused app is Notes (`appId === "notes"`), this also reads/writes
+ * `notesStore` directly — gathering existing notes as tool-call context
+ * before the request (see `runAgentCommand` below), and applying a
+ * validated create/update/delete decision after the request comes back
+ * (see `applyNoteAction` above). That's the intended integration point
+ * (see notesStore.ts's own doc comment), not a layering violation — every
+ * other app still gets only a plain conversational reply, no action
+ * capability, until a later pass gives it an equivalent store to hand the
+ * same way.
  */
 export function CommandBar() {
   const [value, setValue] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
+  // Remembers the last non-null notice so the pill can fade out still
+  // showing its message instead of blanking the instant `notice` clears —
+  // same purpose as AIAnnotationBubble.tsx's `lastAnnotationRef`.
+  const lastNoticeRef = useRef<string | null>(null);
   const pillRef = useRef<HTMLFormElement>(null);
   const timeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  // Bumped on every submit; a scheduled callback checks it's still current
+  // before touching agentStore, so a stale in-flight request can never
+  // stomp on a NEWER task's state. `isBusy` already prevents overlapping
+  // submits today, so in practice this is a defensive belt-and-suspenders
+  // guard rather than something that fires — same reasoning as
+  // useBackendLauncher.ts's own `tokenRef`.
+  const taskTokenRef = useRef(0);
 
   const setCommandBarAnchor = useAgentStore((s) => s.setCommandBarAnchor);
   const startTask = useAgentStore((s) => s.startTask);
+  const setTaskStatus = useAgentStore((s) => s.setTaskStatus);
   const completeCurrentTask = useAgentStore((s) => s.completeCurrentTask);
   const clearCurrentTask = useAgentStore((s) => s.clearCurrentTask);
   const setCursorTarget = useAgentStore((s) => s.setCursorTarget);
   const setAnnotation = useAgentStore((s) => s.setAnnotation);
-  // Not just `status === "working"` — this stays true through the brief
-  // "completed" settle window too (see constants.ts's TASK_SETTLE_MS doc
-  // comment: "...before the sequence resets to idle and the next submit is
-  // allowed"). Gating on "working" alone would let a new submit land while
-  // the previous task is still sitting on "completed", overwriting
+  const currentStatus = useAgentStore((s) => s.currentTask?.status ?? null);
+  // Not just `status === "thinking"` — this stays true through "working"
+  // and the brief "completed" settle window too (see constants.ts's
+  // TASK_SETTLE_MS doc comment: "...before the sequence resets to idle and
+  // the next submit is allowed"). Gating on one status alone would let a
+  // new submit land while the previous task is still settling, overwriting
   // `currentTask` out from under that task's still-pending
   // `clearCurrentTask` timeout — which would then null out the NEW task's
   // in-flight state early (badge/presence ring flashing back to idle while
   // its cursor/annotation are still mid-flight for the new task).
-  const isBusy = useAgentStore((s) => s.currentTask !== null);
+  const isBusy = currentStatus !== null;
 
   // Measure this pill's on-screen center so AICursor knows where to glide
   // FROM (see agentStore's `commandBarAnchor` doc comment). Re-measured on
@@ -83,34 +186,102 @@ export function CommandBar() {
     };
   }, []);
 
+  useEffect(() => {
+    if (notice) lastNoticeRef.current = notice;
+  }, [notice]);
+
   function scheduleTimeout(fn: () => void, ms: number) {
     const id = setTimeout(fn, ms);
     timeoutsRef.current.push(id);
     return id;
   }
 
-  function runAgentSequence(win: WindowState, prompt: string) {
-    const task = startTask({ windowId: win.id, prompt });
-    useWindowStore.getState().setWindowControlledBy(win.id, "ai", task.id);
+  function showNotice(message: string) {
+    setNotice(message);
+    scheduleTimeout(() => setNotice(null), EMPTY_STATE_NOTICE_MS);
+  }
 
+  async function runAgentCommand(win: WindowState, prompt: string) {
+    const token = ++taskTokenRef.current;
+    const task = startTask({ windowId: win.id, prompt });
+
+    const notesEnabled = win.appId === "notes";
+    const requestBody: AiCommandRequest = {
+      prompt,
+      focusedApp: { id: win.appId, title: win.title },
+      notes: notesEnabled
+        ? getNotes().map((note) => ({ id: note.id, title: noteTitle(note) }))
+        : undefined,
+    };
+
+    let result: AiCommandResult;
+    try {
+      const res = await fetch("/api/ai/command", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(requestBody),
+        signal: AbortSignal.timeout(CLIENT_TIMEOUT_MS),
+      });
+      result = (await res.json()) as AiCommandResult;
+    } catch {
+      result = {
+        type: "error",
+        kind: "unreachable",
+        message: "Couldn't reach the local AI model.",
+      };
+    }
+
+    // A newer submit already started its own task while this one was in
+    // flight (see `taskTokenRef`'s doc comment) — bail rather than acting
+    // on behalf of a task that isn't the current one any more.
+    if (token !== taskTokenRef.current) return;
+
+    if (result.type === "error") {
+      clearCurrentTask();
+      showNotice(result.message);
+      return;
+    }
+
+    if (result.type === "message") {
+      completeCurrentTask(result.text);
+      setAnnotation({ message: result.text, position: messageAnnotationPoint() });
+      scheduleTimeout(() => {
+        setAnnotation(null);
+        scheduleTimeout(clearCurrentTask, TASK_SETTLE_MS);
+      }, MESSAGE_HOLD_MS);
+      return;
+    }
+
+    // result.type === "action" — apply it before touching any of the
+    // window-takeover choreography, so a note that's vanished out from
+    // under us (see applyNoteAction) never leaves the window stuck
+    // "AI-controlled" with nothing actually happening.
+    const applied = applyNoteAction(result);
+    if (!applied.ok) {
+      clearCurrentTask();
+      showNotice(applied.reason);
+      return;
+    }
+
+    setTaskStatus("working");
+    useWindowStore.getState().setWindowControlledBy(win.id, "ai", task.id);
     const center = {
       x: win.position.x + win.size.width / 2,
       y: win.position.y + win.size.height / 2,
     };
     setCursorTarget(center);
     setAnnotation({
-      message: pickCannedAnnotation(),
+      message: applied.summary,
       position: { x: center.x, y: win.position.y },
     });
 
     scheduleTimeout(() => {
-      completeCurrentTask();
+      completeCurrentTask(applied.summary);
       useWindowStore.getState().setWindowControlledBy(win.id, "human");
       setAnnotation(null);
       setCursorTarget(null);
-
       scheduleTimeout(clearCurrentTask, TASK_SETTLE_MS);
-    }, TASK_WORKING_MS);
+    }, ACTION_HOLD_MS);
   }
 
   function handleSubmit(event: FormEvent) {
@@ -124,25 +295,41 @@ export function CommandBar() {
     const windows = useWindowStore.getState().windows;
     const focused = Object.values(windows).find((w) => w.isFocused);
     if (!focused) {
-      setNotice("Open an app first, then ask again.");
-      scheduleTimeout(() => setNotice(null), EMPTY_STATE_NOTICE_MS);
+      showNotice("Open an app first, then ask again.");
       return;
     }
 
     setValue("");
-    runAgentSequence(focused, prompt);
+    void runAgentCommand(focused, prompt);
   }
+
+  // Nothing has ever been shown yet — nothing to fade out from either, so
+  // there's genuinely nothing to mount (same reasoning as
+  // AIAnnotationBubble.tsx's own `display` gate).
+  const displayNotice = notice ?? lastNoticeRef.current;
 
   return (
     <div className="absolute inset-x-0 bottom-6 z-[var(--z-chrome)] flex flex-col items-center gap-2">
-      {/* Plain conditional mount, deliberately not animated via
-          framer-motion's AnimatePresence/`exit` — see AICursor.tsx's doc
-          comment: that mechanism didn't reliably unmount nodes in this
-          project's React 19 + motion setup. */}
-      {notice && (
-        <p className="bg-surface-elevated/90 text-ink-muted shadow-float-sm rounded-pill border-border/60 border px-3.5 py-1.5 text-[12px] font-medium backdrop-blur-xl">
-          {notice}
-        </p>
+      {/* Stays mounted once shown and animates opacity/position rather than
+          mounting/unmounting per notice via AnimatePresence's `exit`, which
+          isn't reliable in this project's React 19 + motion setup — see
+          AICursor.tsx's doc comment for why. */}
+      {displayNotice && (
+        <motion.p
+          initial={false}
+          animate={{ opacity: notice ? 1 : 0, y: notice ? 0 : 4 }}
+          transition={{
+            duration: notice ? 0.16 : 0.12,
+            ease: notice ? easeEntrance : easeExit,
+          }}
+          aria-hidden={!notice}
+          className={cn(
+            "bg-surface-elevated/90 text-ink-muted shadow-float-sm rounded-pill border-border/60 border px-3.5 py-1.5 text-[12px] font-medium backdrop-blur-xl",
+            !notice && "pointer-events-none",
+          )}
+        >
+          {displayNotice}
+        </motion.p>
       )}
 
       <form
@@ -154,7 +341,7 @@ export function CommandBar() {
           value={value}
           onChange={(event) => setValue(event.target.value)}
           disabled={isBusy}
-          placeholder={isBusy ? "Working…" : "Ask something…"}
+          placeholder={placeholderFor(currentStatus)}
           aria-label="Ask the AI agent"
           className={cn(
             "text-ink placeholder:text-ink-faint min-w-0 flex-1 bg-transparent text-sm outline-none",
@@ -168,7 +355,11 @@ export function CommandBar() {
           size="md"
           disabled={!value.trim() || isBusy}
         >
-          <PaperPlaneRightIcon size={17} weight="fill" />
+          {isBusy ? (
+            <CircleNotchIcon size={17} weight="bold" className="animate-spin" />
+          ) : (
+            <PaperPlaneRightIcon size={17} weight="fill" />
+          )}
         </IconButton>
       </form>
     </div>

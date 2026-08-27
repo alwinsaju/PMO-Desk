@@ -1,56 +1,52 @@
 "use client";
 
 import { useState } from "react";
+import { motion } from "motion/react";
 import { NotePencilIcon, PlusIcon, TrashIcon } from "@phosphor-icons/react";
 import { IconButton, ScrollArea } from "@/components/ui";
 import { cn } from "@/lib/cn";
-import { initialNotes, noteTitle, notePreview, type Note } from "./mockNotesStore";
-
-function createEmptyNote(): Note {
-  return {
-    id:
-      typeof crypto !== "undefined" && "randomUUID" in crypto
-        ? crypto.randomUUID()
-        : `note-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-    content: "",
-    updatedLabel: "Just now",
-  };
-}
+import { easeStandard } from "@/lib/motion";
+import { noteTitle, notePreview, useNotesStore } from "./notesStore";
 
 /**
  * Root Notes window — matches the `AppComponent` contract
  * (`ComponentType<{ windowId: string }>`) and is registered under "notes"
- * in `index.ts`. Sidebar list + single editor pane, both backed by local
- * component state seeded from `mockNotesStore.ts`'s `initialNotes` — fully
- * per-instance, so multiple Notes windows never share or clobber each
- * other's edits.
+ * in `index.ts`. Sidebar list + single editor pane. Notes themselves
+ * (create/update/delete/list) are read/written through the shared,
+ * persisted `notesStore` — see that file's doc comment for why: it's also
+ * the store the AI command route acts on when the Notes app is focused, so
+ * every open Notes window and the AI see the exact same data.
+ *
+ * `selectedId` (which note THIS window's editor pane is showing) stays
+ * local component state on purpose — a per-window UI concern, not data, so
+ * multiple open Notes windows can browse/edit independently even though
+ * they now share the same underlying notes.
  */
 export function NotesApp({ windowId }: { windowId: string }) {
-  const [notes, setNotes] = useState<Note[]>(initialNotes);
+  const notes = useNotesStore((s) => s.notes);
+  const createNote = useNotesStore((s) => s.createNote);
+  const updateNote = useNotesStore((s) => s.updateNote);
+  const deleteNote = useNotesStore((s) => s.deleteNote);
+
   const [selectedId, setSelectedId] = useState<string | null>(
-    initialNotes[0]?.id ?? null,
+    () => useNotesStore.getState().notes[0]?.id ?? null,
   );
 
   const selectedNote = notes.find((note) => note.id === selectedId) ?? null;
 
   function handleCreate() {
-    const note = createEmptyNote();
-    setNotes((prev) => [note, ...prev]);
+    const note = createNote("");
     setSelectedId(note.id);
   }
 
   function handleChangeContent(content: string) {
     if (!selectedId) return;
-    setNotes((prev) =>
-      prev.map((note) =>
-        note.id === selectedId ? { ...note, content, updatedLabel: "Just now" } : note,
-      ),
-    );
+    updateNote(selectedId, content);
   }
 
   function handleDelete(id: string) {
     const remaining = notes.filter((note) => note.id !== id);
-    setNotes(remaining);
+    deleteNote(id);
     if (selectedId === id) setSelectedId(remaining[0]?.id ?? null);
   }
 
@@ -78,7 +74,7 @@ export function NotesApp({ windowId }: { windowId: string }) {
                   type="button"
                   onClick={() => setSelectedId(note.id)}
                   className={cn(
-                    "rounded-control flex w-full min-w-0 flex-col gap-0.5 px-2.5 py-2 pr-8 text-left outline-none",
+                    "rounded-control ease-standard flex w-full min-w-0 flex-col gap-0.5 px-2.5 py-2 pr-8 text-left transition-colors duration-150 outline-none",
                     "focus-visible:ring-accent focus-visible:ring-2",
                     note.id === selectedId ? "bg-accent-subtle" : "hover:bg-neutral-100",
                   )}
@@ -122,19 +118,30 @@ export function NotesApp({ windowId }: { windowId: string }) {
 
       <div className="flex min-w-0 flex-1 flex-col">
         {selectedNote ? (
-          <>
+          // Keyed by the selected note so switching in the sidebar gives
+          // the editor pane a brief fade rather than an instant content
+          // swap — kept quick since this fires on every click through the
+          // list. Plain mount animation (no animated exit): the previous
+          // note's text is simply gone the instant the new one mounts,
+          // same as before this existed.
+          <motion.div
+            key={selectedNote.id}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.12, ease: easeStandard }}
+            className="flex min-h-0 flex-1 flex-col"
+          >
             <div className="border-border/60 text-ink-faint flex items-center border-b px-4 py-2 text-[12px]">
               {selectedNote.updatedLabel}
             </div>
             <textarea
-              key={selectedNote.id}
               value={selectedNote.content}
               onChange={(event) => handleChangeContent(event.target.value)}
               placeholder="Start typing…"
               aria-label="Note content"
               className="text-ink placeholder:text-ink-faint min-h-0 flex-1 resize-none bg-transparent p-5 text-[14px] leading-relaxed outline-none"
             />
-          </>
+          </motion.div>
         ) : (
           <div className="text-ink-faint flex flex-1 flex-col items-center justify-center gap-3 text-center text-sm">
             <NotePencilIcon size={28} />

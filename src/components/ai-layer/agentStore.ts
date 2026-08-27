@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { AgentAnnotation, AgentTask, ScreenPoint } from "./types";
+import type { AgentAnnotation, AgentTask, AgentTaskStatus, ScreenPoint } from "./types";
 
 /**
  * No `"use client"` here, deliberately — same as `windowStore.ts`. This
@@ -14,7 +14,8 @@ import type { AgentAnnotation, AgentTask, ScreenPoint } from "./types";
 export interface AgentStoreState {
   /** The task currently "in flight" — null when idle. Its `status` drives
    *  AgentStatusBadge's pill and the AI presence avatar's active/idle
-   *  ring. Only ever one at a time: this is a mocked single-agent shell. */
+   *  ring. Only ever one at a time: this is a single-agent shell, not a
+   *  real multi-task scheduler. */
   currentTask: AgentTask | null;
   /** Completed tasks, most recent first. Rendered by TaskList — collapsed
    *  and hidden by default, per the reference product's clean default
@@ -33,12 +34,20 @@ export interface AgentStoreState {
    *  (see PresenceAvatars.tsx). */
   isTaskListExpanded: boolean;
 
-  /** Starts a new task against `windowId` and returns it (its `id` is the
-   *  mock `aiTaskId` to hand to `windowStore.setWindowControlledBy`). */
+  /** Starts a new task against `windowId`, status "thinking", and returns
+   *  it (its `id` is the `aiTaskId` to hand to
+   *  `windowStore.setWindowControlledBy` once/if it becomes a real
+   *  action — see CommandBar.tsx). */
   startTask: (input: { windowId: string; prompt: string }) => AgentTask;
-  /** Flips the current task to "completed" and unshifts it into
-   *  `taskHistory`. No-ops if there's no current task. */
-  completeCurrentTask: () => void;
+  /** Sets the current task's status in place (e.g. "thinking" ->
+   *  "working" once a validated action decision arrives). No-ops if
+   *  there's no current task. */
+  setTaskStatus: (status: AgentTaskStatus) => void;
+  /** Flips the current task to "completed" (optionally recording a
+   *  human-readable `summary` of what actually happened — see
+   *  AgentTask's own doc comment) and unshifts it into `taskHistory`.
+   *  No-ops if there's no current task. */
+  completeCurrentTask: (summary?: string) => void;
   /** Clears the current task entirely (back to "Idle"). Separate from
    *  `completeCurrentTask` so the badge can sit on "Completed" for a beat
    *  before the whole sequence resets — see CommandBar's timers. */
@@ -69,20 +78,26 @@ export const useAgentStore = create<AgentStoreState>()((set) => ({
       id: generateTaskId(),
       windowId,
       prompt,
-      status: "working",
+      status: "thinking",
       createdAt: Date.now(),
     };
     set({ currentTask: task });
     return task;
   },
 
-  completeCurrentTask: () => {
+  setTaskStatus: (status) =>
+    set((state) =>
+      state.currentTask ? { currentTask: { ...state.currentTask, status } } : state,
+    ),
+
+  completeCurrentTask: (summary) => {
     set((state) => {
       if (!state.currentTask) return state;
       const completed: AgentTask = {
         ...state.currentTask,
         status: "completed",
         completedAt: Date.now(),
+        summary,
       };
       return {
         currentTask: completed,
