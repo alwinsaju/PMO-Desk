@@ -150,6 +150,77 @@
 }
 
 /**
+ * Dark mode — same token names, inverted neutral ramp + higher-contrast
+ * shadows. This is an attribute-toggle theme with no `prefers-color-scheme`
+ * fallback: the OS defaults to light and only switches when
+ * `data-theme="dark"` is present on <html>, which only happens via the
+ * toggle in DesktopContextMenu.tsx (persisted to localStorage by
+ * src/lib/theme.ts). Every component already reads color exclusively
+ * through these variables — directly (`bg-neutral-100`, `border-border`,
+ * ...) or through the semantic aliases above — so overriding the
+ * variables here is the ENTIRE mechanism; no component needs its own
+ * dark-mode-aware className to repaint correctly.
+ *
+ * The ONE accent color (teal, `--color-accent-*` above) is deliberately
+ * NOT redefined here — it stays exactly the same hue in both themes, per
+ * the "ONE accent color" rule elsewhere in this file and in
+ * ARCHITECTURE.md.
+ *
+ * `@custom-variant dark` teaches Tailwind's `dark:` prefix to key off this
+ * same attribute (Tailwind v4's built-in `dark:` is `prefers-color-scheme`-
+ * based by default, which this app doesn't use). Its only current consumer
+ * is Wallpaper.tsx, which uses `dark:hidden`/`dark:block` to swap its light
+ * and dark gradient layers with zero client-side JS.
+ */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* Inverted neutral ramp — same 14 steps, same semantic role at each step
+     (0/25 is still "the surface end", 900/950 is still "the ink end"),
+     only the lightness direction flips. That keeps every direct `neutral-*`
+     consumer (e.g. DockTile's `bg-neutral-100 hover:bg-neutral-200`)
+     working unmodified: hovering still moves a step further from the
+     surface tone, it just now means "a little lighter than black" instead
+     of "a little more gray than white". `0` goes all the way to true OLED
+     black, per the design brief. */
+  --color-neutral-0: #000000;
+  --color-neutral-25: #070708;
+  --color-neutral-50: #0c0d0e;
+  --color-neutral-100: #141517;
+  --color-neutral-150: #1a1b1d;
+  --color-neutral-200: #242629;
+  --color-neutral-300: #35373b;
+  --color-neutral-400: #4c4f54;
+  --color-neutral-500: #65686e;
+  --color-neutral-600: #85888e;
+  --color-neutral-700: #a9acb1;
+  --color-neutral-800: #cdcfd2;
+  --color-neutral-900: #f1f1f2;
+  --color-neutral-950: #fbfbfc;
+
+  /* Re-asserted rather than left to inherit through the cascade, so the
+     light<->dark mapping for each semantic alias is legible right here
+     without cross-referencing the @theme block above. Values still trace
+     back to the neutral steps redefined just above. */
+  --color-surface: var(--color-neutral-25);
+  --color-surface-elevated: var(--color-neutral-0);
+  --color-border: var(--color-neutral-150);
+  --color-ink: var(--color-neutral-900);
+  --color-ink-muted: var(--color-neutral-600);
+  --color-ink-faint: var(--color-neutral-500);
+
+  /* Shadows stay neutral/black (never color-tinted — same rule as light
+     mode) but need more opacity to still read as "lifted": a light-mode-
+     strength translucent black shadow all but disappears once the ambient
+     backdrop is this dark. */
+  --shadow-float-sm: 0 6px 18px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.4);
+  --shadow-float: 0 14px 36px rgba(0, 0, 0, 0.6), 0 5px 14px rgba(0, 0, 0, 0.42);
+  --shadow-float-lg: 0 24px 56px rgba(0, 0, 0, 0.65), 0 10px 20px rgba(0, 0, 0, 0.46);
+}
+
+/**
  * Static z-index layers. NOT a Tailwind @theme namespace — Tailwind v4
  * ships z-index as fixed utilities (z-0, z-10, ...), not an extensible
  * scale the way color/radius/shadow/spacing are, so these are plain

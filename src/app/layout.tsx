@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Figtree, IBM_Plex_Mono } from "next/font/google";
+import Script from "next/script";
 import { TooltipProvider } from "@/components/ui/Tooltip";
+import { getThemeInitScript } from "@/lib/theme";
 import "./globals.css";
 
 // Figtree is used as a true variable font (no `weight` list) so every
@@ -41,8 +43,30 @@ export default function RootLayout({
     // against its OWN element's scope, then that resolved value — invalid,
     // in that case — is what gets inherited downward) and every element
     // would silently fall back to Tailwind's default font stack.
-    <html lang="en" className={`${figtree.variable} ${ibmPlexMono.variable}`}>
+    //
+    // suppressHydrationWarning is scoped to this one element's own
+    // attributes (it does not suppress hydration warnings for anything
+    // below it) and is needed because of the theme-init script below: it
+    // sets data-theme="dark" directly on this DOM node before React
+    // hydrates, which otherwise makes React log a hydration mismatch for
+    // an attribute that's supposed to differ on purpose. See
+    // src/lib/theme.ts.
+    <html
+      lang="en"
+      className={`${figtree.variable} ${ibmPlexMono.variable}`}
+      suppressHydrationWarning
+    >
       <body className="antialiased">
+        {/* Sets data-theme="dark" on <html> (see tokens.css) before
+            hydration if the user previously toggled dark mode (src/lib/
+            theme.ts), so a returning dark-mode user never sees a flash of
+            the light theme first. `beforeInteractive` is what guarantees
+            this runs ahead of hydration regardless of where in the tree
+            it's placed; next/script requires an `id` for inline scripts
+            using that strategy. */}
+        <Script id="theme-init" strategy="beforeInteractive">
+          {getThemeInitScript()}
+        </Script>
         {/* Global provider: Radix's Tooltip.Root works without this, but a
             single app-wide Provider is the recommended setup — it lets any
             later phase share one delayDuration/skipDelayDuration config
