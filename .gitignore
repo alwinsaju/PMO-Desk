@@ -43,6 +43,7 @@ next-env.d.ts
 # agent-apps: real client/employee data and generated artifacts (never commit)
 agent-apps/**/input/
 agent-apps/**/output/
+agent-apps/**/config/
 agent-apps/**/reference/
 agent-apps/**/templates/
 agent-apps/.venv/

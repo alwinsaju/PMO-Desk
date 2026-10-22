@@ -9,6 +9,9 @@ writes it back deterministically. Schema (version 1):
       "location_codes": {"Bengaluru": "Blr", ...},     # optional; default below
       "min_staff": {"DIS": 3, "DEP": 3, "L3": 3, "default": 2},   # keyed by TEAM
       "team_aliases": {"L2": "DIS", "L N S 2.0": "LNS 2.0"},     # roster section -> team
+      "excluded_sections": ["Governance"],             # sections the program never touches
+      "excluded_section_patterns": ["Leadership", "Governance", "PMO", "Analytics"],
+      "disconnect_windows": [{"start": "2026-12-25", "end": "2027-01-01"}],   # ISO dates
       "has_data_threshold": 0.95,                      # share of weeks, (0, 1]
       "seed": 12345,                                   # int, for tie-breaks
       "people": [
@@ -24,8 +27,24 @@ writes it back deterministically. Schema (version 1):
 `min_staff` is the minimum number of people WORKING per shift code per day, keyed
 by TEAM (any key, matched case-insensitively; "default" is required and used for
 every team not listed). Default: 3 for DIS, DEP and L3, 2 for every other team.
-"Per shift" means per team, per shift code, per day, for the shifts active that
-day (S2/S4 are not active Mon-Tue); that counting lives in `checks.py`.
+A per-team override may be any non-negative integer; 0 means "no minimum": the
+team is not staffing-checked and holiday fairness lets everyone off a common
+holiday. "Per shift" means per team, per shift code, per day, for the shifts
+active that day (S2/S4 are not active Mon-Tue); that counting lives in `checks.py`.
+
+`excluded_sections` / `excluded_section_patterns`: people in these roster sections
+are NOT part of the rotation, PTO, holiday logic or staffing/HOL checks (the
+cycle builder never edits their cells and never lists them as new or removed).
+A section is excluded when its title (or its team after `team_aliases`) equals an
+`excluded_sections` entry (case/space-insensitive) OR contains one of the
+`excluded_section_patterns` as a case-insensitive substring. Defaults: section
+"Governance" and the patterns Leadership, Governance, PMO, Analytics; a list in
+the file REPLACES the default. `cfg.is_excluded_section(section | roster Person)`.
+
+`disconnect_windows`: inclusive ISO date ranges (December Disconnect) that are
+handled outside the program: their days are ignored by the HOL check, by the
+holiday counters and by holiday assignment. Default none.
+`cfg.disconnect_dates()` returns every date inside any window.
 
 `team_aliases` maps a roster section title (or any raw team text) to the team
 name used by `min_staff`; keys match case- and whitespace-insensitively. Default
@@ -52,6 +71,7 @@ from __future__ import annotations
 import json
 import unicodedata
 from dataclasses import dataclass, field, replace
+from datetime import date, timedelta
 from enum import Enum
 from pathlib import Path
 from typing import Any, Mapping
@@ -62,12 +82,29 @@ from .holiday_matrix import DEFAULT_LOCATION_CODES
 CONFIG_VERSION = 1
 DEFAULT_MIN_STAFF = {"DIS": 3, "DEP": 3, "L3": 3, "default": 2}
 DEFAULT_TEAM_ALIASES = {"L2": "DIS"}
+DEFAULT_EXCLUDED_SECTIONS = ("Governance",)
+DEFAULT_EXCLUDED_SECTION_PATTERNS = ("Leadership", "Governance", "PMO", "Analytics")
 DEFAULT_HAS_DATA_THRESHOLD = 0.95
 DEFAULT_SEED = 0
 
-_TOP_KEYS = {"version", "location_codes", "min_staff", "team_aliases", "has_data_threshold",
-             "seed", "people"}
+_TOP_KEYS = {"version", "location_codes", "min_staff", "team_aliases", "excluded_sections",
+             "excluded_section_patterns", "disconnect_windows", "has_data_threshold", "seed",
+             "people"}
 _PERSON_KEYS = ("name", "team", "subteam", "location", "rotation", "shift", "partner")
+
+
+@dataclass(frozen=True)
+class DateWindow:
+    """An inclusive run of dates handled outside the program (December Disconnect)."""
+
+    start: date
+    end: date
+
+    def dates(self) -> list[date]:
+        return [self.start + timedelta(days=i) for i in range((self.end - self.start).days + 1)]
+
+    def to_dict(self) -> dict[str, str]:
+        return {"start": self.start.isoformat(), "end": self.end.isoformat()}
 
 
 class Rotation(Enum):
@@ -145,6 +182,10 @@ class RotationConfig:
     location_codes: dict[str, str] = field(default_factory=lambda: dict(DEFAULT_LOCATION_CODES))
     min_staff: dict[str, int] = field(default_factory=lambda: dict(DEFAULT_MIN_STAFF))
     team_aliases: dict[str, str] = field(default_factory=lambda: dict(DEFAULT_TEAM_ALIASES))
+    excluded_sections: list[str] = field(default_factory=lambda: list(DEFAULT_EXCLUDED_SECTIONS))
+    excluded_section_patterns: list[str] = field(
+        default_factory=lambda: list(DEFAULT_EXCLUDED_SECTION_PATTERNS))
+    disconnect_windows: list[DateWindow] = field(default_factory=list)
     has_data_threshold: float = DEFAULT_HAS_DATA_THRESHOLD
     seed: int = DEFAULT_SEED
     version: int = CONFIG_VERSION
@@ -182,6 +223,27 @@ class RotationConfig:
             if _label_key(alias) == key:
                 return team
         return " ".join(text.split())
+
+    def is_excluded_section(self, subject: Any) -> bool:
+        """True if the section (a title, a `roster_io.Person` or a config `Person`) is
+        excluded by `excluded_sections` / `excluded_section_patterns` (see docstring)."""
+        if isinstance(subject, str):
+            text = subject
+        elif hasattr(subject, "section"):
+            text = subject.section
+        else:
+            text = getattr(subject, "subteam", None) or getattr(subject, "team", None)
+        if not isinstance(text, str) or not text.strip():
+            return False
+        candidates = {_label_key(text), _label_key(self.team_of(text) or text)}
+        if candidates & {_label_key(s) for s in self.excluded_sections}:
+            return True
+        patterns = [_label_key(p) for p in self.excluded_section_patterns if p.strip()]
+        return any(pat in c for pat in patterns for c in candidates)
+
+    def disconnect_dates(self) -> frozenset[date]:
+        """Every date inside any `disconnect_windows` entry."""
+        return frozenset(d for w in self.disconnect_windows for d in w.dates())
 
     def min_staff_for_team(self, team: str | None) -> int:
         """Minimum people working per shift per day for a team (aliases resolved; teams
@@ -253,6 +315,12 @@ class RotationConfig:
                           "default": self.min_staff["default"]},
             "team_aliases": dict(sorted(self.team_aliases.items(),
                                         key=lambda kv: (_label_key(kv[0]), kv[0]))),
+            "excluded_sections": sorted(self.excluded_sections,
+                                        key=lambda v: (_label_key(v), v)),
+            "excluded_section_patterns": sorted(self.excluded_section_patterns,
+                                                key=lambda v: (_label_key(v), v)),
+            "disconnect_windows": [w.to_dict() for w in sorted(
+                self.disconnect_windows, key=lambda w: (w.start, w.end))],
             "has_data_threshold": self.has_data_threshold,
             "seed": self.seed,
             "people": [p.to_dict() for p in sorted(self.people,
@@ -311,6 +379,44 @@ def _is_int(value: Any) -> bool:
     return isinstance(value, int) and not isinstance(value, bool)
 
 
+def _string_list(raw: Any, label: str, problems: list[str], fallback: list[str]) -> list[str]:
+    """A list of non-empty, distinct (case/space-insensitive) strings."""
+    if not isinstance(raw, list) or not all(isinstance(v, str) and v.strip() for v in raw):
+        problems.append(f"{label} must be a list of non-empty strings")
+        return fallback
+    cleaned = [" ".join(v.split()) for v in raw]
+    keys = [_label_key(v) for v in cleaned]
+    if len(set(keys)) != len(keys):
+        problems.append(f"{label} has duplicate entries (matched case-insensitively)")
+    return cleaned
+
+
+def _windows(raw: Any, problems: list[str]) -> list[DateWindow]:
+    if not isinstance(raw, list):
+        problems.append('disconnect_windows must be a list of {"start", "end"} objects')
+        return []
+    out: list[DateWindow] = []
+    for i, entry in enumerate(raw, start=1):
+        label = f"disconnect_windows[{i}]"
+        if not isinstance(entry, dict) or set(entry) != {"start", "end"}:
+            problems.append(f"{label}: must be an object with exactly 'start' and 'end'")
+            continue
+        try:
+            start, end = (date.fromisoformat(entry[k]) for k in ("start", "end"))
+        except (TypeError, ValueError):
+            problems.append(f"{label}: start and end must be ISO dates (YYYY-MM-DD)")
+            continue
+        if end < start:
+            problems.append(f"{label}: end {entry['end']} is before start {entry['start']}")
+            continue
+        out.append(DateWindow(start, end))
+    ordered = sorted(out, key=lambda w: (w.start, w.end))
+    for a, b in zip(ordered, ordered[1:]):
+        if b.start <= a.end:
+            problems.append(f"disconnect_windows overlap: {a.start}..{a.end} and {b.start}..{b.end}")
+    return out
+
+
 def parse_config(data: Any) -> RotationConfig:
     """Validate a decoded JSON document into a `RotationConfig` (all problems at once)."""
     problems: list[str] = []
@@ -366,6 +472,18 @@ def parse_config(data: Any) -> RotationConfig:
                                 "case- and whitespace-insensitively)")
             team_aliases = {k: " ".join(v.split()) for k, v in raw.items()}
 
+    excluded_sections = list(DEFAULT_EXCLUDED_SECTIONS)
+    if "excluded_sections" in data:
+        excluded_sections = _string_list(data["excluded_sections"], "excluded_sections", problems,
+                                         excluded_sections)
+    patterns = list(DEFAULT_EXCLUDED_SECTION_PATTERNS)
+    if "excluded_section_patterns" in data:
+        patterns = _string_list(data["excluded_section_patterns"], "excluded_section_patterns",
+                                problems, patterns)
+    windows: list[DateWindow] = []
+    if "disconnect_windows" in data:
+        windows = _windows(data["disconnect_windows"], problems)
+
     threshold = data.get("has_data_threshold", DEFAULT_HAS_DATA_THRESHOLD)
     if (isinstance(threshold, bool) or not isinstance(threshold, (int, float))
             or not 0 < threshold <= 1):
@@ -380,7 +498,8 @@ def parse_config(data: Any) -> RotationConfig:
     cfg = RotationConfig(
         people=[], location_codes=location_codes,
         min_staff=min_staff if "default" in min_staff else {**min_staff, "default": 2},
-        team_aliases=team_aliases,
+        team_aliases=team_aliases, excluded_sections=excluded_sections,
+        excluded_section_patterns=patterns, disconnect_windows=windows,
         has_data_threshold=float(threshold), seed=seed,
         version=CONFIG_VERSION,
     )

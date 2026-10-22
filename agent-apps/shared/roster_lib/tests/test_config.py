@@ -1,5 +1,6 @@
 import copy
 import json
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -339,3 +340,75 @@ def test_people_by_rotation():
     cfg = load_config(EXAMPLE)
     assert [p.name for p in cfg.people_by_rotation(Rotation.AUTO_SWAP)] == [
         "Bob Sample", "Carol Example"]
+
+
+# ---- excluded sections, disconnect windows, per-team minimums ------------------------
+
+def test_excluded_defaults_and_example():
+    cfg = parse_config(BASE)
+    assert cfg.excluded_sections == ["Governance"]
+    assert cfg.excluded_section_patterns == ["Leadership", "Governance", "PMO", "Analytics"]
+    assert cfg.disconnect_windows == [] and cfg.disconnect_dates() == frozenset()
+    ex = load_config(EXAMPLE)
+    assert len(ex.disconnect_windows) == 1
+    assert len(ex.disconnect_dates()) == 8  # 25 Dec .. 1 Jan inclusive
+
+
+@pytest.mark.parametrize("section,expected", [
+    ("Governance", True), ("  governance ", True), ("Leadership Team", True),
+    ("PMO", True), ("Analytics", True), ("Data ANALYTICS ops", True), ("Programme PMO Office", True),
+    ("L2", False), ("Device Support", False), ("Lab", False), ("", False),
+])
+def test_is_excluded_section(section, expected):
+    assert parse_config(BASE).is_excluded_section(section) is expected
+
+
+def test_is_excluded_section_accepts_people_and_aliases():
+    from roster_lib.roster_io import Person as RosterPerson
+    cfg = parse_config(doc(excluded_sections=["DIS"], excluded_section_patterns=[]))
+    assert cfg.is_excluded_section(RosterPerson("P", "Blr", "x", "L2", 16))  # L2 -> DIS (alias)
+    assert not cfg.is_excluded_section(RosterPerson("P", "Blr", "x", "Lab", 17))
+    assert cfg.is_excluded_section(Person("A", "Operate", "Blr", Rotation.ASK_ME, subteam="L2"))
+    assert not cfg.is_excluded_section(Person("A", "Operate", "Blr", Rotation.ASK_ME))
+
+
+def test_excluded_lists_replace_defaults_and_validate():
+    cfg = parse_config(doc(excluded_sections=[], excluded_section_patterns=["Ops"]))
+    assert not cfg.is_excluded_section("Governance") and cfg.is_excluded_section("Big OPS")
+    assert any("excluded_sections must be" in p for p in problems_of(doc(excluded_sections="x")))
+    assert any("excluded_sections must be" in p for p in problems_of(doc(excluded_sections=[""])))
+    assert any("duplicate entries" in p for p in problems_of(
+        doc(excluded_section_patterns=["PMO", " pmo"])))
+    assert any("excluded_section_patterns must be" in p for p in problems_of(
+        doc(excluded_section_patterns=[1])))
+
+
+def test_disconnect_windows_parse_validate_and_save(tmp_path):
+    cfg = parse_config(doc(disconnect_windows=[
+        {"start": "2027-01-04", "end": "2027-01-05"}, {"start": "2026-12-25", "end": "2026-12-26"}]))
+    assert cfg.disconnect_dates() == {date(2026, 12, 25), date(2026, 12, 26),
+                                      date(2027, 1, 4), date(2027, 1, 5)}
+    saved = json.loads(save_config(cfg, tmp_path / "w.json").read_text(encoding="utf-8"))
+    assert saved["disconnect_windows"] == [{"start": "2026-12-25", "end": "2026-12-26"},
+                                           {"start": "2027-01-04", "end": "2027-01-05"}]
+    assert load_config(tmp_path / "w.json").to_dict() == cfg.to_dict()
+    bad = problems_of(doc(disconnect_windows=[
+        {"start": "2026-12-27", "end": "2026-12-25"}, {"start": "nope", "end": "2026-12-25"},
+        {"start": "2026-12-25"}, "x",
+        {"start": "2027-02-01", "end": "2027-02-10"}, {"start": "2027-02-10", "end": "2027-02-12"}]))
+    text = "\n".join(bad)
+    for needle in ("is before start", "must be ISO dates", "exactly 'start' and 'end'",
+                   "must be an object", "overlap"):
+        assert needle in text, needle
+    assert any("disconnect_windows must be" in p for p in problems_of(
+        doc(disconnect_windows="x")))
+
+
+def test_min_staff_zero_override_means_no_minimum():
+    cfg = parse_config(doc(min_staff={"DIS": 0, "Lab": 1, "default": 2}))
+    assert cfg.min_staff_for_team("L2") == 0  # alias -> DIS -> 0
+    assert cfg.min_staff_for_team("Lab") == 1 and cfg.min_staff_for_team("EKS") == 2
+    assert parse_config(doc(min_staff={"default": 0})).min_staff_for_team("anything") == 0
+    # defaults when no override is given: 3 for DIS/DEP/L3, 2 otherwise
+    assert [parse_config(BASE).min_staff_for_team(t) for t in ("L2", "DEP", "L3", "Lab")] == [
+        3, 3, 3, 2]
