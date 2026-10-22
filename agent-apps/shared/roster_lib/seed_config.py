@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
@@ -150,18 +151,31 @@ def latest_cycle_with_data(schedule: Mapping[str, Mapping[date, str]], last_date
     return None
 
 
+def _plain(name: str) -> str:
+    """Words only: commas and brackets (`Last, First`, `Name (Alias)`) are not part of a name."""
+    return " ".join(re.sub(r"[,()]", " ", name).split())
+
+
 def _match_entry(entry: SeedEntry, roster_names: Sequence[str], confirmed: Mapping[str, str]
                  ) -> tuple[str | None, str, list[dict[str, str]]]:
     """-> (roster name, reason, candidates). The name is None unless exactly one roster
-    person matches exactly (or by confirmation)."""
+    person matches exactly (same words, any order/case, ignoring commas and brackets) or
+    by confirmation."""
+    originals: dict[str, list[str]] = {}
+    for n in roster_names:
+        originals.setdefault(_plain(n), []).append(n)
+    plain_roster = list(originals)
+    plain_confirmed = {_plain(k): _plain(v) for k, v in confirmed.items()}
     hits: dict[str, str] = {}
     candidates: dict[str, str] = {}
     for alt in entry.alternatives:
-        report = match_names([alt], roster_names, confirmed)
-        if alt in report.exact:
-            hits[report.exact[alt]] = alt
-        for cand in report.needs_confirmation.get(alt, []):
-            candidates[cand.roster_name] = cand.reason
+        report = match_names([_plain(alt)], plain_roster, plain_confirmed)
+        if _plain(alt) in report.exact:
+            for original in originals[report.exact[_plain(alt)]]:
+                hits[original] = alt
+        for cand in report.needs_confirmation.get(_plain(alt), []):
+            for original in originals[cand.roster_name]:
+                candidates[original] = cand.reason
     if len(hits) == 1:
         return next(iter(hits)), "", []
     if len(hits) > 1:

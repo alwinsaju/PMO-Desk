@@ -190,3 +190,14 @@ def test_command_line_end_to_end(tmp_path, capsys):
     assert [u["seed_name"] for u in unmatched["unmatched"]] == [["Person 99"]]
     assert json.loads(out["min"].read_text(encoding="utf-8"))["teams"]
     assert info.people  # fixture built
+
+
+def test_commas_and_brackets_are_not_part_of_a_name():
+    roster = make_roster()
+    roster.people = tuple(p if p.name != "Lab Person 0" else type(p)(
+        "Person, Lab 0", p.location_code, p.team_label, p.section, p.row) for p in roster.people)
+    roster._schedule["Person, Lab 0"] = roster._schedule.pop("Lab Person 0")
+    data = {"permanent": ["Lab 0 Person", ["Other", "Lab (Person) 0"]]}
+    result = seed_config(roster, parse_seed_names(data))
+    assert rotation_of(result, "Person, Lab 0") is Rotation.PERMANENT
+    assert len(result.report["unmatched"]) == 0
