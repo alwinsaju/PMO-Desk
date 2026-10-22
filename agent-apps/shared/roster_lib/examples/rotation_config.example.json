@@ -1,0 +1,78 @@
+{
+  "version": 1,
+  "location_codes": {
+    "Bengaluru": "Blr",
+    "Chennai": "Che",
+    "Gurgaon": "Gur",
+    "Hyderabad": "Hyd",
+    "Kolkata": "Kol",
+    "Mexico": "Mex",
+    "Pune": "Pun"
+  },
+  "min_staff": {
+    "DEP": 3,
+    "DIS": 3,
+    "L3": 3,
+    "default": 2
+  },
+  "has_data_threshold": 0.95,
+  "seed": 12345,
+  "people": [
+    {
+      "name": "Alice Test",
+      "team": "Operate",
+      "subteam": "DIS",
+      "location": "Blr",
+      "rotation": "PERMANENT",
+      "shift": "S1"
+    },
+    {
+      "name": "Bob Sample",
+      "team": "Operate",
+      "subteam": "DIS",
+      "location": "Hyd",
+      "rotation": "AUTO_SWAP",
+      "shift": "S1",
+      "partner": "S2"
+    },
+    {
+      "name": "Carol Example",
+      "team": "Operate",
+      "subteam": "DEP",
+      "location": "Che",
+      "rotation": "AUTO_SWAP",
+      "shift": "S4",
+      "partner": "S3"
+    },
+    {
+      "name": "Dave Demo",
+      "team": "Operate",
+      "subteam": "L3",
+      "location": "Pun",
+      "rotation": "PERMANENT",
+      "shift": "S5"
+    },
+    {
+      "name": "Erin Placeholder",
+      "team": "Operate",
+      "subteam": "DEP",
+      "location": "Gur",
+      "rotation": "ASK_ME",
+      "shift": "S3"
+    },
+    {
+      "name": "Frank Mock",
+      "team": "Operate",
+      "location": "Mex",
+      "rotation": "PERMANENT",
+      "shift": "MX-8-5"
+    },
+    {
+      "name": "Grace Fixture",
+      "team": "Operate",
+      "subteam": "DIS",
+      "location": "Kol",
+      "rotation": "UNCLASSIFIED"
+    }
+  ]
+}
