@@ -83,7 +83,13 @@ partner shift; weekly-off pattern follows the new code), `ASK_ME`,
 `min_staff_for_team(team)` (`min_staff_for` is the old name). `min_staff` is keyed by
 TEAM (3 for DIS, DEP and L3, 2 for every other team, per shift code per day);
 `team_aliases` maps roster section titles to teams (default `L2` -> `DIS`; a map
-in the file replaces the default).
+in the file replaces the default). A per-team `min_staff` override may be 0 (no
+minimum: not staffing-checked, everyone may be off on a common holiday).
+`excluded_sections` / `excluded_section_patterns` (defaults: `Governance`; patterns
+Leadership, Governance, PMO, Analytics, case-insensitive substrings) name the roster
+sections the program never touches (`cfg.is_excluded_section`); `disconnect_windows`
+(inclusive ISO date ranges, default none) are December Disconnect days that the
+holiday assignment, HOL check and counters skip (`cfg.disconnect_dates()`).
 
 ## Workbook I/O (roster_io, xlsx_patch, pkgdiff)
 
@@ -360,3 +366,77 @@ are affected (PTO beats HOL and is never counted).
   `offs_taken` of India people who already have a counter, no last-off date);
   `inherited_counters` ({new name: old name}, from `roster_changes`) copies the
   leaver's counter to the replacement.
+
+## Cycle builder
+
+`cycle_builder.py` wires steps 0-6 into two pure entry points (no file is written, no
+workbook touched; the draft is plain data and a later phase writes the xlsx).
+`seed_config.py` creates the first rotation config from the roster and a (gitignored)
+names file; run it from `agent-apps/shared` with
+`..\.venv\Scripts\python.exe -m roster_lib.seed_config --help`. Real names live only in
+gitignored files (`agent-apps/shift-roster/config/`, `.../output/`).
+
+Scope: `active_people(roster.people, config)` = everyone not in an excluded section.
+Excluded people are never rotated, given PTO or HOL, checked, listed as new/removed or
+edited. Needs the roster's `people`, `first_date`, `last_date`, `row_texts` and
+`holiday_labels` only.
+
+### `analyze_cycle(roster, config, cycle, *, holiday_matrix=None, holiday_matrix_errors=(), pto_path=None, pto_entries=None, confirmed_pto=None, answers=None, bootstrap=False) -> Analysis`
+
+What the UI shows before building. `Analysis` fields: `cycle`, `previous_cycle`,
+`availability` (`cycles.Availability`: enabled, reason, coverage, failing_people),
+`changes` (step 0: NEW and REMOVED), `ask_me` (`AskMeItem` list),
+`required_answers` (`RequiredAnswer(stage, name, kind, reason, details)`; stage
+`changes` / `rotation` / `pto`; only what is STILL missing given `answers` and
+`confirmed_pto`), `pto` (entries, exact matches, `needs_confirmation` with candidates,
+`unmatched`, `dropped_excluded`, `error` for a bad PTO workbook), `year_boundary`
+(crosses, in-file span, remainder span), `holiday_matrix` (present, errors, rows in
+the cycle, years without rows), `active_count`, `excluded_people`, `unclassified`,
+`blockers`; `ready` is true when nothing blocks `build_plan`. `to_dict()`/`to_json()`.
+
+### `build_plan(roster, config, cycle, answers=None, *, holiday_matrix, pto_entries=None, confirmed_pto=None, seed=None, history=None, bootstrap=False, library_commit=None) -> Plan`
+
+Order: apply roster changes -> rotate -> PTO (PTO beats HOL; `shift_group_rule` driven
+by `config.team_of` / `min_staff_for_team`, a minimum of 0 is "no rule") -> holidays
+(counters from the roster via `build_counters_from_schedule`; the engine runs once per
+calendar year of the cycle, so fairness counters restart on 1 January; December
+Disconnect days are skipped) -> checks on the draft (the existing roster overlaid with the
+new cycle: `hol_check` with `coverage_ok` from the holiday result, `staffing_check` over
+the cycle, headcount per shift) -> assemble. Raises `CycleUnavailable` (previous cycle
+has no data, unless `bootstrap`), `MissingInput` (no matrix) or `NeedsAnswers`
+(`.missing` list of `MissingAnswer(stage, name, reason)`, `.invalid`, `.to_dict()` ->
+`{"status": "needs_answers", ...}`); nothing is guessed.
+
+`answers`: `{"changes": {"<new name>": {"replaces": "<old>"} | {"new_seat": {...}}},
+"rotation": {"<name>": {"shift": "S3|KEEP|...", "pattern": "MON_FRI|WED_SUN", "text": "..."}}}`
+(see `roster_changes` and `rotation` for the inner shapes). `confirmed_pto`:
+`{import name: roster name}`. `KEEP` carries the observed shift AND pattern forward.
+
+`Plan` fields: `cycle`; `edits` (`{(name, date): text}` for every new-cycle cell of
+every in-scope person on dates inside the roster file, HOL/PTO included, "" = weekly off);
+`remainder_edits` (same for dates after `roster.last_date`, for the next-year file;
+holidays there come from the matrix when it has rows for that year); `shift_changes`;
+`holiday_assignments` (one per holiday date and team/shift group: off, covering,
+outside, need, shortage, counters); `flags`; `counters_before`/`counters_after`
+(`next_year_counters` when the cycle crosses 1 January); `config_after` (the updated
+config, never saved: roster changes applied, each person's `shift` set to the new
+cycle's); `run_info` (cycle, roster span and counts, config version/seed/digest, seed
+used and its source, answers digest, input counts, availability, year boundary, library
+version and optional commit); `existing_roster_findings` (HOL check and staffing check on
+the EXISTING roster for the cycle's calendar year, for the Draft Summary).
+`to_json()` is deterministic (same inputs, byte-identical text); `Plan.from_json`.
+
+`Flag(kind, severity, message, person, date, team, shift)`, severity ERROR / WARNING /
+INFO, sorted by severity then date. Kinds: `STAFFING_SHORTAGE`, `CANNOT_MEET_MINIMUM`,
+`NO_OFF_AT_MINIMUM`; `HOL_STRAY`, `HOL_MISSING`, `HOL_MISSING_UNVERIFIED`,
+`HOL_ON_WEEKLY_OFF`, `HOL_MISMATCH_NO_LABEL`, `HOL_MISMATCH_NO_MATRIX`,
+`HOL_UNKNOWN_LOCATION`; `PTO_SWAP_SUNDAY`, `PTO_NEEDED`, `PTO_BELOW_MIN`, `PTO_OVERLAP`,
+`PTO_UNMATCHED` (error: nobody matches, not applied), `PTO_SKIPPED`, `PTO_NOTE`;
+`HEADCOUNT_CHANGED`, `HEADCOUNT_BELOW_MIN` (a team has fewer people on a shift than its
+minimum even before leave), `ROTATION_WARNING`, `UNCLASSIFIED_PERSON`, `CHANGE_NOTE`,
+`CONFIG_NOT_UPDATED`; `YEAR_BOUNDARY`, `HOLIDAY_MATRIX_NO_ROWS` (a calendar year of the
+cycle has no matrix rows: error inside the file, warning beyond it),
+`DISCONNECT_HOLIDAY_SKIPPED`, `OVERWRITES_EXISTING`. Flagged problems are never fixed.
+`headcount_table(schedule, people, config, cycle)` gives per team: headcount, people per
+shift, spec minimum and whether that minimum is attainable per shift (feeds the min-staff
+proposal written by `seed_config`).
