@@ -190,3 +190,86 @@ cells differ.
 Tests use synthetic workbooks from `tests/xlsx_fixtures.py`. Two smoke tests run
 against the real reference file when it is present (`roster-reference/`,
 skipped otherwise) and assert structure only.
+
+## Rotation, PTO, roster changes
+
+Shared shapes: a schedule is `{person name: {date: raw cell text}}` (blank `""` =
+weekly off; names exactly as in the roster); an edit set is
+`{(person name, date): new raw text}` (`""` clears). Everything is deterministic.
+
+### `rotation.py` - Step 2 "Rotate"
+
+`rotate(prev_schedule, config, cycle, answers=None, *, people=None, history=None,
+replaces=None) -> RotationResult(schedule, changes, warnings, old_states, .edits)`.
+Leave (PTO/HOL) is not written here. `derive_state(cells, prev_cycle)` reads each
+person's current code, exact string and weekly-off pattern from the previous
+cycle (leave and on-call ignored, odd weeks skipped, a mid-cycle change uses the
+last full weeks, custom time-range text copied verbatim).
+
+- PERMANENT: same string, same pattern. AUTO_SWAP: S1<->S2, S3<->S4, pattern
+  follows the new code. Swap Sunday needs no special case: the pattern rule gives
+  Wed-Sun movers a work Sunday (Mon-Tue off) and Mon-Fri movers a Sunday off.
+- String written for a swapped code, first hit wins: the person's own most recent
+  string for that code (previous cycle, then `history`) -> the team's most common
+  string for it in the previous cycle -> the person's own string restyled
+  (`Shift-1` -> `Shift-2`) -> canonical `Shift-N`.
+- `headcount_by_shift(schedule, roster_people, date)`; the rotation warns when a
+  team's headcount per shift differs before/after (new seats excluded).
+- Missing answers raise `MissingAnswers(.names, .reasons)`; unusable ones raise
+  `InvalidAnswers(.problems)`. Nothing is guessed.
+
+`answers` (rotation form; key = person name, matched case/space-insensitively):
+
+    {"<name>": {"shift": "S3",            # S1-S5, NS, US-CST, US-PST, 11AM-8PM, MX-8-5, or "KEEP"
+                "pattern": "MON_FRI",     # or "WED_SUN"; optional
+                "text": "Shift-3"}}       # optional exact string to write
+
+Needed for ASK_ME / UNCLASSIFIED people, people with no previous-cycle data (new
+seats), and AUTO_SWAP people whose current shift has no partner. Omitted `pattern`
+keeps the current pattern if the shift is unchanged, else the code's default
+(S2/S4 are always Wed-Sun; asking for S2 with MON_FRI is invalid). `ShiftChange`
+carries person, old/new shift, `effective` (rotation Sunday), `first_worked`, and
+old/new pattern.
+
+### `pto.py` - Step 3 PTO import
+
+`read_pto_workbook(path) -> list[PtoEntry]` (columns Name, From, To, Code; header
+found by content; code defaults to `P`; only P, T, SL accepted; all bad rows
+reported together in `PtoImportError` with sheet row numbers).
+`match_names(import_names, roster_names, confirmed) -> PtoMatchReport(exact,
+needs_confirmation, unmatched)`: exact (words, any order/case) is silent; one
+word more/less, a one-word typo or a whole-name edit distance <= 2 returns
+candidates and is never accepted until the caller passes
+`confirmed={import name: roster name}`.
+`apply_pto(schedule, entries, cycle, confirmed, needed=None, min_staff_for=None)
+-> PtoResult(edits, clashes, notes, match, skipped_entries)`: the code goes only on
+days the person would work (a working code, or HOL: PTO beats HOL); weekly offs
+and other leave stay; out-of-cycle ranges are ignored with a note; no
+replacements. Clashes (`PtoClash(person, date, kind, detail)`; kinds SWAP_SUNDAY,
+NEEDED, BELOW_MIN, OVERLAP) are reported, not blocked. `shift_group_rule(schedule,
+team_of, minimum_for)` builds the `min_staff_for` callable (group = team + shift).
+
+### `roster_changes.py` - Step 0 and the ask-me list
+
+`detect_changes(roster_people, config, prev_schedule) -> ChangeSet(new, removed)`:
+NEW = in the roster but not the config, or in the config with no code in
+`prev_schedule`; REMOVED = in the config but not the roster.
+`apply_changes(config, answers, changes, roster_people=None) -> AppliedChanges`
+(`config` deep copy, never saved; `inherited_counters`/`replaces` {new: old};
+`pool_average_seats`; `rotation_answers`). `answers` (key = new person's name):
+
+    {"<new name>": {"replaces": "<old name>"}}
+    {"<new name>": {"new_seat": {"rotation": "PERMANENT|AUTO_SWAP|ASK_ME|UNCLASSIFIED",
+                                 "shift": "S3", "pattern": "MON_FRI",   # pattern optional
+                                 "team": "Operate", "subteam": "DIS",   # subteam optional
+                                 "location": "Hyd"}}}                   # optional
+
+A replacement inherits category, shift, partner, team, subteam and the holiday
+counter, and takes the seat's next assignment from the old person's
+previous-cycle cells (pass `replaces` to `rotate`). A new seat's `shift` is the
+shift they work THIS cycle; its holiday counter starts at the pool average.
+Unanswered new names raise `MissingAnswers`.
+`ask_me_list(config, roster_people, prev_schedule, cycle=None, replaces=None) ->
+list[AskMeItem(name, current_shift, current_pattern, category, current_text,
+reason)]` for the ask-me form (category ASK_ME, UNCLASSIFIED, NEW_SEAT, or
+AUTO_SWAP when it has no partner).
