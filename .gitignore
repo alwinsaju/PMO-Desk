@@ -39,3 +39,21 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# agent-apps: real client/employee data and generated artifacts (never commit)
+agent-apps/**/input/
+agent-apps/**/output/
+agent-apps/**/reference/
+agent-apps/**/templates/
+agent-apps/.venv/
+agent-apps/shared/roster-reference/*
+!agent-apps/shared/roster-reference/README.md
+
+# python
+__pycache__/
+**/__pycache__/
+*.pyc
+.coverage
+
+# Office lock files
+~$*
