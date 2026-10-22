@@ -79,7 +79,11 @@ partner shift; weekly-off pattern follows the new code), `ASK_ME`,
 `UNCLASSIFIED` (asked every run). Validation errors are all reported in one
 `ConfigError`. API: `classify(person)`, `next_shift(person)`, `name_key(name)`,
 `cfg.find(name)`, `add_person`, `update_person`, `remove_person`,
-`resolve_location_code`, `min_staff_for(subteam)`.
+`resolve_location_code`, `team_of(section | roster Person | config Person)`,
+`min_staff_for_team(team)` (`min_staff_for` is the old name). `min_staff` is keyed by
+TEAM (3 for DIS, DEP and L3, 2 for every other team, per shift code per day);
+`team_aliases` maps roster section titles to teams (default `L2` -> `DIS`; a map
+in the file replaces the default).
 
 ## Workbook I/O (roster_io, xlsx_patch, pkgdiff)
 
@@ -273,3 +277,86 @@ Unanswered new names raise `MissingAnswers`.
 list[AskMeItem(name, current_shift, current_pattern, category, current_text,
 reason)]` for the ask-me form (category ASK_ME, UNCLASSIFIED, NEW_SEAT, or
 AUTO_SWAP when it has no partner).
+
+## Holiday engine and checks
+
+Both modules work on a schedule `dict[person name, dict[date, raw text]]`
+(`""` = weekly off; a date missing from the dict is "no data", not a blank) and
+`roster_io.Person` objects; the team of a person is `config.team_of(person)`
+(section after `team_aliases`). They are pure: they return data, never edit the
+schedule, never print and never auto-fix a shortage. No names appear in code,
+tests or docs.
+
+### `checks.py`
+
+- `staffing_check(schedule, people, config, start, end, team_of=None) ->
+  [Shortage(team, shift, date, have, need)]`: per (team, shift code, day) for the
+  shifts ACTIVE that day, people WORKING (a shift code in the cell; not leave, HOL,
+  blank, on-call or custom hours) against `min_staff_for_team`. A shift is active
+  when a member's pattern works it that day or someone works it, so S2/S4 groups
+  are silent Mon-Tue but a Wednesday with everyone on leave or HOL is a shortage.
+  A person on leave keeps the shift code of their nearest worked day (28 days).
+  Mexico people count when working.
+- `hol_check(schedule, people, matrix, roster_labels, start, end, coverage_ok=None,
+  ignore_dates=(), ignore_label_pattern=...) -> [Finding(kind, severity, date,
+  person, location, message)]`, sorted by date. Kinds: `STRAY` (HOL where the
+  location is not ticked, error), `MISSING` (working at a ticked location with no
+  HOL, error), `MISSING_UNVERIFIED` ("MISSING (unverified coverage)", warning: a
+  working India person on a COMMON holiday when no coverage info was given),
+  `HOL_ON_WEEKLY_OFF` (warning, pattern inferred from the surrounding weeks),
+  `MISMATCH_NO_LABEL` / `MISMATCH_NO_MATRIX` (holiday vs the roster's holiday row
+  labels, warning; labels such as shift swap, winter disconnect and lean shift are
+  not holidays and are skipped by default), `UNKNOWN_LOCATION` (info).
+  `coverage_ok` is a set of `(name, date)` or a `(name, date) -> bool` of people
+  deliberately working a COMMON holiday (pass `HolidayResult.coverage` for a draft);
+  when given, an uncovered working India person is a certain `MISSING`. Location-
+  specific and Mexico-only holidays need no coverage info: everyone who works at a
+  ticked location must have HOL. Leave codes and blank cells are never missing.
+  `ignore_dates` skips December Disconnect days.
+- Weekly-off pattern inference (`pattern_on`, `week_pattern`): Mon/Tue/Sat/Sun are
+  the only days that tell Mon-Fri from Wed-Sun apart; working cells vote for the
+  pattern that works them, blanks for the other, leave cells do not vote. The
+  person's own Sunday-Saturday week decides, then up to two weeks either side;
+  S2/S4 are always Wed-Sun.
+- `schedule_from_roster(roster, start, end)`, `resolve_location(text, codes)`.
+
+### `holiday_engine.py`
+
+`assign_holidays(schedule, people, matrix, counters, config, start, end, *,
+seed=None, inherited_counters=None, pool_average_seats=()) -> HolidayResult(edits,
+assignments, counters_before, counters_after, flags, seed, coverage, pool_average)`.
+Holidays in the cycle are processed in date order; only people working that day
+are affected (PTO beats HOL and is never counted).
+
+- Location-specific and Mexico-only holidays: everyone working at a ticked location
+  gets `HOL`; no fairness, no counters; shortages are flagged (`STAFFING_SHORTAGE`),
+  not fixed. Mexico staff always get HOL on any holiday that ticks Mexico, including
+  Common India-Mexico rows (so many shifts are flagged on such days: expected).
+- COMMON holidays: per (team, shift) group, `outside` (non-India staff, Mexico staff
+  when Mexico is not off) count toward the minimum; `pool` = India people working;
+  `need = max(0, min_staff(team) - len(outside))`; the pool is ordered by
+  `offs_taken` DESC, then `last_off_date` DESC (never-off last), then a seeded
+  SHA-256 tie-break; the first `need` cover (keep their shift), the rest get HOL and
+  `offs_taken += 1`. So A with 4 offs covers and B with 3 is off; on a tie the person
+  who was off most recently covers. Group at or below its minimum: nobody is off,
+  flagged `NO_OFF_AT_MINIMUM` (`need == len(pool)`) or `CANNOT_MEET_MINIMUM`
+  (`need > len(pool)`). Mexico staff are never in the pool and have no counter;
+  COMP is never generated and comp-offs are not tracked.
+- `GroupAssignment` per group and holiday: `off`, `straight_off`, `covering`,
+  `outside`, `min_staff`, `need`, `shortage`, and the pool's counters before/after.
+  `HolidayResult.coverage` is the set of `(name, date)` pairs that deliberately work
+  a COMMON holiday (feed it to `hol_check(..., coverage_ok=...)`). The seed is
+  recorded in the result and logged; the same inputs and seed always give the same
+  result. `apply_edits(schedule, edits)` returns a copy with the edits applied.
+- Counters: `OffCounter(offs_taken, last_off_date)` per India person.
+  `build_counters(roster, matrix, year, config, cycle_start, disconnect_dates=())`
+  (or `build_counters_from_schedule(schedule, people, ...)`) counts each India
+  person's HOL cells in the calendar year before `cycle_start` on COMMON holidays
+  that fell on a working day, ignoring PTO, December Disconnect days, stray HOLs
+  (location not ticked that day), HOLs on a weekly off and HOLs on location-specific
+  holidays. ASSUMPTION: only COMMON holidays count, because fairness only applies to
+  them. A person with no counter who is not inherited, and every
+  `pool_average_seats` name, starts at the pool average (floor of the mean
+  `offs_taken` of India people who already have a counter, no last-off date);
+  `inherited_counters` ({new name: old name}, from `roster_changes`) copies the
+  leaver's counter to the replacement.
