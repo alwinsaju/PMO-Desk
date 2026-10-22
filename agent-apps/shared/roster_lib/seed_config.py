@@ -136,15 +136,17 @@ def load_seed_names(path: str | Path) -> SeedNames:
 
 def latest_cycle_with_data(schedule: Mapping[str, Mapping[date, str]], last_date: date,
                            people: Sequence[str]) -> Cycle | None:
-    """The most recent cycle (starting on or before the file's last date) in which at least
-    half of `people` have a derivable shift."""
+    """The most recent COMPLETE cycle (ending on or before the file's last date) in which at
+    least half of `people` have a derivable shift."""
     if not people:
         return None
     cycle = cycle_containing(last_date)
     for _ in range(14):
-        have = sum(1 for n in people
-                   if derive_state({d: t for d, t in schedule.get(n, {}).items()
-                                    if cycle.contains(d)}, cycle) is not None)
+        have = 0
+        if cycle.end <= last_date:
+            have = sum(1 for n in people
+                       if derive_state({d: t for d, t in schedule.get(n, {}).items()
+                                        if cycle.contains(d)}, cycle) is not None)
         if have >= _MIN_DATA_SHARE * len(people):
             return cycle
         cycle = previous_cycle(cycle)

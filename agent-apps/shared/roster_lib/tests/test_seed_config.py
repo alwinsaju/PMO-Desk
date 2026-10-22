@@ -6,7 +6,7 @@ import json
 from datetime import date
 
 import pytest
-from cycle_testkit import AUG, make_roster
+from cycle_testkit import AUG, DEC, make_roster
 from xlsx_fixtures import build_roster_workbook
 
 from roster_lib.checks import schedule_from_roster
@@ -131,6 +131,9 @@ def test_latest_cycle_with_data_skips_empty_cycles():
     sched = schedule_from_roster(roster)
     assert latest_cycle_with_data(sched, roster.last_date, names) == AUG
     assert latest_cycle_with_data({}, roster.last_date, names) is None
+    # a cycle that runs past the end of the file is never "the latest cycle with data"
+    partial = make_roster(filled=(AUG, DEC), last_date=date(2027, 1, 1))
+    assert latest_cycle_with_data(schedule_from_roster(partial), partial.last_date, names) == AUG
     assert latest_cycle_with_data(sched, roster.last_date, []) is None
 
 
