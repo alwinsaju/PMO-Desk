@@ -17,8 +17,10 @@ Inputs
                   "KEEP" (existing people only: keep the current shift).
                   `pattern`: "MON_FRI" or "WED_SUN" (also "Mon-Fri"/"Wed-Sun");
                   optional: omitted means the current pattern when the shift
-                  is unchanged, else the code's default (S2/S4 are always
-                  Wed-Sun). `text` (optional): the exact string to write.
+                  is unchanged (carried forward as observed, even if it is not the
+                  usual one for the code, exactly like PERMANENT), else the code's
+                  default (S2/S4 are always Wed-Sun; an explicit pattern that
+                  contradicts that is invalid). `text` (optional): the exact string to write.
                   Names are matched with `config.name_key`. A missing answer
                   raises `MissingAnswers` (never a guess); a bad one raises
                   `InvalidAnswers`.
@@ -352,15 +354,17 @@ def _read_answer(name: str, answer: Mapping, state: PersonState | None):
             raise ValueError(f"unusable shift {shift!r}")
         code = parsed.canonical
     pattern_raw = answer.get("pattern")
+    inherited = False  # the observed pattern carried forward (like PERMANENT), not asked for
     if pattern_raw in (None, ""):
         if state is not None and state.code == code and state.pattern is not None:
             pattern = state.pattern
+            inherited = True
         else:
             pattern = default_pattern(code) or Pattern.MON_FRI
     else:
         pattern = parse_pattern(pattern_raw)
     forced = forced_pattern(code)
-    if forced is not None and pattern is not forced:
+    if forced is not None and pattern is not forced and not inherited:
         raise ValueError(f"{code} is always {forced.value}, not {pattern.value}")
     text = answer.get("text")
     if text not in (None, ""):

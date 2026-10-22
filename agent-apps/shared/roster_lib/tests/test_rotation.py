@@ -266,6 +266,22 @@ def test_answer_exact_text_and_invalid_answers():
             rotate(prev, config, AUG, {"Ask Me": bad})
 
 
+def test_keep_carries_an_observed_unusual_pattern_forward():
+    """S4 observed on Mon-Fri: KEEP copies it (as PERMANENT does); asking for it is still invalid."""
+    config = cfg(("Odd", Rotation.ASK_ME, None, None))
+    prev = {"Odd": fill(PREV, MF, "Shift-4")}
+    res = rotate(prev, config, AUG, {"Odd": {"shift": "KEEP"}})
+    assert all(bool(t) == works_on(MF, d) for d, t in res.schedule["Odd"].items())
+    assert res.changes == []
+    res = rotate(prev, config, AUG, {"Odd": {"shift": "S4"}})  # same code, pattern omitted
+    assert all(bool(t) == works_on(MF, d) for d, t in res.schedule["Odd"].items())
+    with pytest.raises(InvalidAnswers):
+        rotate(prev, config, AUG, {"Odd": {"shift": "S4", "pattern": "MON_FRI"}})
+    with pytest.raises(InvalidAnswers):  # a different code never inherits a contradicting pattern
+        rotate({"Odd": fill(PREV, MF, "Shift-3")}, config, AUG,
+               {"Odd": {"shift": "S2", "pattern": "MON_FRI"}})
+
+
 def test_new_seat_needs_answer_and_has_no_shift_change():
     config = cfg(("Newbie", Rotation.PERMANENT, "S3", None), ("Old", Rotation.PERMANENT, "S3", None))
     prev = {"Old": fill(PREV, MF, "Shift-3")}
