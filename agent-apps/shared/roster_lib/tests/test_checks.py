@@ -21,7 +21,19 @@ from roster_lib.checks import (
 from roster_lib.codes import Pattern
 from roster_lib.holiday_matrix import HolidayMatrixError, load_holiday_matrix
 from roster_lib.roster_io import load_roster
-from roster_testkit import END, INDIA, MEX, START, build, config, days, matrix_of, person, row_for
+from roster_testkit import (
+    END,
+    INDIA,
+    MEX,
+    START,
+    build,
+    config,
+    days,
+    label_derived_matrix,
+    matrix_of,
+    person,
+    row_for,
+)
 
 WED = date(2026, 10, 28)
 SAT = date(2026, 11, 7)
@@ -395,46 +407,11 @@ REAL_UNLABELLED_PUNE = [date(2026, 4, 28), date(2026, 4, 29), date(2026, 5, 14),
                         date(2026, 9, 3)]
 
 
-def _label_derived_matrix(labels):
-    """A 2026 matrix derived from row-12 labels ONLY (documented approximation).
-
-    Scope text in a label is read as follows: "Gur"/"KOL"/"CHE"/"HYD"/"BLR"/"Pun" tokens
-    after "Only" / "Only ... " select those locations; "(Except Gur)" / "(for all except
-    BLR)" selects all India but that one; "MEX" selects Mexico only; "Christmas" is
-    India + Mexico; any other label is read as common India. Dates with no label are
-    holidays for nobody: the real matrix may have more rows (see REAL_UNLABELLED_PUNE).
-    """
-    import re
-    rows = []
-    for d, text in sorted(labels.items()):
-        t = " ".join(text.split())
-        if re.search(r"\b(shift[- ]?swap|winter disconnect|lean shift)\b", t, re.I):
-            continue
-        names = {"blr": "Blr", "che": "Che", "gur": "Gur", "hyd": "Hyd", "kol": "Kol",
-                 "pun": "Pun"}
-        tokens = {names[x] for x in (m.lower() for m in re.findall(r"[A-Za-z]{3}", t))
-                  if x in names}
-        if "MEX" in t.upper():
-            locs = [MEX]
-        elif re.search(r"except|all except", t, re.I):
-            locs = [c for c in INDIA if c not in tokens]
-        elif re.search(r"only|\(", t, re.I) and tokens:
-            locs = sorted(tokens)
-        elif t.upper().startswith("KOL HOL"):
-            locs = ["Kol"]
-        elif t.lower() == "christmas":
-            locs = INDIA + [MEX]
-        else:
-            locs = INDIA
-        rows.append((t, d, locs))
-    return matrix_of(rows)
-
-
 @needs_real
 def test_real_roster_pune_strays_include_the_seven_known_dates():
     roster = load_roster(REAL)
     labels = roster.holiday_labels(expand_merges=True)
-    matrix = _label_derived_matrix(labels)
+    matrix = label_derived_matrix(labels)
     pune = [p for p in roster.people if p.location_code == "Pune"]
     assert len(pune) == 5
     sched = schedule_from_roster(roster)
