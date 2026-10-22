@@ -7,11 +7,13 @@ writes it back deterministically. Schema (version 1):
     {
       "version": 1,
       "location_codes": {"Bengaluru": "Blr", ...},     # optional; default below
-      "min_staff": {"DIS": 3, "DEP": 3, "L3": 3, "default": 2},
+      "min_staff": {"DIS": 3, "DEP": 3, "L3": 3, "default": 2},   # keyed by TEAM
+      "team_aliases": {"L2": "DIS", "L N S 2.0": "LNS 2.0"},     # roster section -> team
       "has_data_threshold": 0.95,                      # share of weeks, (0, 1]
       "seed": 12345,                                   # int, for tie-breaks
       "people": [
-        {"name": "Alice Test", "team": "Operate", "subteam": "DIS",   # subteam optional
+        {"name": "Alice Test", "team": "Operate", "subteam": "DIS",   # subteam optional;
+                                                 # it is the roster team (section) if given
          "location": "Blr",                      # a location name or its code
          "rotation": "PERMANENT",
          "shift": "S1",                          # optional except for AUTO_SWAP
@@ -19,8 +21,19 @@ writes it back deterministically. Schema (version 1):
       ]
     }
 
-`min_staff` is the default minimum people per shift per day, keyed by subteam
-(any key; "default" is required and used for everything not listed).
+`min_staff` is the minimum number of people WORKING per shift code per day, keyed
+by TEAM (any key, matched case-insensitively; "default" is required and used for
+every team not listed). Default: 3 for DIS, DEP and L3, 2 for every other team.
+"Per shift" means per team, per shift code, per day, for the shifts active that
+day (S2/S4 are not active Mon-Tue); that counting lives in `checks.py`.
+
+`team_aliases` maps a roster section title (or any raw team text) to the team
+name used by `min_staff`; keys match case- and whitespace-insensitively. Default
+`{"L2": "DIS"}`. A map given in the file REPLACES the default (so write every
+alias you want). A section with no alias is its own team. `cfg.team_of(x)`
+resolves a section string, a `roster_io.Person` (its `section`) or a config
+`Person` (its `subteam`, else `team`); `cfg.min_staff_for_team(team)` resolves
+aliases first, then looks the team up (falling back to "default").
 
 Rotation categories (`Rotation`):
   PERMANENT    copy the shift forward unchanged;
@@ -48,10 +61,12 @@ from .holiday_matrix import DEFAULT_LOCATION_CODES
 
 CONFIG_VERSION = 1
 DEFAULT_MIN_STAFF = {"DIS": 3, "DEP": 3, "L3": 3, "default": 2}
+DEFAULT_TEAM_ALIASES = {"L2": "DIS"}
 DEFAULT_HAS_DATA_THRESHOLD = 0.95
 DEFAULT_SEED = 0
 
-_TOP_KEYS = {"version", "location_codes", "min_staff", "has_data_threshold", "seed", "people"}
+_TOP_KEYS = {"version", "location_codes", "min_staff", "team_aliases", "has_data_threshold",
+             "seed", "people"}
 _PERSON_KEYS = ("name", "team", "subteam", "location", "rotation", "shift", "partner")
 
 
@@ -73,6 +88,11 @@ class ConfigError(ValueError):
 def name_key(name: str) -> str:
     """Case-, whitespace- and unicode-form-insensitive key for matching names."""
     return " ".join(unicodedata.normalize("NFKC", name).split()).casefold()
+
+
+def _label_key(text: str) -> str:
+    """Key for section / team text: same normalisation as `name_key`."""
+    return name_key(text)
 
 
 @dataclass(frozen=True)
@@ -124,6 +144,7 @@ class RotationConfig:
     people: list[Person] = field(default_factory=list)
     location_codes: dict[str, str] = field(default_factory=lambda: dict(DEFAULT_LOCATION_CODES))
     min_staff: dict[str, int] = field(default_factory=lambda: dict(DEFAULT_MIN_STAFF))
+    team_aliases: dict[str, str] = field(default_factory=lambda: dict(DEFAULT_TEAM_ALIASES))
     has_data_threshold: float = DEFAULT_HAS_DATA_THRESHOLD
     seed: int = DEFAULT_SEED
     version: int = CONFIG_VERSION
@@ -144,12 +165,38 @@ class RotationConfig:
     def people_by_rotation(self, rotation: Rotation) -> list[Person]:
         return [p for p in self.people if p.rotation is rotation]
 
-    def min_staff_for(self, subteam: str | None) -> int:
-        if subteam is not None:
-            for key, value in self.min_staff.items():
-                if key.casefold() == subteam.casefold() and key != "default":
+    def team_of(self, subject: Any) -> str | None:
+        """Team name for a section title (str), a `roster_io.Person` (its `section`) or a
+        config `Person` (its `subteam`, else `team`), after `team_aliases`. None if the
+        subject carries no text."""
+        if isinstance(subject, str):
+            text = subject
+        elif hasattr(subject, "section"):
+            text = subject.section
+        else:
+            text = getattr(subject, "subteam", None) or getattr(subject, "team", None)
+        if not isinstance(text, str) or not text.strip():
+            return None
+        key = _label_key(text)
+        for alias, team in self.team_aliases.items():
+            if _label_key(alias) == key:
+                return team
+        return " ".join(text.split())
+
+    def min_staff_for_team(self, team: str | None) -> int:
+        """Minimum people working per shift per day for a team (aliases resolved; teams
+        not listed use "default")."""
+        resolved = self.team_of(team) if team is not None else None
+        if resolved is not None:
+            key = _label_key(resolved)
+            for name, value in self.min_staff.items():
+                if name != "default" and _label_key(name) == key:
                     return value
         return self.min_staff["default"]
+
+    def min_staff_for(self, subteam: str | None) -> int:
+        """Backward-compatible name for `min_staff_for_team`."""
+        return self.min_staff_for_team(subteam)
 
     # -- editing -----------------------------------------------------------------
     def add_person(self, person: Person) -> Person:
@@ -204,6 +251,8 @@ class RotationConfig:
             "min_staff": {**dict(sorted((k, v) for k, v in self.min_staff.items()
                                         if k != "default")),
                           "default": self.min_staff["default"]},
+            "team_aliases": dict(sorted(self.team_aliases.items(),
+                                        key=lambda kv: (_label_key(kv[0]), kv[0]))),
             "has_data_threshold": self.has_data_threshold,
             "seed": self.seed,
             "people": [p.to_dict() for p in sorted(self.people,
@@ -298,7 +347,24 @@ def parse_config(data: Any) -> RotationConfig:
             for k, v in raw.items():
                 if not _is_int(v) or v < 0:
                     problems.append(f"min_staff[{k!r}] must be a non-negative integer, got {v!r}")
+            lowered = [k.casefold() for k in raw if isinstance(k, str)]
+            if len(set(lowered)) != len(lowered):
+                problems.append("min_staff has duplicate team keys (keys are case-insensitive)")
             min_staff = dict(raw)
+
+    team_aliases = dict(DEFAULT_TEAM_ALIASES)
+    if "team_aliases" in data:
+        raw = data["team_aliases"]
+        if (not isinstance(raw, dict)
+                or not all(isinstance(k, str) and k.strip() and isinstance(v, str) and v.strip()
+                           for k, v in raw.items())):
+            problems.append("team_aliases must be an object of section -> team strings")
+        else:
+            keys = [_label_key(k) for k in raw]
+            if len(set(keys)) != len(keys):
+                problems.append("team_aliases has duplicate sections (keys match "
+                                "case- and whitespace-insensitively)")
+            team_aliases = {k: " ".join(v.split()) for k, v in raw.items()}
 
     threshold = data.get("has_data_threshold", DEFAULT_HAS_DATA_THRESHOLD)
     if (isinstance(threshold, bool) or not isinstance(threshold, (int, float))
@@ -314,6 +380,7 @@ def parse_config(data: Any) -> RotationConfig:
     cfg = RotationConfig(
         people=[], location_codes=location_codes,
         min_staff=min_staff if "default" in min_staff else {**min_staff, "default": 2},
+        team_aliases=team_aliases,
         has_data_threshold=float(threshold), seed=seed,
         version=CONFIG_VERSION,
     )

@@ -15,6 +15,10 @@
     "L3": 3,
     "default": 2
   },
+  "team_aliases": {
+    "L N S 2.0": "LNS 2.0",
+    "L2": "DIS"
+  },
   "has_data_threshold": 0.95,
   "seed": 12345,
   "people": [

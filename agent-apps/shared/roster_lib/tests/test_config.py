@@ -46,6 +46,7 @@ def test_example_loads_and_covers_all_categories():
     assert {classify(p) for p in cfg.people} == set(Rotation)
     assert cfg.seed == 12345 and cfg.has_data_threshold == 0.95
     assert cfg.min_staff == {"DIS": 3, "DEP": 3, "L3": 3, "default": 2}
+    assert cfg.team_aliases == {"L2": "DIS", "L N S 2.0": "LNS 2.0"}
     assert len(cfg.people) == 7
 
 
@@ -64,6 +65,7 @@ def test_example_uses_only_synthetic_names():
 def test_defaults_when_optional_keys_absent():
     cfg = parse_config(BASE)
     assert cfg.min_staff == {"DIS": 3, "DEP": 3, "L3": 3, "default": 2}
+    assert cfg.team_aliases == {"L2": "DIS"}
     assert cfg.has_data_threshold == 0.95
     assert cfg.seed == 0
     assert cfg.location_codes["Bengaluru"] == "Blr"
@@ -74,7 +76,9 @@ def test_defaults_are_not_shared_between_instances():
     a, b = parse_config(BASE), parse_config(BASE)
     a.min_staff["default"] = 9
     a.location_codes["X"] = "Xx"
+    a.team_aliases["Zed"] = "Z"
     assert b.min_staff["default"] == 2 and "X" not in b.location_codes
+    assert "Zed" not in b.team_aliases
 
 
 def test_classify_and_next_shift():
@@ -204,6 +208,50 @@ def test_min_staff_for():
     assert cfg.min_staff_for("Other") == 2
     assert cfg.min_staff_for(None) == 2
     assert cfg.min_staff_for("default") == 2
+
+
+def test_min_staff_for_team_uses_aliases_and_defaults():
+    cfg = load_config(EXAMPLE)
+    # rule: 3 for DIS, DEP and L3; 2 for every other team
+    assert [cfg.min_staff_for_team(t) for t in ("DIS", "DEP", "L3")] == [3, 3, 3]
+    assert [cfg.min_staff_for_team(t) for t in ("Lab", "Device Support", "CMS 2.0", "EKS",
+                                                "LNS 2.0", "Governance", None)] == [2] * 7
+    assert cfg.min_staff_for_team("L2") == 3  # section title -> DIS
+    assert cfg.min_staff_for_team("  l2 ") == 3
+    assert cfg.min_staff_for_team("l n s  2.0") == 2  # alias -> LNS 2.0 -> default
+
+
+def test_team_of_accepts_sections_and_person_objects():
+    from roster_lib.roster_io import Person as RosterPerson
+    cfg = load_config(EXAMPLE)
+    assert cfg.team_of("L2") == "DIS"
+    assert cfg.team_of("l n s 2.0") == "LNS 2.0"
+    assert cfg.team_of("  Device   Support ") == "Device Support"  # no alias: own team
+    assert cfg.team_of("") is None and cfg.team_of(None) is None
+    assert cfg.team_of(RosterPerson("P", "Blr", "L2 DIS USI", "L2", 16)) == "DIS"
+    assert cfg.team_of(RosterPerson("P", "Blr", "Lab", "Lab", 70)) == "Lab"
+    assert cfg.team_of(Person("A", "Operate", "Blr", Rotation.ASK_ME, subteam="L2")) == "DIS"
+    assert cfg.team_of(Person("A", "Operate", "Blr", Rotation.ASK_ME)) == "Operate"
+
+
+def test_team_aliases_validation_and_replace_semantics():
+    cfg = parse_config(doc(team_aliases={"Alpha": "A-team"}))
+    assert cfg.team_aliases == {"Alpha": "A-team"}  # replaces the default
+    assert cfg.team_of("L2") == "L2" and cfg.team_of("alpha") == "A-team"
+    assert any("team_aliases must be" in p for p in problems_of(doc(team_aliases=["x"])))
+    assert any("team_aliases must be" in p for p in problems_of(doc(team_aliases={"L2": ""})))
+    assert any("team_aliases must be" in p for p in problems_of(doc(team_aliases={"L2": 3})))
+    assert any("duplicate sections" in p for p in problems_of(
+        doc(team_aliases={"L2": "DIS", " l2": "X"})))
+    assert any("duplicate team keys" in p for p in problems_of(
+        doc(min_staff={"default": 2, "DIS": 3, "dis": 2})))
+
+
+def test_team_aliases_saved_deterministically(tmp_path):
+    cfg = parse_config(doc(team_aliases={"zeta": "Z", "L2": "DIS", "Alpha": "A"}))
+    text = save_config(cfg, tmp_path / "t.json").read_text(encoding="utf-8")
+    assert list(json.loads(text)["team_aliases"]) == ["Alpha", "L2", "zeta"]
+    assert load_config(tmp_path / "t.json").team_aliases == cfg.team_aliases
 
 
 def test_add_update_remove_person():
