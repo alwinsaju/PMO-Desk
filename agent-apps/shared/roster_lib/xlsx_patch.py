@@ -320,6 +320,7 @@ class SheetCell:
     is_formula: bool
     style: Optional[str]
     cell_type: Optional[str]  # the t attribute (s, str, inlineStr, b, e, n) or None
+    formula: str = ""  # <f> text; "" for no formula and for shared-formula children
 
 
 _SHEETDATA_OPEN_RE = re.compile(rb"<sheetData(?=[\s>/])")
@@ -354,6 +355,7 @@ _S_ATTR_RE = re.compile(r'(?<![\w:-])s="([^"]*)"')
 _V_RE = re.compile(r"<v(?:\s[^>]*)?(?:/>|>(.*?)</v>)", re.S)
 _IS_RE = re.compile(r"<is\b.*?</is>|<is\s*/>", re.S)
 _F_RE = re.compile(r"<f\b[^>]*?(?:/>|>.*?</f>)", re.S)
+_F_FULL_RE = re.compile(r"<f\b[^>]*?(?:/>|>(.*?)</f>)", re.S)
 _F_OPEN_RE = re.compile(r"<f\b([^>]*?)/?>")
 
 
@@ -402,13 +404,15 @@ def iter_sheet_cells(body: str, shared: Optional[list[str]] = None) -> Iterator[
             ctype = tm.group(1) if tm else None
             cinner = cm.group(2) or ""
             sm = _S_ATTR_RE.search(cattrs)
+            fm = _F_FULL_RE.search(cinner) if cinner else None
             yield SheetCell(
                 row=row,
                 col=col,
                 text=_cell_text(ctype, cinner, shared) if cinner else "",
-                is_formula=bool(cinner) and _F_RE.search(cinner) is not None,
+                is_formula=fm is not None,
                 style=sm.group(1) if sm else None,
                 cell_type=ctype,
+                formula=decode_text(fm.group(1) or "") if fm else "",
             )
 
 
