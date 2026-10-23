@@ -129,14 +129,14 @@ def test_answers_change_the_plan(tmp_path):
     p = Pipeline(tmp_path / "t")
     assert p.prepare() == 0 and p.analyze() == 0
     p.answer({"shift:Person 04": "S2", "seat_shift:Person 14": "S3",
-              "seat_rotation:Person 14": "PERMANENT", PTO_FIELD: "SKIP"})
+              "seat_rotation:Person 14": "ASK_ME", PTO_FIELD: "SKIP"})
     assert p.build_draft() == 0
     plan = plan_of(p)
     changes = {c["person"]: c for c in plan.shift_changes}
     assert (changes["Person 04"]["old_shift"], changes["Person 04"]["new_shift"]) == ("S3", "S2")
     assert changes["Person 04"]["new_pattern"] == "Wed-Sun"  # S2 is always Wed-Sun
     assert changes["Person 14"]["new_shift"] == "S3"
-    assert plan.config_after.find("Person 14").rotation.value == "PERMANENT"
+    assert plan.config_after.find("Person 14").rotation.value == "ASK_ME"
     # a skipped PTO name is not applied and is noted
     assert canonical(plan.edits.get(("Person 07", date(2026, 12, 16)), "")) != "P"
     skipped = [f for f in plan.flags if f.kind == "PTO_SKIPPED"]
