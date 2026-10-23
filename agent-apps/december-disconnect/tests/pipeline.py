@@ -21,6 +21,15 @@ class Pipeline:
         self.paths = self.world.paths
         self.root = root
 
+    @classmethod
+    def adopt(cls, root: Path) -> "Pipeline":
+        """A pipeline on an existing task folder (a copy of a finished stage)."""
+        from _common import Paths
+
+        self = object.__new__(cls)
+        self.root, self.paths, self.world = root, Paths(root), None
+        return self
+
     # ---- steps (each returns the exit code) ----
     def prepare(self) -> int:
         import prepare_options  # imported lazily: a script is importable as soon as it exists
