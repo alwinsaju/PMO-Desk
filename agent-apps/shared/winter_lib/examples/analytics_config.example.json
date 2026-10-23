@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "title": "Analytics \u00b7 Winter Holiday Coverage",
+  "window": {"start": "2026-12-25", "end": "2027-01-01"},
+  "people": [
+    {"name": "Alpha Tester",   "short_name": "Alpha",   "location": "Pune",      "usual_shift": "S1"},
+    {"name": "Bravo Tester",   "short_name": "Bravo",   "location": "Hyderabad", "usual_shift": "S1"},
+    {"name": "Charlie Tester", "short_name": "Charlie", "location": "Hyderabad", "usual_shift": "S2"},
+    {"name": "Delta Tester",   "short_name": "Delta",   "location": "Pune",      "usual_shift": "S2",
+     "available": {"from": "2026-12-28", "to": "2026-12-30"},
+     "note": "Available Dec 28-30 only"},
+    {"name": "Echo Tester",    "short_name": "Echo",    "location": "Gurgaon",   "usual_shift": "S3"},
+    {"name": "Foxtrot Tester", "short_name": "Foxtrot", "location": "Pune",      "usual_shift": "S3"},
+    {"name": "Golf Tester",    "short_name": "Golf",    "location": "Hyderabad", "usual_shift": "S2"},
+    {"name": "Hotel Tester",   "short_name": "Hotel",   "location": "Pune",      "usual_shift": "S1", "role": "on_call"},
+    {"name": "India Tester",   "short_name": "India",   "location": "Pune",      "usual_shift": "S2", "role": "on_call"},
+    {"name": "Juliet Tester",  "short_name": "Juliet",  "location": "Mexico",    "usual_shift": "S4", "role": "mexico"}
+  ],
+  "holiday_dates": ["2026-12-25", "2026-12-26", "2026-12-27", "2027-01-01"],
+  "slots_per_person": 4,
+  "on_call_slots_each": 1,
+  "weights": {"usual_shift": 3, "holiday": 4, "block": 2, "oncall_block": 3, "turnaround": 6, "extra_slot": 1},
+  "solver": {"seed": 0, "time_limit_s": 120}
+}
