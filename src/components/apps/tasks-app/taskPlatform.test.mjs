@@ -38,13 +38,26 @@ import {
   TEXT_MAX_CHARS,
 } from "./formGate.ts";
 import {
+  applyUpload,
+  canClearInputs,
   canPrepare,
+  cleanupNote,
+  cleanupResultText,
+  clearButtonLabel,
+  clearConfirmText,
+  cleansOnComplete,
   defaultChoice,
   formatBytes,
+  formatUploaded,
   isChoosable,
+  isOnFile,
+  isPersistInput,
+  keepsSomeInputs,
   missingRequired,
+  PERSIST_HINT,
   prepareAfterIds,
   selectChoices,
+  startDescription,
   validateFile,
 } from "./startForm.ts";
 import {
@@ -1178,6 +1191,332 @@ describe("api: open a listed file, clear an answer", () => {
     await api.saveForm("december-disconnect", { avail_dates_1: null, note: "x" });
     assert.deepEqual(JSON.parse(calls[0].init.body), {
       answers: { avail_dates_1: null, note: "x" },
+    });
+  });
+});
+
+describe("files kept across runs (persist)", () => {
+  const HOLIDAYS = {
+    id: "holidays",
+    label: "Holiday Roster",
+    type: "file",
+    accept: [".xlsx"],
+    required: true,
+    persist: true,
+  };
+  const ROSTER = {
+    id: "roster",
+    label: "Roster workbook",
+    type: "file",
+    accept: [".xlsx"],
+    required: true,
+  };
+  const t = task({
+    inputs: [
+      ROSTER,
+      HOLIDAYS,
+      {
+        id: "cycle",
+        label: "Cycle",
+        type: "select",
+        optionsKey: "cycles",
+        required: true,
+      },
+    ],
+    prepare: true,
+  });
+  const live = (id, over = {}) => ({
+    id,
+    label: id,
+    type: "file",
+    required: true,
+    present: true,
+    ...over,
+  });
+
+  it("a present persist file is 'on file'; absent or non-persist ones are not", () => {
+    assert.equal(isPersistInput(HOLIDAYS), true);
+    assert.equal(isPersistInput(ROSTER), false);
+    assert.equal(isOnFile(HOLIDAYS, live("holidays")), true);
+    assert.equal(isOnFile(HOLIDAYS, live("holidays", { present: false })), false);
+    assert.equal(isOnFile(HOLIDAYS, undefined), false);
+    assert.equal(isOnFile(ROSTER, live("roster")), false);
+    // the live status wins over the manifest, either way
+    assert.equal(isPersistInput(ROSTER, live("roster", { persist: true })), true);
+    assert.equal(isPersistInput(HOLIDAYS, live("holidays", { persist: false })), false);
+  });
+
+  it("a required persist file that is on file counts as satisfied for Start (and for Check inputs)", () => {
+    const choices = { cycle: selectChoices(OPTIONS, "cycles") };
+    const statuses = [
+      live("roster"),
+      live("holidays", { persist: true, modified: "2026-01-05T09:30:00Z" }),
+    ];
+    assert.deepEqual(missingRequired(t, statuses, { cycle: "2026-12" }, choices), []);
+    assert.equal(canPrepare(t, statuses), true);
+    const absent = [live("roster"), live("holidays", { present: false, persist: true })];
+    assert.deepEqual(missingRequired(t, absent, { cycle: "2026-12" }, choices), [
+      "Holiday Roster",
+    ]);
+  });
+
+  it("formats 'uploaded <date>' from the ISO UTC mtime", () => {
+    const opts = { locale: "en-GB", timeZone: "UTC" };
+    assert.equal(formatUploaded("2026-03-12T09:30:00Z", opts), "12 Mar 2026");
+    assert.equal(formatUploaded("2026-03-12T09:30:00", opts), "12 Mar 2026"); // naive = UTC, not local
+    assert.equal(formatUploaded("2026-03-12T23:30:00+00:00", opts), "12 Mar 2026");
+    assert.equal(formatUploaded(null, opts), null);
+    assert.equal(formatUploaded(undefined, opts), null);
+    assert.equal(formatUploaded("not a date", opts), null);
+    assert.match(PERSIST_HINT, /stays on file/);
+  });
+
+  it("a replaced persist file stays present with a fresh date and keeps its persist flag", () => {
+    const before = [
+      live("roster"),
+      live("holidays", {
+        persist: true,
+        filename: "old.xlsx",
+        size: 1,
+        modified: "2025-01-01T00:00:00Z",
+      }),
+    ];
+    const now = new Date("2026-06-01T10:00:00Z");
+    const after = applyUpload(
+      before,
+      HOLIDAYS,
+      { filename: "new.xlsx", size: 2048 },
+      { name: "x.xlsx", size: 9 },
+      now,
+    );
+    const row = after.find((s) => s.id === "holidays");
+    assert.deepEqual(
+      [row.present, row.persist, row.filename, row.size, row.modified],
+      [true, true, "new.xlsx", 2048, "2026-06-01T10:00:00.000Z"],
+    );
+    assert.equal(after.length, 2);
+    // first-ever upload (no status row yet): the file's own name/size and the manifest's persist
+    const first = applyUpload([], HOLIDAYS, {}, { name: "h.xlsx", size: 77 }, now);
+    assert.deepEqual(
+      [first[0].id, first[0].present, first[0].persist, first[0].filename, first[0].size],
+      ["holidays", true, true, "h.xlsx", 77],
+    );
+    assert.equal(isOnFile(HOLIDAYS, first[0]), true);
+  });
+
+  it("a persist file in prepare.after still gates Check inputs (so replacing it re-runs the check)", () => {
+    assert.deepEqual(prepareAfterIds(t), ["roster", "holidays"]);
+    const explicit = task({
+      inputs: t.inputs,
+      prepare: { cmd: "p.py", after: ["holidays"] },
+    });
+    assert.deepEqual(prepareAfterIds(explicit), ["holidays"]);
+  });
+});
+
+describe("start dialog for file-only tasks (no prepare, no select)", () => {
+  const fileOnly = (over = {}) =>
+    task({
+      id: "weekly-aging-report",
+      displayName: "Weekly aging report",
+      inputs: [
+        {
+          id: "report",
+          label: "Incident export",
+          type: "file",
+          accept: [".xlsx", ".csv"],
+          dest: "input/export.xlsx",
+          required: true,
+        },
+      ],
+      prepare: false,
+      cleanup: { onComplete: true, keep: [] },
+      ...over,
+    });
+  const live = (present) => [
+    { id: "report", label: "Incident export", type: "file", required: true, present },
+  ];
+
+  it("opens the start form, has no Check step, and Start is enabled right after the upload", () => {
+    const f = fileOnly();
+    assert.equal(hasStartForm(f), true);
+    assert.equal(canPrepare(f, live(true)), false); // no Check inputs button to wait for
+    assert.deepEqual(missingRequired(f, live(false), {}, {}), ["Incident export"]);
+    assert.deepEqual(missingRequired(f, [], {}, {}), ["Incident export"]);
+    assert.deepEqual(missingRequired(f, live(true), {}, {}), []);
+    const after = applyUpload(
+      [],
+      f.inputs[0],
+      { filename: "e.xlsx", size: 5 },
+      { name: "e.xlsx", size: 5 },
+    );
+    assert.deepEqual(missingRequired(f, after, {}, {}), []);
+  });
+
+  it("words the dialog for what it asks", () => {
+    assert.equal(
+      startDescription(fileOnly()),
+      "Add the file, then start the run. Nothing runs until you press Start.",
+    );
+    assert.match(
+      startDescription(task({ inputs: INPUTS, prepare: true })),
+      /check them, then choose/,
+    );
+    assert.match(
+      startDescription(task({ inputs: INPUTS.slice(0, 2) })),
+      /Add the files, then start/,
+    );
+  });
+
+  it("shows the cleanup footnote only for tasks that clean up", () => {
+    assert.equal(cleansOnComplete(fileOnly()), true);
+    assert.equal(
+      cleanupNote(fileOnly()),
+      "Input files are removed automatically after the run completes.",
+    );
+    assert.equal(cleanupNote(fileOnly({ cleanup: null })), null);
+    assert.equal(cleanupNote(fileOnly({ cleanup: undefined })), null);
+    assert.equal(
+      cleanupNote(fileOnly({ cleanup: { onComplete: false, keep: [] } })),
+      null,
+    );
+    // something is kept: the line says so
+    const kept = fileOnly({ cleanup: { onComplete: true, keep: ["holidays"] } });
+    assert.match(cleanupNote(kept), /except the ones kept on file/);
+    assert.equal(keepsSomeInputs(kept), true);
+    assert.equal(keepsSomeInputs(fileOnly()), false);
+    assert.equal(
+      keepsSomeInputs(
+        fileOnly({ inputs: [{ id: "h", label: "h", type: "file", persist: true }] }),
+      ),
+      true,
+    );
+  });
+});
+
+describe("clear input files", () => {
+  const files = (n, bytes) => ({ files: n, bytes });
+  const base = (over = {}) => task({ state: "resting", inputs: INPUTS, ...over });
+  const mb = 1024 * 1024;
+
+  it("is offered only when resting, on the inputs platform and something is cleanable", () => {
+    assert.equal(canClearInputs(base(), files(3, 100)), true);
+    assert.equal(canClearInputs(base(), files(0, 0)), false);
+    assert.equal(canClearInputs(base(), null), false); // older backend: no `cleanable`
+    assert.equal(canClearInputs(base(), undefined), false);
+    for (const state of [
+      "working",
+      "awaiting_review",
+      "awaiting_send",
+      "finishing",
+      "error",
+    ]) {
+      assert.equal(canClearInputs(base({ state }), files(3, 100)), false, state);
+    }
+    assert.equal(canClearInputs(base({ inputs: undefined }), files(3, 100)), false);
+    assert.equal(canClearInputs(base({ inputs: [] }), files(3, 100)), false);
+  });
+
+  it("words the button, the confirmation and the result", () => {
+    assert.equal(
+      clearButtonLabel(files(3, 12 * mb)),
+      "Clear input files (3 files, 12.0 MB)",
+    );
+    assert.equal(clearButtonLabel(files(1, 2048)), "Clear input files (1 file, 2.0 KB)");
+    assert.equal(
+      clearConfirmText(files(3, 12 * mb), false),
+      "Delete 3 input files (12.0 MB) from this computer? This can't be undone.",
+    );
+    assert.match(
+      clearConfirmText(files(1, 10), true),
+      /Delete 1 input file .*Files kept on file for future runs stay\./,
+    );
+    assert.equal(
+      cleanupResultText({ removed: 3, bytes: 12 * mb, skipped: 1 }),
+      "Removed 3 files, freed 12.0 MB; 1 file skipped — it may be open in another program.",
+    );
+    assert.equal(
+      cleanupResultText({ removed: 2, bytes: 3 * mb, skipped: 0 }),
+      "Removed 2 files, freed 3.0 MB.",
+    );
+    assert.equal(
+      cleanupResultText({ removed: 0, bytes: 0, skipped: 2 }),
+      "No files were removed; 2 files skipped — they may be open in another program.",
+    );
+    assert.equal(cleanupResultText({}), "No files were removed.");
+  });
+});
+
+describe("api: persist/cleanup fields and the cleanup route", () => {
+  const realFetch = globalThis.fetch;
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+  });
+  const json = (body, status = 200) => ({
+    ok: status < 400,
+    status,
+    json: async () => body,
+  });
+
+  it("passes persist, modified and cleanable through getInputs untouched", async () => {
+    const body = {
+      ok: true,
+      inputs: [
+        {
+          id: "holidays",
+          label: "Holiday Roster",
+          type: "file",
+          required: true,
+          present: true,
+          persist: true,
+          modified: "2026-03-12T09:30:00Z",
+          filename: "h.xlsx",
+          size: 10,
+        },
+      ],
+      params: {},
+      cleanable: { files: 2, bytes: 4096 },
+    };
+    globalThis.fetch = async () => json(body);
+    const reply = await api.getInputs("shift-roster");
+    assert.equal(reply.inputs[0].persist, true);
+    assert.equal(reply.inputs[0].modified, "2026-03-12T09:30:00Z");
+    assert.deepEqual(reply.cleanable, { files: 2, bytes: 4096 });
+  });
+
+  it("POSTs /cleanup (encoded id, no body) and returns the counts", async () => {
+    const calls = [];
+    globalThis.fetch = async (url, init = {}) => {
+      calls.push({ url: String(url), init });
+      return json({ ok: true, removed: 3, bytes: 100, skipped: 1 });
+    };
+    const reply = await api.cleanupInputs("a b");
+    assert.equal(calls[0].init.method, "POST");
+    assert.ok(calls[0].url.endsWith("/tasks/a%20b/cleanup"));
+    assert.equal(calls[0].init.body, undefined);
+    assert.deepEqual(
+      [reply.ok, reply.removed, reply.bytes, reply.skipped],
+      [true, 3, 100, 1],
+    );
+  });
+
+  it("flags a 404 as notFound (the control hides) but no other failure", async () => {
+    globalThis.fetch = async () => json({ detail: "Not Found" }, 404);
+    const missing = await api.cleanupInputs("t");
+    assert.equal(missing.ok, false);
+    assert.equal(missing.notFound, true);
+    globalThis.fetch = async () => json({ detail: "boom" }, 500);
+    const broken = await api.cleanupInputs("t");
+    assert.equal(broken.ok, false);
+    assert.equal(broken.notFound, undefined);
+    globalThis.fetch = async () => {
+      throw new TypeError("fetch failed");
+    };
+    assert.equal((await api.cleanupInputs("t")).notFound, undefined);
+    globalThis.fetch = async () => json({ ok: false, reason: "The task is running." });
+    assert.deepEqual(await api.cleanupInputs("t"), {
+      ok: false,
+      reason: "The task is running.",
     });
   });
 });

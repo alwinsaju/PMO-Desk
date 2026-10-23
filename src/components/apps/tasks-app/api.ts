@@ -1,6 +1,7 @@
 import type {
   ActionResult,
   Agent,
+  CleanupPayload,
   DiffPayload,
   FlagsPayload,
   FormAnswerPatch,
@@ -207,10 +208,10 @@ interface CallOptions {
   timeoutMs?: number;
 }
 
-function failure<T extends object>(reason: string): Reply<T> {
+function failure<T extends object>(reason: string, notFound = false): Reply<T> {
   // `{ok, reason}` is a valid Reply for every T (all payload fields are
   // optional), but TS can't see that through the generic Partial<T>.
-  return { ok: false, reason } as Reply<T>;
+  return (notFound ? { ok: false, reason, notFound } : { ok: false, reason }) as Reply<T>;
 }
 
 async function callJson<T extends object>(
@@ -229,6 +230,7 @@ async function callJson<T extends object>(
         res.status === 404
           ? "The running agent-office backend doesn't support this yet — restart it to pick up the new version."
           : `The backend rejected the request (HTTP ${res.status}).`,
+        res.status === 404,
       );
     }
     return (await res.json()) as Reply<T>;
@@ -320,4 +322,11 @@ export function getDiff(taskId: string): Promise<Reply<DiffPayload>> {
 /** The draft review gate's flags.json (null if not written yet). */
 export function getFlags(taskId: string): Promise<Reply<FlagsPayload>> {
   return callJson<FlagsPayload>(`${taskPath(taskId)}/flags`);
+}
+
+/** Deletes the task's input files from disk (the backend keeps files its
+ *  manifest marks to keep). Only accepted while the task is resting. A reply
+ *  with `notFound` means an older backend without this route. */
+export function cleanupInputs(taskId: string): Promise<Reply<CleanupPayload>> {
+  return callJson<CleanupPayload>(`${taskPath(taskId)}/cleanup`, { method: "POST" });
 }

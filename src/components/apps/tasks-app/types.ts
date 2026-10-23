@@ -57,6 +57,18 @@ export interface TaskInputDef {
   required?: boolean;
   optionsFile?: string;
   optionsKey?: string;
+  /** A file kept on disk across runs (e.g. the yearly Holiday Roster): once
+   *  it is present the user need not upload it again. Absent on an older
+   *  backend (= false). */
+  persist?: boolean;
+}
+
+/** Task-level input cleanup policy from the manifest. `onComplete` = input
+ *  files are removed automatically when a run completes; `keep` names what
+ *  stays. Null/absent = the task never cleans up on its own. */
+export interface TaskCleanup {
+  onComplete: boolean;
+  keep: string[];
 }
 
 /** `prepare` as exposed by GET /tasks is a bool; the raw manifest shape
@@ -99,6 +111,7 @@ export interface Task {
   inputs?: TaskInputDef[];
   prepare?: TaskPrepare;
   runtime?: string | null;
+  cleanup?: TaskCleanup | null;
 }
 
 /** One pool worker. This app only ever uses it to compute whether any
@@ -207,6 +220,10 @@ export interface ReviewQueue {
 export type Reply<T extends object = object> = {
   ok: boolean;
   reason?: string;
+  /** Set by api.ts when the route doesn't exist (HTTP 404: an older backend
+   *  still running), so a caller can hide a feature instead of showing a
+   *  failure. Never sent by the backend itself. */
+  notFound?: boolean;
 } & Partial<T>;
 
 /** One input's live status from GET /tasks/{id}/inputs. */
@@ -219,12 +236,33 @@ export interface InputStatus {
   filename?: string;
   size?: number;
   sha256?: string;
+  /** Kept on disk across runs (see TaskInputDef.persist). */
+  persist?: boolean;
+  /** ISO UTC mtime of the file on disk; null/absent when unknown or missing. */
+  modified?: string | null;
+}
+
+/** What "Clear input files" would delete right now. */
+export interface Cleanable {
+  files: number;
+  bytes: number;
 }
 
 export interface InputsPayload {
   inputs: InputStatus[];
   /** Previously saved select values, `{inputId: value}`. */
   params: Record<string, string>;
+  /** Input files on disk that a cleanup would remove. Absent on a backend
+   *  without the cleanup feature. */
+  cleanable?: Cleanable;
+}
+
+/** POST /tasks/{id}/cleanup: what was removed, and how many files could not
+ *  be (e.g. open in another program). */
+export interface CleanupPayload {
+  removed: number;
+  bytes: number;
+  skipped: number;
 }
 
 export interface UploadPayload {

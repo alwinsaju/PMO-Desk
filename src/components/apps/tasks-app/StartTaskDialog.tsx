@@ -22,17 +22,25 @@ import { getInputs, prepare, saveParams, uploadInput } from "./api";
 import { SectionLabel, SeverityChip } from "./GateParts";
 import {
   acceptAttr,
+  applyUpload,
   canPrepare,
+  cleanupNote,
   defaultChoice,
   fileInputs,
   formatBytes,
+  formatUploaded,
   hasPrepare,
   isChoosable,
+  isOnFile,
+  isPersistInput,
+  isPresent,
   missingRequired,
   prepareAfterIds,
   selectChoices,
   selectInputs,
+  startDescription,
   validateFile,
+  PERSIST_HINT,
   type SelectChoice,
 } from "./startForm";
 import { refusalText } from "./taskPresenter";
@@ -185,30 +193,7 @@ export function StartTaskDialog({
       setFileErrors((e) => ({ ...e, [input.id]: reply.reason ?? "The upload failed." }));
       return;
     }
-    const current = statusesRef.current;
-    const next = current.some((s) => s.id === input.id)
-      ? current.map((s) =>
-          s.id === input.id
-            ? {
-                ...s,
-                present: true,
-                filename: reply.filename ?? file.name,
-                size: reply.size ?? file.size,
-              }
-            : s,
-        )
-      : [
-          ...current,
-          {
-            id: input.id,
-            label: input.label,
-            type: input.type,
-            required: Boolean(input.required),
-            present: true,
-            filename: reply.filename ?? file.name,
-            size: reply.size ?? file.size,
-          },
-        ];
+    const next = applyUpload(statusesRef.current, input, reply, file);
     statusesRef.current = next;
     setStatuses(next);
     // Changing a file `prepare` reads invalidates what it produced.
@@ -262,10 +247,7 @@ export function StartTaskDialog({
     <Dialog open={open} onOpenChange={(next) => !starting && onOpenChange(next)}>
       <DialogContent className="flex max-h-[85vh] max-w-xl flex-col overflow-y-auto">
         <DialogTitle>Run {task.displayName}</DialogTitle>
-        <DialogDescription>
-          Add the files, check them, then choose what to build. Nothing runs until you
-          press Start.
-        </DialogDescription>
+        <DialogDescription>{startDescription(task)}</DialogDescription>
 
         {loadState === "loading" && (
           <p className="text-ink-faint mt-4 text-[12px]">
@@ -320,6 +302,7 @@ export function StartTaskDialog({
                       : ready
                         ? "Check the files to see which cycles can be built."
                         : `Upload ${afterIds
+                            .filter((id) => !isPresent(statuses, id))
                             .map((id) => files.find((f) => f.id === id)?.label ?? id)
                             .join(" and ")} first.`}
                 </p>
@@ -354,6 +337,10 @@ export function StartTaskDialog({
               />
             ))}
           </div>
+        )}
+
+        {loadState === "ready" && cleanupNote(task) && (
+          <p className="text-ink-faint mt-4 text-[11px]">{cleanupNote(task)}</p>
         )}
 
         {startError && (
@@ -408,6 +395,10 @@ function FileInput({
   const [dragging, setDragging] = useState(false);
   const picker = useRef<HTMLInputElement>(null);
   const present = Boolean(status?.present);
+  // A persist file already on disk: a compact "On file" row (still a drop
+  // target and replaceable) that counts as satisfied; no empty drop zone.
+  const kept = isOnFile(input, status);
+  const uploaded = formatUploaded(status?.modified);
   const accept = (input.accept ?? []).join(" / ");
 
   const take = (list: FileList | null | undefined) => {
@@ -431,7 +422,8 @@ function FileInput({
           if (!disabled && !busy) take(event.dataTransfer.files);
         }}
         className={cn(
-          "ease-standard flex items-center gap-3 rounded-lg border p-3 transition-colors duration-100",
+          "ease-standard flex items-center gap-3 rounded-lg border transition-colors duration-100",
+          kept ? "p-2.5" : "p-3",
           dragging
             ? "border-accent border-solid bg-neutral-100"
             : present
@@ -458,6 +450,11 @@ function FileInput({
               {input.required ? "Required" : "Optional"}
               {accept ? ` · ${accept}` : ""}
             </span>
+            {kept && (
+              <span className="border-border text-ink-muted rounded-pill ml-2 border px-1.5 py-px align-[1px] text-[10px] font-medium">
+                On file
+              </span>
+            )}
           </p>
           {busy ? (
             <p className="text-ink-muted text-[12px]">Uploading…</p>
@@ -470,12 +467,19 @@ function FileInput({
                   {formatBytes(status.size)}
                 </span>
               )}
-              <span className="text-ink-faint shrink-0">· uploaded</span>
+              <span className="text-ink-faint shrink-0">
+                · uploaded{uploaded ? ` ${uploaded}` : ""}
+              </span>
             </p>
           ) : (
-            <p className="text-ink-faint text-[12px]">
-              Drop the file here, or choose it.
-            </p>
+            <>
+              <p className="text-ink-faint text-[12px]">
+                Drop the file here, or choose it.
+              </p>
+              {isPersistInput(input, status) && (
+                <p className="text-ink-faint text-[11px]">{PERSIST_HINT}</p>
+              )}
+            </>
           )}
         </div>
         <input
@@ -491,6 +495,7 @@ function FileInput({
           variant="outline"
           disabled={disabled || busy}
           onClick={() => picker.current?.click()}
+          aria-label={present ? `Replace ${input.label}` : undefined}
           className="shrink-0"
         >
           {present ? "Replace" : "Choose file"}

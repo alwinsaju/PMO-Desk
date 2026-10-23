@@ -15,6 +15,7 @@ import {
   TabsTrigger,
 } from "@/components/ui";
 import { fetchTaskHistory, fetchTaskLog } from "./api";
+import { ClearInputFiles } from "./ClearInputFiles";
 import { DiffGatePanel } from "./DiffGatePanel";
 import { FlagsGatePanel } from "./FlagsGatePanel";
 import { FormGatePanel } from "./FormGatePanel";
@@ -407,6 +408,8 @@ export function TaskDetailDialog({
                 </ScrollArea>
               </TabsContent>
             </Tabs>
+
+            {task && <ClearInputFiles key={task.id} task={task} onSettled={onSettled} />}
 
             {task && gateType && (
               <div className="border-border/60 mt-4 border-t pt-3">

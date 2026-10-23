@@ -2,10 +2,19 @@
  * Pure logic behind the Run form for tasks that declare `inputs`: which
  * files must exist before `prepare`, how a select input's choices come out
  * of options.json (disabled entries stay visible with their reason), what
- * the default is, and when Start may be enabled. Imports are type-only so
+ * the default is, when Start may be enabled, how a file kept on disk across
+ * runs ("persist") reads, and the "Clear input files" rules. Imports are type-only so
  * taskPlatform.test.mjs runs it under plain Node.
  */
-import type { InputStatus, OptionEntry, OptionsFile, Task, TaskInputDef } from "./types";
+import type {
+  Cleanable,
+  CleanupPayload,
+  InputStatus,
+  OptionEntry,
+  OptionsFile,
+  Task,
+  TaskInputDef,
+} from "./types";
 
 /** Matches the backend's upload cap (contract section 2). */
 export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
@@ -149,4 +158,163 @@ export function missingRequired(
 /** `accept` attribute value for a hidden file input. */
 export function acceptAttr(input: Pick<TaskInputDef, "accept">): string | undefined {
   return input.accept && input.accept.length > 0 ? input.accept.join(",") : undefined;
+}
+
+// ---------------------------------------------------------------------------
+// Files kept on disk across runs (`persist`), e.g. the yearly Holiday Roster.
+// ---------------------------------------------------------------------------
+
+/** True if the input is a file kept across runs. The live status from
+ *  GET /inputs wins; the manifest's `persist` (GET /tasks) is the fallback. */
+export function isPersistInput(
+  input: Pick<TaskInputDef, "persist">,
+  status?: Pick<InputStatus, "persist">,
+): boolean {
+  return Boolean(status?.persist ?? input.persist);
+}
+
+/** A persist input whose file is already on disk: shown as a compact "On
+ *  file" row instead of a drop zone, and counted as satisfied for Start. */
+export function isOnFile(
+  input: Pick<TaskInputDef, "persist">,
+  status?: Pick<InputStatus, "persist" | "present">,
+): boolean {
+  return Boolean(status?.present) && isPersistInput(input, status);
+}
+
+/** Helper line under an empty persist drop zone. */
+export const PERSIST_HINT = "Upload once; it stays on file for future runs.";
+
+function parseIsoUtc(value: string): Date {
+  // A naive ISO string (no Z / offset) would be read as LOCAL time.
+  const hasZone = /(Z|[+-]\d{2}:?\d{2})$/i.test(value);
+  return new Date(hasZone ? value : `${value}Z`);
+}
+
+/** "12 Mar 2026" for a file's ISO UTC mtime, in the viewer's time zone
+ *  (override `locale`/`timeZone` for tests); null when absent or unreadable. */
+export function formatUploaded(
+  modified: string | null | undefined,
+  options: { locale?: string; timeZone?: string } = {},
+): string | null {
+  if (!modified) return null;
+  const date = parseIsoUtc(modified);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleDateString(options.locale, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: options.timeZone,
+  });
+}
+
+/** True when the task cleans its non-kept input files after each run. */
+export function cleansOnComplete(task: Pick<Task, "cleanup">): boolean {
+  return Boolean(task.cleanup?.onComplete);
+}
+
+/** The calm footnote at the bottom of the start dialog; null for tasks that
+ *  don't clean up. Mentions the exception only when something is kept. */
+export function cleanupNote(task: Task): string | null {
+  if (!cleansOnComplete(task)) return null;
+  return keepsSomeInputs(task)
+    ? "Input files are removed automatically after the run completes, except the ones kept on file."
+    : "Input files are removed automatically after the run completes.";
+}
+
+/** Dialog subtitle: the check/choose steps are only mentioned when the task
+ *  has them (the older file-only tasks just need their file). */
+export function startDescription(task: Task): string {
+  const steps =
+    hasPrepare(task) || selectInputs(task).length > 0
+      ? "Add the files, check them, then choose what to build."
+      : fileInputs(task).length === 1
+        ? "Add the file, then start the run."
+        : "Add the files, then start the run.";
+  return `${steps} Nothing runs until you press Start.`;
+}
+
+/** Live status after an upload completes (the reply carries no mtime, so
+ *  `now` stands in for it). Works whether or not a status existed already. */
+export function applyUpload(
+  statuses: InputStatus[],
+  input: TaskInputDef,
+  uploaded: { filename?: string; size?: number },
+  file: { name: string; size: number },
+  now: Date = new Date(),
+): InputStatus[] {
+  const patch = {
+    present: true,
+    filename: uploaded.filename ?? file.name,
+    size: uploaded.size ?? file.size,
+    modified: now.toISOString(),
+  };
+  if (statuses.some((s) => s.id === input.id)) {
+    return statuses.map((s) => (s.id === input.id ? { ...s, ...patch } : s));
+  }
+  return [
+    ...statuses,
+    {
+      id: input.id,
+      label: input.label,
+      type: input.type,
+      required: Boolean(input.required),
+      persist: input.persist,
+      ...patch,
+    },
+  ];
+}
+
+// ---------------------------------------------------------------------------
+// "Clear input files": delete a resting task's input files on demand.
+// ---------------------------------------------------------------------------
+
+function plural(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? "" : "s"}`;
+}
+
+/** Offered only while the task is resting (never while running/awaiting),
+ *  for a task on the inputs platform, and only when there is something to
+ *  delete. `cleanable` is undefined on a backend without the feature. */
+export function canClearInputs(
+  task: Pick<Task, "state" | "inputs">,
+  cleanable: Cleanable | null | undefined,
+): boolean {
+  return (
+    task.state === "resting" &&
+    (task.inputs?.length ?? 0) > 0 &&
+    Boolean(cleanable) &&
+    (cleanable?.files ?? 0) > 0
+  );
+}
+
+/** "Clear input files (3 files, 12.0 MB)". */
+export function clearButtonLabel(cleanable: Cleanable): string {
+  return `Clear input files (${plural(cleanable.files, "file")}, ${formatBytes(cleanable.bytes)})`;
+}
+
+/** The confirmation sentence shown before anything is deleted. */
+export function clearConfirmText(cleanable: Cleanable, keepsSome: boolean): string {
+  return `Delete ${plural(cleanable.files, "input file")} (${formatBytes(cleanable.bytes)}) from this computer? This can't be undone.${keepsSome ? " Files kept on file for future runs stay." : ""}`;
+}
+
+/** True when some of the task's inputs stay on disk across runs. */
+export function keepsSomeInputs(task: Pick<Task, "cleanup" | "inputs">): boolean {
+  return (
+    (task.cleanup?.keep?.length ?? 0) > 0 ||
+    (task.inputs ?? []).some((input) => input.persist)
+  );
+}
+
+/** Result line after a cleanup: "Removed 3 files, freed 12.0 MB; 1 file
+ *  skipped — it may be open in another program." */
+export function cleanupResultText(result: Partial<CleanupPayload>): string {
+  const removed = result.removed ?? 0;
+  const skipped = result.skipped ?? 0;
+  const head =
+    removed > 0
+      ? `Removed ${plural(removed, "file")}, freed ${formatBytes(result.bytes ?? 0)}`
+      : "No files were removed";
+  if (skipped === 0) return `${head}.`;
+  return `${head}; ${plural(skipped, "file")} skipped — ${skipped === 1 ? "it" : "they"} may be open in another program.`;
 }
