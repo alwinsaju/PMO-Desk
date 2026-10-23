@@ -26,6 +26,7 @@ from roster_testkit import (
     days,
     label_derived_matrix,
     matrix_of,
+    per_shift_config,
     person,
     row_for,
 )
@@ -52,7 +53,7 @@ def run(specs, counters=None, matrix=ONLY_COMMON, cfg=None, edit=None, **kw):
     if edit:
         edit(sched)
     counters = {} if counters is None else counters
-    res = assign_holidays(sched, people, matrix, counters, cfg or config(), START, END,
+    res = assign_holidays(sched, people, matrix, counters, cfg or per_shift_config(), START, END,
                           seed=kw.pop("seed", 1), **kw)
     return people, sched, res
 
@@ -345,7 +346,7 @@ def test_staffing_check_after_engine_matches_the_flags():
     specs = [("A", "Gur", "Lab", "S1"), ("B", "Gur", "Lab", "S1"), ("C", "Hyd", "Lab", "S1")]
     people, sched, res = run(specs, matrix=matrix_of([("Gur Day", BLR_ONLY, ["Gur"])]))
     after = apply_edits(sched, res.edits)
-    short = staffing_check(after, people, config(), START, END)
+    short = staffing_check(after, people, per_shift_config(), START, END)
     assert [(s.team, s.shift, s.date) for s in short] == [("Lab", "S1", BLR_ONLY)]
 
 
@@ -536,3 +537,94 @@ def test_real_roster_counters_cover_exactly_the_india_people():
     assert all(c.last_off_date is None or c.last_off_date < date(2026, 10, 25)
                for c in counters.values())
     assert sum(c.offs_taken for c in counters.values()) > 0
+
+
+# ---- per_team_day teams: the fairness group is the whole team that day -----------------
+
+def team_run(specs, counters=None, **kw):
+    return run(specs, counters, cfg=config(), **kw)  # the real defaults: Lab etc. per team per day
+
+
+def test_team_level_fairness_group_spans_all_shifts():
+    # Lab (per_team_day, min 2): 3 on S1 + 2 on S3 form ONE group: 2 cover, 3 are off.
+    specs = [("A", "Blr", "Lab", "S1"), ("B", "Hyd", "Lab", "S1"), ("C", "Pun", "Lab", "S1"),
+             ("D", "Blr", "Lab", "S3"), ("E", "Hyd", "Lab", "S3")]
+    _, _, res = team_run(specs, seed=3)
+    (a,) = res.assignments
+    assert (a.team, a.shift, a.mode, a.min_staff, a.need) == ("Lab", "ALL", "per_team_day", 2, 2)
+    assert len(a.covering) == 2 and len(a.off) == 3 and a.outside == ()
+    assert sorted(a.off + a.covering) == ["A", "B", "C", "D", "E"]
+    assert {n for n, _ in res.edits} == set(a.off)
+    assert sum(c.offs_taken for c in res.counters_after.values()) == 3
+    assert res.coverage == {(n, COMMON) for n in a.covering}
+    assert not res.flags  # no shortage after the holidays either
+
+
+def test_team_level_group_ignores_shift_so_per_shift_teams_still_split():
+    specs = [("A", "Blr", "L2", "S1"), ("B", "Hyd", "L2", "S1"), ("C", "Pun", "L2", "S1"),
+             ("D", "Blr", "L2", "S3"), ("E", "Hyd", "L2", "S3"), ("F", "Gur", "L2", "S3")]
+    _, _, res = team_run(specs, seed=3)  # DIS: per shift, unchanged: min 3 -> nobody off
+    assert {(a.shift, a.mode) for a in res.assignments} == {("S1", "per_shift"), ("S3", "per_shift")}
+    assert res.edits == {}
+
+
+def test_team_level_fewest_offs_order_applies_across_shifts():
+    specs = [("A", "Blr", "Lab", "S1"), ("B", "Hyd", "Lab", "S3"), ("C", "Pun", "Lab", "S1")]
+    counters = {"A": C(5, date(2026, 5, 1)), "B": C(2, date(2026, 6, 1)), "C": C(3, date(2026, 2, 1))}
+    _, _, res = team_run(specs, counters)  # need 2: the two with the MOST offs cover
+    assert off_names(res, COMMON) == ["B"]
+    assert set(res.assignments[0].covering) == {"A", "C"}
+
+
+def test_team_level_mexico_staff_count_as_outside():
+    # Mexico works an India-only holiday: outside 1, so need = 2 - 1 = 1 across both shifts
+    specs = [("A", "Blr", "Lab", "S1"), ("B", "Hyd", "Lab", "S3"), ("C", "Pun", "Lab", "S1"),
+             ("X", "Mex", "Lab", "S3")]
+    _, _, res = team_run(specs, seed=4)
+    (a,) = res.assignments
+    assert a.outside == ("X",) and a.need == 1 and len(a.covering) == 1 and len(a.off) == 2
+    assert all(n != "X" for n, _ in res.edits)
+
+
+def test_team_level_single_person_team_nobody_gets_an_impossible_minimum():
+    _, _, res = team_run([("Solo", "Blr", "EKS", "S1")])
+    (a,) = res.assignments
+    assert (a.min_staff, a.need, a.off) == (1, 1, ())  # effective min = min(2, 1)
+    assert [f.kind for f in res.flags] == ["NO_OFF_AT_MINIMUM"]
+    assert res.edits == {}
+
+
+def test_team_level_effective_min_counts_scheduled_people_on_leave():
+    # 3 scheduled, one on PTO: the effective minimum stays 2 (not 3), 2 working = at minimum
+    specs = [("A", "Blr", "Lab", "S1"), ("B", "Hyd", "Lab", "S3"), ("C", "Pun", "Lab", "S1")]
+    _, _, res = team_run(specs, edit=lambda s: s["C"].update({COMMON: "P"}))
+    (a,) = res.assignments
+    assert (a.min_staff, a.need, len(a.covering), a.off) == (2, 2, 2, ())
+    assert [f.kind for f in res.flags] == ["NO_OFF_AT_MINIMUM"]
+    assert res.counters_after["C"] == res.counters_before["C"]  # PTO is never counted
+
+
+def test_team_level_small_team_on_offset_patterns_uses_those_scheduled_that_day():
+    # Wed-Sun person + Mon-Fri person: both are scheduled on Wednesday, 2 -> at minimum
+    people, sched = build([("A", "Blr", "Lab", "S2"), ("B", "Hyd", "Lab", "S1")])
+    res = assign_holidays(sched, people, matrix_of([("Sat Common", SAT, INDIA)]), {}, config(),
+                          START, END, seed=1)
+    (a,) = res.assignments  # Saturday: only the Wed-Sun person is scheduled -> effective min 1
+    assert (a.min_staff, a.need, a.covering, a.off) == (1, 1, ("A",), ())
+
+
+def test_team_level_location_specific_holiday_still_straight_hol_and_flags_shortage():
+    specs = [("A", "Gur", "Lab", "S1"), ("B", "Gur", "Lab", "S3"), ("C", "Hyd", "Lab", "S1")]
+    _, _, res = team_run(specs, matrix=matrix_of([("Gur Day", BLR_ONLY, ["Gur"])]))
+    assert off_names(res, BLR_ONLY) == ["A", "B"]
+    (a,) = res.assignments
+    assert (a.shift, a.fairness, a.shortage) == ("ALL", False, 1)  # 1 working (C) < min 2
+    assert [(f.kind, f.shift) for f in res.flags] == [("STAFFING_SHORTAGE", "ALL")]
+
+
+def test_team_level_result_is_deterministic():
+    specs = [(f"P{i}", INDIA[i % 6], "Lab", "S1" if i % 2 else "S3") for i in range(7)]
+    counters = {f"P{i}": C(1, None) for i in range(7)}
+    _, _, a = team_run(specs, counters, seed=9)
+    _, _, b = team_run(list(reversed(specs)), counters, seed=9)
+    assert a.edits == b.edits and a.assignments[0].covering == b.assignments[0].covering

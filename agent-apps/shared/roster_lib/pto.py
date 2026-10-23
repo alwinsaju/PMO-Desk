@@ -31,7 +31,8 @@ are skipped by `apply_pto` and listed in `PtoResult.match`.
   - clashes (reported, still applied): PTO on the swap Sunday, on a day the
     person is in `needed`, or dropping a team's shift below its minimum
     (`min_staff_for(name, date) -> (group, minimum) | None`, group is any
-    hashable such as (team, shift); see `shift_group_rule`); overlapping
+    hashable such as (team, shift) or, for a per_team_day team, (team, "ALL") with
+    the effective minimum; see `shift_group_rule`); overlapping
     entries with different codes keep the first.
 Edits are `{(name, date): text}`; the schedule is not modified.
 """
@@ -47,6 +48,7 @@ from typing import Callable, Hashable, Iterable, Mapping
 
 import openpyxl
 
+from .checks import ALL_SHIFTS, PersonCells, scheduled_on
 from .codes import DEFAULT_TABLE, HOL, P, SL, T, Kind, is_leave_code, is_working_code, try_parse_code
 from .config import name_key
 from .cycles import Cycle
@@ -299,14 +301,35 @@ def shift_group_rule(
     schedule: Mapping[str, Mapping[date, str]],
     team_of: Callable[[str], str],
     minimum_for: Callable[[str], int | None],
+    per_team_day: Callable[[str], bool] | None = None,
 ) -> Callable[[str, date], tuple[Hashable, int] | None]:
     """Build a `min_staff_for` for `apply_pto`: group = (team, canonical shift on that day).
 
     `team_of(name)` and `minimum_for(name)` come from the caller (roster/config);
-    people not on a shift that day have no rule.
+    people not on a shift that day have no rule. `per_team_day(name)` -> True marks people
+    of a per_team_day team: their group is the whole team that day, (team, "ALL"), counting
+    every working cell, with the EFFECTIVE minimum min(minimum, members of the team
+    scheduled that day before leave/HOL) (see `checks.effective_min`).
     """
+    cells = {n: PersonCells(c) for n, c in schedule.items()} if per_team_day else {}
+    scheduled: dict[tuple[str, date], int] = {}
+
+    def team_scheduled(team: str, d: date) -> int:
+        if (team, d) not in scheduled:
+            scheduled[(team, d)] = sum(1 for n, pc in cells.items()
+                                       if team_of(n) == team and scheduled_on(pc, d))
+        return scheduled[(team, d)]
+
     def rule(name: str, d: date):
         parsed = try_parse_code(schedule.get(name, {}).get(d, ""))
+        if per_team_day is not None and per_team_day(name):
+            if parsed is None or not is_working_code(parsed.canonical):
+                return None
+            minimum = minimum_for(name)
+            if minimum is None:
+                return None
+            team = team_of(name)
+            return (team, ALL_SHIFTS), min(minimum, team_scheduled(team, d))
         if parsed is None or DEFAULT_TABLE[parsed.canonical].kind is not Kind.SHIFT:
             return None
         minimum = minimum_for(name)

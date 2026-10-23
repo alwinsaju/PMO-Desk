@@ -5,16 +5,19 @@ from pathlib import Path
 import pytest
 
 from roster_lib.checks import (
+    ALL_SHIFTS,
     Finding,
     FindingKind,
     PersonCells,
     Severity,
     Shortage,
     canonical_of,
+    effective_min,
     hol_check,
     pattern_on,
     resolve_location,
     schedule_from_roster,
+    scheduled_on,
     staffing_check,
     week_pattern,
 )
@@ -31,6 +34,7 @@ from roster_testkit import (
     days,
     label_derived_matrix,
     matrix_of,
+    per_shift_config,
     person,
     row_for,
 )
@@ -112,8 +116,7 @@ def test_shortage_when_one_person_on_pto():
     assert out[0].severity == "WARNING" and "DIS S1" in out[0].message
 
 
-@pytest.mark.parametrize("section,need", [("L2", 3), ("DEP", 3), ("L3", 3), ("Lab", 2),
-                                          ("Device Support", 2), ("Governance", 2)])
+@pytest.mark.parametrize("section,need", [("L2", 3), ("DEP", 3), ("L3", 3)])
 def test_minimum_by_team(section, need):
     # one fewer than the minimum working every day: every weekday is short by one
     people, sched = build([(f"P{i}", "Blr", section, "S1") for i in range(need - 1)])
@@ -165,10 +168,11 @@ def test_mexico_people_count_when_working():
 def test_groups_are_per_shift_code_and_oc_custom_are_not_counted():
     people, sched = build([("A", "Blr", "Lab", "S1"), ("B", "Blr", "Lab", "S1"),
                            ("C", "Blr", "Lab", "S3")])
-    out = staffing_check(sched, people, config(), date(2026, 10, 26), date(2026, 10, 26))
+    cfg = per_shift_config()
+    out = staffing_check(sched, people, cfg, date(2026, 10, 26), date(2026, 10, 26))
     assert out == [Shortage("Lab", "S3", date(2026, 10, 26), 1, 2)]
     sched["C"][date(2026, 10, 26)] = "IST 6:00-3:00AM"  # custom hours: not a shift group
-    assert staffing_check(sched, people, config(), date(2026, 10, 26), date(2026, 10, 26)) == []
+    assert staffing_check(sched, people, cfg, date(2026, 10, 26), date(2026, 10, 26)) == []
 
 
 def test_missing_dates_are_no_data_not_blank_and_unknown_people_ignored():
@@ -185,6 +189,93 @@ def test_custom_team_function_and_config_min_staff():
     out = staffing_check(sched, people, config(), WED, WED, team_of=lambda p: "L3")
     assert out == [Shortage("L3", "S1", WED, 1, 3)]
     assert staffing_check(sched, people, config(Whatever=1), WED, WED) == []
+
+
+# ---- staffing check: per_team_day teams (minimum "Option B") ---------------------------
+
+
+def test_effective_min_per_mode():
+    cfg = config()
+    assert effective_min(cfg, "L2", 1) == 3 and effective_min(cfg, "DEP", 0) == 3  # per_shift
+    assert effective_min(cfg, "Lab", 5) == 2 and effective_min(cfg, "Lab", 1) == 1
+    assert effective_min(cfg, "Lab", 0) == 0  # nobody scheduled: nothing needed
+    assert effective_min(config(Lab=0), "Lab", 4) == 0
+    assert effective_min(per_shift_config(), "Lab", 1) == 2
+
+
+def test_scheduled_on_counts_leave_on_pattern_days_only():
+    cells = row_for("S2")  # Wed-Sun
+    cells[date(2026, 10, 28)] = "P"  # a Wednesday: scheduled, on leave
+    cells[date(2026, 10, 26)] = "P"  # a Monday: a weekly off, so not scheduled
+    cells[date(2026, 10, 29)] = "SL"
+    pc = PersonCells(cells)
+    assert scheduled_on(pc, date(2026, 10, 28)) and scheduled_on(pc, date(2026, 10, 29))
+    assert not scheduled_on(pc, date(2026, 10, 26)) and not scheduled_on(pc, date(2026, 10, 27))
+    assert scheduled_on(pc, date(2026, 10, 30))  # a working cell
+    assert not scheduled_on(pc, date(2030, 1, 1))  # no data
+
+
+def test_per_team_day_counts_the_team_across_shifts():
+    # 3 people on two shifts: per shift S3 would be short (1 < 2), per team day 3 >= 2
+    specs = [("A", "Blr", "Lab", "S1"), ("B", "Hyd", "Lab", "S1"), ("C", "Pun", "Lab", "S3")]
+    people, sched = build(specs)
+    assert staffing_check(sched, people, config(), START, END) == []
+    assert staffing_check(sched, people, per_shift_config(), START, END)  # the old rule
+    # one person on leave: 2 left >= 2, fine; two on leave: 1 < 2, flagged for the TEAM
+    sched["A"][WED] = "P"
+    assert staffing_check(sched, people, config(), START, END) == []
+    sched["B"][WED] = "HOL"
+    out = staffing_check(sched, people, config(), START, END)
+    assert out == [Shortage("Lab", ALL_SHIFTS, WED, 1, 2)]
+    assert out[0].severity == "WARNING" and out[0].message == "Lab on 2026-10-28: 1 working, minimum 2"
+
+
+def test_per_team_day_single_person_team_never_gets_an_impossible_shortage():
+    people, sched = build([("Solo", "Blr", "EKS", "S1")])
+    assert staffing_check(sched, people, config(), START, END) == []  # min(2, 1) = 1
+    sched["Solo"][WED] = "P"  # absent on a day they were scheduled: that IS a shortage
+    out = staffing_check(sched, people, config(), START, END)
+    assert out == [Shortage("EKS", ALL_SHIFTS, WED, 0, 1)] and out[0].severity == "ERROR"
+
+
+def test_per_team_day_small_team_on_offset_patterns():
+    # Mon-Fri + Wed-Sun: only one is scheduled on Mon, Tue (S1 person) and Sat, Sun (S2 person)
+    people, sched = build([("A", "Blr", "CMS 2.0", "S1"), ("B", "Hyd", "CMS 2.0", "S2")])
+    assert staffing_check(sched, people, config(), START, END) == []
+    sat = date(2026, 11, 7)
+    sched["B"][sat] = "P"  # the only person scheduled that Saturday is away
+    assert staffing_check(sched, people, config(), START, END) == [
+        Shortage("CMS 2.0", ALL_SHIFTS, sat, 0, 1)]
+
+
+def test_per_team_day_a_day_nobody_is_scheduled_is_not_active():
+    people, sched = build([(f"P{i}", "Blr", "Lab", "S2") for i in range(2)])
+    mon = date(2026, 10, 26)
+    assert staffing_check(sched, people, config(), mon, mon + timedelta(days=1)) == []
+    # leave on a weekly off does not make the team "scheduled" either
+    sched["P0"][mon] = "P"
+    assert staffing_check(sched, people, config(), mon, mon) == []
+
+
+def test_mode_override_and_aliases_pick_the_counting_rule():
+    people, sched = build([("A", "Blr", "L2", "S1"), ("B", "Hyd", "L2", "S1"),
+                           ("C", "Pun", "L2", "S3")])
+    assert {s.shift for s in staffing_check(sched, people, config(), START, END)} == {"S1", "S3"}
+    cfg = config()
+    cfg.min_staff_mode["DIS"] = "per_team_day"  # L2 -> DIS: now counted for the whole team
+    cfg.min_staff["DIS"] = 2
+    assert staffing_check(sched, people, cfg, START, END) == []
+
+
+def test_per_team_day_counts_custom_hours_and_mexico_but_not_blank():
+    people, sched = build([("A", "Blr", "Lab", "S1"), ("B", "Mex", "Lab", "S1")])
+    sched["B"][WED] = "IST 6:00-3:00AM"  # custom hours: working
+    assert staffing_check(sched, people, config(), START, END) == []
+    sched["B"][WED] = ""  # blank: not scheduled either, so the minimum drops to 1
+    assert staffing_check(sched, people, config(), START, END) == []
+    sched["A"][WED] = "P"
+    assert staffing_check(sched, people, config(), START, END) == [
+        Shortage("Lab", ALL_SHIFTS, WED, 0, 1)]
 
 
 # ---- HOL check --------------------------------------------------------------------------

@@ -418,3 +418,37 @@ def test_min_staff_zero_override_means_no_minimum():
     # defaults when no override is given: 3 for DIS/DEP/L3, 2 otherwise
     assert [parse_config(BASE).min_staff_for_team(t) for t in ("L2", "DEP", "L3", "Lab")] == [
         3, 3, 3, 2]
+
+
+def test_min_staff_mode_defaults_aliases_and_overrides():
+    cfg = parse_config(BASE)
+    assert cfg.min_staff_mode == {"DIS": "per_shift", "DEP": "per_shift", "L3": "per_shift",
+                                  "default": "per_team_day"}
+    assert [cfg.min_staff_mode_for_team(t) for t in ("DIS", "L2", "dep", "L3")] == ["per_shift"] * 4
+    assert [cfg.min_staff_mode_for_team(t) for t in ("Lab", "EKS", "Device Support", None)] == [
+        "per_team_day"] * 4
+    over = parse_config(doc(min_staff_mode={"DIS": "per_team_day", "lab": "per_shift",
+                                            "default": "per_shift"}))
+    assert over.min_staff_mode_for_team("L2") == "per_team_day"  # alias -> DIS
+    assert over.min_staff_mode_for_team("Lab") == "per_shift"
+    assert over.min_staff_mode_for_team("EKS") == "per_shift"  # the file's default
+
+
+def test_min_staff_mode_validation():
+    assert any("must include a 'default'" in p for p in problems_of(
+        doc(min_staff_mode={"DIS": "per_shift"})))
+    text = "\n".join(problems_of(doc(min_staff_mode={"default": "weekly", "Lab": 3, "lab": "per_shift"})))
+    assert "must be one of per_shift, per_team_day" in text and "duplicate team keys" in text
+    assert any("min_staff_mode must be an object" in p for p in problems_of(
+        doc(min_staff_mode=["per_shift"])))
+
+
+def test_min_staff_mode_saved_deterministically(tmp_path):
+    cfg = parse_config(doc(min_staff_mode={"lab": "per_shift", "DIS": "per_team_day",
+                                           "default": "per_team_day"}))
+    out = save_config(cfg, tmp_path / "c.json")
+    saved = json.loads(out.read_text(encoding="utf-8"))
+    assert list(saved["min_staff_mode"]) == ["DIS", "lab", "default"]
+    assert list(saved).index("min_staff_mode") == list(saved).index("min_staff") + 1
+    again = save_config(load_config(out), tmp_path / "d.json")
+    assert again.read_bytes() == out.read_bytes()

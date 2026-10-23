@@ -26,6 +26,15 @@ staffing_check(schedule, people, config, start, end, *, team_of=None) -> [Shorta
   days) and counts as an expected-but-absent member, so S2/S4 groups are inactive
   Mon-Tue while a Wednesday where everyone is on HOL is a shortage of `need`.
   Mexico people count when working. Never auto-fixes.
+  Teams whose `config.min_staff_mode_for_team` is `per_team_day` (every team except DIS, DEP
+  and L3 by default) are counted PER TEAM PER DAY across all their shifts instead
+  (`Shortage.shift == ALL_SHIFTS`): working = a shift code, custom hours or on-call; the
+  EFFECTIVE minimum is `effective_min` = min(configured minimum, members SCHEDULED that
+  day), where scheduled (`scheduled_on`) means a working cell, or a leave cell (P, T, SL,
+  COMP, HOL) on a day the person's weekly pattern works, i.e. before any leave/HOL. A day
+  nobody in the team is scheduled is not active, so a one-person team or a small team on
+  offset patterns never gets an impossible shortage; a team with leave dropping below the
+  effective minimum is flagged.
 
 hol_check(schedule, people, matrix, roster_labels, start, end, *, coverage_ok=None,
           ignore_dates=(), ignore_label_pattern=DEFAULT_NON_HOLIDAY_LABELS) -> [Finding]
@@ -76,6 +85,7 @@ from .codes import (
     try_parse_code,
     works_on,
 )
+from .config import PER_TEAM_DAY
 from .holiday_matrix import (
     MEXICO_LOCATION,
     HolidayMatrix,
@@ -88,6 +98,7 @@ from .holiday_matrix import (
 Schedule = Mapping[str, Mapping[date, str]]
 CoverageOk = Union[Collection[tuple[str, date]], Callable[[str, date], bool]]
 
+ALL_SHIFTS = "ALL"  # the `shift` of a per-team-day shortage / holiday group
 UNKNOWN = "UNKNOWN"  # canonical placeholder for cell text that is not a recognised code
 DEFAULT_NON_HOLIDAY_LABELS = re.compile(
     r"shift[\s_-]*swap|winter[\s_-]*disconnect|lean[\s_-]*shift", re.IGNORECASE)
@@ -247,6 +258,33 @@ def pattern_on(cells: Mapping[date, str], d: date) -> Pattern | None:
 
 # ---- staffing check -------------------------------------------------------------------
 
+def scheduled_on(pc: PersonCells, d: date) -> bool:
+    """True when the person is scheduled to work on `d` before any leave/HOL: a working cell
+    (shift code, custom hours, on-call), or a leave cell (P, T, SL, COMP, HOL) on a day their
+    weekly pattern works. Blank cells and dates with no data are not scheduled."""
+    canon = pc.canon(d)
+    if canon is None:
+        return False
+    if is_working_code(canon):
+        return True
+    if canon in LEAVE_CODES:
+        if pc.nearest_shift_code(d) is None:
+            return False
+        pattern = pc.pattern_on(d)
+        return pattern is not None and works_on(pattern, d)
+    return False
+
+
+def effective_min(config, team: str | None, scheduled: int) -> int:
+    """The minimum that applies on a day. `per_shift` teams: the configured minimum.
+    `per_team_day` teams: min(configured minimum, members scheduled that day) so a small team
+    never gets an impossible minimum (0 when nobody is scheduled: the day is not active)."""
+    minimum = config.min_staff_for_team(team)
+    if config.min_staff_mode_for_team(team) == PER_TEAM_DAY:
+        return min(minimum, scheduled)
+    return minimum
+
+
 @dataclass(frozen=True)
 class Shortage:
     team: str
@@ -261,13 +299,15 @@ class Shortage:
 
     @property
     def message(self) -> str:
-        return (f"{self.team} {self.shift} on {self.date.isoformat()}: {self.have} working, "
+        where = self.team if self.shift == ALL_SHIFTS else f"{self.team} {self.shift}"
+        return (f"{where} on {self.date.isoformat()}: {self.have} working, "
                 f"minimum {self.need}")
 
 
 def staffing_check(schedule: Schedule, people: Iterable, config, start: date, end: date, *,
                    team_of: Callable[[object], str | None] | None = None) -> list[Shortage]:
-    """Shortages per (team, shift code, day) for shifts active that day. Never auto-fixes."""
+    """Shortages per (team, shift code, day) for shifts active that day, and per (team, day)
+    for `per_team_day` teams (`shift == ALL_SHIFTS`). Never auto-fixes."""
     team_fn = team_of or config.team_of
     days = daterange(start, end)
     have: dict[tuple[str, str, date], int] = defaultdict(int)
@@ -280,6 +320,14 @@ def staffing_check(schedule: Schedule, people: Iterable, config, start: date, en
         if not team:
             continue
         pc = PersonCells(cells)
+        if config.min_staff_mode_for_team(team) == PER_TEAM_DAY:
+            for d in days:
+                canon = pc.canon(d)
+                if canon is not None and is_working_code(canon):
+                    have[(team, ALL_SHIFTS, d)] += 1
+                if scheduled_on(pc, d):
+                    members[(team, ALL_SHIFTS, d)] += 1
+            continue
         for d in days:
             canon = pc.canon(d)
             if canon is None:
@@ -296,7 +344,7 @@ def staffing_check(schedule: Schedule, people: Iterable, config, start: date, en
                     members[(team, code, d)] += 1
     out = []
     for (team, shift, d) in sorted(members, key=lambda k: (k[2], k[0], k[1])):
-        need = config.min_staff_for_team(team)
+        need = effective_min(config, team, members[(team, shift, d)])
         got = have.get((team, shift, d), 0)
         if got < need:
             out.append(Shortage(team, shift, d, got, need))

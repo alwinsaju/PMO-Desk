@@ -174,9 +174,10 @@ def test_min_staff_proposal_counts():
     assert dis["headcount"] == 14 and dis["spec_min"] == 3
     assert dis["per_shift"] == {"S1": 3, "S2": 3, "S3": 4, "S4": 3, "US-CST": 1}
     assert dis["attainable"]["S1"] is True and dis["attainable"]["US-CST"] is False
-    assert prop["teams"]["Lab"] == {
+    assert prop["teams"]["Lab"] == {  # a per_team_day team: attainable for the whole team
         "headcount": 2, "per_shift": {"S1": 2}, "no_shift": 0, "spec_min": 2,
-        "attainable": {"S1": True}, "lowest_shift_headcount": 2}
+        "mode": "per_team_day", "attainable": {"ALL": True}, "lowest_shift_headcount": 2}
+    assert dis["mode"] == "per_shift"
     assert min_staff_proposal(roster, result.config, None) == {"cycle": None, "teams": {}}
 
 

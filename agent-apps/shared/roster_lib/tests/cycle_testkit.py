@@ -112,11 +112,16 @@ def make_roster(*, filled=(AUG,), last_date=date(2026, 12, 31), labels=None, spe
     return FakeRoster(specs, schedule, ROSTER_START, last_date, labels or {})
 
 
-def make_config(k: int = 0, specs=SPECS, **min_staff) -> RotationConfig:
+def make_config(k: int = 0, specs=SPECS, per_shift: bool = True, **min_staff) -> RotationConfig:
     """Config matching the roster as of the k-th cycle after AUG (the config shift is the
-    shift each person worked in that cycle). Governance people are in the config too."""
+    shift each person worked in that cycle). Governance people are in the config too.
+    `per_shift=True` (default) counts EVERY team per shift code (the legacy rule these
+    fixtures were written for); `per_shift=False` uses the real defaults (DIS/DEP/L3 per
+    shift, every other team per team per day)."""
     cfg = RotationConfig()
     cfg.min_staff.update(min_staff)
+    if per_shift:
+        cfg.min_staff_mode["default"] = "per_shift"
     for s in specs:
         cfg.add_person(ConfigPerson(
             s.name, "Operate", s.loc, s.rotation, subteam=s.section,

@@ -8,6 +8,8 @@ writes it back deterministically. Schema (version 1):
       "version": 1,
       "location_codes": {"Bengaluru": "Blr", ...},     # optional; default below
       "min_staff": {"DIS": 3, "DEP": 3, "L3": 3, "default": 2},   # keyed by TEAM
+      "min_staff_mode": {"DIS": "per_shift", "DEP": "per_shift", "L3": "per_shift",
+                         "default": "per_team_day"},              # keyed by TEAM
       "team_aliases": {"L2": "DIS", "L N S 2.0": "LNS 2.0"},     # roster section -> team
       "excluded_sections": ["Governance"],             # sections the program never touches
       "excluded_section_patterns": ["Leadership", "Governance", "PMO", "Analytics"],
@@ -24,13 +26,20 @@ writes it back deterministically. Schema (version 1):
       ]
     }
 
-`min_staff` is the minimum number of people WORKING per shift code per day, keyed
-by TEAM (any key, matched case-insensitively; "default" is required and used for
-every team not listed). Default: 3 for DIS, DEP and L3, 2 for every other team.
-A per-team override may be any non-negative integer; 0 means "no minimum": the
-team is not staffing-checked and holiday fairness lets everyone off a common
-holiday. "Per shift" means per team, per shift code, per day, for the shifts
-active that day (S2/S4 are not active Mon-Tue); that counting lives in `checks.py`.
+`min_staff` is the minimum number of people WORKING, keyed by TEAM (any key, matched
+case-insensitively; "default" is required and used for every team not listed).
+Default: 3 for DIS, DEP and L3, 2 for every other team. A per-team override may be
+any non-negative integer; 0 means "no minimum": the team is not staffing-checked and
+holiday fairness lets everyone off a common holiday.
+
+`min_staff_mode` says what the minimum is counted over, keyed by TEAM like `min_staff`
+("default" is required): `per_shift` = per team, per shift code, per day, for the shifts
+active that day (S2/S4 are not active Mon-Tue); `per_team_day` = per team per day across
+ALL its shifts, with the EFFECTIVE minimum min(configured minimum, team members whose
+weekly pattern schedules them that day before any leave or HOL), so a small team never
+gets an impossible shortage and a day nobody is scheduled is not active. Default: DIS,
+DEP and L3 `per_shift`, every other team `per_team_day`. The counting lives in
+`checks.py` (`effective_min`, `staffing_check`).
 
 `excluded_sections` / `excluded_section_patterns`: people in these roster sections
 are NOT part of the rotation, PTO, holiday logic or staffing/HOL checks (the
@@ -85,13 +94,18 @@ from .holiday_matrix import DEFAULT_LOCATION_CODES
 
 CONFIG_VERSION = 1
 DEFAULT_MIN_STAFF = {"DIS": 3, "DEP": 3, "L3": 3, "default": 2}
+PER_SHIFT = "per_shift"
+PER_TEAM_DAY = "per_team_day"
+MIN_STAFF_MODES = (PER_SHIFT, PER_TEAM_DAY)
+DEFAULT_MIN_STAFF_MODE = {"DIS": PER_SHIFT, "DEP": PER_SHIFT, "L3": PER_SHIFT,
+                          "default": PER_TEAM_DAY}
 DEFAULT_TEAM_ALIASES = {"L2": "DIS"}
 DEFAULT_EXCLUDED_SECTIONS = ("Governance",)
 DEFAULT_EXCLUDED_SECTION_PATTERNS = ("Leadership", "Governance", "PMO", "Analytics")
 DEFAULT_HAS_DATA_THRESHOLD = 0.95
 DEFAULT_SEED = 0
 
-_TOP_KEYS = {"version", "location_codes", "min_staff", "team_aliases", "excluded_sections",
+_TOP_KEYS = {"version", "location_codes", "min_staff", "min_staff_mode", "team_aliases", "excluded_sections",
              "excluded_section_patterns", "disconnect_windows", "has_data_threshold", "seed",
              "people"}
 _PERSON_KEYS = ("name", "team", "subteam", "location", "rotation", "shift", "partner")
@@ -185,6 +199,7 @@ class RotationConfig:
     people: list[Person] = field(default_factory=list)
     location_codes: dict[str, str] = field(default_factory=lambda: dict(DEFAULT_LOCATION_CODES))
     min_staff: dict[str, int] = field(default_factory=lambda: dict(DEFAULT_MIN_STAFF))
+    min_staff_mode: dict[str, str] = field(default_factory=lambda: dict(DEFAULT_MIN_STAFF_MODE))
     team_aliases: dict[str, str] = field(default_factory=lambda: dict(DEFAULT_TEAM_ALIASES))
     excluded_sections: list[str] = field(default_factory=lambda: list(DEFAULT_EXCLUDED_SECTIONS))
     excluded_section_patterns: list[str] = field(
@@ -260,6 +275,17 @@ class RotationConfig:
                     return value
         return self.min_staff["default"]
 
+    def min_staff_mode_for_team(self, team: str | None) -> str:
+        """`per_shift` or `per_team_day` for a team (aliases resolved; teams not listed use
+        "default")."""
+        resolved = self.team_of(team) if team is not None else None
+        if resolved is not None:
+            key = _label_key(resolved)
+            for name, value in self.min_staff_mode.items():
+                if name != "default" and _label_key(name) == key:
+                    return value
+        return self.min_staff_mode["default"]
+
     def min_staff_for(self, subteam: str | None) -> int:
         """Backward-compatible name for `min_staff_for_team`."""
         return self.min_staff_for_team(subteam)
@@ -317,6 +343,9 @@ class RotationConfig:
             "min_staff": {**dict(sorted((k, v) for k, v in self.min_staff.items()
                                         if k != "default")),
                           "default": self.min_staff["default"]},
+            "min_staff_mode": {**dict(sorted((k, v) for k, v in self.min_staff_mode.items()
+                                             if k != "default")),
+                               "default": self.min_staff_mode["default"]},
             "team_aliases": dict(sorted(self.team_aliases.items(),
                                         key=lambda kv: (_label_key(kv[0]), kv[0]))),
             "excluded_sections": sorted(self.excluded_sections,
@@ -461,6 +490,26 @@ def parse_config(data: Any) -> RotationConfig:
                 problems.append("min_staff has duplicate team keys (keys are case-insensitive)")
             min_staff = dict(raw)
 
+    min_staff_mode = dict(DEFAULT_MIN_STAFF_MODE)
+    if "min_staff_mode" in data:
+        raw = data["min_staff_mode"]
+        if not isinstance(raw, dict):
+            problems.append("min_staff_mode must be an object")
+        else:
+            if "default" not in raw:
+                problems.append("min_staff_mode must include a 'default' entry")
+            for k, v in raw.items():
+                if not isinstance(k, str) or not k.strip():
+                    problems.append(f"min_staff_mode has an invalid team key {k!r}")
+                if v not in MIN_STAFF_MODES:
+                    problems.append(f"min_staff_mode[{k!r}] must be one of "
+                                    f"{', '.join(MIN_STAFF_MODES)}, got {v!r}")
+            lowered = [_label_key(k) for k in raw if isinstance(k, str)]
+            if len(set(lowered)) != len(lowered):
+                problems.append("min_staff_mode has duplicate team keys (keys are "
+                                "case-insensitive)")
+            min_staff_mode = dict(raw)
+
     team_aliases = dict(DEFAULT_TEAM_ALIASES)
     if "team_aliases" in data:
         raw = data["team_aliases"]
@@ -501,6 +550,8 @@ def parse_config(data: Any) -> RotationConfig:
     cfg = RotationConfig(
         people=[], location_codes=location_codes,
         min_staff=min_staff if "default" in min_staff else {**min_staff, "default": 2},
+        min_staff_mode=(min_staff_mode if "default" in min_staff_mode
+                        else {**min_staff_mode, "default": PER_TEAM_DAY}),
         team_aliases=team_aliases, excluded_sections=excluded_sections,
         excluded_section_patterns=patterns, disconnect_windows=windows,
         has_data_threshold=float(threshold), seed=seed,

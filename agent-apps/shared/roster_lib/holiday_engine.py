@@ -36,6 +36,12 @@ Holiday kinds (from `holiday_matrix`)
       expected.
   A group is (team, shift code) with team = `config.team_of(person)` (section after
   `team_aliases`). Custom hours group by their text, on-call by "OC".
+  For a `per_team_day` team (see `config`; every team except DIS, DEP, L3 by default) the
+  fairness group on a day is the WHOLE TEAM across all its shifts (shift `ALL`): pool =
+  India members working that day, outside = the other members who work (Mexico when not
+  off, non-India), and the minimum is the EFFECTIVE one, min(configured minimum, members
+  scheduled that day before leave/HOL, `checks.effective_min`), so
+  `need = max(0, effective_min - len(outside))`. `per_shift` teams are unchanged.
 
 Counters (`OffCounter(offs_taken, last_off_date)`, per India person, by name)
   Built from the existing roster by `build_counters`: a person's HOL cells in the
@@ -67,17 +73,20 @@ from datetime import date
 from typing import Collection, Iterable, Mapping
 
 from .checks import (
+    ALL_SHIFTS,
     PersonCells,
     Schedule,
+    effective_min,
     india_codes,
     is_working_cell,
     mexico_code,
     resolve_location,
     schedule_from_roster,
+    scheduled_on,
     staffing_check,
 )
 from .codes import HOL, OC, parse_code, works_on
-from .config import RotationConfig, name_key
+from .config import PER_SHIFT, PER_TEAM_DAY, RotationConfig, name_key
 from .holiday_matrix import HolidayMatrix, HolidayType, holidays_on
 
 log = logging.getLogger(__name__)
@@ -103,7 +112,7 @@ class GroupAssignment:
     kind: str  # COMMON_INDIA_MEXICO, COMMON, LOCATION_SPECIFIC or MEXICO_ONLY
     team: str
     shift: str
-    min_staff: int
+    min_staff: int  # the EFFECTIVE minimum that day (see `checks.effective_min`)
     fairness: bool  # True when India people of this group went through the fairness order
     off: tuple[str, ...]  # everyone given HOL (fairness offs + straight HOL)
     straight_off: tuple[str, ...]  # given HOL without fairness (location rule / Mexico)
@@ -113,6 +122,7 @@ class GroupAssignment:
     shortage: int  # max(0, min_staff - len(outside) - len(covering))
     counters_before: Mapping[str, OffCounter]  # pool members, fairness only
     counters_after: Mapping[str, OffCounter]
+    mode: str = PER_SHIFT  # `per_shift` (shift = a code) or `per_team_day` (shift = "ALL")
 
     @property
     def working(self) -> tuple[str, ...]:
@@ -258,6 +268,10 @@ def assign_holidays(
     india, mex = india_codes(matrix), mexico_code(matrix)
     loc_of = {p.name: resolve_location(p.location_code, locs) for p in people}
     team_of = {p.name: config.team_of(p) or p.section for p in people}
+    team_day = {t for t in set(team_of.values())
+                if config.min_staff_mode_for_team(t) == PER_TEAM_DAY}
+    cells_of = {p.name: PersonCells(schedule.get(p.name) or {}) for p in people
+                if team_of[p.name] in team_day}
     india_people = [p for p in people if loc_of[p.name] in india]
 
     before, average = _seed_counters(counters, india_people, inherited_counters or {},
@@ -279,12 +293,17 @@ def assign_holidays(
         kind = _kind_of(todays)
         names = tuple(sorted({h.name for h in todays}))
         groups: dict[tuple[str, str], dict[str, list[str]]] = {}
+        scheduled: dict[str, int] = {}  # per_team_day teams: members scheduled today
+        for p in people:
+            if team_of[p.name] in team_day and scheduled_on(cells_of[p.name], d):
+                scheduled[team_of[p.name]] = scheduled.get(team_of[p.name], 0) + 1
         for p in people:
             text = (schedule.get(p.name) or {}).get(d)
             if text is None or not is_working_cell(text):
                 continue  # weekly off, leave (PTO beats HOL), or no data
             loc = loc_of[p.name]
-            slot = groups.setdefault((team_of[p.name], _group_key(text)),
+            shift_key = ALL_SHIFTS if team_of[p.name] in team_day else _group_key(text)
+            slot = groups.setdefault((team_of[p.name], shift_key),
                                      {"pool": [], "straight": [], "outside": []})
             if loc is not None and loc == mex:
                 slot["straight" if mex in off_locations else "outside"].append(p.name)
@@ -303,7 +322,7 @@ def assign_holidays(
             pool, straight, outside = slot["pool"], slot["straight"], slot["outside"]
             if not pool and not straight:
                 continue
-            minimum = config.min_staff_for_team(team)
+            minimum = effective_min(config, team, scheduled.get(team, 0))
             need = 0
             covering: list[str] = []
             fair_off: list[str] = []
@@ -342,7 +361,7 @@ def assign_holidays(
             assignments.append(GroupAssignment(
                 d, names, kind, team, shift, minimum, bool(pool), tuple(off), tuple(straight),
                 tuple(covering), tuple(outside), need, max(0, minimum - working),
-                c_before, c_after))
+                c_before, c_after, PER_TEAM_DAY if team in team_day else PER_SHIFT))
 
     result_schedule = apply_edits(schedule, edits)
     if holiday_dates:

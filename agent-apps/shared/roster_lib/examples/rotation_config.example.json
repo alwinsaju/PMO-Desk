@@ -15,6 +15,12 @@
     "L3": 3,
     "default": 2
   },
+  "min_staff_mode": {
+    "DEP": "per_shift",
+    "DIS": "per_shift",
+    "L3": "per_shift",
+    "default": "per_team_day"
+  },
   "team_aliases": {
     "L N S 2.0": "LNS 2.0",
     "L2": "DIS"

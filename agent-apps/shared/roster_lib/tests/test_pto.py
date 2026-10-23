@@ -219,6 +219,43 @@ def test_below_minimum_clash():
     assert res.clashes == []  # still 2 working: at the minimum
 
 
+def test_below_minimum_per_team_day_counts_all_shifts_with_the_effective_minimum():
+    # 3 people on two shifts, minimum 2 per team per day: two PTO on one day -> 1 left < 2
+    sched = {"A Test": fill(MF), "B Test": fill(MF), "C Test": fill(MF, "Shift-3")}
+    team = dict.fromkeys(sched, "T1")
+    rule = shift_group_rule(sched, team.get, lambda n: 2, lambda n: True)
+    day = date(2026, 8, 10)
+    res = apply_pto(sched, [entry("A Test", day, day)], AUG, min_staff_for=rule)
+    assert res.clashes == []  # S3 alone would be short, but the team still has 2 working
+    res = apply_pto(sched, [entry("A Test", day, day), entry("B Test", day, day, row=4)], AUG,
+                    min_staff_for=rule)
+    assert [(c.person, c.kind) for c in res.clashes] == [("A Test", "BELOW_MIN"),
+                                                         ("B Test", "BELOW_MIN")]
+    assert "1 left" in res.clashes[0].detail and "minimum 2" in res.clashes[0].detail
+    per_shift = shift_group_rule(sched, team.get, lambda n: 2)  # default: per shift, as before
+    res = apply_pto(sched, [entry("A Test", day, day)], AUG, min_staff_for=per_shift)
+    assert [c.kind for c in res.clashes] == ["BELOW_MIN"]  # per shift: S1 drops to 1 < 2
+
+
+def test_below_minimum_per_team_day_single_person_and_offset_patterns():
+    # a one-person team: effective minimum 1, so PTO for them flags (they are the team)
+    sched = {"Solo Test": fill(MF)}
+    rule = shift_group_rule(sched, {"Solo Test": "T9"}.get, lambda n: 2, lambda n: True)
+    day = date(2026, 8, 10)
+    res = apply_pto(sched, [entry("Solo Test", day, day)], AUG, min_staff_for=rule)
+    assert [c.kind for c in res.clashes] == ["BELOW_MIN"] and "minimum 1" in res.clashes[0].detail
+    # Mon-Fri + Wed-Sun pair: on a Monday only the Mon-Fri person is scheduled -> minimum 1
+    sched = {"A Test": fill(MF), "B Test": fill(WS, "Shift-2")}
+    team = dict.fromkeys(sched, "T1")
+    rule = shift_group_rule(sched, team.get, lambda n: 2, lambda n: True)
+    sat = date(2026, 8, 15)
+    res = apply_pto(sched, [entry("B Test", sat, sat)], AUG, min_staff_for=rule)
+    assert [c.kind for c in res.clashes] == ["BELOW_MIN"] and "minimum 1" in res.clashes[0].detail
+    assert [c for c in apply_pto(sched, [entry("A Test", date(2026, 8, 12),
+                                               date(2026, 8, 12))], AUG,
+                                 min_staff_for=rule).clashes] != []  # Wed: 2 scheduled, 1 left
+
+
 def test_year_boundary_cycle_dates():
     dec = cycle_for(2026, 12)
     sched = {"Alice Test": fill(MF, cycle=dec)}

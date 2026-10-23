@@ -53,6 +53,13 @@ def config(**min_staff):
     return cfg
 
 
+def per_shift_config(**min_staff):
+    """Like `config()` but EVERY team is counted per shift code (the pre-"Option B" rule)."""
+    cfg = config(**min_staff)
+    cfg.min_staff_mode["default"] = "per_shift"
+    return cfg
+
+
 def label_derived_matrix(labels):
     """A 2026 matrix derived from row-12 labels ONLY (documented approximation).
 

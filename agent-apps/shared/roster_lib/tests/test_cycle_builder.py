@@ -622,3 +622,68 @@ def test_library_covers_every_shift_code_text():
     for code in ("S1", "S2", "S3", "S4", "S5", "US-CST"):
         assert try_parse_code(code_text(code)).canonical == code
     assert shift_in_cycle(SPECS[0], 1) == "S2" and Pattern.WED_SUN is pattern_of("S2")
+
+
+# ---- per_team_day teams (minimum "Option B") ---------------------------------------------
+
+def team_day_world():
+    """The Oct world with the real mode defaults: DIS/DEP/L3 per shift, Lab per team per day."""
+    roster = make_roster(labels=labels_of(HOLIDAYS_OCT))
+    cfg = make_config(0, per_shift=False, **LOW)
+    cfg.min_staff["Lab"] = 3  # two people: the effective minimum is min(3, 2) = 2
+    return roster, cfg, matrix_of(HOLIDAYS_OCT)
+
+
+def test_per_team_day_headcount_flags_and_table():
+    roster, cfg, matrix = team_day_world()
+    plan = build_plan(roster, cfg, OCT, ANSWERS, holiday_matrix=matrix)
+    # the legacy per-shift rule flagged Lab (2 people < 3); the effective-minimum rule does not
+    assert not any(f.kind == "HEADCOUNT_BELOW_MIN" and f.team == "Lab" for f in plan.flags)
+    sched = {n: dict(c) for n, c in roster._schedule.items()}
+    table = headcount_table(sched, active_people(roster.people, cfg), cfg, AUG)
+    assert table["Lab"]["mode"] == "per_team_day" and table["Lab"]["spec_min"] == 3
+    assert table["Lab"]["attainable"] == {"ALL": False}  # 2 people can never reach 3
+    assert table["DIS"]["mode"] == "per_shift" and "US-CST" in table["DIS"]["attainable"]
+
+
+def test_per_team_day_holiday_group_is_the_whole_team():
+    roster, cfg, matrix = team_day_world()
+    plan = build_plan(roster, cfg, OCT, ANSWERS, holiday_matrix=matrix)
+    lab = [a for a in plan.holiday_assignments if a["team"] == "Lab"]
+    assert lab and {a["shift"] for a in lab} == {"ALL"}
+    common = next(a for a in lab if a["date"] == "2026-10-20")
+    assert common["min_staff"] == 2 and common["off"] == [] and len(common["covering"]) == 2
+    assert any(f.kind == "NO_OFF_AT_MINIMUM" and (f.team, f.shift) == ("Lab", "ALL")
+               for f in plan.flags)
+    dis = [a for a in plan.holiday_assignments if a["team"] == "DIS"]
+    assert {a["shift"] for a in dis} >= {"S1", "S3"}  # per_shift teams unchanged
+
+
+def test_per_team_day_leave_below_the_effective_minimum_flags_staffing_and_pto():
+    roster, cfg, matrix = team_day_world()
+    day = date(2026, 10, 14)  # a Wednesday: both Lab people are scheduled
+    entries = [pto("Lab Person 0", day), pto("Lab Person 1", day)]
+    plan = build_plan(roster, cfg, OCT, ANSWERS, holiday_matrix=matrix, pto_entries=entries)
+    kinds = {(f.kind, f.person) for f in plan.flags}
+    assert ("PTO_BELOW_MIN", "Lab Person 0") in kinds and ("PTO_BELOW_MIN", "Lab Person 1") in kinds
+    short = [f for f in plan.flags if f.kind == "STAFFING_SHORTAGE" and f.team == "Lab"]
+    assert [(f.date, f.shift) for f in short] == [(day, "ALL")] and short[0].severity == "ERROR"
+    assert "Lab on 2026-10-14: 0 working, minimum 2" in short[0].message
+    # one person away: 1 working < effective minimum 2 -> flagged too (but not an ERROR)
+    plan = build_plan(roster, cfg, OCT, ANSWERS, holiday_matrix=matrix,
+                      pto_entries=[pto("Lab Person 0", day)])
+    short = [f for f in plan.flags if f.kind == "STAFFING_SHORTAGE" and f.team == "Lab"]
+    assert [(f.date, f.severity) for f in short] == [(day, "WARNING")]
+
+
+def test_per_team_day_removes_the_phantom_shortages_of_small_teams():
+    roster, cfg, matrix = team_day_world()
+    cfg.min_staff["Lab"] = 2
+    legacy = make_config(0, per_shift=True, **LOW)
+    legacy.min_staff["Lab"] = 2
+    legacy_plan = build_plan(roster, legacy, OCT, ANSWERS, holiday_matrix=matrix)
+    plan = build_plan(roster, cfg, OCT, ANSWERS, holiday_matrix=matrix)
+    lab = [f for f in plan.flags if f.kind == "STAFFING_SHORTAGE" and f.team == "Lab"]
+    assert lab == []  # nobody is away on a working day
+    assert plan.to_json() == build_plan(roster, cfg, OCT, ANSWERS, holiday_matrix=matrix).to_json()
+    assert len(legacy_plan.flags) >= len(plan.flags)

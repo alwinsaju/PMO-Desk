@@ -73,6 +73,7 @@ from datetime import date, timedelta
 from typing import Any, Collection, Iterable, Mapping, Sequence
 
 from .checks import (
+    ALL_SHIFTS,
     FindingKind,
     daterange,
     hol_check,
@@ -81,7 +82,7 @@ from .checks import (
     staffing_check,
 )
 from .codes import counts_as_code, try_parse_code
-from .config import Rotation, RotationConfig, name_key, parse_config
+from .config import PER_TEAM_DAY, Rotation, RotationConfig, name_key, parse_config
 from .cycles import Availability, Cycle, cycle_availability, previous_cycle, split_at_year_boundary
 from .holiday_engine import (
     OffCounter,
@@ -547,8 +548,10 @@ def analyze_cycle(
 def headcount_table(schedule: Mapping[str, Mapping[date, str]], people: Iterable[RosterPerson],
                     config: RotationConfig, cycle: Cycle) -> dict[str, dict[str, Any]]:
     """Per team: headcount, people per shift code in `cycle` (the code the person works that
-    cycle, from `rotation.derive_state`), the spec minimum and whether that minimum is
-    attainable per shift (people on the shift >= minimum; a minimum of 0 always is)."""
+    cycle, from `rotation.derive_state`), the spec minimum, the minimum `mode`
+    (`per_shift` / `per_team_day`) and whether that minimum is attainable: per shift (people
+    on the shift >= minimum) for a per_shift team, for the whole team (key "ALL": people
+    with a shift >= minimum) for a per_team_day team; a minimum of 0 always is."""
     table: dict[str, dict[str, Any]] = {}
     for p in people:
         team = _team_name(config, p)
@@ -564,11 +567,15 @@ def headcount_table(schedule: Mapping[str, Mapping[date, str]], people: Iterable
     for team in sorted(table):
         row = table[team]
         minimum = config.min_staff_for_team(team)
+        mode = config.min_staff_mode_for_team(team)
         per_shift = dict(sorted(row["per_shift"].items()))
+        attainable = ({ALL_SHIFTS: sum(per_shift.values()) >= minimum}
+                      if mode == PER_TEAM_DAY
+                      else {code: n >= minimum for code, n in per_shift.items()})
         out[team] = {
             "headcount": row["headcount"], "per_shift": per_shift, "no_shift": row["no_shift"],
-            "spec_min": minimum,
-            "attainable": {code: n >= minimum for code, n in per_shift.items()},
+            "spec_min": minimum, "mode": mode,
+            "attainable": attainable,
             "lowest_shift_headcount": min(per_shift.values()) if per_shift else None,
         }
     return out
@@ -762,7 +769,9 @@ def build_plan(
         minimum = cfg.min_staff_for_team(team_of_name[name])
         return minimum if minimum > 0 else None
 
-    rule = shift_group_rule(rotated.schedule, lambda n: team_of_name[n], minimum_for)
+    rule = shift_group_rule(
+        rotated.schedule, lambda n: team_of_name[n], minimum_for,
+        lambda n: cfg.min_staff_mode_for_team(team_of_name[n]) == PER_TEAM_DAY)
     pto_result = apply_pto(rotated.schedule, pto.entries, cycle, confirmed_pto, min_staff_for=rule)
     with_pto = apply_edits(rotated.schedule, pto_result.edits)
 
@@ -863,8 +872,8 @@ def build_plan(
 
     table = headcount_table(final, active, cfg, cycle)
     for team, row in table.items():
-        if row["spec_min"] <= 0:
-            continue
+        if row["spec_min"] <= 0 or row["mode"] == PER_TEAM_DAY:
+            continue  # per_team_day teams use the effective minimum (see checks.effective_min)
         for code, n in row["per_shift"].items():
             if n < row["spec_min"]:
                 flags.append(Flag(
