@@ -570,3 +570,9 @@ def solve_analytics_plan(config: AnalyticsConfig) -> AnalyticsPlan:
     if res.status == 1:
         plan.notes.append("The solver hit its time limit; the plan is valid but may not be the best possible.")
     return plan
+
+
+# Public names for the helpers the workbook and the audit share.
+fmt_dates = _fmt_dates
+ordinal = _ordinal
+standard_counts = _standard_counts
