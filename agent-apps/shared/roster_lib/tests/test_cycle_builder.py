@@ -29,13 +29,16 @@ from roster_lib.config import DateWindow, Rotation
 from roster_lib.cycle_builder import (
     Analysis,
     CycleUnavailable,
+    Flag,
     MissingInput,
     NeedsAnswers,
     Plan,
     active_people,
     analyze_cycle,
     build_plan,
+    flag_delta,
     headcount_table,
+    make_rechecker,
 )
 from roster_lib.pto import PtoEntry, apply_pto, shift_group_rule
 
@@ -811,3 +814,110 @@ def test_preserved_leave_in_the_year_boundary_cycle_only_covers_the_file(dec_wor
     assert not any(n == "Lab Person 0" and d in (date(2026, 12, 3), date(2027, 1, 1))
                    for n, d in plan.edits)
     assert any(n == "Lab Person 0" for n, _ in plan.remainder_edits)  # beyond the file: all built
+
+
+# ---- the re-check hook, flag keys and the snapshot ----------------------------------------
+
+CHECK_KINDS = ("HOL_", "STAFFING_SHORTAGE", "HEADCOUNT_BELOW_MIN")
+
+
+def is_check_flag(f) -> bool:
+    return f.kind.startswith(CHECK_KINDS)
+
+
+def plan_schedule(plan, roster, cfg):
+    """The COMPLETE schedule of the cycle inside the file, as the saved draft would hold it."""
+    out = {}
+    for p in active_people(roster.people, cfg):
+        out[p.name] = {d: t for (n, d), t in {**plan.edits, **plan.preserved}.items()
+                       if n == p.name}
+    return out
+
+
+def test_flag_keys_are_stable_and_distinguish_flags():
+    f = Flag("STAFFING_SHORTAGE", "WARNING", "m", None, date(2026, 10, 14), "Lab", "ALL")
+    assert f.key == "STAFFING_SHORTAGE||2026-10-14|Lab|ALL"
+    assert Flag("HOL_STRAY", "ERROR", "x", "A Person", date(2026, 11, 9)).key ==         "HOL_STRAY|A Person|2026-11-09||"
+    assert Flag("HEADCOUNT_BELOW_MIN", "WARNING", "m", team="Lab", shift="S1").key ==         "HEADCOUNT_BELOW_MIN|||Lab|S1"
+    note_a, note_b = Flag("PTO_NOTE", "INFO", "one"), Flag("PTO_NOTE", "INFO", "two")
+    assert note_a.key != note_b.key and note_a.key == Flag("PTO_NOTE", "INFO", "one").key
+    assert f.to_dict()["key"] == f.key and Flag.from_dict(f.to_dict()).key == f.key
+
+
+def test_flag_delta_new_resolved_remaining():
+    a = Flag("HOL_STRAY", "ERROR", "a", "P1", date(2026, 11, 9))
+    b = Flag("HOL_STRAY", "ERROR", "b", "P2", date(2026, 11, 9))
+    c = Flag("STAFFING_SHORTAGE", "WARNING", "c", None, date(2026, 11, 9), "Lab", "ALL")
+    new, resolved, remaining = flag_delta([a, b], [b, c])
+    assert (new, resolved, remaining) == ([c], [a], [b])
+    # a changed message with the same identity is still the same flag; dicts are accepted
+    b2 = Flag("HOL_STRAY", "ERROR", "reworded", "P2", date(2026, 11, 9))
+    assert flag_delta([b.to_dict()], [b2]) == ([], [], [b2])
+    assert flag_delta([], []) == ([], [], [])
+
+
+def test_snapshot_cells_are_exactly_the_cells_written_into_the_file(dec_world):
+    roster, cfg, matrix = dec_world
+    roster._schedule["Lab Person 0"][date(2026, 12, 3)] = "P"
+    plan = build_plan(roster, cfg, DEC, ANSWERS, holiday_matrix=matrix)
+    snap = plan.snapshot_cells()
+    assert snap == plan.edits and snap is not plan.edits
+    assert plan.remainder_edits and not set(snap) & set(plan.remainder_edits)
+    assert all(d <= roster.last_date for _, d in snap)
+    assert ("Lab Person 0", date(2026, 12, 3)) not in snap  # preserved leave is not written
+    assert plan.to_json() == build_plan(roster, cfg, DEC, ANSWERS, holiday_matrix=matrix).to_json()
+    assert Plan.from_json(plan.to_json()).snapshot_cells() == snap
+
+
+def test_rechecker_reproduces_the_plan_checks_on_the_unedited_draft(dec_world):
+    roster, cfg, matrix = dec_world
+    plan = build_plan(roster, cfg, DEC, ANSWERS, holiday_matrix=matrix,
+                      pto_entries=[pto("Lab Person 0", date(2026, 12, 9)),
+                                   pto("Lab Person 1", date(2026, 12, 9))])
+    recheck = make_rechecker(roster, cfg, DEC, matrix, plan)
+    flags = recheck(plan_schedule(plan, roster, cfg))
+    assert all(isinstance(f, Flag) for f in flags)
+    expected = [f for f in plan.flags if is_check_flag(f)]
+    assert expected  # the scenario really has check flags (shortage on the PTO day, HOL ...)
+    assert sorted(f.key for f in flags) == sorted(f.key for f in expected)
+    new, resolved, remaining = flag_delta(plan.flags, flags)
+    assert new == [] and sorted(f.key for f in remaining) == sorted(f.key for f in expected)
+    assert {f.key for f in resolved} == {f.key for f in plan.flags if not is_check_flag(f)}
+    # same checks, same output on a second call; flags come back sorted like the plan's
+    assert [f.to_dict() for f in recheck(plan_schedule(plan, roster, cfg))] ==         [f.to_dict() for f in flags]
+
+
+def test_rechecker_sees_resolved_and_new_flags_after_edits(dec_world):
+    roster, cfg, matrix = dec_world
+    day = date(2026, 12, 9)  # a Wednesday: both Lab people scheduled
+    plan = build_plan(roster, cfg, DEC, ANSWERS, holiday_matrix=matrix,
+                      pto_entries=[pto("Lab Person 0", day), pto("Lab Person 1", day)])
+    recheck = make_rechecker(roster, cfg, DEC, matrix, plan)
+    schedule = plan_schedule(plan, roster, cfg)
+    before = [f for f in plan.flags if is_check_flag(f)]
+    shortage_key = f"STAFFING_SHORTAGE||{day.isoformat()}|Lab|S1"  # legacy per-shift fixture
+    assert shortage_key in {f.key for f in before}
+    # the PMO takes one person off leave: that shortage goes away
+    fixed = {n: dict(c) for n, c in schedule.items()}
+    fixed["Lab Person 0"][day] = "Shift-1"
+    new, resolved, remaining = flag_delta(before, recheck(fixed))
+    assert shortage_key in {f.key for f in resolved}
+    assert not [f for f in new if f.kind == "STAFFING_SHORTAGE"]
+    assert not [f for f in new if f.kind == "HOL_STRAY"]
+    # a HOL typed where the location has no holiday is a new STRAY
+    broken = {n: dict(c) for n, c in schedule.items()}
+    broken["Dep Person 0"][date(2026, 12, 2)] = "HOL"
+    new, resolved, remaining = flag_delta(before, recheck(broken))
+    assert [(f.kind, f.person, f.date) for f in new if f.kind == "HOL_STRAY"] == [
+        ("HOL_STRAY", "Dep Person 0", date(2026, 12, 2))]
+
+
+def test_rechecker_ignores_unknown_people_and_dates_beyond_the_file(dec_world):
+    roster, cfg, matrix = dec_world
+    plan = build_plan(roster, cfg, DEC, ANSWERS, holiday_matrix=matrix)
+    recheck = make_rechecker(roster, cfg, DEC, matrix, plan)
+    schedule = plan_schedule(plan, roster, cfg)
+    base = [f.key for f in recheck(schedule)]
+    noisy = {**schedule, "Not In Roster": {date(2026, 12, 3): "HOL"}}
+    noisy["Lab Person 0"] = {**schedule["Lab Person 0"], date(2027, 1, 20): "HOL"}  # past the file
+    assert [f.key for f in recheck(noisy)] == base

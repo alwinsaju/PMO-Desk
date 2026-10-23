@@ -58,8 +58,20 @@ team, shift)`; nothing flagged is ever fixed automatically. Kinds:
   PTO_NOTE                                                           (PTO)
   HEADCOUNT_CHANGED, HEADCOUNT_BELOW_MIN, ROTATION_WARNING, UNCLASSIFIED_PERSON,
   CHANGE_NOTE, CONFIG_NOT_UPDATED                                    (rotation / config)
-  YEAR_BOUNDARY, HOLIDAY_MATRIX_NO_ROWS, DISCONNECT_HOLIDAY_SKIPPED, OVERWRITES_EXISTING
-Severity is ERROR, WARNING or INFO.
+  YEAR_BOUNDARY, HOLIDAY_MATRIX_NO_ROWS, DISCONNECT_HOLIDAY_SKIPPED, OVERWRITES_EXISTING,
+  PRESERVED_LEAVE
+Severity is ERROR, WARNING or INFO. Every flag has a stable `key` (`kind|person|date|team|
+shift`); `flag_delta(before, after)` -> (new, resolved, remaining) compares two runs, and
+`make_rechecker(...)` recomputes the check flags (HOL check, staffing, headcount per shift)
+for an edited draft schedule.
+
+Existing leave: a cell of the cycle that already holds a leave code (P, T, SL, COMP, or a HOL
+typed by hand) in the file is PRESERVED: never rewritten (not in `Plan.edits`, listed in
+`Plan.preserved`, one INFO `PRESERVED_LEAVE` flag each), the person is away that day (no
+HOL), a PTO import on it keeps the existing code with a PTO_NOTE, and a preserved HOL of an
+India person on a COMMON holiday they work is an off already taken (see `holiday_engine`).
+Only shift/pattern cells (working codes, blanks, custom text) are rewritten;
+OVERWRITES_EXISTING counts those non-blank, non-leave cells that change, by existing code.
 """
 
 from __future__ import annotations
@@ -70,7 +82,7 @@ import json
 import re
 from dataclasses import dataclass, field
 from datetime import date, timedelta
-from typing import Any, Collection, Iterable, Mapping, Sequence
+from typing import Any, Callable, Collection, Iterable, Mapping, Sequence
 
 from .checks import (
     ALL_SHIFTS,
@@ -175,15 +187,46 @@ class Flag:
     team: str | None = None
     shift: str | None = None
 
+    @property
+    def key(self) -> str:
+        """Stable identity for comparing two runs: `kind|person|date|team|shift` (empty where
+        absent). A flag with none of person/date/team/shift (a general note) also carries a
+        short digest of its message so two different notes never share a key."""
+        parts = [self.kind, self.person or "", _iso(self.date) or "", self.team or "",
+                 self.shift or ""]
+        if not any(parts[1:]):
+            parts.append(hashlib.sha256(self.message.encode("utf-8")).hexdigest()[:10])
+        return "|".join(parts)
+
     def to_dict(self) -> dict[str, Any]:
-        return {"kind": self.kind, "severity": self.severity, "message": self.message,
-                "person": self.person, "date": _iso(self.date), "team": self.team,
-                "shift": self.shift}
+        return {"key": self.key, "kind": self.kind, "severity": self.severity,
+                "message": self.message, "person": self.person, "date": _iso(self.date),
+                "team": self.team, "shift": self.shift}
 
     @staticmethod
     def from_dict(d: Mapping[str, Any]) -> "Flag":
         return Flag(d["kind"], d["severity"], d["message"], d.get("person"),
                     _date(d.get("date")), d.get("team"), d.get("shift"))
+
+
+def flag_delta(before: Iterable[Any], after: Iterable[Any]
+               ) -> tuple[list[Any], list[Any], list[Any]]:
+    """Compare two flag lists by `Flag.key` -> (new, resolved, remaining): new = in `after`
+    only, resolved = in `before` only, remaining = in both (the `after` objects). Accepts
+    `Flag` objects or dicts carrying a `key` (or the Flag fields)."""
+    def key_of(f: Any) -> str:
+        if isinstance(f, Flag):
+            return f.key
+        if isinstance(f, Mapping):
+            return f["key"] if f.get("key") else Flag.from_dict(f).key
+        return f.key
+
+    before, after = list(before), list(after)
+    before_keys = {key_of(f) for f in before}
+    after_keys = {key_of(f) for f in after}
+    return ([f for f in after if key_of(f) not in before_keys],
+            [f for f in before if key_of(f) not in after_keys],
+            [f for f in after if key_of(f) in before_keys])
 
 
 @dataclass(frozen=True)
@@ -588,7 +631,8 @@ class Plan:
     """The draft for one cycle as plain data (see the module docstring)."""
 
     cycle: Cycle
-    edits: Edits  # every new-cycle cell inside the roster file: (name, date) -> text
+    edits: Edits  # every new-cycle cell written into the roster file: (name, date) -> text
+    # (in-file dates only; existing leave cells, `preserved`, are not in it)
     remainder_edits: Edits  # the same for dates after roster.last_date (next-year file)
     shift_changes: list[dict[str, Any]]
     holiday_assignments: list[dict[str, Any]]
@@ -600,6 +644,11 @@ class Plan:
     existing_roster_findings: dict[str, Any]
     next_year_counters: dict[str, dict[str, Any]] | None = None
     preserved: Edits = field(default_factory=dict)  # existing leave cells kept: (name, date) -> text
+
+    def snapshot_cells(self) -> dict[tuple[str, date], str]:
+        """Exactly the cells the plan writes into the roster file: `edits` (dates inside the
+        file; preserved leave cells and next-year `remainder_edits` are not in it)."""
+        return dict(self.edits)
 
     def flags_by_kind(self) -> dict[str, int]:
         out: dict[str, int] = {}
@@ -723,6 +772,84 @@ def _existing_findings(roster, active: Sequence[RosterPerson], config: RotationC
     return out
 
 
+def _draft_flags(roster, active: Sequence[RosterPerson], cfg: RotationConfig,
+                 matrix: HolidayMatrix, draft: Schedule, cycle_schedule: Schedule, cycle: Cycle,
+                 last_date: date, disconnect: Collection[date], coverage: frozenset,
+                 cannot_meet: Collection[tuple]) -> list[Flag]:
+    """The checks on a draft: HOL check, staffing check and headcount per shift. Shared by
+    `build_plan` and the re-checker. `draft` = the existing roster overlaid with the new cycle
+    (every date of the cycle), `cycle_schedule` = the cycle's cells only."""
+    flags: list[Flag] = []
+    in_file_end = min(cycle.end, last_date)
+    hol_findings = []
+    if cycle.start <= last_date:
+        hol_findings += hol_check(draft, active, matrix, roster.holiday_labels(expand_merges=True),
+                                  cycle.start, in_file_end, coverage_ok=coverage,
+                                  ignore_dates=disconnect)
+    if cycle.end > last_date:
+        beyond_from = max(cycle.start, last_date + timedelta(days=1))
+        hol_findings += [f for f in hol_check(draft, active, matrix, {}, beyond_from, cycle.end,
+                                              coverage_ok=coverage, ignore_dates=disconnect)
+                         if not f.kind.name.startswith("MISMATCH")]
+    for f in hol_findings:
+        flags.append(Flag("HOL_" + f.kind.name, f.severity.value, f.message, f.person, f.date))
+    for s in staffing_check(draft, active, cfg, cycle.start, cycle.end):
+        if (s.team, s.shift, s.date) in cannot_meet:
+            continue  # already reported as CANNOT_MEET_MINIMUM by the holiday engine
+        flags.append(Flag("STAFFING_SHORTAGE", s.severity, s.message, date=s.date, team=s.team,
+                          shift=s.shift))
+    table = headcount_table(cycle_schedule, active, cfg, cycle)
+    for team, row in table.items():
+        if row["spec_min"] <= 0 or row["mode"] == PER_TEAM_DAY:
+            continue  # per_team_day teams use the effective minimum (see checks.effective_min)
+        for code, n in row["per_shift"].items():
+            if n < row["spec_min"]:
+                flags.append(Flag(
+                    "HEADCOUNT_BELOW_MIN", "WARNING",
+                    f"team {team} has {n} people on {code}, below the minimum of "
+                    f"{row['spec_min']} even before any leave", team=team, shift=code))
+    return flags
+
+
+def make_rechecker(roster, config: RotationConfig, cycle: Cycle, holiday_matrix: HolidayMatrix,
+                   plan: "Plan") -> Callable[[Mapping[str, Mapping[date, str]]], list[Flag]]:
+    """A function `recheck(edited_schedule) -> list[Flag]` for the draft-diff step.
+
+    `edited_schedule` is the COMPLETE edited schedule of the cycle: `{name: {date: raw
+    text}}` for all in-scope people and the cycle's dates inside the roster file (people
+    or dates it lacks keep the roster's own cells). It returns the full flag list recomputed
+    with the same checks as `build_plan` (HOL check with the plan's coverage set, staffing
+    check and headcount per shift); rotation warnings, PTO and other plan-time flags are not
+    recomputed. The plan's next-year `remainder_edits` complete the cycle. Compare with
+    `flag_delta(plan.flags, recheck(schedule))`; every `Flag.key` is stable across runs.
+    Pure: nothing is written."""
+    active = active_people(roster.people, config)
+    last_date = roster.last_date
+    disconnect = config.disconnect_dates()
+    coverage = frozenset((n, date.fromisoformat(a["date"]))
+                         for a in plan.holiday_assignments for n in a["covering"])
+    cannot_meet = {(f.team, f.shift, f.date) for f in plan.flags
+                   if f.kind == "CANNOT_MEET_MINIMUM"}
+    base = schedule_from_roster(roster)
+    cycle_dates = daterange(cycle.start, cycle.end)
+
+    def recheck(edited: Mapping[str, Mapping[date, str]]) -> list[Flag]:
+        draft: Schedule = {p.name: dict(base[p.name]) for p in active}
+        for name, cells in edited.items():
+            if name in draft:
+                draft[name].update({d: t for d, t in cells.items() if d <= last_date})
+        for (name, d), text in plan.remainder_edits.items():
+            if name in draft:
+                draft[name][d] = text
+        cycle_schedule = {n: {d: cells[d] for d in cycle_dates if d in cells}
+                          for n, cells in draft.items()}
+        flags = _draft_flags(roster, active, config, holiday_matrix, draft, cycle_schedule,
+                             cycle, last_date, disconnect, coverage, cannot_meet)
+        return sorted(flags, key=_flag_order)
+
+    return recheck
+
+
 def build_plan(
     roster, config: RotationConfig, cycle: Cycle, answers: Mapping[str, Any] | None = None, *,
     holiday_matrix: HolidayMatrix | None,
@@ -844,33 +971,14 @@ def build_plan(
     draft: Schedule = {n: dict(cells) for n, cells in prep.schedule.items()}
     for n in draft:
         draft[n].update(final[n])
-    in_file_end = min(cycle.end, last_date)
-    hol_findings = []
-    if cycle.start <= last_date:
-        hol_findings += hol_check(draft, active, holiday_matrix,
-                                  roster.holiday_labels(expand_merges=True), cycle.start,
-                                  in_file_end, coverage_ok=frozenset(coverage),
-                                  ignore_dates=disconnect)
-    if cycle.end > last_date:
-        beyond_from = max(cycle.start, last_date + timedelta(days=1))
-        hol_findings += [f for f in hol_check(draft, active, holiday_matrix, {}, beyond_from,
-                                              cycle.end, coverage_ok=frozenset(coverage),
-                                              ignore_dates=disconnect)
-                         if not f.kind.name.startswith("MISMATCH")]
-    for f in hol_findings:
-        flags.append(Flag("HOL_" + f.kind.name, f.severity.value, f.message, f.person, f.date))
-
     cannot_meet = {(f.team, f.shift, f.date) for f in engine_flags if f.kind == "CANNOT_MEET_MINIMUM"}
+    flags += _draft_flags(roster, active, cfg, holiday_matrix, draft, final, cycle, last_date,
+                          disconnect, frozenset(coverage), cannot_meet)
     for f in engine_flags:
         if f.kind == "STAFFING_SHORTAGE":
             continue  # reported by the staffing check below
         flags.append(Flag(f.kind, "WARNING" if f.kind == "CANNOT_MEET_MINIMUM" else "INFO",
                           f.message, date=f.date, team=f.team, shift=f.shift))
-    for s in staffing_check(draft, active, cfg, cycle.start, cycle.end):
-        if (s.team, s.shift, s.date) in cannot_meet:
-            continue
-        flags.append(Flag("STAFFING_SHORTAGE", s.severity, s.message, date=s.date, team=s.team,
-                          shift=s.shift))
 
     for c in pto_result.clashes:
         flags.append(Flag("PTO_" + c.kind, "WARNING", f"{c.person} {c.date.isoformat()}: {c.detail}",
@@ -888,16 +996,6 @@ def build_plan(
                           f"PTO row {e.row} ({e.name}) belongs to an excluded section and was "
                           "ignored", e.name))
 
-    table = headcount_table(final, active, cfg, cycle)
-    for team, row in table.items():
-        if row["spec_min"] <= 0 or row["mode"] == PER_TEAM_DAY:
-            continue  # per_team_day teams use the effective minimum (see checks.effective_min)
-        for code, n in row["per_shift"].items():
-            if n < row["spec_min"]:
-                flags.append(Flag(
-                    "HEADCOUNT_BELOW_MIN", "WARNING",
-                    f"team {team} has {n} people on {code}, below the minimum of "
-                    f"{row['spec_min']} even before any leave", team=team, shift=code))
     for w in rotated.warnings:
         m = _HEADCOUNT_RE.match(w)
         if m:
