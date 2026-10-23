@@ -65,3 +65,22 @@ src/
 See `ARCHITECTURE.md` for what each of these owns, the contracts other code
 should go through, and how the next four workstreams (Desktop Shell & Chrome,
 AI Agent Layer, App Store, Demo Apps) fit in.
+
+## Agent apps: Shift Roster and December Disconnect
+
+Two deterministic (no LLM judgment) tasks live in `agent-apps/` and run from the Tasks app through the
+agent-office backend: **Shift Roster** (builds the roster for one two-month cycle) and **December Disconnect**
+(the winter holiday coverage: main plan and Analytics plan). Both write Excel drafts you review, then a confirmed
+final; the master roster is never modified. Real data is gitignored (`input/`, `output/`, `config/`).
+
+- First run (restart the backend, click path, what to check in Excel, bug reporting, rollback):
+  [`agent-apps/FIRST-RUN-GUIDE.md`](./agent-apps/FIRST-RUN-GUIDE.md)
+- What was decided, what is assumed, open items to confirm:
+  [`agent-apps/DECISIONS-AND-ASSUMPTIONS.md`](./agent-apps/DECISIONS-AND-ASSUMPTIONS.md)
+- Acceptance criteria against test evidence: [`agent-apps/ACCEPTANCE.md`](./agent-apps/ACCEPTANCE.md)
+- Task docs: [`agent-apps/shift-roster/README.md`](./agent-apps/shift-roster/README.md),
+  [`agent-apps/december-disconnect/README.md`](./agent-apps/december-disconnect/README.md)
+- Task platform contract (manifest keys, endpoints, JSON files):
+  [`agent-apps/TASK-PLATFORM-CONTRACT.md`](./agent-apps/TASK-PLATFORM-CONTRACT.md)
+- Libraries: [`agent-apps/shared/roster_lib/README.md`](./agent-apps/shared/roster_lib/README.md),
+  [`agent-apps/shared/winter_lib/README.md`](./agent-apps/shared/winter_lib/README.md)
