@@ -1,6 +1,19 @@
 {
   "id": "monthly-report-deck",
   "displayName": "Monthly Report deck",
+  "inputs": [
+    {
+      "id": "incident",
+      "label": "ServiceNow incident export (one month)",
+      "type": "file",
+      "accept": [".xlsx"],
+      "dest": "input/incident.xlsx",
+      "required": true
+    }
+  ],
+  "cleanup": {
+    "onComplete": true
+  },
   "steps": [
     {
       "id": "prepare_data",

@@ -1,6 +1,21 @@
 {
   "id": "weekly-aging-report",
   "displayName": "Aging Report",
+  "inputs": [
+    {
+      "id": "incident",
+      "label": "ServiceNow incident export",
+      "type": "file",
+      "accept": [
+        ".xlsx"
+      ],
+      "dest": "input/incident (1).xlsx",
+      "required": true
+    }
+  ],
+  "cleanup": {
+    "onComplete": true
+  },
   "steps": [
     {
       "id": "build_report",

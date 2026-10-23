@@ -45,6 +45,9 @@
       "required": true
     }
   ],
+  "cleanup": {
+    "onComplete": true
+  },
   "prepare": {
     "cmd": "scripts/prepare_options.py",
     "after": ["roster", "staff"]

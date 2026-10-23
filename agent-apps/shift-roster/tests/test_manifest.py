@@ -90,3 +90,29 @@ def test_tracked_text_files_hold_no_personal_data_markers():
     for path in [TASK / "README.md", TASK / "AGENT.md", TASK / "agent.json",
                  *sorted((TASK / "scripts").glob("*.py")), *sorted((TASK / "tests").glob("*.py"))]:
         assert not re.search(r"[\w.]+@[\w-]+\.\w+", path.read_text(encoding="utf-8")), path.name
+
+
+def test_holiday_roster_is_a_persisted_yearly_input_and_the_run_is_cleaned():
+    inputs = {i["id"]: i for i in MANIFEST["inputs"]}
+    assert inputs["holidays"]["persist"] is True and "once a year" in inputs["holidays"]["label"]
+    # the per-run uploads are not persisted (the backend cleans them after a completed run)
+    assert not any(inputs[k].get("persist") for k in ("roster", "pto", "cycle"))
+    assert MANIFEST["cleanup"] == {"onComplete": True}
+
+
+def test_no_script_deletes_input_files():
+    """The persisted Holiday Roster (and every other upload) is only ever read by the scripts:
+    nothing in scripts/ removes a path under input/."""
+    import ast
+
+    scripts = TASK / "scripts"
+    removers = {"unlink", "remove", "rmtree", "rmdir"}
+    for path in sorted(scripts.glob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call):
+                f = node.func
+                name = f.attr if isinstance(f, ast.Attribute) else getattr(f, "id", "")
+                if name in removers:
+                    seg = ast.get_source_segment(path.read_text(encoding="utf-8"), node) or ""
+                    assert "holiday" not in seg.lower() and "input" not in seg.lower().replace("input_dir", ""), (path.name, seg)

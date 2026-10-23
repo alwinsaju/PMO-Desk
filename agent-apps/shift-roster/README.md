@@ -36,7 +36,7 @@ All of `input/`, `output/` and `config/` hold real employee data and are gitigno
 | File | What |
 |---|---|
 | `input/roster.xlsx` | the master roster (sheet `PDT Operate`); only ever read |
-| `input/holiday-roster.xlsx` | the Holiday Roster (Holiday name, Date, one column per location; `X` = off) |
+| `input/holiday-roster.xlsx` | the Holiday Roster (Holiday name, Date, one column per location; `X` = off). A YEARLY upload that stays on file (`persist`): see "The Holiday Roster stays on file" |
 | `input/pto-import.xlsx` | optional PTO import (Name, From, To, Code P/T/SL) |
 | `input/run-params.json` | `{"params": {"cycle": "2026-12"}}`, written by the app |
 | `config/rotation-config.json` | rotation categories, staffing minimums, disconnect windows |
@@ -70,7 +70,8 @@ filled yet, else the latest enabled one) and `problems` (`severity` + `message`)
 enabled only when every active person has a code in at least 95% of the weeks of the previous
 cycle; `reason` explains it and is shown on hover. A cycle is also disabled while the config
 or the Holiday Roster cannot be used. Expected problems are reported in `problems` and the
-script still exits 0.
+script still exits 0. A readable but outdated Holiday Roster is not a problem: the cycles it
+does not cover are just disabled (see "The Holiday Roster stays on file").
 
 **`analyze.py`** removes the derived files of an earlier run (answers, plan, flags, diff, report
 data: stale answers must never satisfy a new form), runs `cycle_builder.analyze_cycle` and writes
@@ -106,6 +107,38 @@ backup paths) and asserts that the master's sha256 is unchanged. Because the con
 finished run cannot be finalized again ("the rotation config changed since the analysis"): start
 a new run. A run that died before the config was saved can simply be repeated (the identical
 final is reused, a new audit line is appended).
+
+## The Holiday Roster stays on file
+
+The Holiday Roster is a yearly input, not a per-run one. The `holidays` input is marked
+`"persist": true` in `agent.json`, so the file is kept on disk across runs (the Tasks app shows it
+as "on file") and is never cleaned: upload it once a year and replace it when the year changes.
+
+- **Coverage rule.** `prepare_options.py` checks every candidate cycle against the stored file. A
+  cycle is covered when the matrix has at least one holiday row dated in EACH calendar year the
+  cycle touches (its first to its last date). A Dec-Jan cycle (e.g. Dec 2026 - Jan 2027) needs
+  rows in both years. An uncovered cycle gets `enabled: false` and the reason
+  "Holiday Roster has no 2027 rows - upload the new year's Holiday Roster" (several missing years
+  are listed with "or"). Replace the file and the next prepare enables the cycle again. When that
+  leaves no cycle selectable a warning in `problems` says the Holiday Roster does not cover the
+  needed year. `problems` with severity `error` stay for an unreadable or missing matrix.
+- **The assumed 1 Jan 2027 row.** The Holiday Roster 2026 file carries a 1 Jan 2027 row that is an
+  ASSUMPTION (see `../DECISIONS-AND-ASSUMPTIONS.md`). That single row counts as "a 2027 row", so the
+  Dec 2026 - Jan 2027 cycle stays selectable with the 2026 file; the 2027 holidays after 1 Jan are
+  missing until the new year's file is uploaded (the draft's `HOLIDAY_MATRIX_NO_ROWS` flag only
+  fires when there is no 2027 row at all).
+- **Never deleted by the scripts.** No script removes anything in `input/`: `analyze.py` and
+  `diff_draft.py` only delete derived `output/` files, and `finalize.py` only moves its own staging
+  files in `output/`. The backend's clean-up below keeps the persisted file too.
+
+## Clean-up after a completed run
+
+`agent.json` has `"cleanup": {"onComplete": true}`. After a SUCCESSFUL run the backend deletes this
+task's `input/` files except persisted inputs (the Holiday Roster), the manifest's `cleanup.keep`
+paths (none here) and dotfiles. So the master roster, the optional PTO import and `run-params.json`
+are removed and the next run asks for a fresh roster upload. `output/` (the final roster, next-year
+file, audit log, backups) and `config/` are never touched; a failed or abandoned run keeps its
+input so it can be retried.
 
 ## What the draft contains (rules)
 

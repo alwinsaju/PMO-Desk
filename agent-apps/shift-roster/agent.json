@@ -14,11 +14,12 @@
     },
     {
       "id": "holidays",
-      "label": "Holiday Roster",
+      "label": "Holiday Roster (upload once a year)",
       "type": "file",
       "accept": [".xlsx"],
       "dest": "input/holiday-roster.xlsx",
-      "required": true
+      "required": true,
+      "persist": true
     },
     {
       "id": "pto",
@@ -37,6 +38,9 @@
       "required": true
     }
   ],
+  "cleanup": {
+    "onComplete": true
+  },
   "prepare": {
     "cmd": "scripts/prepare_options.py",
     "after": ["roster", "holidays"]

@@ -154,3 +154,9 @@ def test_backend_reads_the_manifest():
                              ["diff_draft", "python", None], ["confirm_diff", "confirm", "diff"],
                              ["finalize", "python", None]]
     assert info["completed"] == MANIFEST["completedMessage"]
+
+
+def test_cleanup_flag_and_no_persisted_input():
+    assert MANIFEST["cleanup"] == {"onComplete": True}
+    # every upload is per-run; config/ and output/ are the backend's untouchable areas
+    assert not any(i.get("persist") for i in MANIFEST["inputs"])

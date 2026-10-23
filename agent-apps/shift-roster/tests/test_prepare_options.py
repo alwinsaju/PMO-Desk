@@ -149,3 +149,118 @@ def test_prepare_runs_as_a_subprocess_with_closed_stdin(tmp_path):
                           stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=120)
     assert done.returncode == 0, done.stderr
     assert options(p)["default"] == "2026-12" and "default 2026-12" in done.stdout
+
+
+# ---- the Holiday Roster is a yearly upload that stays on file --------------------------------
+
+def _rewrite_matrix(path, keep_years=None, extra_rows=()):
+    """Synthetic Holiday Roster: the standard test rows filtered to `keep_years`, plus extras."""
+    from openpyxl import load_workbook
+
+    wb = load_workbook(path)
+    ws = wb.active
+    for row in range(ws.max_row, 1, -1):
+        if keep_years is not None and ws.cell(row, 2).value.year not in keep_years:
+            ws.delete_rows(row)
+    locs = [ws.cell(1, j).value for j in range(3, 10)]
+    for name, d, off in extra_rows:
+        r = ws.max_row + 1
+        ws.cell(r, 1, name)
+        ws.cell(r, 2, d)
+        for j, loc in enumerate(locs, start=3):
+            if loc in off:
+                ws.cell(r, j, "X")
+    wb.save(path)
+
+
+def test_cycles_covered_by_the_stored_matrix_stay_enabled(tmp_path):
+    p = Pipeline(tmp_path / "t")
+    assert p.prepare() == 0
+    opts = options(p)
+    # the matrix has rows in 2026 and 2027: nothing is disabled for the holiday year
+    assert all("Holiday Roster has no" not in c["reason"] for c in opts["cycles"])
+    assert by_id(opts)["2026-12"]["enabled"] and opts["problems"] == []
+
+
+def test_uncovered_year_disables_the_cycle_with_a_clear_reason(tmp_path):
+    p = Pipeline(tmp_path / "t")
+    _rewrite_matrix(p.paths.holidays, keep_years={2026})
+    assert p.prepare() == 0
+    opts = options(p)
+    cycles = by_id(opts)
+    # 2026 cycles still work; the Dec 2026 - Jan 2027 cycle needs 2027 rows
+    assert cycles["2026-10"]["enabled"]
+    dec = cycles["2026-12"]
+    assert dec["enabled"] is False
+    assert dec["reason"] == "Holiday Roster has no 2027 rows - upload the new year's Holiday Roster"
+    # a readable but old matrix is not a "problem" (problems stay for unreadable matrices)
+    assert not any(x["severity"] == "error" for x in opts["problems"])
+    assert opts["default"] == "2026-10"
+    # the Feb 2027 cycle is only 2027 and was already disabled for missing data
+    assert "2027" not in cycles["2027-02"]["reason"] or not cycles["2027-02"]["enabled"]
+
+
+def test_dec_jan_cycle_needs_both_years(tmp_path):
+    p = Pipeline(tmp_path / "t")
+    # only 2027 rows: the 2026 part of the Dec-Jan cycle is uncovered
+    _rewrite_matrix(p.paths.holidays, keep_years={2027})
+    assert p.prepare() == 0
+    cycles = by_id(options(p))
+    dec = cycles["2026-12"]
+    assert dec["enabled"] is False
+    assert dec["reason"] == "Holiday Roster has no 2026 rows - upload the new year's Holiday Roster"
+    assert not cycles["2026-10"]["enabled"] and "no 2026 rows" in cycles["2026-10"]["reason"]
+
+    # a single row in each year is enough (the assumed 1 Jan 2027 row counts for 2027)
+    p2 = Pipeline(tmp_path / "t2")
+    _rewrite_matrix(p2.paths.holidays, keep_years=set(),
+                    extra_rows=[("Only 2026", date(2026, 3, 3), ["Pune"]),
+                                ("Only 2027", date(2027, 1, 1), ["Pune", "Chennai"])])
+    assert p2.prepare() == 0
+    assert by_id(options(p2))["2026-12"]["enabled"] is True
+
+
+def test_replacing_the_matrix_later_re_enables_the_cycle(tmp_path):
+    p = Pipeline(tmp_path / "t")
+    full = p.paths.holidays.read_bytes()
+    _rewrite_matrix(p.paths.holidays, keep_years={2026})
+    assert p.prepare() == 0
+    assert not by_id(options(p))["2026-12"]["enabled"]
+
+    p.paths.holidays.write_bytes(full)  # the new year's upload replaces the file
+    assert p.prepare() == 0
+    opts = options(p)
+    assert by_id(opts)["2026-12"]["enabled"] and opts["default"] == "2026-12"
+
+
+def test_no_cycle_selectable_because_of_the_year_says_so(tmp_path):
+    p = Pipeline(tmp_path / "t")
+    _rewrite_matrix(p.paths.holidays, keep_years=set(),
+                    extra_rows=[("Far Future", date(2030, 5, 5), ["Pune"])])
+    assert p.prepare() == 0
+    opts = options(p)
+    assert not any(c["enabled"] for c in opts["cycles"]) and opts["default"] is None
+    assert any("does not cover the needed year" in x["message"] for x in opts["problems"])
+    assert not any("previous cycle is missing data" in x["message"] for x in opts["problems"])
+
+
+def test_analyze_fails_clearly_when_the_stored_matrix_is_missing(tmp_path, capsys):
+    p = Pipeline(tmp_path / "t")
+    assert p.prepare() == 0
+    synth.write_run_params(p.paths, "2026-12")
+    p.paths.holidays.unlink()
+    assert p.analyze() == 1
+    err = capsys.readouterr().err
+    assert "cannot be built" in err and "holiday matrix is missing" in err
+    assert "Traceback" not in err
+
+
+def test_no_script_deletes_the_stored_holiday_roster(tmp_path):
+    """The Holiday Roster stays on file between runs: a whole run must leave it byte-identical."""
+    p = Pipeline(tmp_path / "t")
+    before = p.paths.holidays.read_bytes()
+    assert p.prepare() == 0
+    p.run_to_draft()
+    p.run_to_diff()
+    assert p.finalize() == 0
+    assert p.paths.holidays.is_file() and p.paths.holidays.read_bytes() == before

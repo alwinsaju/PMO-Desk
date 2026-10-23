@@ -5,6 +5,7 @@ Processes a monthly ServiceNow incident export into the proven monthly trend-ana
 
 ## Inputs
 - `input/incident*.xlsx` - the raw ServiceNow export for one calendar month. The newest matching file is used.
+- Upload and clean-up: Run opens an upload dialog with one required input, the month's ServiceNow export, saved as `input/incident.xlsx` (matches `incident*.xlsx`; the newest match is still used). `agent.json` has `cleanup: {onComplete: true}`: after a COMPLETED run the backend deletes this run's `input/` files (dotfiles aside); `reference/` (previous monthly workbooks) and `output/` are never touched, and a failed or abandoned run keeps its input.
 - Previous monthly workbooks (`Monthly Incidents Trend Analysis - *.xlsx`) in `reference/` and `output/` - the classification knowledge base. `prepare_data.py` discovers all of them (month read from `Trend analysis!A1`), and the newest one before the report month becomes the structural template. `output/` holds the user-reviewed deliverables and outranks `reference/` for the same month, so always leave the final corrected workbook in `output/`.
 - `reference/incident-June2026-chitra.xlsx` - June classification reference.
 - `reference/monthly trend notes (updated).docx` - business notes for trend categorization.

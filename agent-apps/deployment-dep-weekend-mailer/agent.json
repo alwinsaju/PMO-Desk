@@ -1,6 +1,21 @@
 {
   "id": "deployment-dep-weekend-mailer",
   "displayName": "Deployment Mailer",
+  "inputs": [
+    {
+      "id": "workbook",
+      "label": "Deployment and Activities workbook",
+      "type": "file",
+      "accept": [
+        ".xlsx"
+      ],
+      "dest": "input/Deployment and Activites.xlsx",
+      "required": true
+    }
+  ],
+  "cleanup": {
+    "onComplete": true
+  },
   "steps": [
     {
       "id": "build_email_data",

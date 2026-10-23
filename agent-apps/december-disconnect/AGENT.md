@@ -5,6 +5,7 @@ Builds the winter holiday coverage for one window (default Fri 25 Dec - Fri 1 Ja
 
 ## Inputs
 - `input/roster.xlsx` shift roster (sheet `PDT Operate`), `input/staff-roster.xlsx` PDT staff roster; optional `input/analytics-a.xlsx`, `input/analytics-b.xlsx` (Oct/Nov Analytics rosters: refresh the usual shifts).
+- Clean-up: `agent.json` has `cleanup: {onComplete: true}`: after a COMPLETED run the backend deletes this run's uploaded files from `input/` (dotfiles aside), so upload them again for the next run; `config/` and `output/` (the finals, the audit log) are never touched, and a failed or abandoned run keeps its input.
 - The window (`input/run-params.json`), chosen from `output/options.json` (written by `scripts/prepare_options.py` from the config).
 - `config/winter-config.json` (teams, minimums, weights, exclusions) and `config/analytics-config.json` (people, slots, on call). Never edited by a script.
 

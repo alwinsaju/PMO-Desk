@@ -49,6 +49,12 @@ def problem(severity: str, message: str) -> dict[str, str]:
     return {"severity": severity, "message": message}
 
 
+def years_without_holidays(cycle, matrix) -> list[int]:
+    """Calendar years the cycle touches (first to last date) that have no row in the matrix."""
+    have = {h.date.year for h in matrix.holidays}
+    return [y for y in range(cycle.start.year, cycle.end.year + 1) if y not in have]
+
+
 def build_options(paths: Paths) -> dict[str, Any]:
     problems: list[dict[str, str]] = []
     options: dict[str, Any] = {"roster": None, "cycles": [], "default": None, "problems": problems}
@@ -91,6 +97,7 @@ def build_options(paths: Paths) -> dict[str, Any]:
     schedule = schedule_of(roster, names)
     threshold = (config or RotationConfig()).has_data_threshold
     blocked_reason = config_problem or matrix_problem
+    holiday_disabled = 0
 
     entries: list[dict[str, Any]] = []
     for cycle in candidate_cycles(roster.first_date, roster.last_date):
@@ -101,6 +108,12 @@ def build_options(paths: Paths) -> dict[str, Any]:
         if enabled and blocked_reason:
             enabled = False
             reason = f"{cycle.label} cannot be built yet: {blocked_reason}"
+        elif enabled and matrix is not None and years_without_holidays(cycle, matrix):
+            missing = years_without_holidays(cycle, matrix)
+            holiday_disabled += 1
+            enabled = False
+            reason = (f"Holiday Roster has no {' or '.join(str(y) for y in missing)} rows - "
+                      "upload the new year's Holiday Roster")
         elif enabled and filled:
             reason += " This cycle already has data in the roster file."
         entries.append({
@@ -123,7 +136,11 @@ def build_options(paths: Paths) -> dict[str, Any]:
         options["default"] = unfilled[0]["id"]
     elif enabled_entries:
         options["default"] = enabled_entries[-1]["id"]
-    if not enabled_entries and not blocked_reason:
+    if not enabled_entries and not blocked_reason and holiday_disabled:
+        problems.append(problem(
+            "warning", "no cycle can be selected: the Holiday Roster on file does not cover the "
+                       "needed year (upload the new year's Holiday Roster)"))
+    elif not enabled_entries and not blocked_reason:
         problems.append(problem(
             "warning", "no cycle can be selected: every cycle's previous cycle is missing data "
                        "(hover a cycle to see why)"))

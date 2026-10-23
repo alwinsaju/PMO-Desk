@@ -66,6 +66,8 @@ All of `input/`, `output/` and `config/` hold real employee data and are gitigno
 | `output/final/Analytics Winter Coverage FINAL <window>.xlsx` | the final Analytics plan |
 | `output/audit/<run id>.json`, `audit.log.jsonl` | who approved which cells (append-only) |
 
+Clean-up: `agent.json` has `"cleanup": {"onComplete": true}`. After a SUCCESSFUL run the backend deletes this task's `input/` files (the uploaded rosters and `run-params.json`; dotfiles and any `cleanup.keep` path stay), so the next run asks for fresh uploads. `config/` and `output/` (the finals and the audit log) are never touched; a failed or abandoned run keeps its input.
+
 `<window>` reads like `2026-12-25 to 2027-01-01`. The Tasks app shows one Open button per workbook:
 `report-data.json` lists both files in `extra_paths` (`[{"label": "Main plan", "path": ...},
 {"label": "Analytics plan", "path": ...}]`, task-relative, draft files at the draft stage and the finals
