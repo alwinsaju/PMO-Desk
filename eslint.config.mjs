@@ -23,6 +23,8 @@ const eslintConfig = [
       "out/**",
       "build/**",
       "release/**",
+      "agent-apps/.venv/**",
+      "agent-apps/**/.venv/**",
       "next-env.d.ts",
     ],
   },
