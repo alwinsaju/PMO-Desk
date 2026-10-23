@@ -22,7 +22,8 @@ from roster_lib.checks import (
     week_pattern,
 )
 from roster_lib.codes import Pattern
-from roster_lib.holiday_matrix import HolidayMatrixError, load_holiday_matrix
+from roster_lib.config import DateWindow
+from roster_lib.holiday_matrix import load_holiday_matrix
 from roster_lib.roster_io import load_roster
 from roster_testkit import (
     END,
@@ -516,20 +517,47 @@ def test_real_roster_pune_strays_include_the_seven_known_dates():
     assert {f.location for f in found if f.kind is FindingKind.STRAY} == {"Pun"}
 
 
-@needs_real
-@pytest.mark.xfail(raises=HolidayMatrixError, strict=True, reason=(
-    "The real 'Holiday Roster 2026' sheet is a March coverage plan with pictures, not the "
-    "Holiday name/Date/location matrix layout, so load_holiday_matrix cannot read it. "
-    "Supply the real 2026 matrix (an xlsx in the matrix layout) to turn this into the "
-    "exact-seven acceptance check."))
-def test_real_roster_pune_strays_are_exactly_the_seven_dates_with_the_real_matrix():
-    matrix = load_holiday_matrix(REAL, "Holiday Roster 2026")
+REAL_MATRIX = (Path(__file__).resolve().parents[2] / "roster-reference" / "Holiday Roster 2026.xlsx")
+needs_real_matrix = pytest.mark.skipif(
+    not (REAL.exists() and REAL_MATRIX.exists()), reason="real roster / holiday matrix not present")
+# the four extra Pune HOL dates the PMO confirmed are also errors (no Pune holiday those days)
+REAL_PUNE_EXTRA_STRAYS = [date(2026, 4, 28), date(2026, 4, 29), date(2026, 5, 14), date(2026, 9, 3)]
+
+
+@needs_real_matrix
+def test_real_matrix_loads_with_the_expected_types_and_location_counts():
+    matrix = load_holiday_matrix(REAL_MATRIX, "Holiday Roster 2026")
+    by_type = {}
+    for h in matrix.holidays:
+        by_type.setdefault(h.type.name, []).append(h)
+    assert {k: len(v) for k, v in by_type.items()} == {
+        "COMMON": 7, "LOCATION_SPECIFIC": 11, "MEXICO_ONLY": 7}
+    assert sorted(h.date for h in by_type["COMMON"]) == [
+        date(2026, 1, 1), date(2026, 1, 26), date(2026, 5, 1), date(2026, 10, 2),
+        date(2026, 11, 9), date(2026, 12, 25), date(2027, 1, 1)]
+    assert {h.date for h in by_type["COMMON"] if h.common_india_mexico} == {
+        date(2026, 1, 1), date(2026, 5, 1), date(2026, 12, 25), date(2027, 1, 1)}
+    # every India location has 11 holidays in 2026 (the screenshot's 15 minus the 4 disconnect days)
+    for code in INDIA:
+        assert sum(1 for h in matrix.holidays
+                   if code in h.off_locations and h.date.year == 2026) == 11
+
+
+@needs_real_matrix
+def test_real_roster_pune_strays_are_exactly_the_eleven_known_dates_with_the_real_matrix():
+    matrix = load_holiday_matrix(REAL_MATRIX, "Holiday Roster 2026")
     roster = load_roster(REAL)
-    pune = [p for p in roster.people if p.location_code == "Pune"]
-    found = hol_check(schedule_from_roster(roster), pune, matrix, {}, roster.first_date,
-                      roster.last_date, ignore_label_pattern=None)
-    assert sorted(f.date for f in found if f.kind is FindingKind.STRAY) == REAL_STRAYS
-    assert {f.location for f in found if f.kind is FindingKind.STRAY} == {"Pun"}
+    # 26-31 Dec 2026 is the December Disconnect (config.disconnect_windows): ignored
+    window = DateWindow(date(2026, 12, 26), date(2026, 12, 31))
+    found = hol_check(schedule_from_roster(roster), roster.people, matrix, {}, roster.first_date,
+                      roster.last_date, ignore_dates=window.dates(), ignore_label_pattern=None)
+    strays: dict[str, set] = {}
+    for f in found:
+        if f.kind is FindingKind.STRAY:
+            strays.setdefault(f.location, set()).add(f.date)
+    assert sorted(strays["Pun"]) == sorted(REAL_STRAYS + REAL_PUNE_EXTRA_STRAYS)
+    pune_people = {p.name for p in roster.people if p.location_code == "Pune"}
+    assert {f.person for f in found if f.kind is FindingKind.STRAY and f.location == "Pun"}         <= pune_people
 
 
 @needs_real
