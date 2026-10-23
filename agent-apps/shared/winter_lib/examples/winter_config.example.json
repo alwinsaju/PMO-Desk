@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "window": {"start": "2026-12-25", "end": "2027-01-01"},
+  "holidays": {"2026-12-25": "Christmas", "2027-01-01": "New Year"},
+  "weekend_label": "Weekend",
+  "default_day_label": "Winter Disconnect",
+  "fair_days": ["2026-12-25", "2026-12-26", "2026-12-27", "2027-01-01"],
+  "fair_range": {"min": 1, "max": 2},
+  "teams": [
+    {"name": "DIS", "label": "DIS (L2)", "min_per_day": 2, "best_effort": false},
+    {"name": "DEP", "label": "DEP", "min_per_day": 2, "best_effort": false},
+    {"name": "L3", "label": "L3", "min_per_day": 0, "best_effort": true},
+    {"name": "Device Support", "label": "Device Support", "min_per_day": 0, "best_effort": true},
+    {"name": "Lab", "label": "Lab", "min_per_day": 0, "best_effort": true},
+    {"name": "Device Support L3", "label": "Device Support L3", "min_per_day": 0, "best_effort": true},
+    {"name": "CMS 2.0", "label": "CMS 2.0", "min_per_day": 1, "best_effort": false},
+    {"name": "EKS", "label": "EKS", "min_per_day": 0, "best_effort": true},
+    {"name": "LNS 2.0", "label": "LNS 2.0", "min_per_day": 1, "best_effort": false},
+    {"name": "Integration HUB", "label": "Integration HUB", "min_per_day": 1, "best_effort": false},
+    {"name": "R&D", "label": "R&D", "min_per_day": 0, "best_effort": true},
+    {"name": "Instrument Manager", "label": "Instrument Manager", "min_per_day": 0, "best_effort": true}
+  ],
+  "team_aliases": {"L2": "DIS", "L N S 2.0": "LNS 2.0"},
+  "staff_team_map": {
+    "DIS L2": "DIS", "DIS L2 - Infra": "DIS", "DIS": "DIS", "Complaints": "DIS",
+    "DEP": "DEP", "Device": "Device Support", "Device L3": "Device Support L3"
+  },
+  "subteams": ["Complaints", "Loyalty"],
+  "rules": {"min_days": 3, "max_days": 5, "best_effort_max_days": 3},
+  "exclusions": {
+    "team_patterns": ["Leadership", "Governance", "PMO", "Analytics"],
+    "people": ["Rolled Off Example"],
+    "name_patterns": []
+  },
+  "availability": {
+    "Alice Example": {"unavailable": ["2026-12-25", "2026-12-26..2026-12-27"]},
+    "Bob Example": {"allowed": ["2026-12-28..2026-12-31"]}
+  },
+  "shift_overrides": {"Carol Example": "S1"},
+  "default_new_person_shift": null,
+  "name_aliases": {"Dan Examplesson": "Daniel Example"},
+  "lookback_months": 4,
+  "weights": {
+    "shortfall": 1000,
+    "best_effort_nobody": 100,
+    "day_weight": {"weekday": 3, "holiday": 2, "weekend": 1},
+    "extra_day": [400, 600],
+    "lane": 60,
+    "subteam": 40,
+    "fairness": 5,
+    "block": 1,
+    "stability": 30,
+    "days_shortfall": 5000
+  },
+  "solver": {"time_limit_s": 120, "mip_rel_gap": 0.0, "seed": 20261225}
+}
