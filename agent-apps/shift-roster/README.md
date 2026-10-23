@@ -136,7 +136,7 @@ as "on file") and is never cleaned: upload it once a year and replace it when th
 `agent.json` has `"cleanup": {"onComplete": true}`. After a SUCCESSFUL run the backend deletes this
 task's `input/` files except persisted inputs (the Holiday Roster), the manifest's `cleanup.keep`
 paths (none here) and dotfiles. So the master roster, the optional PTO import and `run-params.json`
-are removed and the next run asks for a fresh roster upload. `output/` (the final roster, next-year
+are removed and the next run asks for a fresh roster upload. The stale `output/options.json` (the cycle list) is cleared too. The rest of `output/` (the final roster, next-year
 file, audit log, backups) and `config/` are never touched; a failed or abandoned run keeps its
 input so it can be retried.
 
