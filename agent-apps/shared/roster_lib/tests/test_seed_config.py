@@ -62,7 +62,7 @@ def test_summary_is_counts_only_and_report_lists_unlisted_people():
     result = seed_config(roster, parse_seed_names(NAMES))
     s = result.summary
     assert s["roster_people"] == 25 and s["in_scope"] == 23 and s["excluded"] == 2
-    assert s["seeded"] == 23 and s["unmatched"] == 0 and s["conflicts"] == 0
+    assert s["seeded"] == 23 and s["unmatched"] == 0 and s["listed_pair_differs"] == 0
     assert s["by_category"] == {"ASK_ME": 1, "AUTO_SWAP": 12, "PERMANENT": 6, "UNCLASSIFIED": 4}
     assert s["latest_cycle"] == "Aug 2026" and s["unlisted_unclassified"] == 4
     assert all(isinstance(v, (int, str, dict, type(None))) for v in s.values())
@@ -98,14 +98,42 @@ def test_alternative_spellings_and_ambiguity():
     assert rotation_of(result, "Lab Person 0") is Rotation.UNCLASSIFIED
 
 
-def test_auto_swap_outside_its_pair_is_a_conflict_not_a_guess():
+def test_auto_swap_outside_its_listed_pair_stays_auto_swap_with_the_observed_shift():
     data = {"auto_swap": [{"shifts": ["S3", "S4"], "names": ["Dis Morning 01", "Dis Evening 01"]}]}
     result = seed_config(make_roster(), parse_seed_names(data))
     assert rotation_of(result, "Dis Evening 01") is Rotation.AUTO_SWAP
-    assert rotation_of(result, "Dis Morning 01") is Rotation.UNCLASSIFIED  # on S1, not S3/S4
-    conflicts = result.report["conflicts"]
-    assert [(c["name"], c["current_shift"], c["listed_pair"]) for c in conflicts] == [
-        ("Dis Morning 01", "S1", ["S3", "S4"])]
+    morning = result.config.find("Dis Morning 01")
+    assert morning.rotation is Rotation.AUTO_SWAP  # on S1, listed S3/S4: no conflict
+    assert (morning.shift, morning.partner) == ("S1", "S2")  # the observed shift rules
+    assert "conflicts" not in result.report and "conflicts" not in result.summary
+    assert result.report["listed_pair_differs"] == [
+        {"name": "Dis Morning 01", "listed_pair": ["S3", "S4"], "current_shift": "S1"}]
+    assert result.summary["listed_pair_differs"] == 1
+    assert result.summary["by_category"]["AUTO_SWAP"] == 2
+
+
+def test_auto_swap_observed_without_partner_stays_auto_swap():
+    data = {"auto_swap": [{"shifts": ["S1", "S2"], "names": ["Lead Three 0"]}]}  # observed S5
+    result = seed_config(make_roster(), parse_seed_names(data))
+    lead = result.config.find("Lead Three 0")
+    assert lead.rotation is Rotation.AUTO_SWAP and lead.shift == "S5" and lead.partner is None
+
+
+def test_not_on_roster_names_are_not_reported_and_get_no_entry():
+    data = {**NAMES, "not_on_roster": ["Team Member Elsewhere", ["Another Absent", "Alias Absent"]]}
+    result = seed_config(make_roster(), parse_seed_names(data))
+    assert result.report["unmatched"] == [] and result.summary["unmatched"] == 0
+    assert result.summary["not_on_roster"] == 2 and result.summary["not_on_roster_found"] == 0
+    assert result.config.find("Team Member Elsewhere") is None
+    assert result.summary["seeded"] == 23  # unchanged
+    # an entry that IS on the roster is reported and the person is not removed from the config
+    present = {**NAMES, "not_on_roster": ["Lab Person 0"]}
+    again = seed_config(make_roster(), parse_seed_names(present))
+    assert again.report["not_on_roster_found"] == [
+        {"seed_name": ["Lab Person 0"], "roster_name": "Lab Person 0"}]
+    assert again.config.find("Lab Person 0") is not None and again.summary["not_on_roster"] == 0
+    with pytest.raises(SeedNamesError, match=r"not_on_roster\[1\]"):
+        parse_seed_names({"not_on_roster": [1]})
 
 
 def test_person_listed_in_two_categories_keeps_the_first():

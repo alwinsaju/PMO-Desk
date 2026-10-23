@@ -19,8 +19,8 @@ writes it back deterministically. Schema (version 1):
                                                  # it is the roster team (section) if given
          "location": "Blr",                      # a location name or its code
          "rotation": "PERMANENT",
-         "shift": "S1",                          # optional except for AUTO_SWAP
-         "partner": "S2"}                        # AUTO_SWAP only (S1<->S2, S3<->S4)
+         "shift": "S1",                          # optional snapshot of the current shift
+         "partner": "S2"}                        # AUTO_SWAP only: derived from `shift`
       ]
     }
 
@@ -56,8 +56,12 @@ aliases first, then looks the team up (falling back to "default").
 
 Rotation categories (`Rotation`):
   PERMANENT    copy the shift forward unchanged;
-  AUTO_SWAP    flip to the partner shift (S1<->S2, S3<->S4); the weekly-off
-               pattern follows the new code (S2/S4 = Wed-Sun, S1/S3 = Mon-Fri);
+  AUTO_SWAP    flip to the partner of the OBSERVED current shift (S1<->S2, S3<->S4)
+               in the previous cycle, never of the listed `shift`/`partner` (those are
+               a snapshot, informational: shifts may be changed by hand in the roster);
+               the weekly-off pattern follows the new code (S2/S4 = Wed-Sun, S1/S3 =
+               Mon-Fri). An observed shift with no partner (S5, NS, US-*, custom hours)
+               goes to the ask-me list;
   ASK_ME       the user is asked what to do for this person;
   UNCLASSIFIED not yet categorised; the user is asked every run.
 
@@ -345,15 +349,14 @@ class RotationConfig:
         if p.shift is not None and _shift_code(p.shift) is None:
             problems.append(f"{label}: invalid shift {p.shift!r}")
         if p.rotation is Rotation.AUTO_SWAP:
+            # The shift is only a snapshot (the rotation derives the partner from the OBSERVED
+            # shift), so none, or one with no partner (S5), is allowed: the person is asked.
             shift = _shift_code(p.shift)
-            if shift is None:
-                problems.append(f"{label}: AUTO_SWAP needs a shift of S1, S2, S3 or S4")
-            elif partner_shift(shift) is None:
-                problems.append(f"{label}: AUTO_SWAP shift {shift} has no partner "
-                                "(only S1<->S2 and S3<->S4 swap)")
-            elif p.partner is not None and _shift_code(p.partner) != partner_shift(shift):
-                problems.append(f"{label}: partner {p.partner!r} does not match shift {shift} "
-                                f"(expected {partner_shift(shift)})")
+            if p.partner is not None and (
+                    shift is None or _shift_code(p.partner) != partner_shift(shift)):
+                expected = partner_shift(shift) if shift else None
+                problems.append(f"{label}: partner {p.partner!r} does not match shift "
+                                f"{shift or p.shift} (expected {expected})")
         elif p.partner is not None:
             problems.append(f"{label}: partner is only valid for AUTO_SWAP")
         return problems

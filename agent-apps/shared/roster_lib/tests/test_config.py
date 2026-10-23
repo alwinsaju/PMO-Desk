@@ -149,7 +149,7 @@ def test_errors_collected_all_at_once():
     for needle in ("unknown top-level key 'extra'", "version must be 1", "seed must be an integer",
                    "has_data_threshold", "'default'", "min_staff['DIS']", "min_staff['L3']",
                    "unknown location 'Atlantis'", "duplicate name", "rotation must be one of",
-                   "AUTO_SWAP needs a shift", "S5 has no partner", "does not match shift S1",
+                   "does not match shift S1",
                    "partner is only valid for AUTO_SWAP", "invalid shift 'HOL'",
                    "team is required", "unknown field 'bogus'", "must be an object"):
         assert needle in text, needle
@@ -293,11 +293,17 @@ def test_add_update_remove_person():
         cfg.remove_person("Person A1")
 
 
-def test_update_to_auto_swap_without_swappable_shift_fails():
-    cfg = parse_config(doc(people=[{"name": "A", "team": "T", "location": "Blr",
-                                    "rotation": "PERMANENT", "shift": "NS"}]))
-    with pytest.raises(ConfigError, match="no partner"):
-        cfg.update_person("A", rotation="AUTO_SWAP")
+def test_auto_swap_shift_is_a_snapshot_so_no_shift_or_no_partner_is_valid():
+    cfg = parse_config(doc(people=[
+        {"name": "A", "team": "T", "location": "Blr", "rotation": "PERMANENT", "shift": "NS"},
+        {"name": "B", "team": "T", "location": "Blr", "rotation": "AUTO_SWAP"},
+        {"name": "C", "team": "T", "location": "Blr", "rotation": "AUTO_SWAP", "shift": "S5"}]))
+    assert cfg.find("B").shift is None and cfg.find("B").partner is None
+    assert cfg.find("C").partner is None
+    upd = cfg.update_person("A", rotation="AUTO_SWAP")
+    assert upd.shift == "NS" and upd.partner is None
+    with pytest.raises(ConfigError, match="does not match shift"):
+        cfg.add_person(Person("D", "T", "Blr", Rotation.AUTO_SWAP, shift="S5", partner="S1"))
 
 
 def test_save_is_deterministic_sorted_and_roundtrips(tmp_path):

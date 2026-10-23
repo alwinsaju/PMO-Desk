@@ -114,6 +114,53 @@ def test_permanent_custom_string_copied_verbatim():
     assert {t for t in res.schedule["Cust"].values() if t} == {" IST 6:00-3:00AM"}
 
 
+def test_auto_swap_follows_the_observed_shift_not_the_listed_pair():
+    # configured in the S1/S2 group but observed on S3 (Mon-Fri): the partner is S4
+    config = cfg(("Ann", Rotation.AUTO_SWAP, "S1", "DIS"))
+    assert config.find("Ann").partner == "S2"  # the listed pair is informational
+    res = rotate({"Ann": fill(PREV, MF, "Shift-3")}, config, AUG)
+    row = res.schedule["Ann"]
+    assert {t for t in row.values() if t} == {"Shift-4"}
+    assert all(bool(t) == works_on(WS, d) for d, t in row.items())  # pattern follows S4
+    # swap-Sunday mechanics: a Wed-Sun mover works the rotation Sunday, Mon and Tue are off
+    sunday = AUG.rotation_sunday
+    assert row[sunday] == "Shift-4"
+    assert row[sunday + timedelta(days=1)] == "" and row[sunday + timedelta(days=2)] == ""
+    assert row[sunday + timedelta(days=3)] == "Shift-4"
+    assert [(c.person, c.old_shift, c.new_shift) for c in res.changes] == [("Ann", "S3", "S4")]
+    assert any("config shift S1 differs from the observed S3" in w for w in res.warnings)
+
+
+def test_manual_shift_change_between_cycles_carries_forward():
+    # S1 -> S3 changed by hand in the previous cycle's last full weeks: the next cycle follows it
+    cells = fill(PREV, MF, "Shift-1")
+    for d in list(cells):
+        if d >= date(2026, 7, 5) and cells[d]:
+            cells[d] = "Shift-3"
+    config = cfg(("Ann", Rotation.AUTO_SWAP, "S1", None), ("Bea", Rotation.PERMANENT, "S1", None))
+    res = rotate({"Ann": cells, "Bea": dict(cells)}, config, AUG)
+    assert {t for t in res.schedule["Ann"].values() if t} == {"Shift-4"}  # S3 -> S4
+    assert {t for t in res.schedule["Bea"].values() if t} == {"Shift-3"}  # PERMANENT follows too
+    assert all(bool(t) == works_on(MF, d) for d, t in res.schedule["Bea"].items())
+
+
+def test_a_manual_change_in_the_last_full_week_is_respected():
+    cells = fill(PREV, MF, "Shift-1")
+    last_sunday = PREV.end - timedelta(days=6)  # the last full Sunday-Saturday week
+    for d in list(cells):
+        if d >= last_sunday and cells[d]:
+            cells[d] = "Shift-3"
+    config = cfg(("Ann", Rotation.AUTO_SWAP, "S1", None))
+    res = rotate({"Ann": cells}, config, AUG)
+    assert {t for t in res.schedule["Ann"].values() if t} == {"Shift-4"}
+
+
+def test_auto_swap_observed_without_partner_needs_an_answer():
+    config = cfg(("Ann", Rotation.AUTO_SWAP, "S1", None))
+    with pytest.raises(MissingAnswers, match="no partner"):
+        rotate({"Ann": fill(PREV, MF, "Shift-5")}, config, AUG)
+
+
 def test_auto_swap_flips_and_pattern_follows_new_code():
     config = cfg(("Ann", Rotation.AUTO_SWAP, "S1", "DIS"), ("Ben", Rotation.AUTO_SWAP, "S2", "DIS"),
                  ("Cal", Rotation.AUTO_SWAP, "S3", "DIS"), ("Dee", Rotation.AUTO_SWAP, "S4", "DIS"))

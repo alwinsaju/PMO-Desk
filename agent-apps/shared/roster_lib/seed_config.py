@@ -8,6 +8,8 @@ The names live in a GITIGNORED JSON file (this module and its tests contain none
                      {"shifts": ["S3", "S4"], "names": [...]}],
      "ask_me":      [...],
      "unclassified": [...],                  # optional: same as not listing them
+     "not_on_roster": [...],                 # part of the team but not on the roster: never
+                                             # reported as unmatched, no config entry
      "confirmed":   {"seed name": "roster name"}}   # optional answers to earlier questions
 
 A list entry may be one name or a list of alternative spellings of the SAME person
@@ -24,12 +26,15 @@ Rules
     does not resolve is reported (the person is left out of the config).
   - rotation = the listed category; anyone in scope who is not listed is UNCLASSIFIED.
   - shift = the shift the person worked in the latest cycle with data
-    (`rotation.derive_state`); none when it is custom hours or unknown. An AUTO_SWAP
-    person whose current shift is not in their listed pair (or has no shift) is a
-    conflict: they are seeded UNCLASSIFIED and reported.
+    (`rotation.derive_state`); none when it is custom hours or unknown. For AUTO_SWAP
+    people the listed pair is INFORMATIONAL: the rotation derives the partner from the
+    OBSERVED shift, so a person observed outside their listed pair stays AUTO_SWAP
+    (shift = the observed one; `listed_pair_differs` in the report notes it, no
+    conflict). An observed shift with no partner puts them on the ask-me list at run time.
 
-Unmatched names, ambiguous names, conflicts and location problems are written to the
-report (gitignored); `SeedResult.summary` holds counts only.
+Unmatched names, ambiguous names, `not_on_roster` entries found on the roster and
+location problems are written to the report (gitignored); `SeedResult.summary` holds
+counts only.
 
 Run (from `agent-apps/shared`):
     ..\\.venv\\Scripts\\python.exe -m roster_lib.seed_config --roster ROSTER.xlsx \\
@@ -80,6 +85,7 @@ class SeedEntry:
 class SeedNames:
     entries: list[SeedEntry]
     confirmed: dict[str, str]
+    not_on_roster: list[tuple[str, ...]] = field(default_factory=list)  # alternatives per person
 
 
 @dataclass
@@ -102,7 +108,7 @@ def _alternatives(raw: Any, label: str) -> tuple[str, ...]:
 def parse_seed_names(data: Any) -> SeedNames:
     if not isinstance(data, Mapping):
         raise SeedNamesError("the seed-names file must be a JSON object")
-    known = {"permanent", "auto_swap", "ask_me", "unclassified", "confirmed"}
+    known = {"permanent", "auto_swap", "ask_me", "unclassified", "not_on_roster", "confirmed"}
     extra = sorted(set(data) - known)
     if extra:
         raise SeedNamesError(f"unknown key(s): {', '.join(extra)}")
@@ -123,7 +129,9 @@ def parse_seed_names(data: Any) -> SeedNames:
     if not isinstance(confirmed, Mapping) or not all(
             isinstance(k, str) and isinstance(v, str) for k, v in confirmed.items()):
         raise SeedNamesError("'confirmed' must map seed names to roster names")
-    return SeedNames(entries, dict(confirmed))
+    absent = [_alternatives(raw, f"not_on_roster[{i}]")
+              for i, raw in enumerate(data.get("not_on_roster") or [], start=1)]
+    return SeedNames(entries, dict(confirmed), absent)
 
 
 def load_seed_names(path: str | Path) -> SeedNames:
@@ -200,8 +208,18 @@ def seed_config(roster, names: SeedNames, *, base: RotationConfig | None = None,
     schedule = schedule_from_roster(roster)
     cycle = cycle or latest_cycle_with_data(schedule, roster.last_date, active_names)
 
-    report: dict[str, Any] = {"unmatched": [], "duplicates": [], "conflicts": [],
-                              "location_problems": [], "unclassified_people": []}
+    report: dict[str, Any] = {"unmatched": [], "duplicates": [], "listed_pair_differs": [],
+                              "not_on_roster_found": [], "location_problems": [],
+                              "unclassified_people": []}
+    absent = set()
+    for alternatives in names.not_on_roster:
+        roster_name, _, _ = _match_entry(SeedEntry(alternatives, Rotation.UNCLASSIFIED),
+                                         active_names, names.confirmed)
+        if roster_name is not None:  # listed as absent but present: reported, not excluded
+            report["not_on_roster_found"].append({"seed_name": list(alternatives),
+                                                  "roster_name": roster_name})
+        else:
+            absent.add(alternatives)
     chosen: dict[str, SeedEntry] = {}
     for entry in names.entries:
         roster_name, reason, candidates = _match_entry(entry, active_names, names.confirmed)
@@ -230,11 +248,8 @@ def seed_config(roster, names: SeedNames, *, base: RotationConfig | None = None,
             if cycle is not None else None
         shift = state.code if state is not None and is_shift_canonical(state.code) else None
         if category is Rotation.AUTO_SWAP and (shift is None or shift not in entry.pair):
-            report["conflicts"].append({
-                "name": p.name, "listed_pair": list(entry.pair), "current_shift": shift,
-                "reason": "AUTO_SWAP needs a current shift inside the listed pair; "
-                          "seeded UNCLASSIFIED"})
-            category = Rotation.UNCLASSIFIED
+            report["listed_pair_differs"].append({  # informational: the observed shift rules
+                "name": p.name, "listed_pair": list(entry.pair), "current_shift": shift})
         config.add_person(Person(p.name, team, location, category, subteam=p.section,
                                  shift=shift))
         matched[p.name] = category.value
@@ -249,7 +264,9 @@ def seed_config(roster, names: SeedNames, *, base: RotationConfig | None = None,
         "excluded": len(roster.people) - len(active),
         "seeded": len(matched), "by_category": dict(sorted(by_category.items())),
         "seed_names_listed": len(names.entries),
-        "unmatched": len(report["unmatched"]), "conflicts": len(report["conflicts"]),
+        "unmatched": len(report["unmatched"]),
+        "listed_pair_differs": len(report["listed_pair_differs"]),
+        "not_on_roster": len(absent), "not_on_roster_found": len(report["not_on_roster_found"]),
         "duplicates": len(report["duplicates"]),
         "location_problems": len(report["location_problems"]),
         "unlisted_unclassified": len(report["unclassified_people"]),
