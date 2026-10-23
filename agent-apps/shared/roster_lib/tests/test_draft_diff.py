@@ -354,3 +354,23 @@ def test_to_json_deterministic_and_complete_for_the_ui(env):
     assert set(data["flags"]) == {"new", "resolved", "remaining"} and data["flags"]["resolved"][0]["key"] == "k-err"
     assert data["meta"]["cycle"]["label"] == "Jan 2026" and data["snapshot_cells"] == len(plan.edits)
     assert isinstance(DiffIssue("X", "info", "m").to_dict(), dict)
+
+
+def test_works_with_the_real_flag_type_and_flag_delta(tmp_path):
+    """cycle_builder.Flag (key property) and cycle_builder.flag_delta against sidecar flags (dicts)."""
+    from roster_lib.cycle_builder import Flag, flag_delta
+
+    info = make_master(tmp_path)
+    plan = make_plan(info, flags=[Flag("STAFFING_SHORTAGE", "ERROR", "short", None, date(2026, 1, 14), "DIS", "S1"),
+                                  Flag("HOL_ON_WEEKLY_OFF", "WARNING", "off", info.people[1].name, date(2026, 1, 17))])
+    draft = tmp_path / "draft.xlsx"
+    build_draft(info.path, draft, plan, now=NOW)
+    saved = pmo_save(draft, tmp_path / "saved.xlsx", {(person(info, 0), date(2026, 1, 8)): "Shift-9"})
+    after = [plan.flags[1], Flag("PTO_NEEDED", "WARNING", "needed", None, date(2026, 1, 8), "DIS", "S1")]
+    d = diff_draft(saved, master_path=info.path, recheck=lambda s: after, flag_delta=flag_delta)
+    assert [f["kind"] for f in d.flags_new] == ["PTO_NEEDED"]
+    assert [f["kind"] for f in d.flags_resolved] == ["STAFFING_SHORTAGE"]
+    assert [f["kind"] for f in d.flags_remaining] == ["HOL_ON_WEEKLY_OFF"]
+    # the default (local) delta agrees with the real one
+    d2 = diff_draft(saved, master_path=info.path, recheck=lambda s: after)
+    assert (d2.flags_new, d2.flags_resolved, d2.flags_remaining) == (d.flags_new, d.flags_resolved, d.flags_remaining)
