@@ -75,13 +75,20 @@ with or without Mexico) or `MEXICO_ONLY`. Helpers: `holidays_in_range`,
 writes deterministically (people sorted by name, fixed key order). Schema is in
 the module docstring; see `examples/rotation_config.example.json`.
 Rotation categories: `PERMANENT` (copy forward), `AUTO_SWAP` (flip to the
-partner shift; weekly-off pattern follows the new code), `ASK_ME`,
-`UNCLASSIFIED` (asked every run). Validation errors are all reported in one
+partner of the OBSERVED shift; weekly-off pattern follows the new code), `ASK_ME`,
+`UNCLASSIFIED` (asked every run). The listed `shift`/`partner` of an AUTO_SWAP person
+is only a snapshot: shifts may be changed by hand in the roster between cycles, so the
+rotation reads each person's shift from the previous cycle (`rotation.derive_state`: the
+last full weeks win, a manual change inside the cycle is respected) and swaps THAT one
+(S1<->S2, S3<->S4). An observed shift with no partner (S5, NS, US-*, custom hours) puts
+the person on the ask-me list. PERMANENT people follow the observed state too. Validation errors are all reported in one
 `ConfigError`. API: `classify(person)`, `next_shift(person)`, `name_key(name)`,
 `cfg.find(name)`, `add_person`, `update_person`, `remove_person`,
 `resolve_location_code`, `team_of(section | roster Person | config Person)`,
-`min_staff_for_team(team)` (`min_staff_for` is the old name). `min_staff` is keyed by
-TEAM (3 for DIS, DEP and L3, 2 for every other team, per shift code per day);
+`min_staff_for_team(team)` (`min_staff_for` is the old name), `min_staff_mode_for_team(team)`.
+`min_staff` is keyed by TEAM (3 for DIS, DEP and L3, 2 for every other team); `min_staff_mode`
+(same keying, "default" required, validated, saved deterministically) says how it is counted,
+see "Minimum staffing" below;
 `team_aliases` maps roster section titles to teams (default `L2` -> `DIS`; a map
 in the file replaces the default). A per-team `min_staff` override may be 0 (no
 minimum: not staffing-checked, everyone may be off on a common holiday).
@@ -90,6 +97,31 @@ Leadership, Governance, PMO, Analytics, case-insensitive substrings) name the ro
 sections the program never touches (`cfg.is_excluded_section`); `disconnect_windows`
 (inclusive ISO date ranges, default none) are December Disconnect days that the
 holiday assignment, HOL check and counters skip (`cfg.disconnect_dates()`).
+
+### Minimum staffing: `per_shift` and `per_team_day` ("Option B")
+
+`min_staff_mode` per team (defaults: DIS, DEP and L3 `per_shift`, every other team
+`per_team_day`; overridable in the config file):
+
+- `per_shift`: the minimum applies per team, per shift code, per day, for the shifts active
+  that day (unchanged).
+- `per_team_day`: the minimum applies per team per day across ALL its shifts (working = a
+  shift code, custom hours or on-call). The **effective minimum** that day is
+  `min(configured minimum, team members SCHEDULED that day)`, where scheduled
+  (`checks.scheduled_on`) means a working cell, or a leave cell (P, T, SL, COMP, HOL) on a day
+  the person's weekly pattern works, i.e. before any leave or HOL. So a one-person team or a
+  small team on offset patterns never gets an impossible shortage, a day nobody in the team is
+  scheduled is not active, and a team whose leave drops it below the effective minimum is
+  flagged (`Shortage.shift == "ALL"`).
+
+The rule is applied the same way everywhere (`checks.effective_min`): `staffing_check`, the
+PTO below-minimum clash (`pto.shift_group_rule(..., per_team_day=...)`, group (team, "ALL")),
+the cycle builder's headcount flags (a per_team_day team gets no `HEADCOUNT_BELOW_MIN`;
+`headcount_table` rows carry `mode` and, for such a team, `attainable` is `{"ALL": ...}`),
+and the holiday fairness engine: on a COMMON holiday the fairness group of a per_team_day team
+is the whole team that day (shift `ALL`): pool = India members working that day across shifts,
+outside = the other members who work (Mexico when not off), `need = max(0, effective_min -
+len(outside))`. `per_shift` teams are unchanged.
 
 ## Workbook I/O (roster_io, xlsx_patch, pkgdiff)
 
@@ -251,13 +283,16 @@ needs_confirmation, unmatched)`: exact (words, any order/case) is silent; one
 word more/less, a one-word typo or a whole-name edit distance <= 2 returns
 candidates and is never accepted until the caller passes
 `confirmed={import name: roster name}`.
-`apply_pto(schedule, entries, cycle, confirmed, needed=None, min_staff_for=None)
+`apply_pto(schedule, entries, cycle, confirmed, needed=None, min_staff_for=None,
+preserved=())
 -> PtoResult(edits, clashes, notes, match, skipped_entries)`: the code goes only on
 days the person would work (a working code, or HOL: PTO beats HOL); weekly offs
-and other leave stay; out-of-cycle ranges are ignored with a note; no
+and other leave stay; `preserved` (name, date) cells keep their leave code, a HOL included,
+and get the note "already X; PTO not written"; out-of-cycle ranges are ignored with a note; no
 replacements. Clashes (`PtoClash(person, date, kind, detail)`; kinds SWAP_SUNDAY,
 NEEDED, BELOW_MIN, OVERLAP) are reported, not blocked. `shift_group_rule(schedule,
-team_of, minimum_for)` builds the `min_staff_for` callable (group = team + shift).
+team_of, minimum_for, per_team_day=None)` builds the `min_staff_for` callable (group = team +
+shift; for a per_team_day team group = (team, "ALL") with the effective minimum).
 
 ### `roster_changes.py` - Step 0 and the ask-me list
 
@@ -302,7 +337,8 @@ tests or docs.
   when a member's pattern works it that day or someone works it, so S2/S4 groups
   are silent Mon-Tue but a Wednesday with everyone on leave or HOL is a shortage.
   A person on leave keeps the shift code of their nearest worked day (28 days).
-  Mexico people count when working.
+  Mexico people count when working. A `per_team_day` team is counted per team per day
+  with the effective minimum instead (`Shortage.shift == "ALL"`; see "Minimum staffing").
 - `hol_check(schedule, people, matrix, roster_labels, start, end, coverage_ok=None,
   ignore_dates=(), ignore_label_pattern=...) -> [Finding(kind, severity, date,
   person, location, message)]`, sorted by date. Kinds: `STRAY` (HOL where the
@@ -338,7 +374,8 @@ are affected (PTO beats HOL and is never counted).
   gets `HOL`; no fairness, no counters; shortages are flagged (`STAFFING_SHORTAGE`),
   not fixed. Mexico staff always get HOL on any holiday that ticks Mexico, including
   Common India-Mexico rows (so many shifts are flagged on such days: expected).
-- COMMON holidays: per (team, shift) group, `outside` (non-India staff, Mexico staff
+- COMMON holidays: per (team, shift) group (a per_team_day team: the whole team that day,
+  shift `ALL`, effective minimum), `outside` (non-India staff, Mexico staff
   when Mexico is not off) count toward the minimum; `pool` = India people working;
   `need = max(0, min_staff(team) - len(outside))`; the pool is ordered by
   `offs_taken` DESC, then `last_off_date` DESC (never-off last), then a seeded
@@ -349,7 +386,12 @@ are affected (PTO beats HOL and is never counted).
   (`need > len(pool)`). Mexico staff are never in the pool and have no counter;
   COMP is never generated and comp-offs are not tracked.
 - `GroupAssignment` per group and holiday: `off`, `straight_off`, `covering`,
-  `outside`, `min_staff`, `need`, `shortage`, and the pool's counters before/after.
+  `outside`, `min_staff` (the effective one), `need`, `shortage`, `mode`, `preserved_off` and
+  the pool's counters before/after. A HOL already in the schedule (typed by hand) is listed in
+  `preserved_off`: on a COMMON holiday where the person's location is ticked and their pattern
+  works it is an off already taken (counter +1, last off = that day; they leave the pool so
+  `need` is unchanged); a stray, weekly-off or location-specific HOL is not counted, and any
+  leave code in the schedule makes the person unavailable like PTO.
   `HolidayResult.coverage` is the set of `(name, date)` pairs that deliberately work
   a COMMON holiday (feed it to `hol_check(..., coverage_ok=...)`). The seed is
   recorded in the result and logged; the same inputs and seed always give the same
@@ -374,7 +416,10 @@ workbook touched; the draft is plain data and a later phase writes the xlsx).
 `seed_config.py` creates the first rotation config from the roster and a (gitignored)
 names file; run it from `agent-apps/shared` with
 `..\.venv\Scripts\python.exe -m roster_lib.seed_config --help`. Real names live only in
-gitignored files (`agent-apps/shift-roster/config/`, `.../output/`).
+gitignored files (`agent-apps/shift-roster/config/`, `.../output/`). In the names file an
+AUTO_SWAP group's listed pair is informational (a person observed outside it stays AUTO_SWAP,
+noted as `listed_pair_differs`; no conflict), and `not_on_roster` lists team members who are
+not on the roster: never reported as unmatched, no config entry.
 
 Scope: `active_people(roster.people, config)` = everyone not in an excluded section.
 Excluded people are never rotated, given PTO or HOL, checked, listed as new/removed or
@@ -396,8 +441,9 @@ the cycle, years without rows), `active_count`, `excluded_people`, `unclassified
 
 ### `build_plan(roster, config, cycle, answers=None, *, holiday_matrix, pto_entries=None, confirmed_pto=None, seed=None, history=None, bootstrap=False, library_commit=None) -> Plan`
 
-Order: apply roster changes -> rotate -> PTO (PTO beats HOL; `shift_group_rule` driven
-by `config.team_of` / `min_staff_for_team`, a minimum of 0 is "no rule") -> holidays
+Order: apply roster changes -> rotate -> preserve existing leave -> PTO (PTO beats
+generated HOL; `shift_group_rule` driven by `config.team_of` / `min_staff_for_team` /
+`min_staff_mode_for_team`, a minimum of 0 is "no rule") -> holidays
 (counters from the roster via `build_counters_from_schedule`; the engine runs once per
 calendar year of the cycle, so fairness counters restart on 1 January; December
 Disconnect days are skipped) -> checks on the draft (the existing roster overlaid with the
@@ -412,8 +458,20 @@ has no data, unless `bootstrap`), `MissingInput` (no matrix) or `NeedsAnswers`
 (see `roster_changes` and `rotation` for the inner shapes). `confirmed_pto`:
 `{import name: roster name}`. `KEEP` carries the observed shift AND pattern forward.
 
-`Plan` fields: `cycle`; `edits` (`{(name, date): text}` for every new-cycle cell of
-every in-scope person on dates inside the roster file, HOL/PTO included, "" = weekly off);
+Existing leave is PRESERVED: a cell of the cycle that already holds a leave code (P, T, SL,
+COMP, or a HOL typed by hand) in the file is never rewritten (not in `edits`, kept in
+`Plan.preserved`, one INFO `PRESERVED_LEAVE` flag each, counted in `run_info.counts`). The
+person is unavailable that day (no HOL generated; a PTO import on it keeps the existing code
+and adds a `PTO_NOTE`); a preserved HOL on a COMMON holiday the person works (not stray, not a
+weekly off) counts as an off already taken in the fairness counters; a preserved stray HOL
+is kept and still reported `HOL_STRAY`. Only shift/pattern cells (working codes, blanks,
+custom text) are rewritten, and `OVERWRITES_EXISTING` counts the non-blank, non-leave cells
+that change, by their existing code.
+
+`Plan` fields: `cycle`; `edits` (`{(name, date): text}` for every new-cycle cell written
+into the roster file: in-scope people, dates inside the file, HOL/PTO included, "" = weekly
+off, existing leave cells excluded); `preserved` (the leave cells kept, `{(name, date): text}`);
+`snapshot_cells()` (exactly the cells written into the file: `edits`);
 `remainder_edits` (same for dates after `roster.last_date`, for the next-year file;
 holidays there come from the matrix when it has rows for that year); `shift_changes`;
 `holiday_assignments` (one per holiday date and team/shift group: off, covering,
@@ -427,16 +485,32 @@ the EXISTING roster for the cycle's calendar year, for the Draft Summary).
 `to_json()` is deterministic (same inputs, byte-identical text); `Plan.from_json`.
 
 `Flag(kind, severity, message, person, date, team, shift)`, severity ERROR / WARNING /
-INFO, sorted by severity then date. Kinds: `STAFFING_SHORTAGE`, `CANNOT_MEET_MINIMUM`,
+INFO, sorted by severity then date. `Flag.key` is a stable identity string
+(`kind|person|date|team|shift`, empty where absent; a flag with none of them also carries a
+short digest of its message) so two runs can be compared: `flag_delta(before, after) ->
+(new, resolved, remaining)`. `make_rechecker(roster, config, cycle, holiday_matrix, plan)`
+returns `recheck(edited_schedule) -> list[Flag]` for the draft-diff step: given the COMPLETE
+edited schedule (all in-scope people, the cycle's in-file dates, raw texts) it recomputes the
+same checks as `build_plan` (HOL check with the plan's coverage set, staffing check,
+headcount per shift; not the plan-time rotation, PTO or unclassified flags). Kinds: `STAFFING_SHORTAGE`, `CANNOT_MEET_MINIMUM`,
 `NO_OFF_AT_MINIMUM`; `HOL_STRAY`, `HOL_MISSING`, `HOL_MISSING_UNVERIFIED`,
 `HOL_ON_WEEKLY_OFF`, `HOL_MISMATCH_NO_LABEL`, `HOL_MISMATCH_NO_MATRIX`,
 `HOL_UNKNOWN_LOCATION`; `PTO_SWAP_SUNDAY`, `PTO_NEEDED`, `PTO_BELOW_MIN`, `PTO_OVERLAP`,
 `PTO_UNMATCHED` (error: nobody matches, not applied), `PTO_SKIPPED`, `PTO_NOTE`;
-`HEADCOUNT_CHANGED`, `HEADCOUNT_BELOW_MIN` (a team has fewer people on a shift than its
-minimum even before leave), `ROTATION_WARNING`, `UNCLASSIFIED_PERSON`, `CHANGE_NOTE`,
+`HEADCOUNT_CHANGED`, `HEADCOUNT_BELOW_MIN` (a per_shift team has fewer people on a shift than
+its minimum even before leave; per_team_day teams use the effective minimum instead), `ROTATION_WARNING`, `UNCLASSIFIED_PERSON`, `CHANGE_NOTE`,
 `CONFIG_NOT_UPDATED`; `YEAR_BOUNDARY`, `HOLIDAY_MATRIX_NO_ROWS` (a calendar year of the
 cycle has no matrix rows: error inside the file, warning beyond it),
-`DISCONNECT_HOLIDAY_SKIPPED`, `OVERWRITES_EXISTING`. Flagged problems are never fixed.
+`DISCONNECT_HOLIDAY_SKIPPED`, `OVERWRITES_EXISTING`, `PRESERVED_LEAVE`. Flagged problems are
+never fixed.
 `headcount_table(schedule, people, config, cycle)` gives per team: headcount, people per
-shift, spec minimum and whether that minimum is attainable per shift (feeds the min-staff
-proposal written by `seed_config`).
+shift, spec minimum, `mode` and whether that minimum is attainable (per shift, or for the
+whole team under key `ALL` for a per_team_day team; feeds the min-staff proposal written by
+`seed_config`).
+
+Real-file tests (skipped when the gitignored reference files are absent) assert dates and
+counts only: the real 2026 Holiday Roster (`roster-reference/Holiday Roster 2026.xlsx`, same
+layout as `write_template`; the 2027-01-01 row is an ASSUMPTION and 26-31 Dec 2026 is the
+December Disconnect, a config `disconnect_windows` entry, not a matrix row) loads with the
+expected types and 11 holidays per India location in 2026, and the Pune stray HOLs are exactly
+the eleven dates the PMO confirmed.
