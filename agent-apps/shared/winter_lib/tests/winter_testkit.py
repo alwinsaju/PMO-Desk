@@ -109,3 +109,24 @@ def person(name, team, shift="S1", loc="Hyd", subteam=None):
 def window_days(cfg=None):
     cfg = cfg or make_config()
     return list(cfg.days)
+
+
+def small_cfg(**over):
+    """The example configuration without any real-world exclusions/availability, 30 s solver limit."""
+    d = example_dict()
+    d["availability"], d["shift_overrides"], d["name_aliases"] = {}, {}, {}
+    d["exclusions"] = {"team_patterns": [], "people": [], "name_patterns": []}
+    d["solver"]["time_limit_s"] = 30
+    for k, v in over.items():
+        d[k] = v
+    return parse_config(d)
+
+
+def make_people(n_dis=6, n_dep=4, n_l3=3, n_cms=2, n_lns=2, n_hub=2):
+    shifts = ["S1", "S3", "S2", "NS", "S4", "US-CST"]
+    out = []
+    for team, n in (("DIS", n_dis), ("DEP", n_dep), ("L3", n_l3), ("CMS 2.0", n_cms), ("LNS 2.0", n_lns),
+                    ("Integration HUB", n_hub)):
+        for i in range(n):
+            out.append(person(f"{team[:3].upper()}{i} Tester", team, shifts[i % len(shifts)]))
+    return out
