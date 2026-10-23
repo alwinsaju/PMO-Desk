@@ -111,8 +111,10 @@ export function filterFields(
   return fields.filter((field) => {
     if (filter.onlyPending && !(field.required && !effective[field.id])) return false;
     if (terms.length === 0) return true;
-    const haystack =
-      `${field.label} ${field.description ?? ""} ${field.group} ${field.id}`.toLowerCase();
+    const haystack = [field.label, field.description, field.group, field.id]
+      .map((value) => value ?? "")
+      .join(" ")
+      .toLowerCase();
     return terms.every((term) => haystack.includes(term));
   });
 }

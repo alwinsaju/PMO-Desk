@@ -181,9 +181,9 @@ export function FlagsGatePanel({ task, gate }: { task: Task; gate: GateData }) {
               </GateNote>
             ) : (
               <ul className="divide-border/60 divide-y" aria-label="Flags">
-                {visible.slice(0, limit).map((flag) => (
+                {visible.slice(0, limit).map((flag, index) => (
                   <li
-                    key={flag.key}
+                    key={`${flag.key}-${index}`}
                     className="flex flex-col gap-1 px-3 py-2 select-text"
                   >
                     <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
@@ -192,11 +192,14 @@ export function FlagsGatePanel({ task, gate }: { task: Task; gate: GateData }) {
                         {flag.kind}
                       </span>
                       <span className="text-ink text-[12px] font-medium">
-                        {flag.person}
+                        {flag.person ?? <span className="text-ink-faint">—</span>}
                       </span>
-                      {flag.date && (
-                        <span className="text-ink-faint font-mono text-[11px]">
-                          {flag.date}
+                      <span className="text-ink-faint font-mono text-[11px]">
+                        {flag.date ?? "—"}
+                      </span>
+                      {(flag.team || flag.shift) && (
+                        <span className="text-ink-faint text-[11px]">
+                          {[flag.team, flag.shift].filter(Boolean).join(" · ")}
                         </span>
                       )}
                     </div>

@@ -210,8 +210,17 @@ function FlagList({ title, flags }: { title: string; flags: Flag[] }) {
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                 <SeverityChip severity={flag.severity} />
                 <span className="text-ink-muted font-mono text-[11px]">{flag.kind}</span>
-                <span className="text-ink text-[12px] font-medium">{flag.person}</span>
-                <span className="text-ink-faint font-mono text-[11px]">{flag.date}</span>
+                <span className="text-ink text-[12px] font-medium">
+                  {flag.person ?? <span className="text-ink-faint">—</span>}
+                </span>
+                <span className="text-ink-faint font-mono text-[11px]">
+                  {flag.date ?? "—"}
+                </span>
+                {(flag.team || flag.shift) && (
+                  <span className="text-ink-faint text-[11px]">
+                    {[flag.team, flag.shift].filter(Boolean).join(" · ")}
+                  </span>
+                )}
               </div>
               <p className="text-ink-muted text-[12px] break-words">{flag.message}</p>
             </li>
@@ -325,10 +334,10 @@ function ChangeTable({
               {rows.slice(0, limit).map((row, index) => (
                 <tr key={`${row.person}|${row.date}|${index}`} className="select-text">
                   <td className="text-ink px-3 py-1.5 font-medium break-words">
-                    {row.person}
+                    {row.person ?? <span className="text-ink-faint">—</span>}
                   </td>
                   <td className="text-ink-muted px-3 py-1.5 font-mono text-[11px] whitespace-nowrap">
-                    {row.date}
+                    {row.date ?? "—"}
                   </td>
                   <td className="px-3 py-1.5">
                     <span className="inline-flex flex-wrap items-center gap-1.5">

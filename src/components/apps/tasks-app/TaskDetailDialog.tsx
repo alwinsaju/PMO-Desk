@@ -398,7 +398,9 @@ export function TaskDetailDialog({
                                     )}
                                   </span>
                                   <span className="text-ink-faint">
-                                    {parseUtc(approval.at).toLocaleString()}
+                                    {approval.at
+                                      ? parseUtc(approval.at).toLocaleString()
+                                      : ""}
                                   </span>
                                 </li>
                               ))}

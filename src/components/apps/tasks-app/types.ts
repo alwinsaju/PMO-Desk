@@ -295,8 +295,12 @@ export interface Flag {
   key: string;
   severity: FlagSeverity | (string & {});
   kind: string;
-  person: string;
-  date: string;
+  /** Null for roster-wide flags (e.g. STAFFING_SHORTAGE). */
+  person: string | null;
+  /** Null for flags with no single date (e.g. PTO_UNMATCHED). */
+  date: string | null;
+  team?: string | null;
+  shift?: string | null;
   message: string;
 }
 
@@ -311,8 +315,8 @@ export interface FlagsPayload {
 }
 
 export interface CellChange {
-  person: string;
-  date: string;
+  person: string | null;
+  date: string | null;
   before: string | null;
   after: string | null;
 }

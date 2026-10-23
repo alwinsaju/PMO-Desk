@@ -703,3 +703,133 @@ describe("summaries and refusals", () => {
     );
   });
 });
+
+describe("backend nulls (real flags have person/date null)", () => {
+  const flags = [
+    {
+      key: "a",
+      severity: "warning",
+      kind: "PTO_UNMATCHED",
+      person: "Zoe",
+      date: null,
+      message: "no date",
+    },
+    {
+      key: "b",
+      severity: "warning",
+      kind: "STAFFING_SHORTAGE",
+      person: null,
+      date: "2026-12-02",
+      team: "Ops",
+      shift: "S2",
+      message: "short",
+    },
+    {
+      key: "c",
+      severity: "warning",
+      kind: "HEADCOUNT_BELOW_MIN",
+      person: null,
+      date: null,
+      message: "min\theadcount",
+    },
+    {
+      key: "d",
+      severity: "warning",
+      kind: "HOL_STRAY",
+      person: "Amy",
+      date: "2026-12-03",
+      message: "stray",
+    },
+    {
+      key: "e",
+      severity: "warning",
+      kind: "HOL_STRAY",
+      person: "Amy",
+      date: null,
+      message: "stray 2",
+    },
+  ];
+  const keys = (o = {}) =>
+    filterFlags(flags, { severity: "all", kind: "all", query: "", ...o }).map(
+      (f) => f.key,
+    );
+
+  it("sorts null person/date last, stably, without throwing", () => {
+    // person asc: Amy(d, e), Zoe(a), then nulls (b by date, c with no date); dates null last.
+    assert.deepEqual(keys(), ["d", "e", "a", "b", "c"]);
+  });
+
+  it("never searches the literal text null", () => {
+    assert.deepEqual(keys({ query: "null" }), []);
+    assert.deepEqual(keys({ query: "undefined" }), []);
+    assert.deepEqual(keys({ query: "ops s2" }), ["b"]);
+    assert.deepEqual(keys({ query: "zoe" }), ["a"]);
+  });
+
+  it("filters by kind/severity and lists kinds with nulls present", () => {
+    assert.deepEqual(keys({ kind: "STAFFING_SHORTAGE" }), ["b"]);
+    assert.deepEqual(keys({ severity: "info" }), []);
+    assert.deepEqual(
+      flagKinds([
+        ...flags,
+        { key: "x", severity: "info", kind: null, person: null, date: null, message: "" },
+      ]),
+      ["HEADCOUNT_BELOW_MIN", "HOL_STRAY", "PTO_UNMATCHED", "STAFFING_SHORTAGE"],
+    );
+  });
+
+  it("exports nulls as empty TSV cells", () => {
+    const rows = flagsToTsv([flags[2], flags[1]]).split("\n");
+    assert.equal(rows[1], "warning\tHEADCOUNT_BELOW_MIN\t\t\tmin headcount");
+    assert.equal(rows[2], "warning\tSTAFFING_SHORTAGE\t\t2026-12-02\tshort");
+    assert.ok(!rows.join("\n").includes("null"));
+  });
+
+  it("handles null person/date in the diff table", () => {
+    const changes = [
+      { person: null, date: "2026-12-02", before: "S1", after: "P" },
+      { person: "Bob", date: null, before: null, after: "OFF" },
+      { person: "Amy", date: "2026-12-05", before: "S2", after: "P" },
+    ];
+    const order = (key, dir) =>
+      sortChanges(changes, key, dir).map((c) => c.person ?? "-");
+    assert.deepEqual(order("person", "asc"), ["Amy", "Bob", "-"]);
+    assert.deepEqual(order("person", "desc"), ["Bob", "Amy", "-"]);
+    assert.deepEqual(order("date", "asc"), ["-", "Amy", "Bob"]);
+    assert.deepEqual(order("date", "desc"), ["Amy", "-", "Bob"]);
+    assert.equal(filterChanges(changes, "null").length, 0);
+    assert.equal(filterChanges(changes, "off").length, 1);
+    assert.deepEqual(changeStats(changes), { cells: 3, people: 2 });
+  });
+
+  it("copes with null labels, descriptions and options in forms and inputs", () => {
+    const fields = [
+      {
+        id: "a",
+        group: "G",
+        label: null,
+        description: null,
+        type: "select",
+        required: true,
+        default: null,
+        options: null,
+      },
+    ];
+    assert.deepEqual(
+      filterFields(fields, { query: "null", onlyPending: false }, { a: "" }),
+      [],
+    );
+    assert.equal(effectiveAnswers({ fields }, {}, {}).a, "");
+    assert.deepEqual(
+      selectChoices(
+        { cycles: [{ id: "x", label: null, reason: null, enabled: null }] },
+        "cycles",
+      ),
+      [{ id: "x", label: "x", enabled: true, reason: undefined, coverage: undefined }],
+    );
+    assert.equal(
+      refusalText({ ok: false, reason: null, pending: null, blocking: null }),
+      "request was rejected",
+    );
+  });
+});

@@ -7,6 +7,23 @@ import type { Flag, FlagSeverity, FlagsFile } from "./types";
 
 export const SEVERITIES: readonly FlagSeverity[] = ["error", "warning", "info"];
 
+/** Null-safe text: backend fields may be null (e.g. a flag with no person). */
+export function textOf(value: string | null | undefined): string {
+  return value ?? "";
+}
+
+/** localeCompare where null/empty values sort LAST (never first), so rows
+ *  without a person/date sink to the bottom of a group. */
+export function compareNullsLast(
+  a: string | null | undefined,
+  b: string | null | undefined,
+): number {
+  const aEmpty = a === null || a === undefined || a === "";
+  const bEmpty = b === null || b === undefined || b === "";
+  if (aEmpty || bEmpty) return Number(aEmpty) - Number(bEmpty);
+  return a.localeCompare(b);
+}
+
 export function severityRank(severity: string): number {
   const index = SEVERITIES.indexOf(severity as FlagSeverity);
   return index === -1 ? SEVERITIES.length : index;
@@ -27,7 +44,10 @@ export function severityCounts(file: FlagsFile): Record<FlagSeverity, number> {
 }
 
 export function flagKinds(flags: Flag[]): string[] {
-  return [...new Set(flags.map((flag) => flag.kind))].sort((a, b) => a.localeCompare(b));
+  const kinds = flags
+    .map((flag) => flag.kind)
+    .filter((kind): kind is string => Boolean(kind));
+  return [...new Set(kinds)].sort((a, b) => a.localeCompare(b));
 }
 
 export interface FlagFilter {
@@ -47,21 +67,31 @@ export function filterFlags(flags: Flag[], filter: FlagFilter): Flag[] {
       if (filter.severity !== "all" && flag.severity !== filter.severity) return false;
       if (filter.kind !== "all" && flag.kind !== filter.kind) return false;
       if (terms.length === 0) return true;
-      const haystack =
-        `${flag.kind} ${flag.person} ${flag.date} ${flag.message}`.toLowerCase();
+      const haystack = [
+        flag.kind,
+        flag.person,
+        flag.date,
+        flag.team,
+        flag.shift,
+        flag.message,
+      ]
+        .map(textOf)
+        .join(" ")
+        .toLowerCase();
       return terms.every((term) => haystack.includes(term));
     })
     .sort(
       (a, b) =>
         severityRank(a.severity) - severityRank(b.severity) ||
-        a.person.localeCompare(b.person) ||
-        a.date.localeCompare(b.date),
+        compareNullsLast(a.person, b.person) ||
+        compareNullsLast(a.date, b.date),
     );
 }
 
 /** Tab-separated rows (with a header) that paste cleanly into Excel. */
 export function flagsToTsv(flags: Flag[]): string {
-  const clean = (value: string) => (value ?? "").replace(/[\t\r\n]+/g, " ");
+  const clean = (value: string | null | undefined) =>
+    textOf(value).replace(/[\t\r\n]+/g, " ");
   const rows = flags.map((flag) =>
     [flag.severity, flag.kind, flag.person, flag.date, flag.message]
       .map(clean)

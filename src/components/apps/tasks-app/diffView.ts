@@ -6,6 +6,19 @@
  */
 import type { CellChange, DiffBlocker, RosterDiff } from "./types";
 
+/** localeCompare with null/empty values last (a changed cell without a
+ *  person/date must not throw or sort first). Defined here, not imported,
+ *  because plain-Node tests can't resolve extensionless sibling imports. */
+function compareNullsLast(
+  a: string | null | undefined,
+  b: string | null | undefined,
+): number {
+  const aEmpty = !a;
+  const bEmpty = !b;
+  if (aEmpty || bEmpty) return Number(aEmpty) - Number(bEmpty);
+  return a.localeCompare(b, undefined, { numeric: true });
+}
+
 export type ChangeSortKey = "person" | "date" | "before" | "after";
 export type SortDirection = "asc" | "desc";
 
@@ -14,8 +27,10 @@ export function filterChanges(changes: CellChange[], query: string): CellChange[
   const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
   if (terms.length === 0) return changes;
   return changes.filter((change) => {
-    const haystack =
-      `${change.person} ${change.date} ${change.before ?? ""} ${change.after ?? ""}`.toLowerCase();
+    const haystack = [change.person, change.date, change.before, change.after]
+      .map((value) => value ?? "")
+      .join(" ")
+      .toLowerCase();
     return terms.every((term) => haystack.includes(term));
   });
 }
@@ -29,12 +44,17 @@ export function sortChanges(
   direction: SortDirection,
 ): CellChange[] {
   const sign = direction === "asc" ? 1 : -1;
-  const cell = (change: CellChange) => (change[key] ?? "").toString();
+  // Empty cells sort last in BOTH directions (the sign only applies when
+  // both sides have a value).
+  const byColumn = (a: CellChange, b: CellChange) =>
+    !a[key] || !b[key]
+      ? compareNullsLast(a[key], b[key])
+      : sign * compareNullsLast(a[key], b[key]);
   return [...changes].sort(
     (a, b) =>
-      sign * cell(a).localeCompare(cell(b), undefined, { numeric: true }) ||
-      a.person.localeCompare(b.person) ||
-      a.date.localeCompare(b.date),
+      byColumn(a, b) ||
+      compareNullsLast(a.person, b.person) ||
+      compareNullsLast(a.date, b.date),
   );
 }
 
@@ -44,7 +64,10 @@ export interface ChangeStats {
 }
 
 export function changeStats(changes: CellChange[]): ChangeStats {
-  return { cells: changes.length, people: new Set(changes.map((c) => c.person)).size };
+  return {
+    cells: changes.length,
+    people: new Set(changes.map((c) => c.person).filter(Boolean)).size,
+  };
 }
 
 /** Blockers that stop the confirm (the backend refuses it too). */

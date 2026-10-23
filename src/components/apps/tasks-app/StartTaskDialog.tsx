@@ -465,7 +465,7 @@ function FileInput({
             <p className="text-ink-muted flex items-center gap-1.5 text-[12px]">
               <FileXlsIcon size={13} weight="bold" aria-hidden className="shrink-0" />
               <span className="min-w-0 truncate">{status?.filename ?? "Uploaded"}</span>
-              {status?.size !== undefined && (
+              {status?.size != null && (
                 <span className="text-ink-faint shrink-0">
                   {formatBytes(status.size)}
                 </span>
