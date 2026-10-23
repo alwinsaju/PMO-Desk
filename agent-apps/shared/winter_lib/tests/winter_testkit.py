@@ -130,3 +130,44 @@ def make_people(n_dis=6, n_dep=4, n_l3=3, n_cms=2, n_lns=2, n_hub=2):
         for i in range(n):
             out.append(person(f"{team[:3].upper()}{i} Tester", team, shifts[i % len(shifts)]))
     return out
+
+
+def make_sample_files(tmp_path, *, dis=8, dep=6, l3=3, cms=2, lns=2, hub=3, with_new=True):
+    """A plannable synthetic staff roster + shift roster (usual shifts from the 4 months before the window;
+    the window itself holds HOL placeholders). Returns (staff_path, roster_path, names_by_team)."""
+    shifts = ["Shift-1", "Shift-3", "Shift-2", "NS", "Shift-4", "US-CST", "11AM-8PM", "Shift-5"]
+    lb0, lb1 = date(2026, 8, 25), date(2026, 12, 24)
+
+    def cells(code):
+        out, d = {}, lb0
+        while d <= lb1:
+            if d.weekday() < 5:
+                out[d] = code
+            d += timedelta(days=1)
+        for i in range(8):
+            out[WINDOW_START + timedelta(days=i)] = "HOL"
+        return out
+
+    sections, staff_rows, names = [], [], {}
+    spec = [("L2", "DIS L2", "DIS", dis, "L2 DIS USI"), ("DEP", "DEP", "DEP", dep, "DEP USI"),
+            ("L3", "L3", "L3", l3, "L3"), ("CMS 2.0", "CMS 2.0", "CMS 2.0", cms, "CMS 2.0"),
+            ("L N S 2.0", "LNS 2.0", "LNS 2.0", lns, "LNS 2.0")]
+    for section, staff_label, team, n, label in spec:
+        people = []
+        for i in range(n):
+            name = f"{team.split()[0]}{i:02d} Sample"
+            people.append((name, ["Hyderabad", "Pune", "Mexico", "Bengaluru"][i % 4], label,
+                           cells(shifts[i % len(shifts)])))
+            staff_rows.append((staff_label, name, "L2", ["Hyderabad", "Pune", "Mexico", "Bengaluru"][i % 4], "India"))
+            names.setdefault(team, []).append(name)
+        sections.append((section, people))
+    sections.append(("Governance", [("Gov00 Sample", "US", "Governance", cells("Shift-1"))]))
+    staff_rows.append(("Leadership", "Gov00 Sample", "Tech M", "NY", "US"))
+    staff_rows.append(("Analytics", "Ana00 Sample", "L2", "Pune", "India"))
+    if with_new:
+        for i in range(hub):
+            staff_rows.append(("Integration HUB", f"Hub{i:02d} Sample", "L2", "Hyderabad", "India"))
+            names.setdefault("Integration HUB", []).append(f"Hub{i:02d} Sample")
+    staff = make_staff_roster(tmp_path / "staff.xlsx", staff_rows)
+    roster = make_shift_roster(tmp_path / "shift.xlsx", sections)
+    return staff, roster, names

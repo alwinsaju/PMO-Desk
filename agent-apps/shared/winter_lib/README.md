@@ -4,6 +4,117 @@ Shared building blocks for the December Disconnect (winter coverage) task: the m
 and the Analytics plan. Plain Python, deterministic, unit-tested with synthetic data only.
 Run the tests from this folder with `..\..\.venv\Scripts\python.exe -m pytest -q`.
 
+## Main winter plan
+
+The PDT winter coverage ("December Disconnect") for the window Fri 25 Dec - Fri 1 Jan: who works
+which days, on their usual shift, so that every team keeps its daily minimum and everybody works
+3-5 days. Window dates, teams, minimums, weights and exclusions are all configuration, never code.
+
+| Module | Role |
+| --- | --- |
+| `winter_config.py` | Config schema, loader, validator (`load_config`, `parse_config`, `save_config`, `WinterConfig`); `examples/winter_config.example.json` (synthetic) |
+| `winter_inputs.py` | `read_staff_roster`, `usual_shift`, `build_inputs` -> people with team, location and usual shift; `needs_shift`, excluded, warnings |
+| `winter_plan.py` | `solve_winter_plan(people, cfg, previous_plan=None) -> WinterPlan` (HiGHS MILP), `score_plan`, `WinterPlan.to_json/from_json` |
+| `winter_workbook.py` | `write_winter_workbook(path, plan, cfg) -> WorkbookResult`: 3 formula-linked tabs + hidden `_snapshot` + `<file>.snapshot.json` |
+| `winter_audit.py` | `audit_winter_plan(path, cfg, roster_names=None) -> AuditResult` read back from the finished file |
+| `winter_build.py` | `build_winter_coverage(staff, roster, cfg, out, shifts=None, previous_plan=None) -> BuildResult` (inputs -> plan -> file -> audit) |
+| `winter_snapshot.py`, `winter_types.py`, `xlsx_style.py` | snapshot sheet/sidecar reader+writer, shared types (`Finding`, `PlanPerson`, shift display table), the shared look |
+
+```python
+from winter_lib.winter_config import load_config
+from winter_lib.winter_build import build_winter_coverage, NeedsShiftError
+
+cfg = load_config("december-disconnect/config/winter-config.json")
+try:
+    res = build_winter_coverage("PDT Staff Roster.xlsx", "Shiftroster.xlsx", cfg,
+                                "december-disconnect/output/winter-coverage-2026.xlsx")
+except NeedsShiftError as e:      # people with no shift history: ask the user, then
+    res = build_winter_coverage(..., shifts={p.name: "Shift-1" for p in e.people})
+res.audit.ok, res.audit.errors, res.plan.run_info.mip_gap, res.inputs.findings
+```
+
+### Inputs (`winter_inputs`)
+
+* Team membership comes from the staff roster (tolerant header detection: a `Team` column plus a
+  full-name or first+last name columns; a second `Team` column is kept as a secondary label).
+  `staff_team_map` maps staff-roster labels to teams, `team_aliases` the shift-roster sections
+  (`L2` -> `DIS`).
+* **Usual shift** = the modal working SHIFT code (canonical, `roster_lib.codes`; leave, on-call,
+  blanks and custom hours do not count) over the lookback range that ENDS THE DAY BEFORE the window
+  (default 4 months, `lookback_months`). Ties go to the most recent occurrence. The window's own
+  cells (placeholders) are never read.
+* `shift_overrides` beat history. People with no history and no override are returned as
+  `needs_shift` (the UI asks); `default_new_person_shift` (off by default) assigns a shift with a
+  warning instead; `build_winter_coverage(shifts={...})` carries the answers.
+* Exclusions: `exclusions.team_patterns` (substring match on the staff-roster team labels and the
+  shift-roster section, e.g. Leadership, Governance, PMO, Analytics), `people`, `name_patterns`.
+  The staff roster's `Roll-off date` column is read but not used (in the real file it holds one
+  placeholder date for almost everybody): list rolled-off people in `exclusions.people`.
+* Staff-roster vs shift-roster differences are WARNINGS: `staff_not_on_shift_roster`,
+  `shift_roster_not_on_staff` (not scheduled unless `include_shift_roster_only`), `unmapped_team`.
+  Names match exactly, by the same words in another order, via `name_aliases`, then by a
+  conservative same-team fuzzy rule that is reported (`name_fuzzy`) for confirmation.
+
+### The solver (`winter_plan`)
+
+`x[person, day]` binary (one slot per person per day; the person works their usual shift).
+Everything else is a penalised slack, so the model is always feasible: a rule the data makes
+impossible is reported (`team_min` finding with a count-based reason), never crashes or is
+silently weakened. Weights are configuration (`weights`), defaults:
+
+| Term | Default |
+| --- | --- |
+| required-team shortfall, per missing head | 1000 x day weight |
+| best-effort team with nobody on a day | 100 x day weight |
+| 4th / 5th day of a person (only if a team needs the slot) | 400 / 600 |
+| lane (Morning / Evening / Night-US) uncovered, teams of 5+ with a lane of 3+ | 60 x day weight |
+| sub-team (Complaints, Loyalty) uncovered | 40 x day weight |
+| person without 1-2 of the holiday/weekend days (Dec 25, 26, 27, Jan 1) | 5 per day |
+| extra contiguous block per person | 1 |
+| changed person-day when re-solving with `previous_plan` | 30 |
+| person below 3 days (only when availability forces it) | 5000 per day |
+
+Day weights: weekday 3, holiday (Dec 25, Jan 1) 2, weekend 1. Hard bounds: at most 5 days per person
+(3 for best-effort team members: they never get extra days). Determinism: HiGHS is deterministic for
+identical input and every x gets a sha256(seed|name|date)-derived tie-break cost below 1e-3 in total
+per cell; the seed, options, weights, model size, status, objective, dual bound and gap are logged in
+`plan.run_info`. A time-limit stop is flagged (`time_limit` finding); with no solution at all a
+deterministic greedy fallback is returned and flagged (`solver_fallback`).
+
+### The workbook (`winter_workbook`)
+
+* `Winter Coverage`: KPI tiles, team x day heat map (green meets the minimum, amber below, red
+  nobody), `Min / day`, people, days-minimum-met, person-days and a plain-English status per team.
+* `Winter Daily Roster`: per date, Morning / Evening / Night-US rows by team (names only) and a
+  `Total on shift` row; lane = IST start time of the code in the person's plan cell.
+* `Winter Plan`: the editable grid grouped by team (team, location, usual shift, lane, one column per
+  date), a stop-style dropdown from the `Shift key` table on the same sheet, Days worked and
+  holiday/weekend day counts; a cell that differs from the usual shift gets an orange border.
+* `_snapshot` (veryHidden) + `<file>.snapshot.json`: every grid cell as written + meta (plan hash,
+  config hash, window, people, rules), same conventions as `roster_lib.draft_builder`.
+* Formulas use only COUNTIF / COUNTIFS / SUMIF / SUMPRODUCT / IF / AND / MATCH / ISNUMBER / MID /
+  CHAR / SUM / COUNT. Names on the daily roster are per-person IF terms joined with `&` and trimmed
+  with `MID` (no TEXTJOIN, no dynamic arrays; works in every Excel). Every formula carries its cached
+  value and the file recalculates on open. A team so large that one daily-roster formula would pass
+  8,000 characters is refused (`ValueError`).
+
+### The audit (`winter_audit`)
+
+Reads the finished (or Excel re-saved) file: team minimums per day, 3-5 days per person (best-effort
+members <= 3), one slot per person per day, shift == usual shift, no excluded person, every name on
+the roster list you pass, unavailable days, window. Findings are structured (`severity`, `code`,
+`team`, `person`, `date`); best-effort gaps are warnings, never failures. `result.ok` = no error.
+
+### Tests and limitations
+
+`tests/test_winter_*.py` use synthetic names only; `test_winter_real_files.py` runs on the real
+reference files when they exist (counts only, output to the gitignored `december-disconnect/output/`).
+Formula checking uses `tests/formula_eval.py`, a small restricted evaluator written for the subset above
+(cached value == recalculated value, zero errors). **Limitation:** neither Excel nor LibreOffice was
+available, and the pure-python `formulas` package gave wrong results for `COUNTIF(...,"?*")` and
+`SUMPRODUCT(--ISNUMBER(MATCH(...)))` on a probe, so it was not used; the evaluator is an independent
+implementation of the semantics, not Excel. Open the generated file once in Excel to confirm.
+
 ## Analytics winter plan
 
 Analytics has its own shift process and its own workbook. This part of the package turns a
