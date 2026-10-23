@@ -298,3 +298,24 @@ def test_flag_key_fallback_for_flags_without_key():
 def test_snapshot_roundtrip_dict():
     s = Snapshot({"a": 1}, [])
     assert Snapshot.from_dict(s.to_dict()).core() == s.core()
+
+
+def test_works_with_the_real_plan_and_flag_types(tmp_path):
+    """Duck typing check against cycle_builder.Plan / Flag (no .key needed: a composite key is used)."""
+    from roster_lib.config import RotationConfig
+    from roster_lib.cycle_builder import Flag, Plan
+
+    info = make_master(tmp_path)
+    fake = make_plan(info)
+    plan = Plan(
+        cycle=fake.cycle, edits=dict(fake.edits), remainder_edits={}, shift_changes=fake.shift_changes,
+        holiday_assignments=fake.holiday_assignments,
+        flags=[Flag("STAFFING_SHORTAGE", "ERROR", "short", None, date(2026, 1, 14), "DIS", "S1"),
+               Flag("CHANGE_NOTE", "INFO", "note")],
+        counters_before={}, counters_after={}, config_after=RotationConfig(), run_info=fake.run_info,
+        existing_roster_findings=fake.existing_roster_findings)
+    draft = tmp_path / "d.xlsx"
+    res = build_draft(info.path, draft, plan, now=NOW)
+    assert res.cells_written == len(plan.edits) and res.flags_by_severity == {"ERROR": 1, "INFO": 1}
+    cells = {(c.person, c.date): c.text for c in read_snapshot_sheet(draft).cells}
+    assert cells == dict(getattr(plan, "snapshot_cells", lambda: plan.edits)())
