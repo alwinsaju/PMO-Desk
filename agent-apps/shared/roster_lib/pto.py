@@ -33,7 +33,10 @@ are skipped by `apply_pto` and listed in `PtoResult.match`.
     (`min_staff_for(name, date) -> (group, minimum) | None`, group is any
     hashable such as (team, shift) or, for a per_team_day team, (team, "ALL") with
     the effective minimum; see `shift_group_rule`); overlapping
-    entries with different codes keep the first.
+    entries with different codes keep the first;
+  - `preserved` ((name, date) cells holding a leave code that must stay, e.g. typed by hand
+    in the master): a PTO entry on one keeps the existing code (HOL included) and adds
+    the note "already X; PTO not written".
 Edits are `{(name, date): text}`; the schedule is not modified.
 """
 
@@ -350,11 +353,13 @@ def apply_pto(
     *,
     needed: Iterable[tuple[str, date]] | None = None,
     min_staff_for: Callable[[str, date], tuple[Hashable, int] | None] | None = None,
+    preserved: Iterable[tuple[str, date]] = (),
 ) -> PtoResult:
     """Turn PTO entries into schedule edits for `cycle`; see the module docstring."""
     entries = list(entries)
     match = match_names((e.name for e in entries), schedule.keys(), confirmed)
     needed_set = set(needed or ())
+    kept = set(preserved)
     edits: dict[tuple[str, date], str] = {}
     clashes: list[PtoClash] = []
     notes: list[str] = []
@@ -375,7 +380,13 @@ def apply_pto(
         while d <= last:
             text = schedule[person].get(d, "")
             key = (person, d)
-            if _would_work(text):
+            if key in kept:
+                # a leave code typed by hand and preserved (a HOL too): it stays, PTO does not
+                # replace it (HOL would otherwise lose to PTO); a note says so
+                existing = try_parse_code(text)
+                if existing is not None and existing.canonical != entry.code:
+                    skipped_leave[key] = existing.canonical
+            elif _would_work(text):
                 if key in edits and edits[key] != entry.code:
                     clashes.append(PtoClash(person, d, "OVERLAP",
                                             f"row {entry.row} ({entry.code}) conflicts with an "

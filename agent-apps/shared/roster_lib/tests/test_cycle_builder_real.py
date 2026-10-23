@@ -58,7 +58,10 @@ def test_real_dec_2026_cycle_crosses_the_year_boundary(world):
     answers = {"rotation": {r.name: {"shift": "KEEP"} for r in analysis.required_answers}}
     plan = build_plan(roster, config, dec, answers, holiday_matrix=matrix)
     # 34 days in the file (29 Nov .. 1 Jan), 29 after it, for each of the 47 people in scope
-    assert len(plan.edits) == 47 * 34 and len(plan.remainder_edits) == 47 * 29
+    # (cells that already hold a leave code in the file are preserved, not edited)
+    assert len(plan.edits) + len(plan.preserved) == 47 * 34 and len(plan.remainder_edits) == 47 * 29
+    assert plan.run_info["counts"]["preserved_leave"] == len(plan.preserved)
+    assert not set(plan.preserved) & set(plan.edits)
     assert plan.shift_changes == []  # KEEP everywhere
     kinds = plan.flags_by_kind()
     assert kinds["YEAR_BOUNDARY"] == 1 and kinds["UNCLASSIFIED_PERSON"] == 47

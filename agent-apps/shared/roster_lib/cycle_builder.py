@@ -81,7 +81,7 @@ from .checks import (
     schedule_from_roster,
     staffing_check,
 )
-from .codes import counts_as_code, try_parse_code
+from .codes import counts_as_code, is_leave_code, try_parse_code
 from .config import PER_TEAM_DAY, Rotation, RotationConfig, name_key, parse_config
 from .cycles import Availability, Cycle, cycle_availability, previous_cycle, split_at_year_boundary
 from .holiday_engine import (
@@ -599,6 +599,7 @@ class Plan:
     run_info: dict[str, Any]
     existing_roster_findings: dict[str, Any]
     next_year_counters: dict[str, dict[str, Any]] | None = None
+    preserved: Edits = field(default_factory=dict)  # existing leave cells kept: (name, date) -> text
 
     def flags_by_kind(self) -> dict[str, int]:
         out: dict[str, int] = {}
@@ -615,6 +616,7 @@ class Plan:
             "cycle": _cycle_dict(self.cycle),
             "edits": edit_rows(self.edits),
             "remainder_edits": edit_rows(self.remainder_edits),
+            "preserved_leave": edit_rows(self.preserved),
             "shift_changes": self.shift_changes,
             "holiday_assignments": self.holiday_assignments,
             "flags": [f.to_dict() for f in self.flags],
@@ -651,7 +653,8 @@ class Plan:
             config_after=parse_config(data["config_after"]),
             run_info=data["run_info"],
             existing_roster_findings=data["existing_roster_findings"],
-            next_year_counters=data.get("next_year_counters"))
+            next_year_counters=data.get("next_year_counters"),
+            preserved=edits_of(data.get("preserved_leave", [])))
 
 
 def _segments(cycle: Cycle) -> list[tuple[date, date]]:
@@ -680,6 +683,7 @@ def _assignment_dict(a) -> dict[str, Any]:
         "outside": list(a.outside), "need": a.need, "shortage": a.shortage,
         "counters_before": _counter_dict(a.counters_before),
         "counters_after": _counter_dict(a.counters_after),
+        "mode": a.mode, "preserved_off": list(a.preserved_off),
     }
 
 
@@ -769,11 +773,25 @@ def build_plan(
         minimum = cfg.min_staff_for_team(team_of_name[name])
         return minimum if minimum > 0 else None
 
+    # Leave codes already typed in the master for this cycle are PRESERVED: the person is away
+    # that day (never rewritten, never given HOL, PTO does not replace them).
+    preserved: Edits = {}
+    for p in active:
+        cells = prep.schedule[p.name]
+        for d in cycle_dates:
+            if d > last_date:
+                break
+            parsed = try_parse_code(cells.get(d, "") or "")
+            if parsed is not None and is_leave_code(parsed.canonical):
+                preserved[(p.name, d)] = cells[d]
+    base = apply_edits(rotated.schedule, preserved)
+
     rule = shift_group_rule(
-        rotated.schedule, lambda n: team_of_name[n], minimum_for,
+        base, lambda n: team_of_name[n], minimum_for,
         lambda n: cfg.min_staff_mode_for_team(team_of_name[n]) == PER_TEAM_DAY)
-    pto_result = apply_pto(rotated.schedule, pto.entries, cycle, confirmed_pto, min_staff_for=rule)
-    with_pto = apply_edits(rotated.schedule, pto_result.edits)
+    pto_result = apply_pto(base, pto.entries, cycle, confirmed_pto, min_staff_for=rule,
+                           preserved=preserved)
+    with_pto = apply_edits(base, pto_result.edits)
 
     # ---- step 4: holidays (per calendar year, December Disconnect days skipped) --------
     matrix_eff = HolidayMatrix(tuple(h for h in holiday_matrix.holidays if h.date not in disconnect),
@@ -902,6 +920,8 @@ def build_plan(
     remainder: Edits = {}
     for n in sorted(final):
         for d in cycle_dates:
+            if (n, d) in preserved:
+                continue  # an existing leave code stays exactly as typed
             (edits if d <= last_date else remainder)[(n, d)] = final[n].get(d, "")
     if remainder:
         first_beyond = min(d for _, d in remainder)
@@ -910,13 +930,24 @@ def build_plan(
             f"{cycle.label} extends past the roster's last date ({last_date.isoformat()}): "
             f"{len(edits)} cell edits are in the file, {len(remainder)} belong to the next-year "
             f"file (from {first_beyond.isoformat()})", date=first_beyond))
-    overwritten = sum(1 for (n, d), t in edits.items()
-                      if (prep.schedule[n].get(d, "") or "").strip()
-                      and prep.schedule[n].get(d, "") != t)
+    for (n, d), raw in sorted(preserved.items()):
+        flags.append(Flag("PRESERVED_LEAVE", "INFO",
+                          f"{n} {d.isoformat()}: the existing {raw.strip()!r} is leave and was "
+                          "kept; the draft does not rewrite this cell", n, d))
+    overwritten: dict[str, int] = {}
+    for (n, d), t in edits.items():
+        existing = prep.schedule[n].get(d, "") or ""
+        if existing.strip() and existing != t:
+            parsed = try_parse_code(existing)
+            label = ("unrecognised" if parsed is None
+                     else "custom hours" if parsed.is_custom else parsed.canonical)
+            overwritten[label] = overwritten.get(label, 0) + 1
     if overwritten:
         flags.append(Flag("OVERWRITES_EXISTING", "INFO",
-                          f"{overwritten} non-blank cell(s) already in the file for this cycle "
-                          "differ from the draft and would be overwritten"))
+                          f"{sum(overwritten.values())} non-blank, non-leave cell(s) already in "
+                          "the file for this cycle differ from the draft and would be "
+                          "overwritten (" + ", ".join(f"{k}: {v}" for k, v in
+                                                       sorted(overwritten.items())) + ")"))
 
     config_out = copy.deepcopy(cfg)
     for p in active:
@@ -956,7 +987,8 @@ def build_plan(
         "segments": [{"start": s.isoformat(), "end": e.isoformat()} for s, e in segments],
         "disconnect_days": len(disconnect),
         "counts": {"edits": len(edits), "remainder_edits": len(remainder),
-                   "holiday_edits": len(hol_edits), "pto_edits": len(pto_result.edits)},
+                   "holiday_edits": len(hol_edits), "pto_edits": len(pto_result.edits),
+                   "preserved_leave": len(preserved)},
     }
     return Plan(
         cycle=cycle, edits=edits, remainder_edits=remainder,
@@ -965,4 +997,4 @@ def build_plan(
         flags=sorted(flags, key=_flag_order),
         counters_before=counters_before, counters_after=counters_after,
         config_after=config_out, run_info=run_info, existing_roster_findings=existing,
-        next_year_counters=next_year_counters)
+        next_year_counters=next_year_counters, preserved=preserved)

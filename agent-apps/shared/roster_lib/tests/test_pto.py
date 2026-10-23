@@ -256,6 +256,18 @@ def test_below_minimum_per_team_day_single_person_and_offset_patterns():
                                  min_staff_for=rule).clashes] != []  # Wed: 2 scheduled, 1 left
 
 
+def test_preserved_cells_keep_their_leave_even_a_hol_and_add_a_note():
+    day = date(2026, 8, 10)
+    sched = {"A Test": fill(MF, overrides={day: "HOL"}), "B Test": fill(MF, overrides={day: "T"}),
+             "C Test": fill(MF, overrides={day: "P"}), "D Test": fill(MF, overrides={day: "HOL"})}
+    kept = [("A Test", day), ("B Test", day), ("C Test", day)]
+    res = apply_pto(sched, [entry(n, day, day, row=i + 2) for i, n in enumerate(sched)], AUG,
+                    preserved=kept)
+    assert res.edits == {("D Test", day): "P"}  # an unpreserved HOL still loses to PTO
+    assert sorted(res.notes) == ["A Test 10-Aug-2026: already HOL; PTO not written",
+                                 "B Test 10-Aug-2026: already T; PTO not written"]  # P over P: silent
+
+
 def test_year_boundary_cycle_dates():
     dec = cycle_for(2026, 12)
     sched = {"Alice Test": fill(MF, cycle=dec)}

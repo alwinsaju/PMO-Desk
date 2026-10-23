@@ -687,3 +687,127 @@ def test_per_team_day_removes_the_phantom_shortages_of_small_teams():
     assert lab == []  # nobody is away on a working day
     assert plan.to_json() == build_plan(roster, cfg, OCT, ANSWERS, holiday_matrix=matrix).to_json()
     assert len(legacy_plan.flags) >= len(plan.flags)
+
+
+# ---- existing leave codes are preserved ---------------------------------------------------
+
+D_TUE = date(2026, 10, 20)  # "Oct Common": a Tuesday, all India off
+D_WED = date(2026, 10, 14)  # a plain Wednesday in OCT
+
+
+def build_oct(world, existing=None, **kw):
+    roster, cfg, matrix = world
+    for (name, d), text in (existing or {}).items():
+        roster._schedule[name][d] = text
+    return build_plan(roster, cfg, OCT, ANSWERS, holiday_matrix=matrix, **kw)
+
+
+def test_existing_leave_codes_are_preserved_not_overwritten(oct_world):
+    existing = {("Dis Morning 01", date(2026, 10, 7)): "P", ("Dis Morning 02", date(2026, 10, 8)): "T",
+                ("Dis Morning 03", date(2026, 10, 9)): "SL", ("Dep Person 0", D_WED): "COMP",
+                ("Dep Person 1", date(2026, 10, 15)): "HOL"}  # a HOL typed on a non-holiday
+    plan = build_oct(oct_world, existing)
+    assert not set(existing) & set(plan.edits)  # no edit touches them
+    assert plan.preserved == existing
+    flags = [f for f in plan.flags if f.kind == "PRESERVED_LEAVE"]
+    assert sorted((f.person, f.date) for f in flags) == sorted(existing)
+    assert all(f.severity == "INFO" and repr(existing[(f.person, f.date)]) in f.message
+               for f in flags)
+    assert plan.run_info["counts"]["preserved_leave"] == 5
+    # other cells of the same people are still rewritten
+    assert plan.edits[("Dis Morning 01", date(2026, 10, 8))].strip()  # a Thursday (S2)
+    # the preserved cells are part of the plan's JSON and survive a round trip
+    again = Plan.from_json(plan.to_json())
+    assert again.preserved == existing and again.to_json() == plan.to_json()
+
+
+def test_only_shift_blank_and_custom_cells_are_rewritten_and_overwrites_are_counted(oct_world):
+    existing = {("Lab Person 0", D_WED): "Shift-3", ("Lab Person 0", date(2026, 10, 15)): "OC",
+                ("Lab Person 1", D_WED): "11AM-8PM", ("Lab Person 1", date(2026, 10, 15)): "P",
+                ("Lab Person 1", date(2026, 10, 16)): "IST 6:00-3:00AM"}
+    plan = build_oct(oct_world, existing)
+    assert plan.edits[("Lab Person 0", D_WED)] == "Shift-1"  # rewritten from the rotation
+    assert plan.edits[("Lab Person 0", date(2026, 10, 15))] == "Shift-1"
+    assert ("Lab Person 1", date(2026, 10, 15)) not in plan.edits  # leave: kept
+    (overw,) = [f for f in plan.flags if f.kind == "OVERWRITES_EXISTING"]
+    assert "4 non-blank, non-leave cell(s)" in overw.message
+    assert "OC: 1" in overw.message and "S3: 1" in overw.message and "custom hours: 1" in overw.message
+    assert "11AM-8PM: 1" in overw.message
+    assert "P" not in overw.message.split("(")[1]
+
+
+def test_no_overwrite_flag_when_only_leave_exists(oct_world):
+    plan = build_oct(oct_world, {("Lab Person 0", D_WED): "P"})
+    assert not [f for f in plan.flags if f.kind == "OVERWRITES_EXISTING"]
+
+
+def test_preserved_leave_makes_the_person_unavailable_for_holidays(oct_world):
+    existing = {("Dep Person 0", D_TUE): "P"}  # on leave on the common holiday
+    plan = build_oct(oct_world, existing)
+    (grp,) = [a for a in plan.holiday_assignments
+              if a["date"] == D_TUE.isoformat() and a["team"] == "DEP"]
+    everyone = grp["off"] + grp["covering"] + grp["outside"]
+    assert "Dep Person 0" not in everyone  # PTO wins: no HOL, not in the pool
+    assert plan.counters_after["Dep Person 0"] == plan.counters_before["Dep Person 0"]
+    assert ("Dep Person 0", D_TUE) not in plan.edits
+
+
+def test_preserved_manual_hol_on_a_common_holiday_counts_as_an_off_taken(oct_world):
+    base = build_oct(oct_world)
+    (b,) = [a for a in base.holiday_assignments if a["date"] == D_TUE.isoformat()
+            and a["team"] == "DEP"]
+    assert len(b["off"]) == 2 and len(b["covering"]) == 2  # 4 people, min 2
+    plan = build_oct(oct_world, {("Dep Person 2", D_TUE): "HOL"})
+    (a,) = [a for a in plan.holiday_assignments if a["date"] == D_TUE.isoformat()
+            and a["team"] == "DEP"]
+    assert a["preserved_off"] == ["Dep Person 2"]
+    assert "Dep Person 2" not in a["off"] + a["covering"]  # not in the pool any more
+    assert len(a["covering"]) == 2 and len(a["off"]) == 1  # need stays 2, one fewer to be off
+    assert a["counters_after"]["Dep Person 2"]["offs_taken"] == (
+        a["counters_before"]["Dep Person 2"]["offs_taken"] + 1)
+    assert plan.counters_after["Dep Person 2"]["last_off_date"] == D_TUE.isoformat()
+    assert ("Dep Person 2", D_TUE) not in plan.edits and plan.preserved[("Dep Person 2", D_TUE)] == "HOL"
+    # total HOL that day for the team is unchanged: one preserved + one generated
+    generated = [n for (n, d), t in plan.edits.items() if d == D_TUE and t == "HOL"
+                 and n.startswith("Dep Person")]
+    assert len(generated) == 1
+    assert not [f for f in plan.flags if f.kind == "HOL_STRAY"]
+
+
+def test_preserved_stray_hol_is_kept_flagged_and_not_counted(oct_world):
+    kol_day = date(2026, 11, 9)  # Kol only: a Pune person's HOL is stray
+    existing = {("Lab Person 0", kol_day): "HOL", ("Dep Person 1", D_WED): "HOL"}
+    plan = build_oct(oct_world, existing)
+    assert plan.preserved[("Lab Person 0", kol_day)] == "HOL"
+    stray = {(f.person, f.date) for f in plan.flags if f.kind == "HOL_STRAY"}
+    assert stray == {("Lab Person 0", kol_day), ("Dep Person 1", D_WED)}
+    base = build_oct(oct_world)
+    assert plan.counters_after["Lab Person 0"] == base.counters_after["Lab Person 0"]
+    assert plan.counters_after["Dep Person 1"]["last_off_date"] != D_WED.isoformat()
+    assert ("Lab Person 0", kol_day) not in plan.edits
+
+
+def test_pto_import_on_an_existing_different_leave_keeps_it_and_notes(oct_world):
+    existing = {("Dep Person 0", D_WED): "T", ("Dep Person 1", D_WED): "HOL",
+                ("Dep Person 2", D_WED): "P"}
+    entries = [pto("Dep Person 0", D_WED), pto("Dep Person 1", D_WED), pto("Dep Person 2", D_WED)]
+    plan = build_oct(oct_world, existing, pto_entries=entries)
+    notes = [f.message for f in plan.flags if f.kind == "PTO_NOTE"]
+    assert any("Dep Person 0" in n and "already T" in n for n in notes)
+    assert any("Dep Person 1" in n and "already HOL" in n for n in notes)
+    assert not any("Dep Person 2" in n for n in notes)  # same code: nothing to say
+    assert plan.preserved[("Dep Person 0", D_WED)] == "T"
+    assert plan.preserved[("Dep Person 1", D_WED)] == "HOL"
+    assert not {("Dep Person 0", D_WED), ("Dep Person 1", D_WED), ("Dep Person 2", D_WED)} & set(plan.edits)
+
+
+def test_preserved_leave_in_the_year_boundary_cycle_only_covers_the_file(dec_world):
+    roster, cfg, matrix = dec_world
+    roster._schedule["Lab Person 0"][date(2026, 12, 3)] = "P"
+    roster._schedule["Lab Person 0"][date(2027, 1, 1)] = "SL"  # last column of the file
+    plan = build_plan(roster, cfg, DEC, ANSWERS, holiday_matrix=matrix)
+    assert set(plan.preserved) == {("Lab Person 0", date(2026, 12, 3)),
+                                   ("Lab Person 0", date(2027, 1, 1))}
+    assert not any(n == "Lab Person 0" and d in (date(2026, 12, 3), date(2027, 1, 1))
+                   for n, d in plan.edits)
+    assert any(n == "Lab Person 0" for n, _ in plan.remainder_edits)  # beyond the file: all built

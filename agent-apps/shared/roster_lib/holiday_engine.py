@@ -11,7 +11,15 @@ Who is affected
   Only people WORKING that day (a shift code, custom hours or on-call in the cell)
   can get a HOL: weekly-off days (blank) and leave days (P, T, SL, COMP, HOL) are
   never touched. PTO beats HOL: a person on leave keeps the leave code, gets no HOL
-  and it does not count as a holiday off.
+  and it does not count as a holiday off. Leave codes already in the schedule (the
+  cycle builder passes the PRESERVED ones, typed by hand in the master) make the person
+  unavailable in the same way. One exception counts as an off already taken: a HOL cell
+  of an India person on a COMMON holiday where their location is ticked and their weekly
+  pattern works (not stray, not a weekly off): their counter goes +1 in `counters_after`
+  and last_off_date = that day, they leave the pool (so the group's `need` stays
+  max(0, min - outside) and one fewer person is available to be off), and they are listed
+  in the group's `GroupAssignment.preserved_off`. A stray or weekly-off HOL is left alone
+  (the HOL check flags it); a HOL on a location-specific holiday is not counted.
 
 Holiday kinds (from `holiday_matrix`)
   LOCATION_SPECIFIC / MEXICO_ONLY   everyone at the ticked locations who works gets
@@ -120,9 +128,10 @@ class GroupAssignment:
     outside: tuple[str, ...]  # working anyway: not at an off location
     need: int  # people the pool had to provide (fairness only)
     shortage: int  # max(0, min_staff - len(outside) - len(covering))
-    counters_before: Mapping[str, OffCounter]  # pool members, fairness only
+    counters_before: Mapping[str, OffCounter]  # pool members (+ preserved offs), fairness only
     counters_after: Mapping[str, OffCounter]
     mode: str = PER_SHIFT  # `per_shift` (shift = a code) or `per_team_day` (shift = "ALL")
+    preserved_off: tuple[str, ...] = ()  # HOL already typed in the schedule: an off already taken
 
     @property
     def working(self) -> tuple[str, ...]:
@@ -232,6 +241,10 @@ def _seed_counters(counters: Mapping[str, OffCounter], india_people: list,
 
 # ---- the engine --------------------------------------------------------------------------------
 
+def _new_slot() -> dict[str, list[str]]:
+    return {"pool": [], "straight": [], "outside": [], "preserved": []}
+
+
 def _tie_break(seed: int, d: date, team: str, shift: str, name: str) -> int:
     digest = hashlib.sha256(f"{seed}|{d.isoformat()}|{team}|{shift}|{name}".encode()).digest()
     return int.from_bytes(digest[:8], "big")
@@ -270,8 +283,7 @@ def assign_holidays(
     team_of = {p.name: config.team_of(p) or p.section for p in people}
     team_day = {t for t in set(team_of.values())
                 if config.min_staff_mode_for_team(t) == PER_TEAM_DAY}
-    cells_of = {p.name: PersonCells(schedule.get(p.name) or {}) for p in people
-                if team_of[p.name] in team_day}
+    cells_of = {p.name: PersonCells(schedule.get(p.name) or {}) for p in people}
     india_people = [p for p in people if loc_of[p.name] in india]
 
     before, average = _seed_counters(counters, india_people, inherited_counters or {},
@@ -297,14 +309,20 @@ def assign_holidays(
         for p in people:
             if team_of[p.name] in team_day and scheduled_on(cells_of[p.name], d):
                 scheduled[team_of[p.name]] = scheduled.get(team_of[p.name], 0) + 1
+        if is_common:  # a HOL already in the schedule (typed by hand) is an off already taken
+            for p in india_people:
+                if (loc_of[p.name] in off_locations and cells_of[p.name].canon(d) == HOL
+                        and scheduled_on(cells_of[p.name], d)):
+                    key = (team_of[p.name], ALL_SHIFTS if team_of[p.name] in team_day
+                           else cells_of[p.name].nearest_shift_code(d) or HOL)
+                    groups.setdefault(key, _new_slot())["preserved"].append(p.name)
         for p in people:
             text = (schedule.get(p.name) or {}).get(d)
             if text is None or not is_working_cell(text):
                 continue  # weekly off, leave (PTO beats HOL), or no data
             loc = loc_of[p.name]
             shift_key = ALL_SHIFTS if team_of[p.name] in team_day else _group_key(text)
-            slot = groups.setdefault((team_of[p.name], shift_key),
-                                     {"pool": [], "straight": [], "outside": []})
+            slot = groups.setdefault((team_of[p.name], shift_key), _new_slot())
             if loc is not None and loc == mex:
                 slot["straight" if mex in off_locations else "outside"].append(p.name)
             elif loc in india:
@@ -320,7 +338,8 @@ def assign_holidays(
         for (team, shift) in sorted(groups):
             slot = groups[(team, shift)]
             pool, straight, outside = slot["pool"], slot["straight"], slot["outside"]
-            if not pool and not straight:
+            kept_off = sorted(slot["preserved"])
+            if not pool and not straight and not kept_off:
                 continue
             minimum = effective_min(config, team, scheduled.get(team, 0))
             need = 0
@@ -328,6 +347,10 @@ def assign_holidays(
             fair_off: list[str] = []
             c_before: dict[str, OffCounter] = {}
             c_after: dict[str, OffCounter] = {}
+            for n in kept_off:  # already off: counts as an off taken, not in the pool
+                c_before[n] = now[n]
+                now[n] = OffCounter(now[n].offs_taken + 1, d)
+                c_after[n] = now[n]
             if pool:
                 need = max(0, minimum - len(outside))
                 ordered = sorted(pool, key=lambda n: (
@@ -335,12 +358,12 @@ def assign_holidays(
                     -now[n].last_off_date.toordinal() if now[n].last_off_date else 0,
                     _tie_break(seed, d, team, shift, n)))
                 covering, fair_off = ordered[:need], ordered[need:]
-                c_before = {n: now[n] for n in pool}
+                c_before.update({n: now[n] for n in pool})
                 for n in covering:
                     coverage.add((n, d))
                 for n in fair_off:
                     now[n] = OffCounter(now[n].offs_taken + 1, d)
-                c_after = {n: now[n] for n in pool}
+                c_after.update({n: now[n] for n in pool})
                 if need > len(pool):
                     flagged_groups.add((team, shift, d))
                     flags.append(HolidayFlag(
@@ -361,7 +384,8 @@ def assign_holidays(
             assignments.append(GroupAssignment(
                 d, names, kind, team, shift, minimum, bool(pool), tuple(off), tuple(straight),
                 tuple(covering), tuple(outside), need, max(0, minimum - working),
-                c_before, c_after, PER_TEAM_DAY if team in team_day else PER_SHIFT))
+                c_before, c_after, PER_TEAM_DAY if team in team_day else PER_SHIFT,
+                tuple(kept_off)))
 
     result_schedule = apply_edits(schedule, edits)
     if holiday_dates:

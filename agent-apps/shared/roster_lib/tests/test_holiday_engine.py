@@ -628,3 +628,57 @@ def test_team_level_result_is_deterministic():
     _, _, a = team_run(specs, counters, seed=9)
     _, _, b = team_run(list(reversed(specs)), counters, seed=9)
     assert a.edits == b.edits and a.assignments[0].covering == b.assignments[0].covering
+
+
+# ---- a HOL already in the schedule is an off already taken -------------------------------
+
+def test_existing_hol_on_a_common_holiday_counts_and_leaves_the_pool():
+    specs = [(f"P{i}", INDIA[i], "L2", "S1") for i in range(5)]
+    counters = {f"P{i}": C(2, date(2026, 3, 3)) for i in range(5)}
+    _, _, plain = run(specs, counters, seed=1)  # DIS min 3, nobody outside: 3 cover, 2 off
+    assert len(plain.edits) == 2
+    _, _, res = run(specs, counters, seed=1, edit=lambda s: s["P0"].update({COMMON: "HOL"}))
+    (a,) = res.assignments
+    assert a.preserved_off == ("P0",) and "P0" not in a.off + a.covering
+    assert (a.need, len(a.covering), len(a.off)) == (3, 3, 1)  # one preserved + one new = 2 offs
+    assert res.counters_after["P0"] == C(3, COMMON)  # +1 and last off = the holiday
+    assert a.counters_before["P0"] == C(2, date(2026, 3, 3)) and a.counters_after["P0"] == C(3, COMMON)
+    assert ("P0", COMMON) not in res.edits  # the cell already holds HOL
+    assert ("P0", COMMON) not in res.coverage
+    assert not res.flags
+
+
+def test_existing_hol_alone_in_a_group_still_gets_a_record():
+    # the only member of the group already has the day off: a record, no pool, a shortage flag
+    _, _, res = run([("P0", "Blr", "L2", "S1")], edit=lambda s: s["P0"].update({COMMON: "HOL"}))
+    (a,) = res.assignments
+    assert (a.preserved_off, a.off, a.covering, a.fairness) == (("P0",), (), (), False)
+    assert res.counters_after["P0"] == C(1, COMMON)
+    assert [f.kind for f in res.flags] == ["STAFFING_SHORTAGE"]
+
+
+def test_existing_hol_not_counted_when_stray_weekly_off_or_not_common():
+    # P0 is Wed-Sun: the Monday holiday is a weekly off for them
+    monday = matrix_of([("Mon Common", MON, INDIA)])
+    _, _, res = run([("P0", "Blr", "L2", "S2"), ("P1", "Hyd", "L2", "S1")], matrix=monday,
+                    edit=lambda s: s["P0"].update({MON: "HOL"}))
+    assert res.counters_after["P0"] == C(0, None)
+    assert all(a.preserved_off == () for a in res.assignments)
+    # a HOL on a location-specific holiday is not an off for fairness
+    _, _, res = run([("P0", "Gur", "L2", "S1")], matrix=matrix_of([("Gur Day", BLR_ONLY, ["Gur"])]),
+                    edit=lambda s: s["P0"].update({BLR_ONLY: "HOL"}))
+    assert res.counters_after["P0"] == C(0, None) and res.assignments == []
+    # a HOL on a day with no holiday at all (stray) is left alone and never counted
+    _, _, res = run([("P0", "Blr", "L2", "S1")], edit=lambda s: s["P0"].update({date(2026, 11, 10): "HOL"}))
+    assert res.counters_after["P0"] == C(0, None)
+
+
+def test_existing_hol_of_a_mexico_person_has_no_counter_and_leave_codes_make_people_unavailable():
+    matrix = matrix_of([("Christmas", COMMON2, INDIA + [MEX])])
+    specs = [("P0", "Blr", "Lab", "S1"), ("P1", "Hyd", "Lab", "S1"), ("M1", "Mex", "Lab", "S1")]
+    _, _, res = run(specs, matrix=matrix, cfg=config(),
+                    edit=lambda s: (s["M1"].update({COMMON2: "HOL"}), s["P1"].update({COMMON2: "P"})))
+    assert "M1" not in res.counters_after
+    (a,) = res.assignments
+    assert a.preserved_off == () and "P1" not in a.off + a.covering + a.outside
+    assert res.counters_after["P1"] == res.counters_before["P1"]  # PTO is never counted
