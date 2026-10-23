@@ -18,6 +18,7 @@ class Pipeline:
         self.world: World = build_world(root, **world_kw)
         self.paths = self.world.paths
         self.root = root
+        self.cycle = "2026-12"
 
     # ---- steps (each returns the exit code) ----
     def prepare(self) -> int:
@@ -28,6 +29,7 @@ class Pipeline:
     def analyze(self, cycle: str = "2026-12") -> int:
         import analyze
 
+        self.cycle = cycle
         write_run_params(self.paths, cycle)
         return analyze.main(task_dir=self.root)
 
@@ -53,7 +55,7 @@ class Pipeline:
         return build_draft.main(task_dir=self.root)
 
     def draft(self) -> Path:
-        return self.paths.draft("2026-12")
+        return self.paths.draft(self.cycle)
 
     def pmo_edit(self, edits: dict[tuple[str, date], str]) -> Path:
         """The user edits cells in Excel and saves the draft in place (sidecar stays)."""
