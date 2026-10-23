@@ -164,7 +164,7 @@ def run_script(impl: Callable[[Paths], None], argv: Sequence[str] | None = None,
         args = list(argv) if argv is not None else ([] if task_dir is not None else None)
         ns = parser.parse_args(args)
     except SystemExit as exc:  # argparse already printed the reason
-        return int(exc.code or 2)
+        return exc.code if isinstance(exc.code, int) else 2  # --help exits 0, bad usage 2
     paths = Paths(task_dir or ns.task_dir)
     try:
         impl(paths)
