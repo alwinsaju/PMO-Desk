@@ -16,6 +16,9 @@ any step. The master roster is never modified.
 
 The manifest is `agent.json` (runtime `local`; inputs, `prepare`, steps and gates as in
 `../TASK-PLATFORM-CONTRACT.md`). `AGENT.md` is the short instruction file for the runtime.
+The optional top-level `completedMessage` is the plain-words body of the task-complete notification
+(it says the final roster, the next-year file when there is one, and the audit log are ready in the
+output folder). `workbook_path` in `output/report-data.json` is relative to the task folder.
 
 ## Inputs and where files land
 

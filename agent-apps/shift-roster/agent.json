@@ -2,6 +2,7 @@
   "id": "shift-roster",
   "displayName": "Shift Roster",
   "runtime": "local",
+  "completedMessage": "The final roster is ready in the output folder, with a next-year file when the cycle runs past the end of the roster. The audit log is saved with them.",
   "inputs": [
     {
       "id": "roster",

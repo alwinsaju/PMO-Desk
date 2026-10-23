@@ -16,6 +16,10 @@ PATHS = Paths(TASK)
 def test_manifest_shape():
     assert MANIFEST["id"] == "shift-roster" and MANIFEST["displayName"] == "Shift Roster"
     assert MANIFEST["runtime"] == "local"
+    # plain words for the task-complete notification (the next-year file is conditional)
+    message = MANIFEST["completedMessage"]
+    assert isinstance(message, str) and 20 < len(message) < 300
+    assert "final roster" in message and "audit log" in message and "next-year" in message
     steps = MANIFEST["steps"]
     assert [s["id"] for s in steps] == ["analyze", "answers", "build_draft", "review_draft",
                                         "diff_draft", "confirm_diff", "finalize"]

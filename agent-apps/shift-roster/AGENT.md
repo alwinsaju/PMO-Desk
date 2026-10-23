@@ -1,7 +1,7 @@
 # Shift Roster Agent
 
 ## Purpose
-Builds the roster for one two-month cycle (rotation, PTO, fair holiday offs) as an Excel draft the user reviews, then writes the approved final roster. Plain Python on `../shared/roster_lib`, no LLM judgment. The master roster is never modified. Runs locally (`runtime: local`). Real data is gitignored.
+Builds the roster for one two-month cycle (rotation, PTO, fair holiday offs) as an Excel draft the user reviews, then writes the approved final roster. Plain Python on `../shared/roster_lib`, no LLM judgment. The master roster is never modified. Runs locally (`runtime: local`); `completedMessage` in `agent.json` is the task-complete notification text. Real data is gitignored.
 
 ## Inputs
 - `input/roster.xlsx` master roster (sheet `PDT Operate`); `input/holiday-roster.xlsx`; optional `input/pto-import.xlsx` (Name, From, To, Code).

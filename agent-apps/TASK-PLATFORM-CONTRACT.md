@@ -20,6 +20,7 @@ All optional; tasks without them behave as today.
   "id": "shift-roster",
   "displayName": "Shift Roster",
   "runtime": "local",
+  "completedMessage": "The final roster and the next-year file are ready in the output folder. The audit log is saved with them.",
   "inputs": [
     {"id": "roster",   "label": "Roster workbook",   "type": "file", "accept": [".xlsx"], "dest": "input/roster.xlsx",          "required": true},
     {"id": "holidays", "label": "Holiday Roster",    "type": "file", "accept": [".xlsx"], "dest": "input/holiday-roster.xlsx",  "required": true},
@@ -43,6 +44,7 @@ All optional; tasks without them behave as today.
 ```
 
 - `runtime: "local"`: the backend runs this task's python/powershell steps with its own subprocess path, never through a Claude-CLI worker.
+- `completedMessage` (optional, task level): plain-words body of the task-complete notification, used instead of the legacy "sent it" text.
 - `steps[].label` / `reviewMessage` (optional): UI text; the backend uses `reviewMessage` for the review-ready notification instead of the hard-coded text.
 - `steps[].gate` (optional, only meaningful on `review` / `confirm` steps): `type` is `form` | `flags` | `diff` | `none`; file paths are relative to the task folder.
 - `inputs[].type`: `file` (upload; `accept` extension allow-list; `dest` is under the task's `input/`) or `select` (options come from a JSON file written by the `prepare` script; `optionsKey` names the array in that file).
@@ -116,6 +118,7 @@ Answers file `output/ask-me-answers.json` is a FLAT object `{fieldId: value}`; `
 ```
 
 `output/report-data.json` (the UI's "Open" button + summaries)
+`workbook_path` may be relative to the task folder (as below); the backend resolves it against the task folder.
 ```json
 {"workbook_path": "output/<file>.xlsx", "stage": "draft|final", "summary": {"cycle": "2026-12", "flags": {"error": 2, "warning": 14, "info": 65}, "shift_changes": 14}}
 ```
