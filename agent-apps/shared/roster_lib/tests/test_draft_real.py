@@ -82,3 +82,31 @@ def test_real_file_diff_smoke(tmp_path):
     mine = [c for c in d2.outside_snapshot_changes if c.person == outsider]
     others = [c for c in d2.outside_snapshot_changes if c.person != outsider]
     assert len(mine) == 1 and len(others) <= 1 and all(c.after.startswith(("http", "..")) for c in others)
+
+
+@needs_real
+def test_real_file_final_smoke(tmp_path):
+    import hashlib
+
+    from roster_lib import pkgdiff
+    from roster_lib.draft_diff import diff_draft
+    from roster_lib.final_build import build_final
+    from draft_testkit import pmo_save
+
+    master = real_copy(tmp_path)
+    before = hashlib.sha256(master.read_bytes()).hexdigest()
+    roster = load_roster(master)
+    plan = real_plan(roster)
+    draft = tmp_path / "real_draft.xlsx"
+    build_draft(master, draft, plan, now=NOW)
+    names = [p.name for p in roster.people[:5]]
+    saved = pmo_save(draft, tmp_path / "saved.xlsx", {
+        (names[0], date(2026, 3, 2)): "Shift-9", (names[1], date(2026, 3, 4)): "",
+        (roster.people[20].name, date(2026, 3, 3)): "Shift-9"}, sheet="PDT Operate")
+    diff = diff_draft(saved, master_path=master)
+    res = build_final(master, saved, diff, tmp_path / "out", approver="smoke")
+    assert hashlib.sha256(master.read_bytes()).hexdigest() == before
+    assert res.approved_cells == 106 and res.user_changes == 2 and res.outside_changes == 1
+    assert res.cells_written + res.cells_skipped_noop == 106 and res.cells_written > 0
+    pkgdiff.assert_only_changed(master, res.final_path, {"xl/worksheets/sheet1.xml"})
+    assert len(load_roster(res.final_path).people) == len(roster.people)
