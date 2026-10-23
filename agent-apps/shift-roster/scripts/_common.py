@@ -24,6 +24,7 @@ import shutil
 import sys
 import tempfile
 import traceback
+import zipfile
 from collections import Counter
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
@@ -595,10 +596,24 @@ def load_plan(paths: Paths) -> Plan:
         raise TaskError(f"the plan (plan.json) cannot be read: {exc}") from None
 
 
+def is_rechecked(flag: Any) -> bool:
+    """True for the flag kinds `make_rechecker` recomputes on an edited schedule: the HOL check,
+    the staffing check and the per-shift headcount minimum. Rotation warnings, PTO notes, the
+    holiday engine's CANNOT_MEET_MINIMUM / NO_OFF_AT_MINIMUM and the like are plan-time facts."""
+    return flag.kind.startswith("HOL_") or flag.kind in ("STAFFING_SHORTAGE", "HEADCOUNT_BELOW_MIN")
+
+
+def carried_flag_count(plan: Plan) -> int:
+    """Plan flags that cannot be re-checked after the user's edits (they simply carry over)."""
+    return sum(1 for f in plan.flags if not is_rechecked(f))
+
+
 def compute_diff(paths: Paths, cycle_id_text: str, plan: Plan, roster: Roster,
                  matrix: HolidayMatrix) -> DraftDiff:
     """Compare the saved draft with its snapshot and re-check the flags; the same call is made
-    by `diff_draft.py` (what the user confirms) and `finalize.py` (what is built)."""
+    by `diff_draft.py` (what the user confirms) and `finalize.py` (what is built). The flag
+    delta compares like with like: only the plan flags the re-checker recomputes are the
+    "before" side, so a plan-time flag is never reported as resolved."""
     saved = paths.draft(cycle_id_text)
     if not saved.exists():
         raise TaskError(f"the draft {saved.name} is missing from output/; save your edits "
@@ -606,15 +621,21 @@ def compute_diff(paths: Paths, cycle_id_text: str, plan: Plan, roster: Roster,
     recheck = make_rechecker(roster, plan.config_after, plan.cycle, matrix, plan)
     try:
         return diff_draft(saved, master_path=paths.roster, recheck=recheck,
-                          flags_before=plan.flags, flag_delta=flag_delta)
+                          flags_before=[f for f in plan.flags if is_rechecked(f)],
+                          flag_delta=flag_delta)
     except OSError as exc:
         raise TaskError(f"the saved draft cannot be read (is it still open in Excel?): "
                         f"{exc}") from None
+    except zipfile.BadZipFile:
+        raise TaskError(f"the saved draft {saved.name} is not a valid .xlsx file (damaged or "
+                        "not saved as a workbook)") from None
 
 
-def diff_payload(diff: DraftDiff, cycle_id_text: str, extra_blocking: Sequence[Mapping[str, str]] = ()
+def diff_payload(diff: DraftDiff, cycle_id_text: str,
+                 extra_blocking: Sequence[Mapping[str, str]] = (), carried: int = 0
                  ) -> dict[str, Any]:
-    """`output/roster-diff.json` (see the task platform contract)."""
+    """`output/roster-diff.json` (see the task platform contract). `flags.remaining` counts the
+    re-checked flags that still stand plus `carried` plan-time flags that cannot be re-checked."""
     def change(c) -> dict[str, Any]:
         return {"person": c.person, "date": c.date.isoformat(), "before": c.before,
                 "after": c.after}
@@ -640,7 +661,8 @@ def diff_payload(diff: DraftDiff, cycle_id_text: str, extra_blocking: Sequence[M
         "blocking": blocking,
         "flags": {"new": severity_lower(diff.flags_new),
                   "resolved": severity_lower(diff.flags_resolved),
-                  "remaining": len(diff.flags_remaining)},
+                  "remaining": len(diff.flags_remaining) + carried,
+                  "not_rechecked": carried},
         "counts": {"changes": len(diff.changes),
                    "outside_changes": len(diff.outside_snapshot_changes),
                    "issues": len(issues), "blocking": len(blocking),
