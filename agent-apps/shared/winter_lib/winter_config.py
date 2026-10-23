@@ -29,6 +29,7 @@ Schema (version 1; every key but `version`, `window` and `teams` is optional)
       "shift_overrides": {"Name": "S1"},          # usual shift when history is missing / wrong
       "default_new_person_shift": null,           # e.g. "S1": used (with a warning) for needs_shift people
       "name_aliases": {"Staff Name": "Shift Roster Name"},     # confirmed name spelling differences
+      "include_shift_roster_only": false,         # schedule people who are on the shift roster but not the staff list
       "lookback_months": 4,                       # usual shift = modal shift over the N months before the window
       "weights": {...},                           # see `Weights`
       "solver": {"time_limit_s": 120, "mip_rel_gap": 0.0, "seed": 20261225}
@@ -162,6 +163,7 @@ class WinterConfig:
     seed: int
     fair_min: int = 1
     fair_max: int = 2
+    include_shift_roster_only: bool = False
     raw: Mapping[str, Any] = field(default_factory=dict, compare=False, hash=False, repr=False)
 
     # -- window -----------------------------------------------------------
@@ -279,6 +281,7 @@ class WinterConfig:
             "shift_overrides": dict(sorted(self.shift_overrides.items())),
             "default_new_person_shift": self.default_new_person_shift,
             "name_aliases": dict(self.name_aliases),
+            "include_shift_roster_only": self.include_shift_roster_only,
             "lookback_months": self.lookback_months,
             "weights": self.weights.to_dict(),
             "solver": {"time_limit_s": self.time_limit_s, "mip_rel_gap": self.mip_rel_gap, "seed": self.seed},
@@ -362,7 +365,8 @@ def _canonical_shift(text: Any, where: str, problems: list[str]) -> Optional[str
 
 _TOP = {"version", "window", "holidays", "weekend_label", "default_day_label", "fair_days", "fair_range", "teams",
         "team_aliases", "staff_team_map", "subteams", "rules", "exclusions", "availability", "shift_overrides",
-        "default_new_person_shift", "name_aliases", "lookback_months", "weights", "solver"}
+        "default_new_person_shift", "name_aliases", "include_shift_roster_only", "lookback_months",
+        "weights", "solver"}
 
 
 def parse_config(data: Mapping[str, Any]) -> WinterConfig:
@@ -535,6 +539,11 @@ def parse_config(data: Mapping[str, Any]) -> WinterConfig:
     default_shift = _canonical_shift(dns, "default_new_person_shift", problems) if dns else None
     aliases = {name_key(str(k)): str(v) for k, v in (data.get("name_aliases") or {}).items()}
 
+    include_shift_only = data.get("include_shift_roster_only", False)
+    if not isinstance(include_shift_only, bool):
+        problems.append("include_shift_roster_only must be true or false")
+        include_shift_only = False
+
     lookback = int(_num(data.get("lookback_months", 4), "lookback_months", problems, minimum=1, integer=True))
 
     # weights
@@ -582,7 +591,8 @@ def parse_config(data: Mapping[str, Any]) -> WinterConfig:
         excluded_team_patterns=patterns, excluded_people=people, excluded_name_patterns=name_patterns,
         availability=avail, shift_overrides=overrides, default_new_person_shift=default_shift,
         name_aliases=aliases, lookback_months=lookback, weights=weights, time_limit_s=float(time_limit),
-        mip_rel_gap=float(gap), seed=seed, fair_min=fair_min, fair_max=fair_max, raw=dict(data),
+        mip_rel_gap=float(gap), seed=seed, fair_min=fair_min, fair_max=fair_max,
+        include_shift_roster_only=include_shift_only, raw=dict(data),
     )
 
 

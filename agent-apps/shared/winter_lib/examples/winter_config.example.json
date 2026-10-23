@@ -39,6 +39,7 @@
   "shift_overrides": {"Carol Example": "S1"},
   "default_new_person_shift": null,
   "name_aliases": {"Dan Examplesson": "Daniel Example"},
+  "include_shift_roster_only": false,
   "lookback_months": 4,
   "weights": {
     "shortfall": 1000,
