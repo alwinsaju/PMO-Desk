@@ -183,3 +183,27 @@ def edit_cells_with_openpyxl(src: Path, dst: Path, edits: dict[str, Any], sheet:
     for ref, value in edits.items():
         ws[ref].value = value
     wb.save(dst)
+
+
+def pmo_save(draft_path: Path, dst: Path, edits: dict, *, sidecar: bool = True, sheet: str = SHEET) -> Path:
+    """The PMO edits cells of the draft and saves it as `dst` (text-level patch; sidecar copied alongside)."""
+    import shutil
+
+    from roster_lib.xlsx_patch import patch_workbook
+
+    roster = load_roster(draft_path, sheet)
+    resolved = {}
+    for (name, d), text in edits.items():
+        resolved[roster.address(roster.find(name)[0], d)] = text
+    patch_workbook(draft_path, dst, sheet, resolved)
+    side = Path(str(draft_path) + ".snapshot.json")
+    if sidecar and side.exists():
+        shutil.copyfile(side, str(dst) + ".snapshot.json")
+    return dst
+
+
+def a1(info: FixtureInfo, name: str, d: date) -> str:
+    from roster_lib.xlsx_patch import format_ref
+
+    p = info.person(name)
+    return format_ref(p.row, info.date_col(d))

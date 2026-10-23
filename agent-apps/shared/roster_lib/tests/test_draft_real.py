@@ -52,3 +52,33 @@ def test_real_file_draft_smoke(tmp_path):
     assert len(r2.people) == len(roster.people) and r2.dates == roster.dates
     wb = load_workbook(draft)
     assert len(wb.sheetnames) == 12
+
+
+@needs_real
+def test_real_file_diff_smoke(tmp_path):
+    from roster_lib.draft_diff import diff_draft
+    from draft_testkit import pmo_save, resave_with_openpyxl
+
+    master = real_copy(tmp_path)
+    roster = load_roster(master)
+    plan = real_plan(roster)
+    draft = tmp_path / "real_draft.xlsx"
+    build_draft(master, draft, plan, now=NOW)
+    names = [p.name for p in roster.people[:5]]
+    outsider = roster.people[20].name
+    saved = pmo_save(draft, tmp_path / "saved.xlsx", {
+        (names[0], date(2026, 3, 2)): "Shift-9", (names[1], date(2026, 3, 4)): "", (names[4], date(2026, 3, 20)): "OC",
+        (outsider, date(2026, 3, 3)): "Shift-9"}, sheet="PDT Operate")
+    d = diff_draft(saved, master_path=master)
+    assert len(d.changes) == 3 and len(d.outside_snapshot_changes) == 1 and d.blocking_issues == []
+    assert len(d.snapshot) == 105
+    resaved = tmp_path / "resaved.xlsx"
+    resave_with_openpyxl(saved, resaved)
+    import shutil
+    shutil.copyfile(str(saved) + ".snapshot.json", str(resaved) + ".snapshot.json")
+    d2 = diff_draft(resaved, master_path=master)
+    assert len(d2.changes) == 3 and d2.blocking_issues == []
+    # openpyxl (not Excel) writes the hyperlink URL into the hyperlinked data cell: the only extra "change"
+    mine = [c for c in d2.outside_snapshot_changes if c.person == outsider]
+    others = [c for c in d2.outside_snapshot_changes if c.person != outsider]
+    assert len(mine) == 1 and len(others) <= 1 and all(c.after.startswith("http") for c in others)
