@@ -47,6 +47,30 @@ Open [http://localhost:3000](http://localhost:3000). A blank desktop with the
 original CSS wallpaper is the correct result — no windows are opened by
 default in this pass.
 
+## Running AI OS as a desktop app
+
+AI OS includes an Electron launcher for a desktop-only installation. It starts
+the local AI OS and Agent Office services, opens a standalone application
+window, and stops both owned services when the final AI OS window closes.
+
+Create the Windows launcher:
+
+```powershell
+pnpm desktop:package
+```
+
+The Version 1 installer is written to `release/AI OS Setup 1.0.0.exe`. Run it
+once to install AI OS under `%LOCALAPPDATA%\Programs\AI OS` (or select a
+different folder in the installer). The installer creates Start-menu and
+desktop shortcuts; pin either to the Windows taskbar. The installed app does
+not need HTTPS, a browser tab, or a terminal.
+
+For development, `pnpm desktop` opens the Electron shell against a local
+production build. Run `pnpm build` first after source changes. The PWA manifest
+remains available for browser-based use on `localhost`, but the Electron
+launcher is the supported option when the application and Agent Office backend
+must stop together on close.
+
 Other scripts:
 
 ```bash

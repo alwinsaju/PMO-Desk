@@ -1,11 +1,15 @@
 {
   "name": "ai-os",
-  "version": "0.1.0",
+  "version": "1.0.0",
+  "description": "A desktop workspace where a human and AI agent work together.",
   "private": true,
+  "main": "desktop/main.cjs",
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "next build --turbopack",
     "start": "next start",
+    "desktop": "electron .",
+    "desktop:package": "pnpm build && electron-builder --win nsis",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "node --no-warnings --test \"src/**/*.test.mjs\"",
@@ -42,6 +46,8 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "electron": "^44.4.1",
+    "electron-builder": "^26.15.3",
     "eslint": "^9",
     "eslint-config-next": "15.5.24",
     "eslint-config-prettier": "^10.1.8",
@@ -49,5 +55,31 @@
     "prettier-plugin-tailwindcss": "^0.8.1",
     "tailwindcss": "^4",
     "typescript": "^5"
+  },
+  "build": {
+    "appId": "com.aios.desktop",
+    "productName": "AI OS",
+    "icon": "desktop/icon.ico",
+    "asar": false,
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "desktop/**/*",
+      ".next/**/*",
+      "public/**/*",
+      "package.json",
+      "node_modules/**/*"
+    ],
+    "win": {
+      "target": "nsis"
+    },
+    "nsis": {
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "oneClick": false,
+      "shortcutName": "AI OS"
+    }
   }
 }

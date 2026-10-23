@@ -3,7 +3,7 @@ import { closeSync, existsSync, openSync, readFileSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { NextResponse } from "next/server";
-import { isBackendRunning } from "../shared";
+import { isBackendRunning, registerDesktopBackend } from "../shared";
 
 // Launches a live local process and polls it — never safe to treat as
 // static/cacheable content.
@@ -33,6 +33,7 @@ const UVICORN_ARGS = ["-m", "uvicorn", "backend.main:app", "--port", "8000"];
  *  enough that the frontend's loading screen never spins forever. */
 const START_TIMEOUT_MS = 20_000;
 const POLL_INTERVAL_MS = 750;
+const DESKTOP_MODE = process.env.AI_OS_DESKTOP_MODE === "1";
 
 /** Diagnostic output lives in the OS temp dir, not inside either project's
  *  own tree — this is scratch runtime data for this route, not source. */
@@ -98,7 +99,7 @@ async function attemptStart(): Promise<StartResult> {
     const errFd = openSync(LOG_PATH, "a");
     child = spawn(PYTHON_EXE, UVICORN_ARGS, {
       cwd: AGENT_OFFICE_CWD,
-      detached: true,
+      detached: !DESKTOP_MODE,
       stdio: ["ignore", outFd, errFd],
       windowsHide: true,
     });
@@ -181,7 +182,11 @@ async function attemptStart(): Promise<StartResult> {
   // process) is free to work unopposed. Verified live: this combination
   // produces no window at any hop AND survives a plain kill of this
   // process's own PID.
-  child.unref();
+  if (DESKTOP_MODE) {
+    registerDesktopBackend(child);
+  } else {
+    child.unref();
+  }
 
   console.log(`[agent-office] launching: ${PYTHON_EXE} ${UVICORN_ARGS.join(" ")}`);
 

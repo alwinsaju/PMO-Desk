@@ -16,7 +16,15 @@ const eslintConfig = [
   // with Prettier's formatting instead of trying to keep both in sync.
   eslintConfigPrettier,
   {
-    ignores: ["node_modules/**", ".next/**", "out/**", "build/**", "next-env.d.ts"],
+    ignores: [
+      "desktop/**",
+      "node_modules/**",
+      ".next/**",
+      "out/**",
+      "build/**",
+      "release/**",
+      "next-env.d.ts",
+    ],
   },
 ];
 

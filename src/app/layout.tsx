@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Figtree, IBM_Plex_Mono } from "next/font/google";
 import Script from "next/script";
+import { ServiceWorkerRegistration } from "@/components/pwa/ServiceWorkerRegistration";
 import { TooltipProvider } from "@/components/ui/Tooltip";
 import { getThemeInitScript } from "@/lib/theme";
 import "./globals.css";
@@ -28,6 +29,13 @@ export const metadata: Metadata = {
   title: "AI OS",
   description:
     "A browser-based AI operating system — a virtual desktop where a human and an AI agent can both drive the same windows and apps.",
+  applicationName: "AI OS",
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "AI OS",
+  },
 };
 
 export default function RootLayout({
@@ -67,6 +75,7 @@ export default function RootLayout({
         <Script id="theme-init" strategy="beforeInteractive">
           {getThemeInitScript()}
         </Script>
+        <ServiceWorkerRegistration />
         {/* Global provider: Radix's Tooltip.Root works without this, but a
             single app-wide Provider is the recommended setup — it lets any
             later phase share one delayDuration/skipDelayDuration config
