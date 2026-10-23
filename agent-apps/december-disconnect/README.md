@@ -11,6 +11,13 @@ It is deterministic Python on the shared library `../shared/winter_lib` (a MILP 
 workbook writers, the audits). There is no LLM judgment in any step. Nothing the PMO provides is
 modified: the rosters and both configs are only read.
 
+**Documents.** First run (click path, what to check in Excel, bugs, rollback):
+[`../FIRST-RUN-GUIDE.md`](../FIRST-RUN-GUIDE.md). What was decided and what is assumed (including the open items):
+[`../DECISIONS-AND-ASSUMPTIONS.md`](../DECISIONS-AND-ASSUMPTIONS.md). Acceptance criteria against test evidence:
+[`../ACCEPTANCE.md`](../ACCEPTANCE.md). File and endpoint contract with the Tasks app and the backend:
+[`../TASK-PLATFORM-CONTRACT.md`](../TASK-PLATFORM-CONTRACT.md). Library behavior:
+[`../shared/winter_lib/README.md`](../shared/winter_lib/README.md).
+
 ## How it works
 
     prepare_options.py          (not a step: runs on demand, fills the window list)
@@ -231,7 +238,34 @@ the Shift Roster task learns to ignore those days (holiday engine, HOL check, co
 `shift_roster_config` in `config/task-config.json`; an absent file is skipped with an info note, an
 unreadable one stops the step before anything is written. The Shift Roster task is never run or edited.
 
+## Changing the config
+
+The rules are data, never code. Edit the config between runs (the app does not edit it), then start a new run;
+changing a config after the analysis makes `build_draft.py` refuse ("changed since the analysis").
+
+**Examples** (synthetic, tracked) in `../shared/winter_lib/examples/`: `winter_config.example.json` (every key of
+`config/winter-config.json`) and `analytics_config.example.json` (every key of `config/analytics-config.json`).
+The schema and validation rules are the module docstrings of `winter_config.py` and `analytics_config.py`; an
+invalid config is reported with every problem at once (no person is named in the message).
+
+| To change | Edit |
+|---|---|
+| the window (another year or period) | `window.start` / `window.end` in `winter-config.json` AND `window` in `analytics-config.json` (both must agree, otherwise the window is disabled), plus `holidays` and `fair_days` |
+| a team's daily minimum | `teams[].min_per_day`; `best_effort: true` removes the minimum |
+| minimum / maximum days per person | `rules.min_days`, `rules.max_days`, `rules.best_effort_max_days` |
+| how hard a rule is pushed | `weights` (see the table under Rules) |
+| a rolled-off or excluded person | `exclusions.people`; whole teams: `exclusions.team_patterns` |
+| a person's usual shift | `shift_overrides` (`{name: shift}`) |
+| a spelling difference between the rosters | `name_aliases` (`{staff name: shift roster name}`) |
+| the default shift of people with no history | `default_new_person_shift` |
+| a person who cannot work certain days | `availability` (`unavailable` or `allowed` dates per person), or the form |
+| the Analytics people, roles, on-call and Mexico assignments, slots | `analytics-config.json`: `people[]`, `slots`, `slots_per_person`, `on_call_slots_each`, `weights` |
+| where the Shift Roster config lives (for the disconnect-day update) | `config/task-config.json` (`shift_roster_config`) |
+
 ## Decisions and assumptions
+
+The full list, with who decided each point and the open items, is in
+[`../DECISIONS-AND-ASSUMPTIONS.md`](../DECISIONS-AND-ASSUMPTIONS.md). In short:
 
 * People with no shift history get a shift through the form; the default answer is the config's
   `default_new_person_shift` (S1 in the real config) and every such answer is flagged. Configurable.

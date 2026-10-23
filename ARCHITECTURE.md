@@ -368,3 +368,16 @@ it, so treat it as worth discussing rather than changing silently.
 
 The next planned step for this repo is a final visual QA pass across
 everything above, not new feature work.
+
+## Agent apps: Shift Roster and December Disconnect (outside the desktop shell)
+
+`agent-apps/` is not part of the Next.js app. It holds task folders (`agent.json` manifest, `scripts/`, tests)
+and shared Python libraries (`shared/roster_lib`, `shared/winter_lib`). The Tasks app
+(`src/components/apps/tasks-app/`) is a client of the separate agent-office FastAPI backend
+(`C:\Projects\Agents-workspace\agent-office`, port 8000), which discovers the task folders, runs each step as a
+subprocess and serves the platform endpoints (uploads, prepare, options, params, questions form, diff, flags,
+approver stamp). The next dev server starts that backend through `src/app/api/agent-office/start/route.ts`. The
+shapes the three parts share (manifest keys, endpoints, JSON files) are fixed in
+[`agent-apps/TASK-PLATFORM-CONTRACT.md`](./agent-apps/TASK-PLATFORM-CONTRACT.md). Task decisions and assumptions:
+[`agent-apps/DECISIONS-AND-ASSUMPTIONS.md`](./agent-apps/DECISIONS-AND-ASSUMPTIONS.md); how to run them the first
+time: [`agent-apps/FIRST-RUN-GUIDE.md`](./agent-apps/FIRST-RUN-GUIDE.md).

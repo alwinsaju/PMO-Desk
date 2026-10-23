@@ -5,6 +5,15 @@ file. It is deterministic Python on the shared library `../shared/roster_lib` (r
 fair holiday offs, checks, draft/diff/final workbook writing). There is no LLM judgment in
 any step. The master roster is never modified.
 
+**Documents.** First run (click path, what to check in Excel, bugs, rollback):
+[`../FIRST-RUN-GUIDE.md`](../FIRST-RUN-GUIDE.md). What was decided and what is assumed:
+[`../DECISIONS-AND-ASSUMPTIONS.md`](../DECISIONS-AND-ASSUMPTIONS.md). Acceptance criteria against test evidence:
+[`../ACCEPTANCE.md`](../ACCEPTANCE.md). File and endpoint contract with the Tasks app and the backend:
+[`../TASK-PLATFORM-CONTRACT.md`](../TASK-PLATFORM-CONTRACT.md). Library behavior:
+[`../shared/roster_lib/README.md`](../shared/roster_lib/README.md).
+
+## How it works
+
     prepare_options.py          (not a step: runs on demand, fills the cycle list)
     analyze.py            -> questions the user must answer
     [answers gate]        -> the user answers a form
@@ -176,6 +185,25 @@ answer only counts for ASK_ME / UNCLASSIFIED seats and for people without any pr
 module docstring of `../shared/roster_lib/config.py` and `../shared/roster_lib/examples/
 rotation_config.example.json`. Created once from the roster and a names file with
 `cd ..\shared; ..\.venv\Scripts\python.exe -m roster_lib.seed_config --help`.
+
+**Examples** (synthetic, tracked) in `../shared/roster_lib/examples/`:
+
+| File | What it shows |
+|---|---|
+| `rotation_config.example.json` | the whole rotation config: people, `min_staff`, `min_staff_mode`, `team_aliases`, excluded sections, `disconnect_windows`, `seed` |
+| `holiday_roster_template.xlsx` | the Holiday Roster layout the `holidays` input expects (Holiday name, Date, one column per location, `X` = off), one row of each holiday type |
+| `pto_import_template.xlsx` | the optional PTO import (Name, From, To, Code P/T/SL) |
+
+Recipes (edit `config/rotation-config.json` between runs, then start a new run):
+
+* change a team's minimum: `min_staff` (a number per team, `0` = no minimum, `default` is required) and, for how it
+  is counted, `min_staff_mode` (`per_shift` or `per_team_day`);
+* add a December Disconnect period: add `{"start": "YYYY-MM-DD", "end": "YYYY-MM-DD"}` to `disconnect_windows`
+  (the December Disconnect task also does this when it finalises);
+* change who is never touched: `excluded_sections` / `excluded_section_patterns`;
+* make a different tie-break: change `seed` (an int; the used seed is printed in the Run log of every draft);
+* change when a cycle becomes selectable: `has_data_threshold` (default 0.95);
+* change a person's category (`PERMANENT`, `AUTO_SWAP`, `ASK_ME`, `UNCLASSIFIED`): the person's `rotation`.
 
 - `people[]`: `name`, `team`, `subteam` (= the roster section), `location`, `rotation`
   (`PERMANENT`, `AUTO_SWAP`, `ASK_ME`, `UNCLASSIFIED`), `shift` (snapshot).
