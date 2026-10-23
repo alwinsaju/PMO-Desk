@@ -1,0 +1,28 @@
+{
+  "id": "monthly-report-deck",
+  "displayName": "Monthly Report deck",
+  "steps": [
+    {
+      "id": "prepare_data",
+      "type": "python",
+      "cmd": "scripts/prepare_data.py"
+    },
+    {
+      "id": "review_incidents",
+      "type": "review"
+    },
+    {
+      "id": "refresh_workbook",
+      "type": "powershell",
+      "cmd": "scripts/refresh_workbook.ps1",
+      "args": [
+        "-SidecarPath",
+        "output/report-data.json"
+      ]
+    },
+    {
+      "id": "review_workbook",
+      "type": "review"
+    }
+  ]
+}

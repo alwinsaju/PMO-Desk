@@ -1,0 +1,38 @@
+{
+  "id": "deployment-dep-weekend-mailer",
+  "displayName": "Deployment Mailer",
+  "steps": [
+    {
+      "id": "build_email_data",
+      "type": "python",
+      "cmd": "scripts/build_email_data.py"
+    },
+    {
+      "id": "create_draft",
+      "type": "powershell",
+      "cmd": "scripts/create_draft.ps1",
+      "args": [
+        "-DataPath",
+        "output/email-data.json"
+      ],
+      "capturesEntryId": true
+    },
+    {
+      "id": "review_gate",
+      "type": "review"
+    },
+    {
+      "id": "send_gate",
+      "type": "confirm"
+    },
+    {
+      "id": "send_draft",
+      "type": "powershell",
+      "cmd": "scripts/send_draft.ps1",
+      "args": [
+        "-EntryId",
+        "{entryId}"
+      ]
+    }
+  ]
+}

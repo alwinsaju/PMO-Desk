@@ -1,0 +1,48 @@
+# Weekly Backlog Report Agent
+
+## Purpose
+Generates and sends the recurring Weekly Backlog Report, run every Wednesday and Friday. Takes the current backlog export from ServiceNow, builds a pivot table filtered to a specific list of people, drops it into a fixed Outlook email template, and sends it once the user confirms the draft looks right.
+
+## Trigger
+Manually invoked by the user each Wed/Fri, after they've exported the raw report from ServiceNow and dropped the file into `input/`. No browser automation is involved — the user doesn't have Claude in Chrome, so the ServiceNow login/filter/export step is entirely manual, done by the user in their own browser before the agent starts.
+
+## Inputs (live in this folder)
+- `input/incident (*).xlsx` — this week's raw ServiceNow export, already filtered by the user to the current date's backlog. ServiceNow's own default download filename (e.g. `incident (18).xlsx`); the build script picks the most recently modified match. Dropped in by the user each run.
+- `../shared/roster/Names.xlsx` — roster of people to include, with columns `Full Name` and `Email` (email is used for the @mention-style links in the email body). Maintained by the user. Moved to the workspace-level `shared/roster/` folder once `weekly-aging-report` needed the same roster as a name-to-email lookup, per this workspace's rule against duplicating shared state across agent folders.
+- `reference/Backlog Incident_19 August 2026.xlsx` — a fully processed example from a prior run (raw data + Today/Aging/Age Bucket columns + pivot sheet). Kept as a reference for the expected formulas/layout, not reprocessed as input.
+- `templates/Backlog Incidents  19th August 2026.msg` — a real, previously-sent example email (not a blank template): fixed To/Cc, subject pattern `Backlog Incidents | {date}`, intro paragraph, HTML pivot table with @mention name links, and the processed workbook attached. Confirmed with the user: every run reuses this pattern verbatim, only the date/counts/table data change.
+
+## Workflow
+1. User manually logs into ServiceNow, applies the date filter for the current day's backlog, exports the report as Excel, and drops the file into `input/`.
+2. User tells the agent to start.
+3. `scripts/build_report.py` reads the raw export, adds the Today / Aging in Days / Age Bucket columns (formulas matching `reference/`), matches `../shared/roster/Names.xlsx` roster members against the raw "Assigned to" text (exact match, then conservative fuzzy matching — see Name matching below), saves `output/Backlog Incident_<date>.xlsx`, and writes `output/pivot-input.json` (which raw "Assigned to" values should be visible, plus the roster email map used later).
+4. `scripts/Recalc-Workbook.ps1` recalculates the formulas (see Technical notes) - must run before step 5, since the pivot cache reads cell values, not formulas.
+5. `scripts/create_pivot.ps1` builds a **real, native Excel PivotTable** (Rows: Priority > Assigned to, Columns: Age Bucket, Values: Count of Number) via Excel COM, then applies PivotTable field filters (not a filtered copy) so only the 3 aged buckets and the roster names from `pivot-input.json` are visible - matching exactly how the reference report's PivotTable was filtered by hand. A formula-only lookalike table was tried first and rejected: the user wants an actual PivotTable object, not typed/computed values standing in for one.
+6. `scripts/build_email_data.py` joins the pivot's row names to roster emails from `pivot-input.json` and writes `output/email-data.json`, avoiding a second roster workbook read.
+7. `scripts/create_draft.ps1` builds the HTML body - a **Deloitte x Takeda co-branded** table (bold priority/grand-total rows, `@mention`-style name links) - creates the Outlook item with the fixed To/Cc/subject pattern, attaches the workbook, and calls `.Display()` so the draft opens visibly in the user's own Outlook window - it does **not** send. Each name's "@Last, First" display text is resolved live against the Exchange directory (`Session.CreateRecipient(email).Resolve()`), not guessed from the roster name - the reference email's display format doesn't follow any parseable rule (e.g. "Ramya Sri Devi Puvvada" displayed as "Devi, Puvvada Ramya Sri").
+
+## Branding (Deloitte x Takeda)
+Per user request, the email is co-branded rather than using generic Deloitte styling:
+- **Palette**: Takeda Red `#E1242A` (table header, grand-total accent), charcoal `#2D2D2D` text, light neutral grays - matched from `reference/Outage_Availability_Report_Template_1.pptx`, this engagement's own status-report template (no Deloitte green appears in it at all).
+- **Logos**: `../shared/assets/deloitte-logo.png` (plain Deloitte wordmark + green dot - cropped from the "Deloitte Digital" lockup on slide 10 of `reference/DXFactory - Templating and Graphics.pptx`, which stacks "Deloitte." above "Digital"; only the top band is used, per the user's request for just Deloitte, not the Digital sub-brand) and `../shared/assets/takeda-logo.png` (extracted from the Outage report template), shown side by side in a letterhead-style header bar with a thin red rule beneath - not a full-width accent stripe, and not the Deloitte tagline lockup (co-branded materials shouldn't carry the tagline lockup per the deloitte-brand skill). Moved to the workspace-level `shared/assets/` folder once `weekly-aging-report` needed the same two logos, per this workspace's rule against duplicating shared assets across agent folders.
+- Logos are embedded as inline attachments with `PR_ATTACH_CONTENT_ID` set (`logo_deloitte` / `logo_takeda`) and referenced via `cid:` in the HTML - the same mechanism Outlook itself uses for the signature image. Two Outlook COM gotchas hit while building this: (1) attachments must be added to the `MailItem` **before** the `HTMLBody` that references their `cid:` is set, or the open Inspector shows broken images; (2) Outlook's renderer ignores CSS `width`/`height` on `<img>` - size logos with the HTML `width`/`height` attributes instead, or they render at native resolution.
+- If a future engagement needs different branding, swap the two files in `assets/` and the palette variables at the top of `create_draft.ps1`.
+8. Agent shows the user the draft and waits for explicit confirmation.
+9. On confirmation, `scripts/send_draft.ps1 -DraftToken <token>` reopens the uniquely tagged draft from Outlook Drafts and sends it via the user's Outlook desktop app. The token remains valid if Outlook changes the draft's EntryID after the user reviews it. Sending is a message on the user's behalf — always get an explicit "yes, send" in chat at send time, even after the draft itself was already approved. The draft token is saved to `output/draft-entry-id.txt` so the send step can be resumed even if the conversation is interrupted between review and confirmation.
+
+## Name matching (ServiceNow "Assigned to" vs. roster)
+ServiceNow's "Assigned to" text doesn't always match the roster spelling exactly (word order, typos, or a genuinely different display name for the same person). This matching logic now lives in `../shared/roster/name_matching.py` (`match_roster_to_raw`, plus `KNOWN_ALIASES`) - promoted there once `weekly-aging-report` needed the identical logic against the same roster, per this workspace's rule against duplicating shared logic across agent folders:
+1. Exact match (case/word-order-insensitive token match) — silent.
+2. `KNOWN_ALIASES` dict — hardcoded, confirmed-by-hand pairs for people whose ServiceNow name is too different to fuzzy-match safely (currently: Dileepu Gowda/"Dileepu a", Meghana Meghana/"Meghana Nittala", Saranya Saranya/"Saranya Kurada"). Add to this dict if a new such mismatch turns up.
+3. Conservative fuzzy fallback (single missing/extra token, or one token within edit-distance 2) — used, but printed out for the user to confirm each run.
+Roster members with no match in a given run's data just have zero current backlog — not an error.
+
+## Technical notes
+- No browser automation — ServiceNow export is a manual, out-of-band step performed by the user.
+- Excel processing (formulas) uses the `xlsx` skill's conventions, but **not** its `recalc.py` (that needs a POSIX `AF_UNIX` socket that isn't available in this native Windows Python). Use `scripts/Recalc-Workbook.ps1` instead, which drives the installed Excel application via COM to recalculate and save.
+- The pivot table is a real Excel PivotTable built via COM (`scripts/create_pivot.ps1`), not a formulas-only lookalike — openpyxl can't reliably create a native, refreshable PivotTable, and the user specifically wants the real thing (filterable/refreshable, same as the reference file, which does contain a genuine `xl/pivotTables/...` part).
+- PivotTable gotcha: freshly created pivot items sort by first appearance in the source data, not by the buckets' natural chronological order — `create_pivot.ps1` sets `PivotItem.Position` explicitly on the Age Bucket field so columns come out 15-30 / 31-45 / >45 days.
+- Outlook desktop is controlled via COM automation (not the web app), since the send step must happen in the user's actual desktop Outlook.
+
+## Data handling
+Exported ServiceNow data and generated reports are real PMO backlog data. Never commit them anywhere in this workspace — `input/`, `output/`, and `reference/` are for local working files only.

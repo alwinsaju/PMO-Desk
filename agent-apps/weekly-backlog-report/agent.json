@@ -1,0 +1,61 @@
+{
+  "id": "weekly-backlog-report",
+  "displayName": "Backlog Report",
+  "steps": [
+    {
+      "id": "build_report",
+      "type": "python",
+      "cmd": "scripts/build_report.py"
+    },
+    {
+      "id": "recalc",
+      "type": "powershell",
+      "cmd": "scripts/Recalc-Workbook.ps1",
+      "args": [
+        "-SidecarPath",
+        "output/pivot-input.json"
+      ]
+    },
+    {
+      "id": "create_pivot",
+      "type": "powershell",
+      "cmd": "scripts/create_pivot.ps1",
+      "args": [
+        "-SidecarPath",
+        "output/pivot-input.json"
+      ]
+    },
+    {
+      "id": "build_email_data",
+      "type": "python",
+      "cmd": "scripts/build_email_data.py"
+    },
+    {
+      "id": "create_draft",
+      "type": "powershell",
+      "cmd": "scripts/create_draft.ps1",
+      "args": [
+        "-DataPath",
+        "output/email-data.json"
+      ],
+      "capturesEntryId": true
+    },
+    {
+      "id": "review_gate",
+      "type": "review"
+    },
+    {
+      "id": "send_gate",
+      "type": "confirm"
+    },
+    {
+      "id": "send_draft",
+      "type": "powershell",
+      "cmd": "scripts/send_draft.ps1",
+      "args": [
+        "-DraftToken",
+        "{entryId}"
+      ]
+    }
+  ]
+}

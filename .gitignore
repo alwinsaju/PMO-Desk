@@ -58,3 +58,6 @@ __pycache__/
 
 # Office lock files
 ~$*
+
+# agent-apps: real employee roster (names/emails) - never commit
+agent-apps/shared/roster/Names.xlsx
