@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
+    "test": "node --no-warnings --test \"src/**/*.test.mjs\"",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },
@@ -30,6 +31,7 @@
     "next": "15.5.24",
     "react": "19.1.0",
     "react-dom": "19.1.0",
+    "read-excel-file": "^9.3.10",
     "tailwind-merge": "^3.6.0",
     "zod": "^4.4.3",
     "zustand": "^5.0.15"
