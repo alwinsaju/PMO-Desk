@@ -514,3 +514,141 @@ layout as `write_template`; the 2027-01-01 row is an ASSUMPTION and 26-31 Dec 20
 December Disconnect, a config `disconnect_windows` entry, not a matrix row) loads with the
 expected types and 11 holidays per India location in 2026, and the Pune stray HOLs are exactly
 the eleven dates the PMO confirmed.
+
+## Draft, diff, final build, next-year file
+
+Steps 6-8 of the workflow. The rule behind all of it: **the master is never written**.
+Every writer takes a source and writes a different destination; the source is hashed
+before and after. Nothing here saves a workbook through openpyxl (it would drop threaded
+comments, the sensitivity label, extLst conditional formatting / validation, ...): the
+xlsx stays a zip of byte blobs and only the named parts change. No Excel or LibreOffice
+was available when this was written, so the output has been checked with zip diffs,
+openpyxl load and the `roster_io` reader only (see Known limits).
+
+    master.xlsx --build_draft--> draft.xlsx (+ draft.xlsx.snapshot.json)
+         PMO edits cells in Excel, saves, clicks Approve
+    saved draft --diff_draft--> DraftDiff (every changed cell + flag delta) --PMO confirms-->
+    master + saved draft + diff --build_final--> <out>/<master> - final <cycle>.xlsx
+                                                 <out>/backups/<master>.<sha8>.xlsx
+                                                 <out>/audit/<run_id>.json (+ audit.log.jsonl)
+    master or final --build_next_year_file--> next-year file (the cycle's remainder)
+
+### `xlsx_sheets.py` - add worksheets at package level
+
+`add_sheets(src, dst, [SheetSpec(name, rows, col_widths=, freeze=, state=, tab_color=,
+row_styles=)])`; cells are str / int / float / bool / date / None or `Cell(value, style)`;
+styles: `header`, `flag_red`, `flag_amber`, `info`, `wrap`, `bold`, `date` (join with `+`,
+a date cell in a styled row gets the date format automatically). New parts
+`xl/worksheets/sheetN.xml` (inline strings) are appended to the zip; `workbook.xml`
+(`<sheet>` appended, new sheetId / r:id, `state=`), `workbook.xml.rels`,
+`[Content_Types].xml`, `styles.xml` (fonts / fills / borders / numFmt / cellXfs
+appended, counts updated, existing indices untouched) and `docProps/app.xml`
+(TitlesOfParts, when present) change; every other part is byte-identical. New sheets go
+after the existing ones so no sheet index moves. Sheet names follow Excel's rules (31
+chars, no `: \ / ? * [ ]`, unique case-insensitively) and a bad or colliding name raises
+`SheetNameError` before anything is written.
+
+### `draft_builder.py` - step 6
+
+`build_draft(master, draft, plan, *, matrix_path=None, pto_path=None, config_path=None,
+extra_run_log=None, sheet_name="PDT Operate", roster=None, now=None) -> DraftResult`.
+`plan` is duck-typed (`cycle_builder.Plan`: `edits`, `remainder_edits`, `shift_changes`,
+`holiday_assignments`, `flags`, `run_info`, `existing_roster_findings`, `to_json()` and,
+when present, `snapshot_cells()` = exactly the cells written into the file, else `edits`).
+The cells are patched into a copy of the master (`xlsx_patch`), then these sheets are
+appended: `Draft Summary` (counts, flags by severity and kind, HOL check on the draft,
+existing-roster findings, year-boundary note), `Shift changes`, `Holiday assignments`,
+`Flags` (red rows for errors, amber for warnings, plain info; columns severity, kind,
+person, date, message, team, shift, key), `Run log` (master / matrix / PTO / config file
+names and sha256, cycle, config version, seed, library version and commit, creation time,
+approver placeholder, plan hash) and the **veryHidden** `_snapshot`. A sidecar
+`<draft>.snapshot.json` carries the same snapshot plus the flags the plan raised.
+Idempotent: the same inputs give the same cell content (time and commit live only in `Run log`).
+
+**Snapshot design.** One row per written cell: person, date (ISO text), text, row, col; a
+meta block holds the master sha256, the plan content hash, the cycle, the sheet name, the
+roster's first/last date, the summary sheet names, the cell count and the schema version
+(`roster-draft-snapshot/1`). It is plain text (nothing for Excel to reinterpret) in a sheet
+that cannot be unhidden from the Excel UI, mirrored in the sidecar outside the workbook.
+
+### `draft_diff.py` - step 7
+
+`diff_draft(saved_draft, *, master_path=None, recheck=None, flags_before=None,
+sidecar_path=None, flag_delta=None) -> DraftDiff`. The saved draft is read with the
+tolerant text readers, so an Excel re-save (shared strings reindexed, styles rewritten,
+cached values recomputed) does not matter; cells are compared as text by person name and
+date, never by row position. Result: `changes` (`CellChange(person, date, before, after,
+row, col)` for every snapshot cell that differs, sorted by row order then date),
+`outside_snapshot_changes` (grid cells not in the snapshot that differ from the master;
+needs `master_path`), `issues` (`DiffIssue(code, severity, message)`; error codes block the
+final: `SNAPSHOT_MISSING`, `SNAPSHOT_TAMPERED`, `ROSTER_UNREADABLE`, `MASTER_CHANGED`,
+`PERSON_MISSING`, `DATES_CHANGED`, ...; warnings: renamed people, changed holiday labels,
+summary sheet deleted or renamed, sheet hidden state changed, formula in a grid cell, ...)
+and, when `recheck(schedule)` is given, the flag delta `flags_new` / `flags_resolved` /
+`flags_remaining` (keyed by `Flag.key`; `flags_before` defaults to the sidecar's flags).
+`recheck` gets `{person: {date: text}}` for the snapshot's people and the cycle's in-file
+dates, built from the saved draft. Snapshot source: the hidden sheet, else the sidecar;
+when both exist and disagree the diff carries `SNAPSHOT_TAMPERED` and compares against the
+sidecar. `to_json()` is deterministic and has everything the UI diff view needs.
+
+### `final_build.py` + `audit.py` - step 8
+
+`build_final(master, saved_draft, diff, out_dir, *, approver=None, confirmed=True,
+matrix_path=None, pto_path=None, config_path=None, extra=None, sidecar_path=None, now=None)
+-> FinalResult`. Raises `FinalBuildRefused` (nothing written) unless `confirmed is True`, the
+diff has no blocking issue, the diff was computed with the master from this same saved draft
+(sha256 and a fresh re-comparison), and the master's sha256 equals the one in the snapshot
+meta. The approved set is the snapshot cells (their values read back from the saved draft)
+plus the changes outside the snapshot; cells whose approved value already equals the
+master's are skipped. They are written into a copy of the **master** (so the final has no
+summary or snapshot sheets). Before the file is moved into place: `pkgdiff` proves only the
+target sheet part differs, only the approved cells differ inside it and everything outside
+`sheetData` is intact, and a grid comparison proves the master-to-final differences are
+exactly the approved cells; otherwise `FinalBuildError` and nothing is left behind. The
+backup is a hash-verified copy of the master (`backups/<stem>.<sha8>.xlsx`, never
+overwritten with different content). An identical existing final is reused; a different
+one is never overwritten (the new file gets ` (2)`).
+
+Audit (`audit/<run_id>.json`, created exclusively, plus one summary line appended to
+`audit/audit.log.jsonl`; nothing is ever rewritten or deleted): `run_id` (UTC timestamp +
+digest of the input hashes and time), `started_utc`, `finished_utc`, `approver` (given, else
+the OS user) and `approver_source`, `inputs` (name, sha256, bytes of master, saved draft,
+matrix, PTO, config), `cycle`, `seed`, `config_version`, `plan_hash`, `snapshot` (source,
+digest, cells), `diff` (the full confirmed diff: user changes, outside changes, issues, flag
+delta), `counts`, `written` (person, date, before, after of every cell written), `outputs`
+(final, backup, saved draft with hashes), `library` versions, `warnings`, `extra`. Names are
+allowed here: the audit folder is output, not source.
+
+### `next_year_file.py`
+
+`build_next_year_file(master_or_final, dst, remainder_edits, *, holiday_labels=None,
+start=None, sheet_name="PDT Operate") -> NextYearResult`. The file ends on a date while the
+Dec-Jan cycle runs on; the new file starts the day after the source's last date and keeps
+the same number of date columns (Jan 2 2027 + 365 columns = Jan 1 2028; a warning says when
+the span is not a full year, e.g. Jan 1 2028 + 365 columns ends Dec 30 2028). Changed: the
+cached values of the date row (the formula chain stays) and weekday row, `fullCalcOnLoad="1"`
+on `calcPr` (Excel recalculates everything on open), the holiday row (cleared, then
+`holiday_labels`; merges on that row dropped), the grid (every person x date cell cleared,
+styles kept, then `remainder_edits`). Everything else is untouched, including the title and
+key text, legends, comments and hyperlinks, which may still mention the old year:
+`old_year_cells` and `warnings` list them (not rewritten). It refuses a date chain it cannot
+restart (a formula in the first date cell, a date formula that is not "previous + 1") and a
+formula cell inside the grid. Verified before returning: `roster_io` reads dates, people,
+grid and labels as expected and `pkgdiff` shows only the sheet part (and `workbook.xml`) changed.
+
+### Known limits
+
+- None of the written files has been opened in Excel here. They follow the spec and the
+  patterns Excel itself writes (inline strings, appended styles, `calcPr`), pass openpyxl
+  loading and the package / cell-level checks, but a human should open the first draft, a
+  final and a next-year file once in Excel to confirm there is no repair prompt.
+- Excel converts inline strings and drops the stale `sst@count` on its next save; harmless.
+- The diff compares cell TEXT: a formula the PMO types into a grid cell is compared by its
+  cached text (and warned about); a date typed into a code cell shows up as its serial.
+- Comments and hyperlinks stay attached to the cells they were on, including in the
+  next-year file where they refer to the old roster.
+- Merged cells on the holiday row are dropped in the next-year file; per-date labels are
+  written one cell each.
+- Real-file checks use the reference copy only (counts and structure); openpyxl itself
+  rewrites the text of a hyperlinked data cell to its URL, so a simulated "Excel re-save"
+  through openpyxl shows that cell as a (spurious) outside-snapshot change.
