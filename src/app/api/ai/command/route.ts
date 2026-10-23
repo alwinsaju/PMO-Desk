@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import type {
+  AiCommandAppId,
   AiCommandRequest,
   AiCommandRequestNote,
   AiCommandResult,
   NoteToolName,
+  WindowToolName,
 } from "./types";
 
 // Always a live call to a local model process — never safe to treat as
@@ -51,9 +53,27 @@ const NOTE_TOOL_NAMES: readonly NoteToolName[] = [
   "update_note",
   "delete_note",
 ];
+const WINDOW_TOOL_NAMES: readonly WindowToolName[] = [
+  "open_app",
+  "focus_window",
+  "minimize_window",
+  "maximize_window",
+  "close_window",
+];
+const AI_APP_IDS: readonly AiCommandAppId[] = [
+  "files",
+  "notes",
+  "browser",
+  "tasks",
+  "app-store",
+];
 
 function isNoteToolName(value: string): value is NoteToolName {
   return (NOTE_TOOL_NAMES as readonly string[]).includes(value);
+}
+
+function isWindowToolName(value: string): value is WindowToolName {
+  return (WINDOW_TOOL_NAMES as readonly string[]).includes(value);
 }
 
 /**
@@ -131,6 +151,70 @@ const NOTE_TOOLS = [
   },
 ] as const;
 
+const WINDOW_TOOLS = [
+  {
+    type: "function",
+    function: {
+      name: "open_app",
+      description: "Open a built-in desktop app when the user asks to open or launch it.",
+      parameters: {
+        type: "object",
+        properties: { appId: { type: "string", enum: AI_APP_IDS } },
+        required: ["appId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "focus_window",
+      description: "Focus an existing desktop window by its id.",
+      parameters: {
+        type: "object",
+        properties: { id: { type: "string" } },
+        required: ["id"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "minimize_window",
+      description: "Minimize an existing desktop window by its id.",
+      parameters: {
+        type: "object",
+        properties: { id: { type: "string" } },
+        required: ["id"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "maximize_window",
+      description:
+        "Maximize an existing desktop window by its id. Calling it again restores its previous size.",
+      parameters: {
+        type: "object",
+        properties: { id: { type: "string" } },
+        required: ["id"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "close_window",
+      description: "Close an existing desktop window by its id.",
+      parameters: {
+        type: "object",
+        properties: { id: { type: "string" } },
+        required: ["id"],
+      },
+    },
+  },
+] as const;
+
 const requestSchema = z.object({
   prompt: z.string().trim().min(1),
   focusedApp: z.object({
@@ -138,6 +222,9 @@ const requestSchema = z.object({
     title: z.string(),
   }),
   notes: z.array(z.object({ id: z.string().min(1), title: z.string() })).optional(),
+  windows: z.array(
+    z.object({ id: z.string().min(1), appId: z.string().min(1), title: z.string() }),
+  ),
 });
 
 const createNoteArgsSchema = z.object({ content: z.string().min(1) });
@@ -146,6 +233,8 @@ const updateNoteArgsSchema = z.object({
   content: z.string().min(1),
 });
 const deleteNoteArgsSchema = z.object({ id: z.string().min(1) });
+const windowIdArgsSchema = z.object({ id: z.string().min(1) });
+const openAppArgsSchema = z.object({ appId: z.enum(AI_APP_IDS) });
 
 /**
  * POST /api/ai/command -> AiCommandResult (see types.ts). Accepts the
@@ -188,11 +277,16 @@ export async function POST(request: Request) {
     messages: [
       {
         role: "system",
-        content: buildSystemPrompt(body.focusedApp.title, notesEnabled, existingNotes),
+        content: buildSystemPrompt(
+          body.focusedApp.title,
+          notesEnabled,
+          existingNotes,
+          body.windows,
+        ),
       },
       { role: "user", content: body.prompt },
     ],
-    ...(notesEnabled ? { tools: NOTE_TOOLS } : {}),
+    tools: notesEnabled ? [...WINDOW_TOOLS, ...NOTE_TOOLS] : WINDOW_TOOLS,
   };
 
   let response: Response;
@@ -233,16 +327,21 @@ export async function POST(request: Request) {
     } satisfies AiCommandResult);
   }
 
-  return NextResponse.json(interpretOllamaResponse(payload, existingNotes));
+  return NextResponse.json(interpretOllamaResponse(payload, existingNotes, body.windows));
 }
 
 function buildSystemPrompt(
   focusedAppTitle: string,
   notesEnabled: boolean,
   existingNotes: AiCommandRequestNote[],
+  windows: AiCommandRequest["windows"],
 ): string {
   const sections = [
     `You are the AI assistant built into this desktop OS's command bar. The user currently has the "${focusedAppTitle}" app focused.`,
+    "You can manage desktop windows with the provided tools. Call exactly one window tool when the user asks to open, launch, focus, minimize, maximize, restore, or close an app/window. To act on an existing window, use its exact id from the list below. Do not claim an action succeeded unless you called its tool.",
+    windows.length > 0
+      ? `Open windows:\n${windows.map((window) => `- id: ${window.id} - ${window.title} (${window.appId})`).join("\n")}`
+      : "There are no open windows.",
   ];
 
   if (notesEnabled) {
@@ -255,7 +354,7 @@ function buildSystemPrompt(
     );
   } else {
     sections.push(
-      "You have NO action tools available for this app — you cannot create, edit, save, delete, or change anything, and must never claim or imply that you did. If asked to perform an action, say plainly that you can't do that from here yet. Otherwise just reply conversationally with a short, helpful plain text message.",
+      "For app-content tasks, explain briefly that direct content editing is currently available in Notes only. You can still manage desktop windows with the provided tools.",
     );
   }
 
@@ -265,6 +364,7 @@ function buildSystemPrompt(
 function interpretOllamaResponse(
   payload: unknown,
   existingNotes: AiCommandRequestNote[],
+  windows: AiCommandRequest["windows"],
 ): AiCommandResult {
   const message = isRecord(payload) ? payload.message : undefined;
   if (!isRecord(message)) {
@@ -277,7 +377,7 @@ function interpretOllamaResponse(
 
   const toolCalls = message.tool_calls;
   if (Array.isArray(toolCalls) && toolCalls.length > 0) {
-    return interpretToolCall(toolCalls[0], existingNotes);
+    return interpretToolCall(toolCalls[0], existingNotes, windows);
   }
 
   const content = message.content;
@@ -295,6 +395,7 @@ function interpretOllamaResponse(
 function interpretToolCall(
   rawCall: unknown,
   existingNotes: AiCommandRequestNote[],
+  windows: AiCommandRequest["windows"],
 ): AiCommandResult {
   const fn = isRecord(rawCall) ? rawCall.function : undefined;
   if (!isRecord(fn)) {
@@ -306,7 +407,7 @@ function interpretToolCall(
   }
 
   const name = fn.name;
-  if (typeof name !== "string" || !isNoteToolName(name)) {
+  if (typeof name !== "string" || (!isNoteToolName(name) && !isWindowToolName(name))) {
     return {
       type: "error",
       kind: "malformed",
@@ -323,7 +424,9 @@ function interpretToolCall(
     };
   }
 
-  return validateNoteAction(name, args, existingNotes);
+  return isNoteToolName(name)
+    ? validateNoteAction(name, args, existingNotes)
+    : validateWindowAction(name, args, windows);
 }
 
 /**
@@ -404,6 +507,41 @@ function validateNoteAction(
     };
   }
   return { type: "action", name: "delete_note", arguments: parsed.data };
+}
+
+function validateWindowAction(
+  name: WindowToolName,
+  args: Record<string, unknown>,
+  windows: AiCommandRequest["windows"],
+): AiCommandResult {
+  if (name === "open_app") {
+    const parsed = openAppArgsSchema.safeParse(args);
+    if (!parsed.success) {
+      return {
+        type: "error",
+        kind: "malformed",
+        message: "The local AI model called open_app with invalid arguments.",
+      };
+    }
+    return { type: "action", name, arguments: parsed.data };
+  }
+
+  const parsed = windowIdArgsSchema.safeParse(args);
+  if (!parsed.success) {
+    return {
+      type: "error",
+      kind: "malformed",
+      message: `The local AI model called ${name} with invalid arguments.`,
+    };
+  }
+  if (!windows.some((window) => window.id === parsed.data.id)) {
+    return {
+      type: "error",
+      kind: "malformed",
+      message: "The local AI model tried to control a window that doesn't exist.",
+    };
+  }
+  return { type: "action", name, arguments: parsed.data };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

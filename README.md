@@ -1,5 +1,14 @@
 # AI OS
 
+## Current behavior
+
+The desktop includes a dock, demo apps, and an AI command bar. The AI can take
+over desktop window operations (open, focus, minimize, maximize, and close)
+with a visible cursor and ownership handoff. When Notes is focused, it can also
+create, update, and delete notes.
+
+## Historical foundation scope
+
 A browser-based "AI Operating System" — a virtual desktop where a human and an AI
 agent can both drive the same windows and apps, with seamless handoff between them.
 

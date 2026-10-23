@@ -34,7 +34,16 @@ import type { AgentTaskStatus } from "./types";
  *  guards against the request somehow hanging past that. */
 const CLIENT_TIMEOUT_MS = 65_000;
 
-type ApplyResult = { ok: true; summary: string } | { ok: false; reason: string };
+type ApplyResult =
+  { ok: true; summary: string; targetWindowId?: string } | { ok: false; reason: string };
+
+const APP_TITLES = {
+  files: "Files",
+  notes: "Notes",
+  browser: "Browser",
+  tasks: "Tasks",
+  "app-store": "App Store",
+} as const;
 
 /**
  * Applies a validated action decision to `notesStore` and returns a short,
@@ -49,7 +58,7 @@ type ApplyResult = { ok: true; summary: string } | { ok: false; reason: string }
  * fully at each step this way, including the final, unconditional branch
  * for "delete_note" (the only name left once the other two are ruled out).
  */
-function applyNoteAction(action: AiCommandAction): ApplyResult {
+function applyAgentAction(action: AiCommandAction): ApplyResult {
   if (action.name === "create_note") {
     const note = createNote(action.arguments.content);
     return { ok: true, summary: `Creating a note: "${noteTitle(note)}"…` };
@@ -64,12 +73,46 @@ function applyNoteAction(action: AiCommandAction): ApplyResult {
     return { ok: true, summary: `Updating "${noteTitle(existing)}"…` };
   }
 
-  const existing = getNotes().find((n) => n.id === action.arguments.id);
-  if (!existing) {
-    return { ok: false, reason: "The note the AI tried to delete no longer exists." };
+  if (action.name === "delete_note") {
+    const existing = getNotes().find((n) => n.id === action.arguments.id);
+    if (!existing) {
+      return { ok: false, reason: "The note the AI tried to delete no longer exists." };
+    }
+    deleteNote(action.arguments.id);
+    return { ok: true, summary: `Deleting "${noteTitle(existing)}"…` };
   }
-  deleteNote(action.arguments.id);
-  return { ok: true, summary: `Deleting "${noteTitle(existing)}"…` };
+
+  const windowStore = useWindowStore.getState();
+  if (action.name === "open_app") {
+    const targetWindowId = windowStore.openWindow(action.arguments.appId, {
+      title: APP_TITLES[action.arguments.appId],
+    });
+    return {
+      ok: true,
+      summary: `Opening ${APP_TITLES[action.arguments.appId]}…`,
+      targetWindowId,
+    };
+  }
+
+  if (!windowStore.windows[action.arguments.id]) {
+    return { ok: false, reason: "The window the AI tried to control no longer exists." };
+  }
+  if (action.name === "focus_window") windowStore.focusWindow(action.arguments.id);
+  if (action.name === "minimize_window") windowStore.minimizeWindow(action.arguments.id);
+  if (action.name === "maximize_window") windowStore.maximizeWindow(action.arguments.id);
+  if (action.name === "close_window") windowStore.closeWindow(action.arguments.id);
+
+  const labels = {
+    focus_window: "Focusing",
+    minimize_window: "Minimizing",
+    maximize_window: "Maximizing",
+    close_window: "Closing",
+  } as const;
+  return {
+    ok: true,
+    summary: `${labels[action.name]} a window…`,
+    targetWindowId: action.arguments.id,
+  };
 }
 
 /** Where a plain conversational reply's annotation bubble anchors — just
@@ -212,6 +255,11 @@ export function CommandBar() {
       notes: notesEnabled
         ? getNotes().map((note) => ({ id: note.id, title: noteTitle(note) }))
         : undefined,
+      windows: Object.values(useWindowStore.getState().windows).map((currentWindow) => ({
+        id: currentWindow.id,
+        appId: currentWindow.appId,
+        title: currentWindow.title,
+      })),
     };
 
     let result: AiCommandResult;
@@ -253,10 +301,10 @@ export function CommandBar() {
     }
 
     // result.type === "action" — apply it before touching any of the
-    // window-takeover choreography, so a note that's vanished out from
-    // under us (see applyNoteAction) never leaves the window stuck
+    // window-takeover choreography, so a note/window that's vanished out
+    // from under us never leaves the window stuck
     // "AI-controlled" with nothing actually happening.
-    const applied = applyNoteAction(result);
+    const applied = applyAgentAction(result);
     if (!applied.ok) {
       clearCurrentTask();
       showNotice(applied.reason);
@@ -264,20 +312,31 @@ export function CommandBar() {
     }
 
     setTaskStatus("working");
-    useWindowStore.getState().setWindowControlledBy(win.id, "ai", task.id);
+    const targetWindowId = applied.targetWindowId ?? win.id;
+    const targetWindow = useWindowStore.getState().windows[targetWindowId];
+    if (targetWindow) {
+      useWindowStore.getState().setWindowControlledBy(targetWindowId, "ai", task.id);
+    }
+    const cursorWindow = targetWindow ?? (targetWindowId === win.id ? win : undefined);
     const center = {
-      x: win.position.x + win.size.width / 2,
-      y: win.position.y + win.size.height / 2,
+      x: cursorWindow
+        ? cursorWindow.position.x + cursorWindow.size.width / 2
+        : messageAnnotationPoint().x,
+      y: cursorWindow
+        ? cursorWindow.position.y + cursorWindow.size.height / 2
+        : messageAnnotationPoint().y,
     };
     setCursorTarget(center);
     setAnnotation({
       message: applied.summary,
-      position: { x: center.x, y: win.position.y },
+      position: { x: center.x, y: cursorWindow?.position.y ?? center.y },
     });
 
     scheduleTimeout(() => {
       completeCurrentTask(applied.summary);
-      useWindowStore.getState().setWindowControlledBy(win.id, "human");
+      if (targetWindow) {
+        useWindowStore.getState().setWindowControlledBy(targetWindowId, "human");
+      }
       setAnnotation(null);
       setCursorTarget(null);
       scheduleTimeout(clearCurrentTask, TASK_SETTLE_MS);

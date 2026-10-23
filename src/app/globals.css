@@ -151,6 +151,14 @@
 
 html {
   color-scheme: light;
+  /* The normal mouse pointer is the OS's black arrow throughout the app.
+     Nothing here ever swapped it for a custom image/tinted cursor — but a
+     bare `cursor: auto` on `html` is easy for a later rule to accidentally
+     override, so it's pinned explicitly. All `cursor-*` utilities already in
+     use (pointer/grab/resize) also resolve to black system cursors; the ONLY
+     non-black pointer in the product is the teal AI overlay in AICursor.tsx,
+     which is a rendered icon (not the OS cursor) and is intentionally exempt. */
+  cursor: auto;
 }
 
 body {
