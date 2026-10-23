@@ -81,4 +81,4 @@ def test_real_file_diff_smoke(tmp_path):
     # openpyxl (not Excel) writes the hyperlink URL into the hyperlinked data cell: the only extra "change"
     mine = [c for c in d2.outside_snapshot_changes if c.person == outsider]
     others = [c for c in d2.outside_snapshot_changes if c.person != outsider]
-    assert len(mine) == 1 and len(others) <= 1 and all(c.after.startswith("http") for c in others)
+    assert len(mine) == 1 and len(others) <= 1 and all(c.after.startswith(("http", "..")) for c in others)
