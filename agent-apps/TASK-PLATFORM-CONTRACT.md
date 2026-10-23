@@ -61,8 +61,9 @@ All optional; tasks without them behave as today.
 | GET | `/tasks/{id}/options` | `{ok, options: <output/options.json or null>}` |
 | POST | `/tasks/{id}/params` | body `{params: {inputId: value}}`. Validates that select values exist in the options file and are `enabled` (an option with `enabled:false` is refused with its `reason`). Writes `input/run-params.json` = `{params, saved_at}`. |
 | POST | `/tasks/{id}/start` | UNCHANGED, except: for a task that declares `inputs`, refuse with `{ok:false, reason, missing:[ids]}` when a required `file` input is absent or a required `select` has no saved param. |
-| GET | `/tasks/{id}/form` | `{ok, schema: <gate.schema file>, answers: <answers file or {}>, pending: [fieldIds]}` where `pending` = required fields without a non-empty answer. |
-| POST | `/tasks/{id}/form` | body `{answers: {fieldId: value}}`. Validates field ids exist; `select` values must be among option `value`s. Merges into the answers file (overwrite per key), returns `{ok, pending}`. Only while the task is `awaiting_review` at a `form` gate. |
+| GET | `/tasks/{id}/form` | `{ok, schema: <gate.schema file>, answers: <answers file or {}>, pending: [fieldIds]}` where `pending` = REQUIRED fields without a non-empty answer (a text answer counts after trimming, so whitespace is not an answer; optional fields never pend, with or without a default, so a script must apply an optional field's `default` itself when the key is absent). |
+| POST | `/tasks/{id}/form` | body `{answers: {fieldId: value}}`. Validates field ids exist; `select` values must be among option `value`s; a `text` value must be a string (stored TRIMMED, at most 500 characters after trimming, may be empty) else `{ok:false, reason, invalid:[ids]}`; a `null` value deletes that answer. Merges into the answers file (overwrite per key), returns `{ok, pending}`. Only while the task is `awaiting_review` at a `form` gate. |
+| POST | `/tasks/{id}/notifications/{notificationId}/open` | EXISTING; opens the notification's file with the OS default app. Optional query `path=<absolute path>` opens that one of the notification's `outputPaths` (the whitelist: the exact listed path, compared after normalisation; anything else is refused with `{ok:false, reason}`); without `path` it opens `outputPath` as before. Either way the file must exist inside the task folder. |
 | POST | `/tasks/{id}/approve` | EXISTING route. New generic refusal: at a `form` gate with pending required fields -> `{ok:false, reason, pending}`. (Keep the legacy hard-coded `review_incidents` refusal as is.) |
 | GET | `/tasks/{id}/diff` | `{ok, diff: <gate.file contents or null>}` |
 | POST | `/tasks/{id}/send` | EXISTING route. New generic refusal: at a `diff` gate when the diff file's `blocking` array is non-empty -> `{ok:false, reason, blocking}`. |
@@ -101,6 +102,7 @@ All dates ISO `YYYY-MM-DD`; UTF-8; deterministic key order.
  ]}
 ```
 Answers file `output/ask-me-answers.json` is a FLAT object `{fieldId: value}`; `build_draft.py` converts it to the library's structured answers.
+A field's `type` is `select` (needs `options`) or `text` (free text; the app shows an input box with the field's `description` as its placeholder, e.g. `{"id": "avail_dates_1", "group": "Availability exceptions", "label": "...", "description": "YYYY-MM-DD, comma separated", "type": "text", "default": "", "required": false}`). The app also hints (never blocks) when a text field whose description contains `YYYY-MM-DD` holds something that is not a date list; the script does the real validation. Optional fields are not recorded until the user changes them: the script falls back to the field's `default` when its key is absent.
 
 `output/flags.json` (written by `build_draft.py`)
 ```json
@@ -117,11 +119,14 @@ Answers file `output/ask-me-answers.json` is a FLAT object `{fieldId: value}`; `
  "flags": {"new": [<flag>], "resolved": [<flag>], "remaining": 12}}
 ```
 
-`output/report-data.json` (the UI's "Open" button + summaries)
+`output/report-data.json` (the UI's "Open" buttons + summaries)
 `workbook_path` may be relative to the task folder (as below); the backend resolves it against the task folder.
 ```json
-{"workbook_path": "output/<file>.xlsx", "stage": "draft|final", "summary": {"cycle": "2026-12", "flags": {"error": 2, "warning": 14, "info": 65}, "shift_changes": 14}}
+{"workbook_path": "output/<file>.xlsx", "stage": "draft|final",
+ "extra_paths": [{"label": "Analytics plan", "path": "output/<other>.xlsx"}],
+ "summary": {"cycle": "2026-12", "flags": {"error": 2, "warning": 14, "info": 65}, "shift_changes": 14}}
 ```
+`extra_paths` (optional) lists more files the Tasks app offers an Open button for, `[{label, path}]`, `path` task-relative like `workbook_path` (at most 10 entries). The backend puts every file that exists and stays inside the task folder on the review/confirm/completed notification as `outputPaths: [{label, path}]` with ABSOLUTE paths: first `workbook_path` (`label` null, or the label of an `extra_paths` entry naming the same file, so a task may list its main file there too), then the extras (duplicates, missing files, absolute paths outside the task folder and malformed entries are dropped). `outputPath` (the `workbook_path` alone) stays for older clients; `outputPaths` is `[]` when no file is known. The notification's `outputPaths` is the only set of files the open endpoint will launch. A task without `extra_paths` behaves as before (one unlabelled file). Examples: shift-roster final lists `[{"label": "Next-year roster", ...}]` when it built a next-year file; december-disconnect lists `Main plan` and `Analytics plan` at both the draft and the final stage.
 
 ## 4. Task-side file layout (shift-roster)
 
@@ -130,4 +135,4 @@ Answers file `output/ask-me-answers.json` is a FLAT object `{fieldId: value}`; `
 
 ## 5. Out of scope here
 
-Task B (December Disconnect) reuses this platform later with its own scripts.
+Task B (December Disconnect) now runs on this platform (`agent-apps/december-disconnect`, `type: "text"` form fields for availability dates, two workbooks via `extra_paths`).

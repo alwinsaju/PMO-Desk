@@ -74,6 +74,10 @@ def test_report_data_final(p):
     assert s["audit"].startswith("output/audit/") and (p.root / s["audit"]).is_file()
     assert s["final_main_sha256"] == sha256_file(p.paths.final_dir / FINAL_MAIN)
     assert s["window"] == WINDOW and s["flags"]["error"] == 0
+    # both finals are offered as Open buttons (labelled, task-relative, existing)
+    assert r["extra_paths"] == [{"label": "Main plan", "path": f"output/final/{FINAL_MAIN}"},
+                                {"label": "Analytics plan", "path": f"output/final/{FINAL_AN}"}]
+    assert all((p.root / x["path"]).is_file() for x in r["extra_paths"])
 
 
 def test_audit_entry_follows_the_roster_lib_conventions(p):

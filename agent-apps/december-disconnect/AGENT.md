@@ -14,7 +14,7 @@ Builds the winter holiday coverage for one window (default Fri 25 Dec - Fri 1 Ja
 3. `build_draft.py`: solves both plans, archives any earlier draft into `output/archive/`. Writes both drafts (+ snapshots), `plan.json`, `flags.json`, `report-data.json`.
 4. Gate `review_draft`: the PMO edits both drafts in Excel, saves under the same names, approves.
 5. `diff_draft.py`: every changed cell of both files and the audit results in `output/roster-diff.json`. `blocking` stops the next gate.
-6. Gate `confirm_diff`: the PMO confirms the changes. If blocked, reject and run again.
+6. Gate `confirm_diff`: the PMO confirms the changes. If blocked, start over (Reset) and run again.
 7. `finalize.py`: checks the file hashes, re-audits, copies the drafts to `output/final/`, writes `output/audit/`, adds the disconnect days to the shift-roster task config (backup kept).
 
 ## Review loop

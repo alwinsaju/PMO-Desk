@@ -257,6 +257,8 @@ def _main(paths: Paths) -> None:
         "cross_task": {k: v for k, v in cross.items() if k not in ("path",)},
     }
     write_json(paths.report, {"workbook_path": paths.rel(finals["main"]), "stage": "final",
+                              "extra_paths": [{"label": "Main plan", "path": paths.rel(finals["main"])},
+                                              {"label": "Analytics plan", "path": paths.rel(finals["analytics"])}],
                               "summary": report_summary})
     print(f"final: {paths.rel(finals['main'])} and {paths.rel(finals['analytics'])} "
           f"({len(confirmed['changes'])} confirmed change(s)), approver {approver}")

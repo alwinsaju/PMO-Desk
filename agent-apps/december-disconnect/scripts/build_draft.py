@@ -17,7 +17,8 @@ never edited), solves both plans and writes
                                                           both audits + plan notes; messages start with
                                                           `[Main]` / `[Analytics]`, kinds WINTER_* / ANALYTICS_*
     output/report-data.json                                `stage: draft`, `workbook_path` = the main plan,
-                                                          `summary.analytics_workbook_path` = the other
+                                                          `summary.analytics_workbook_path` = the other,
+                                                          `extra_paths` = both files with labels (Open buttons)
 
 where `<window>` reads like `2026-12-25 to 2027-01-01`. The shift roster, the staff roster, the Analytics
 rosters and the real configs are only read. Same inputs and answers give the same plans and flags.
@@ -272,7 +273,10 @@ def _main(paths: Paths) -> None:
         "stability": previous is not None,
         "archived_files": archived_n,
     }
+    # `extra_paths`: the Tasks app shows one Open button per file (the main plan is workbook_path)
     write_json(paths.report, {"workbook_path": paths.rel(main_path), "stage": "draft",
+                              "extra_paths": [{"label": "Main plan", "path": paths.rel(main_path)},
+                                              {"label": "Analytics plan", "path": paths.rel(an_path)}],
                               "summary": summary})
     c = payload["counts"]
     print(f"draft: window {window}, main plan {len(people)} people / {summary['person_days']} person-days "

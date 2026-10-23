@@ -82,6 +82,9 @@ def test_final_roster_changes_only_the_approved_cells(done):
     assert s["master_sha256"] == p.master_sha
     assert s["flags_after_edits"]["remaining"] > 0 and s["shift_changes"] == 3
     assert s["next_year_file"] == "output/final/roster - 2027.xlsx"
+    # the Tasks app offers an Open button for the next-year file too (the final roster is workbook_path)
+    assert report["extra_paths"] == [{"label": "Next-year roster", "path": "output/final/roster - 2027.xlsx"}]
+    assert (p.root / report["extra_paths"][0]["path"]).is_file()
 
 
 def test_backup_and_audit_log(done):
@@ -179,6 +182,7 @@ def test_cycle_inside_the_file_has_no_next_year_file(tmp_path):
     assert names == ["roster - final Oct 2026.xlsx"]
     s = p.report()["summary"]
     assert s["cycle"] == "2026-10" and s["next_year_file"] is None and s["next_year"] is None
+    assert "extra_paths" not in p.report()  # no next-year file: nothing extra to open
     final = grid(p.paths.final_dir / names[0])
     assert final[("Person 06", date(2026, 10, 14))] == "Shift-3"
     assert load_config(p.paths.config).find("Person 14") is not None

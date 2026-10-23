@@ -17,7 +17,8 @@
    new baseline) is saved to `config/rotation-config.json`, the previous file first copied to
    `config/backups/rotation-config.<UTC timestamp>.json`.
 5. `output/report-data.json` (`stage: final`, `workbook_path` = the final roster, next-year file
-   and audit path in the summary).
+   and audit path in the summary; `extra_paths` = `[{label: "Next-year roster", path}]` when a
+   next-year file was built, so the Tasks app offers an Open button for it too).
 
 The master (`input/roster.xlsx`) is never modified: its sha256 is asserted at the end (and by
 the library at every stage). Because step 4 changes the config, running this step twice after a
@@ -177,8 +178,11 @@ def _main(paths: Paths) -> None:
         "config_backup": paths.rel(config_backup) if config_backup else None,
         "master_sha256": master_sha,
     }
-    write_json(paths.report, {"workbook_path": paths.rel(final_path), "stage": "final",
-                              "summary": summary})
+    report: dict[str, Any] = {"workbook_path": paths.rel(final_path), "stage": "final"}
+    if next_year_path:  # the Tasks app adds an Open button per extra file
+        report["extra_paths"] = [{"label": "Next-year roster", "path": paths.rel(next_year_path)}]
+    report["summary"] = summary
+    write_json(paths.report, report)
     print(f"final: {paths.rel(final_path)} ({result.cells_written} cell(s) written, "
           f"{result.user_changes} of your change(s) + {result.outside_changes} outside the "
           f"cycle), approver {result.approver}")

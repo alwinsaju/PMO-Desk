@@ -59,8 +59,10 @@ All of `input/`, `output/` and `config/` hold real employee data and are gitigno
 | `output/final/Analytics Winter Coverage FINAL <window>.xlsx` | the final Analytics plan |
 | `output/audit/<run id>.json`, `audit.log.jsonl` | who approved which cells (append-only) |
 
-`<window>` reads like `2026-12-25 to 2027-01-01`. The Tasks app's Open button opens only the main plan
-(`report-data.json` `workbook_path`, task-relative); the Analytics workbook is named in the flags
+`<window>` reads like `2026-12-25 to 2027-01-01`. The Tasks app shows one Open button per workbook:
+`report-data.json` lists both files in `extra_paths` (`[{"label": "Main plan", "path": ...},
+{"label": "Analytics plan", "path": ...}]`, task-relative, draft files at the draft stage and the finals
+after `finalize.py`); `workbook_path` stays the main plan. The Analytics workbook is also named in the flags
 (`ANALYTICS_DRAFT_FILE`), in `summary.analytics_workbook_path` and in the final `summary.message`.
 
 ## The scripts
@@ -209,7 +211,7 @@ the same names and approves. The other tabs recalculate from those cells. Flags 
 `diff_draft.py` then lists every changed cell. If the diff has `blocking` rows the confirm gate refuses.
 
 **Limitation.** A blocked confirm step cannot be repaired in place. If the audit errors came from the PMO's
-edits, or a file was damaged, the PMO must REJECT the run and run the task again from the start. The re-run
+edits, or a file was damaged, the PMO must start over (the Tasks app's "Start over" button next to the blocked Confirm, i.e. Reset) and run the task again from the start. The re-run
 archives the old drafts (the PMO's edits stay readable in `output/archive/`), re-solves, and re-solves the
 main plan with stability against the previous plan, so people whose days were fine keep them (the Analytics
 solver has no stability term; it is deterministic, so unchanged inputs give the same plan). The new drafts do

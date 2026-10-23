@@ -74,6 +74,10 @@ def test_report_data_is_task_relative_and_names_the_analytics_workbook(drafted):
     assert s["seed"] == 20261225 and s["mip_gap"] == 0.0 and s["archived_files"] == 0
     for path in (r["workbook_path"], s["analytics_workbook_path"]):
         assert not path.startswith("/") and ":" not in path
+    # one Open button per workbook in the Tasks app: both files, labelled, task-relative
+    assert r["extra_paths"] == [{"label": "Main plan", "path": r["workbook_path"]},
+                                {"label": "Analytics plan", "path": s["analytics_workbook_path"]}]
+    assert all((drafted.root / x["path"]).is_file() for x in r["extra_paths"])
 
 
 def test_flags_json_follows_the_contract(drafted):
