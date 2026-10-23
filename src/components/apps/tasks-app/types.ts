@@ -17,6 +17,20 @@
 export type TaskState =
   "resting" | "working" | "awaiting_review" | "awaiting_send" | "finishing" | "error";
 
+/** The kind of human gate a `review`/`confirm` step carries (platform
+ *  contract section 1). Absent or "none" = the legacy bare gate. */
+export type GateType = "form" | "flags" | "diff" | "none";
+
+/** A step's `gate` block: the type plus the task-relative file names the
+ *  backend reads for it (this app only ever uses the type — the file
+ *  contents arrive through the dedicated endpoints). */
+export interface StepGate {
+  type: GateType | (string & {});
+  schema?: string;
+  answers?: string;
+  file?: string;
+}
+
 export interface TaskStep {
   id: string;
   /** "python" | "powershell" | "review" | "confirm" in every task seen so
@@ -25,7 +39,29 @@ export interface TaskStep {
    *  value. Only "review" and "confirm" are ever treated specially (as a
    *  human-attention gate); everything else renders as a normal step. */
   type: string;
+  /** Optional UI text from the manifest (platform contract); the UI falls
+   *  back to a humanized `id` when absent, which is what the four older
+   *  tasks do. */
+  label?: string | null;
+  gate?: StepGate | null;
 }
+
+/** A start-form input declared by a task's manifest (contract section 1). */
+export interface TaskInputDef {
+  id: string;
+  label: string;
+  /** "file" = upload; "select" = options come from the prepare script. */
+  type: "file" | "select" | (string & {});
+  accept?: string[];
+  dest?: string;
+  required?: boolean;
+  optionsFile?: string;
+  optionsKey?: string;
+}
+
+/** `prepare` as exposed by GET /tasks is a bool; the raw manifest shape
+ *  (an object naming the `after` inputs) is tolerated too. */
+export type TaskPrepare = boolean | { cmd?: string; after?: string[] };
 
 export interface TaskNotification {
   id: string;
@@ -47,6 +83,11 @@ export interface Task {
   steps: TaskStep[];
   notifications: TaskNotification[];
   schedule: { daily: string } | null;
+  /** Declared only by tasks on the input/form platform; undefined for the
+   *  four older tasks, which keep their one-click Run. */
+  inputs?: TaskInputDef[];
+  prepare?: TaskPrepare;
+  runtime?: string | null;
 }
 
 /** One pool worker. This app only ever uses it to compute whether any
@@ -77,6 +118,17 @@ export interface HistoryRun {
   current_step_at_end: string | null;
   error: string | null;
   steps_completed: string[];
+  /** Who approved/confirmed what, stamped by the backend (OS user + UTC
+   *  time, never client-supplied). Absent on records from an older backend. */
+  approvals?: Approval[];
+}
+
+/** One approve/confirm recorded on a run. */
+export interface Approval {
+  step: string;
+  kind: "approve" | "send" | (string & {});
+  user: string;
+  at: string;
 }
 
 /** One line of a task's live/most-recent per-step output, from
@@ -95,4 +147,198 @@ export interface LogEntry {
 export interface ActionResult {
   ok: boolean;
   reason?: string;
+  /** Approve's review-gate refusals: a count of incidents still needing a
+   *  Subcategory2 (legacy review_incidents gate) or the ids of required
+   *  form fields still unanswered (form gate). */
+  pending?: number | string[];
+  /** start's refusal: ids of required inputs that are missing. */
+  missing?: string[];
+  /** send's refusal at a diff gate: what is blocking the confirm. */
+  blocking?: DiffBlocker[];
+}
+
+/** One incident awaiting human Subcategory2 classification, from
+ *  GET /tasks/{id}/review-incidents. `resolved_subcategory2` is non-null
+ *  once the human has picked a value this run (still editable until the
+ *  gate is approved). */
+export interface ReviewIncident {
+  number: string;
+  short_description: string | null;
+  resolution_notes: string | null;
+  category: string | null;
+  subcategory: string | null;
+  state: string | null;
+  assignment_group: string | null;
+  assigned_to: string | null;
+  current_subcategory2: string | null;
+  review_reasons: string[];
+  resolved_subcategory2: string | null;
+}
+
+/** The review queue for a task: the full option vocabulary plus the
+ *  incidents and a live pending count the Approve gate keys off. */
+export interface ReviewQueue {
+  count: number;
+  pending: number;
+  options: string[];
+  incidents: ReviewIncident[];
+}
+
+// ---------------------------------------------------------------------------
+// Task platform contract (agent-apps/TASK-PLATFORM-CONTRACT.md): inputs,
+// options, forms, flags, diffs. Every endpoint replies HTTP 200 with
+// `{ok, reason?}`; the helpers in api.ts collapse HTTP/network failures into
+// the same `{ok: false, reason}` shape so callers handle one failure path.
+// ---------------------------------------------------------------------------
+
+/** A reply from one of the platform endpoints: the contract's envelope plus
+ *  that endpoint's own fields (all optional until `ok` is checked). */
+export type Reply<T extends object = object> = {
+  ok: boolean;
+  reason?: string;
+} & Partial<T>;
+
+/** One input's live status from GET /tasks/{id}/inputs. */
+export interface InputStatus {
+  id: string;
+  label: string;
+  type: string;
+  required: boolean;
+  present: boolean;
+  filename?: string;
+  size?: number;
+  sha256?: string;
+}
+
+export interface InputsPayload {
+  inputs: InputStatus[];
+  /** Previously saved select values, `{inputId: value}`. */
+  params: Record<string, string>;
+}
+
+export interface UploadPayload {
+  input: string;
+  filename: string;
+  size: number;
+  sha256: string;
+}
+
+/** One selectable entry in options.json's arrays (e.g. a roster cycle).
+ *  Extra keys (start/end/coverage) pass through untouched. */
+export interface OptionEntry {
+  id: string;
+  label: string;
+  /** `false` = shown but not choosable; `reason` says why. */
+  enabled?: boolean;
+  reason?: string;
+  coverage?: number;
+  start?: string;
+  end?: string;
+}
+
+export interface OptionsProblem {
+  severity: string;
+  message: string;
+}
+
+/** output/options.json, written by the task's `prepare` script. Arrays of
+ *  OptionEntry sit under each select input's `optionsKey`, so the shape is
+ *  open-ended apart from the two keys the UI also reads. */
+export interface OptionsFile {
+  roster?: Record<string, unknown>;
+  default?: string;
+  problems?: OptionsProblem[];
+  [key: string]: unknown;
+}
+
+export interface OptionsPayload {
+  options: OptionsFile | null;
+  stderr_tail?: string;
+}
+
+/** One selectable answer in an ask-me field. */
+export interface FormOption {
+  value: string;
+  label: string;
+}
+
+export interface FormField {
+  id: string;
+  group: string;
+  label: string;
+  description?: string;
+  type: "select" | (string & {});
+  options?: FormOption[];
+  default?: string;
+  required?: boolean;
+}
+
+/** output/ask-me.json, the form gate's schema. */
+export interface FormSchema {
+  title?: string;
+  fields: FormField[];
+}
+
+/** The flat answers file: `{fieldId: value}`. */
+export type FormAnswers = Record<string, string>;
+
+export interface FormPayload {
+  schema: FormSchema;
+  answers: FormAnswers;
+  /** Ids of required fields with no non-empty SAVED answer. */
+  pending: string[];
+}
+
+export type FlagSeverity = "error" | "warning" | "info";
+
+export interface Flag {
+  key: string;
+  severity: FlagSeverity | (string & {});
+  kind: string;
+  person: string;
+  date: string;
+  message: string;
+}
+
+/** output/flags.json. */
+export interface FlagsFile {
+  counts: Partial<Record<FlagSeverity, number>>;
+  flags: Flag[];
+}
+
+export interface FlagsPayload {
+  flags: FlagsFile | null;
+}
+
+export interface CellChange {
+  person: string;
+  date: string;
+  before: string | null;
+  after: string | null;
+}
+
+export interface DiffIssue {
+  severity: string;
+  kind: string;
+  message: string;
+}
+
+export interface DiffBlocker {
+  kind: string;
+  message: string;
+}
+
+/** output/roster-diff.json. */
+export interface RosterDiff {
+  cycle?: string;
+  changes: CellChange[];
+  outside_changes?: CellChange[];
+  issues?: DiffIssue[];
+  /** Non-empty = the confirm is refused (and disabled here). */
+  blocking?: DiffBlocker[];
+  flags?: { new?: Flag[]; resolved?: Flag[]; remaining?: number };
+}
+
+export interface DiffPayload {
+  diff: RosterDiff | null;
 }

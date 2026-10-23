@@ -3,7 +3,7 @@
 import { CheckIcon, PauseIcon, XIcon } from "@phosphor-icons/react";
 import { Tooltip } from "@/components/ui";
 import { cn } from "@/lib/cn";
-import { computeStepStatuses, humanize, type StepStatus } from "./taskPresenter";
+import { computeStepStatuses, stepLabel, type StepStatus } from "./taskPresenter";
 import type { Task } from "./types";
 
 // Nodes communicate status via fill/border value contrast (+ a small glyph),
@@ -60,7 +60,7 @@ export function StepTracker({ task }: StepTrackerProps) {
         const isLast = index === task.steps.length - 1;
         return (
           <div key={step.id} className={cn("flex items-center", !isLast && "flex-1")}>
-            <Tooltip label={`${humanize(step.id)} — ${STATUS_WORD[status]}`}>
+            <Tooltip label={`${stepLabel(task, step.id)} — ${STATUS_WORD[status]}`}>
               <span
                 tabIndex={0}
                 className={cn(

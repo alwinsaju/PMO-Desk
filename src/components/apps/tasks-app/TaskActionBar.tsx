@@ -2,8 +2,11 @@
 
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui";
+import type { ReviewBlock } from "./approveGate";
 import type { TaskActionName } from "./useTaskAction";
 import type { TaskState } from "./types";
+
+const DEFAULT_CONFIRM_LABEL = "Confirm & send";
 
 interface TaskActionBarProps {
   state: TaskState;
@@ -13,6 +16,23 @@ interface TaskActionBarProps {
   canStart: boolean;
   pending: TaskActionName | null;
   lastFailure: string | null;
+  /** Set when Approve was stopped because incidents still need a
+   *  Subcategory2 (see approveGate.ts). */
+  reviewBlock?: ReviewBlock | null;
+  /** Opens the task's detail view, which lands on the Review tab. */
+  onOpenReview?: () => void;
+  /** Task-platform gates (all optional; the four older tasks pass none and
+   *  render exactly as before). */
+  /** Text of the Run button — "Run" unless Run opens a form first. */
+  runLabel?: string;
+  /** Text of the confirm button at an awaiting_send gate. */
+  confirmLabel?: string;
+  /** While set, Approve is disabled and this explains why. */
+  approveBlocked?: string | null;
+  /** While set, the confirm button is disabled and this explains why. */
+  sendBlocked?: string | null;
+  /** A dedicated-gate call to action (e.g. "Answer questions"). */
+  gateAction?: { label: string; onClick: () => void } | null;
   onStart: () => void;
   onApprove: () => void;
   onReject: () => void;
@@ -41,6 +61,13 @@ export function TaskActionBar({
   canStart,
   pending,
   lastFailure,
+  reviewBlock = null,
+  onOpenReview,
+  runLabel = "Run",
+  confirmLabel = DEFAULT_CONFIRM_LABEL,
+  approveBlocked = null,
+  sendBlocked = null,
+  gateAction = null,
   onStart,
   onApprove,
   onReject,
@@ -56,7 +83,7 @@ export function TaskActionBar({
     case "resting":
       buttons = (
         <Button size="sm" disabled={!canStart || isBusy} onClick={onStart}>
-          {pending === "start" ? "Starting…" : "Run"}
+          {pending === "start" ? "Starting…" : runLabel}
         </Button>
       );
       if (!canStart) {
@@ -84,7 +111,22 @@ export function TaskActionBar({
     case "awaiting_review":
       buttons = (
         <>
-          <Button size="sm" disabled={isBusy} onClick={onApprove}>
+          {gateAction && (
+            <Button
+              size="sm"
+              variant={approveBlocked ? "solid" : "outline"}
+              disabled={isBusy}
+              onClick={gateAction.onClick}
+            >
+              {gateAction.label}
+            </Button>
+          )}
+          <Button
+            size="sm"
+            variant={gateAction && approveBlocked ? "outline" : "solid"}
+            disabled={isBusy || Boolean(approveBlocked)}
+            onClick={onApprove}
+          >
             {pending === "approve" ? "Approving…" : "Approve"}
           </Button>
           <Button size="sm" variant="outline" disabled={isBusy} onClick={onReject}>
@@ -92,14 +134,69 @@ export function TaskActionBar({
           </Button>
         </>
       );
+      if (approveBlocked) {
+        caption = <p className="text-ink-muted text-[11px]">{approveBlocked}</p>;
+      }
+      if (reviewBlock) {
+        const extra = reviewBlock.pending - reviewBlock.numbers.length;
+        caption = (
+          <p className="text-ink-muted text-[11px]">
+            <strong className="text-ink font-medium">
+              {reviewBlock.pending} incident{reviewBlock.pending === 1 ? "" : "s"}
+            </strong>{" "}
+            still need a Subcategory2
+            {reviewBlock.numbers.length > 0 && (
+              <>
+                {" "}
+                (<span className="font-mono">{reviewBlock.numbers.join(", ")}</span>
+                {extra > 0 ? ` +${extra} more` : ""})
+              </>
+            )}
+            .{" "}
+            {onOpenReview && (
+              <button
+                type="button"
+                onClick={onOpenReview}
+                className="text-accent-800 underline underline-offset-2"
+              >
+                Open Review
+              </button>
+            )}
+          </p>
+        );
+      }
       break;
 
     case "awaiting_send":
       buttons = (
-        <Button size="sm" disabled={isBusy} onClick={onSend}>
-          {pending === "send" ? "Sending…" : "Confirm & send"}
-        </Button>
+        <>
+          {gateAction && (
+            <Button
+              size="sm"
+              variant={sendBlocked ? "solid" : "outline"}
+              disabled={isBusy}
+              onClick={gateAction.onClick}
+            >
+              {gateAction.label}
+            </Button>
+          )}
+          <Button
+            size="sm"
+            variant={gateAction && sendBlocked ? "outline" : "solid"}
+            disabled={isBusy || Boolean(sendBlocked)}
+            onClick={onSend}
+          >
+            {pending === "send"
+              ? confirmLabel === DEFAULT_CONFIRM_LABEL
+                ? "Sending…"
+                : "Confirming…"
+              : confirmLabel}
+          </Button>
+        </>
       );
+      if (sendBlocked) {
+        caption = <p className="text-ink-muted text-[11px]">{sendBlocked}</p>;
+      }
       break;
 
     // "working" and "finishing": no state-machine action is legal — only

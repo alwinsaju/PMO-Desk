@@ -1,11 +1,14 @@
 "use client";
 
 import { Button } from "@/components/ui";
+import { diffSummary } from "./diffView";
+import { flagsSummary } from "./flagsView";
+import { formSummary } from "./formGate";
 import { StepTracker } from "./StepTracker";
-import { TaskActionBar } from "./TaskActionBar";
+import { TaskActions } from "./TaskActions";
 import { TaskStateBadge } from "./TaskStateBadge";
-import { humanize, statusSentence } from "./taskPresenter";
-import { useTaskAction } from "./useTaskAction";
+import { statusSentence, stepLabel } from "./taskPresenter";
+import { useGateData, type GateData } from "./useGateData";
 import type { Task } from "./types";
 
 interface TaskCardProps {
@@ -25,7 +28,11 @@ interface TaskCardProps {
  * TaskActionBar.tsx for where the actual reference-frontend rules live.
  */
 export function TaskCard({ task, canStart, onSettled, onOpenDetail }: TaskCardProps) {
-  const action = useTaskAction(task.id, onSettled);
+  // Data behind a form/flags/diff gate, when the task is waiting at one
+  // (always idle for the four older tasks). Action decisions — the legacy
+  // incident-review check, the Run form, gate blocks — live in TaskActions.
+  const gate = useGateData(task);
+  const gateLine = gateSummary(gate);
 
   return (
     <div className="border-border/60 bg-surface-elevated flex flex-col gap-3 rounded-2xl border p-4">
@@ -42,7 +49,9 @@ export function TaskCard({ task, canStart, onSettled, onOpenDetail }: TaskCardPr
         <div className="flex flex-col gap-1.5">
           <p className="text-ink-muted text-[12px]">
             Failed at{" "}
-            <strong className="text-ink font-medium">{humanize(task.currentStep)}</strong>
+            <strong className="text-ink font-medium">
+              {stepLabel(task, task.currentStep)}
+            </strong>
           </p>
           <p className="border-border text-ink-muted line-clamp-3 rounded-lg border bg-neutral-50 p-2 font-mono text-[11px]">
             {task.error}
@@ -54,17 +63,19 @@ export function TaskCard({ task, canStart, onSettled, onOpenDetail }: TaskCardPr
         </p>
       )}
 
+      {gateLine && (
+        <p className="text-ink -mt-1 text-[12px] font-medium" aria-live="polite">
+          {gateLine}
+        </p>
+      )}
+
       <div className="mt-1 flex items-end justify-between gap-3">
-        <TaskActionBar
-          state={task.state}
+        <TaskActions
+          task={task}
           canStart={canStart}
-          pending={action.pending}
-          lastFailure={action.lastFailure}
-          onStart={action.start}
-          onApprove={action.approve}
-          onReject={action.reject}
-          onSend={action.send}
-          onReset={action.reset}
+          onSettled={onSettled}
+          onOpenDetail={onOpenDetail}
+          gate={gate}
         />
         <Button variant="ghost" size="sm" onClick={onOpenDetail} className="shrink-0">
           Details
@@ -72,4 +83,20 @@ export function TaskCard({ task, canStart, onSettled, onOpenDetail }: TaskCardPr
       </div>
     </div>
   );
+}
+
+/** One-line "what's waiting" summary under the status sentence — only for
+ *  tasks paused at a form/flags/diff gate whose data has loaded. */
+function gateSummary(gate: GateData): string | null {
+  if (gate.status !== "ready") return null;
+  if (gate.gate === "form" && gate.form) {
+    return formSummary(gate.form.schema, gate.form.pending);
+  }
+  if (gate.gate === "flags" && gate.flags) return flagsSummary(gate.flags);
+  if (gate.gate === "diff" && gate.diff) {
+    return gate.diff.blocking?.length
+      ? `${gate.diff.blocking.length} blocking issue${gate.diff.blocking.length === 1 ? "" : "s"} — can't confirm`
+      : diffSummary(gate.diff);
+  }
+  return null;
 }

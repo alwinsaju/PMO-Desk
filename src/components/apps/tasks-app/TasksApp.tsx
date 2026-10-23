@@ -79,6 +79,8 @@ export function TasksApp({ windowId }: { windowId: string }) {
 
       <TaskDetailDialog
         task={selectedTask}
+        canStart={canStart}
+        onSettled={refetch}
         onOpenChange={(open) => {
           if (!open) setSelectedTaskId(null);
         }}

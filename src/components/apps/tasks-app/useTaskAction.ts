@@ -1,8 +1,18 @@
 "use client";
 
-import { useState } from "react";
-import { approveTask, rejectTask, resetTask, sendTask, startTask } from "./api";
+import { useCallback, useState } from "react";
+import {
+  approveTask,
+  fetchReviewIncidents,
+  rejectTask,
+  resetTask,
+  sendTask,
+  startTask,
+} from "./api";
+import { approveWithReviewCheck, type ReviewBlock } from "./approveGate";
+import { refusalText } from "./taskPresenter";
 import type { ActionResult } from "./types";
+import { notifyGateChanged } from "./useGateData";
 
 export type TaskActionName = "start" | "approve" | "reject" | "send" | "reset";
 
@@ -12,7 +22,13 @@ export interface TaskActionState {
   /** The most recent action's rejection reason (`ok: false`) or network
    *  failure message, cleared as soon as another action is attempted. */
   lastFailure: string | null;
-  start: () => void;
+  /** Set when Approve was stopped because the review queue still has
+   *  unclassified incidents; cleared by the next action or `clearReviewBlock`. */
+  reviewBlock: ReviewBlock | null;
+  clearReviewBlock: () => void;
+  /** Resolves with the backend's reply (null when it couldn't be reached),
+   *  so the start form can keep itself open and show a refusal inline. */
+  start: () => Promise<ActionResult | null>;
   approve: () => void;
   reject: () => void;
   send: () => void;
@@ -35,16 +51,63 @@ export interface TaskActionState {
  * — mirrors main.js's `buildActions(task, api, refresh, ...)`, where
  * `refresh` is exactly this "onDone" callback.
  */
-export function useTaskAction(taskId: string, onSettled: () => void): TaskActionState {
+export function useTaskAction(
+  taskId: string,
+  onSettled: () => void,
+  /** True while the task is paused at the `review_incidents` gate — Approve
+   *  then re-checks the live review queue before it is allowed through. */
+  atReviewGate = false,
+): TaskActionState {
   const [pending, setPending] = useState<TaskActionName | null>(null);
   const [lastFailure, setLastFailure] = useState<string | null>(null);
+  const [reviewBlock, setReviewBlock] = useState<ReviewBlock | null>(null);
 
-  function run(name: TaskActionName, call: (id: string) => Promise<ActionResult>) {
+  function run(
+    name: TaskActionName,
+    call: (id: string) => Promise<ActionResult>,
+  ): Promise<ActionResult | null> {
     setPending(name);
     setLastFailure(null);
-    call(taskId)
+    setReviewBlock(null);
+    return call(taskId)
       .then((result) => {
-        if (!result.ok) setLastFailure(result.reason ?? "request was rejected");
+        if (!result.ok) setLastFailure(refusalText(result));
+        return result;
+      })
+      .catch(() => {
+        setLastFailure("couldn't reach the backend");
+        return null;
+      })
+      .finally(() => {
+        setPending(null);
+        // A refused approve/send may mean the gate's own data changed.
+        notifyGateChanged(taskId);
+        onSettled();
+      });
+  }
+
+  const clearReviewBlock = useCallback(() => setReviewBlock(null), []);
+
+  // Approve at the incident-review gate: re-read the queue first and only
+  // let the real approve POST go out once nothing is pending (see
+  // approveGate.ts). A queue we can't read stops the approve too.
+  function approve() {
+    if (!atReviewGate) {
+      void run("approve", approveTask);
+      return;
+    }
+    setPending("approve");
+    setLastFailure(null);
+    setReviewBlock(null);
+    approveWithReviewCheck(taskId, { fetchReviewIncidents, approveTask })
+      .then((outcome) => {
+        if (outcome.kind === "blocked") {
+          setReviewBlock(outcome.block);
+        } else if (outcome.kind === "unverified") {
+          setLastFailure("couldn't verify the review queue — nothing was approved");
+        } else if (!outcome.result.ok) {
+          setLastFailure(outcome.result.reason ?? "request was rejected");
+        }
       })
       .catch(() => {
         setLastFailure("couldn't reach the backend");
@@ -58,10 +121,12 @@ export function useTaskAction(taskId: string, onSettled: () => void): TaskAction
   return {
     pending,
     lastFailure,
+    reviewBlock,
+    clearReviewBlock,
     start: () => run("start", startTask),
-    approve: () => run("approve", approveTask),
-    reject: () => run("reject", rejectTask),
-    send: () => run("send", sendTask),
-    reset: () => run("reset", resetTask),
+    approve,
+    reject: () => void run("reject", rejectTask),
+    send: () => void run("send", sendTask),
+    reset: () => void run("reset", resetTask),
   };
 }
