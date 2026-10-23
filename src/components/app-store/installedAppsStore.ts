@@ -13,10 +13,12 @@ import { persist } from "zustand/middleware";
  * (every open App Store window instance reads/writes the same state,
  * unlike the old per-instance `useState` it replaces) and genuinely
  * persisted (survives closing the window and reloading the page, via
- * `persist` + `localStorage`). It deliberately does NOT cover the 5 apps
- * pinned to the dock (Files/Notes/Browser/Tasks/App Store itself, see
- * `taskbar/pinnedApps.ts`) — those are always present regardless of install
- * state; this store only ever tracks `AppListing.id`s from the catalog.
+ * `persist` + `localStorage`). It deliberately does NOT cover the built-in
+ * apps (Files/Notes/Browser/Tasks/App Store itself, see
+ * `taskbar/pinnedApps.ts`) — those are always installed regardless of this
+ * store (whether one is pinned to the dock is `taskbar/pinnedAppsStore.ts`'s
+ * business, not install state); this store only ever tracks
+ * `AppListing.id`s from the catalog.
  *
  * Public contract, for the App Menu workstream (or anything else outside
  * this directory) to import directly from

@@ -9,6 +9,7 @@ import { useInstalledAppsStore } from "@/components/app-store/installedAppsStore
 import type { AppListing } from "@/components/app-store/types";
 import { useWindowStore } from "@/components/window-manager";
 import {
+  Button,
   IconButton,
   Popover,
   PopoverContent,
@@ -17,16 +18,20 @@ import {
   Tooltip,
 } from "@/components/ui";
 import { AppMenuEntry } from "./AppMenuEntry";
-import { builtInApps, pinnedAppIcons, type PinnedApp } from "./pinnedApps";
+import { builtInAppIds, builtInApps, type PinnedApp } from "./pinnedApps";
 import { APP_DRAG_MIME_TYPE, usePinnedAppsStore } from "./pinnedAppsStore";
+import { isDefaultPinnedIds } from "./taskbarLayout";
 
 /**
  * The "every app" launcher — a flyout off its own dock button (a grid-dots
  * icon), distinct from the dock's "+" (which only ever opens the App
- * Store). Lists the 5 built-in apps plus every App Store catalog entry
- * currently installed (`installedAppsStore`) — i.e. exactly the set of
- * apps that would show "Open" rather than "Install" if you opened the App
- * Store itself right now.
+ * Store). Lists every built-in app (pinned to the taskbar or not — this
+ * menu is how an unpinned one is found again) plus every App Store catalog
+ * entry currently installed (`installedAppsStore`) — i.e. exactly the set
+ * of apps that would show "Open" rather than "Install" if you opened the
+ * App Store itself right now. Every entry can be pinned/unpinned (right-
+ * click, or drag it onto the dock); a footer button resets the taskbar to
+ * its default so it's reachable even when every tile has been removed.
  *
  * Opening a built-in just calls `openWindow` directly, same as a dock
  * tile. Opening a catalog entry goes through `runAppPrimaryAction` — the
@@ -47,6 +52,7 @@ export function AppMenu() {
   const pinnedIds = usePinnedAppsStore((s) => s.pinnedIds);
   const pinApp = usePinnedAppsStore((s) => s.pinApp);
   const unpinApp = usePinnedAppsStore((s) => s.unpinApp);
+  const resetPinnedApps = usePinnedAppsStore((s) => s.resetPinnedApps);
 
   const installedCatalogApps = useMemo(
     () => appCatalog.filter((app) => installedIds[app.id]),
@@ -54,7 +60,7 @@ export function AppMenu() {
   );
 
   function openBuiltIn(app: PinnedApp) {
-    const IconGlyph = pinnedAppIcons[app.icon];
+    const IconGlyph = app.icon;
     openWindow(app.id, { title: app.title, icon: <IconGlyph /> });
     setOpen(false);
   }
@@ -71,7 +77,16 @@ export function AppMenu() {
   // `dataTransfer.types`, readable mid-drag) to show its drop-target ring.
   function handleDragStart(event: DragEvent<HTMLButtonElement>, appId: string) {
     event.dataTransfer.setData(APP_DRAG_MIME_TYPE, appId);
-    event.dataTransfer.effectAllowed = "copy";
+    event.dataTransfer.effectAllowed = "copyMove";
+  }
+
+  function pinningFor(appId: string) {
+    const isPinned = pinnedIds.includes(appId);
+    return {
+      isPinned,
+      onTogglePinned: () => (isPinned ? unpinApp(appId) : pinApp(appId)),
+      onDragStart: (event: DragEvent<HTMLButtonElement>) => handleDragStart(event, appId),
+    };
   }
 
   return (
@@ -96,8 +111,9 @@ export function AppMenu() {
               <AppMenuEntry
                 key={app.id}
                 title={app.title}
-                icon={pinnedAppIcons[app.icon]}
+                icon={app.icon}
                 onOpen={() => openBuiltIn(app)}
+                pinning={pinningFor(app.id)}
               />
             ))}
             {installedCatalogApps.map((app) => (
@@ -106,12 +122,7 @@ export function AppMenu() {
                 title={app.name}
                 icon={appIcons[app.icon]}
                 onOpen={() => openCatalogApp(app)}
-                pinning={{
-                  isPinned: pinnedIds.includes(app.id),
-                  onTogglePinned: () =>
-                    pinnedIds.includes(app.id) ? unpinApp(app.id) : pinApp(app.id),
-                  onDragStart: (event) => handleDragStart(event, app.id),
-                }}
+                pinning={pinningFor(app.id)}
               />
             ))}
           </div>
@@ -122,6 +133,17 @@ export function AppMenu() {
             </p>
           )}
         </ScrollArea>
+
+        <div className="border-border mt-1 flex justify-end border-t px-2 pt-2 pb-0.5">
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={isDefaultPinnedIds(pinnedIds, builtInAppIds)}
+            onClick={resetPinnedApps}
+          >
+            Reset taskbar to default
+          </Button>
+        </div>
       </PopoverContent>
     </Popover>
   );

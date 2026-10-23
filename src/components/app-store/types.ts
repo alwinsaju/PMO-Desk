@@ -15,8 +15,8 @@ export interface AppCategory {
   label: string;
 }
 
-/** Keys into `appCatalog.ts`'s `appIcons` map — same split as
- *  `pinnedApps.ts`'s `PinnedApp["icon"]`. The last 8 are only used by the
+/** Keys into `appCatalog.ts`'s `appIcons` map (a string key here, resolved
+ *  to a live component there). The last 8 are only used by the
  *  real web apps (see `AppListing.url`) — deliberately generic/functional
  *  glyphs (an envelope, a chat bubble, ...) rather than any real brand's
  *  actual logo; see appCatalog.ts's "Real web apps" section for why. */

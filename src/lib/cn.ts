@@ -21,6 +21,7 @@ const twMerge = extendTailwindMerge({
         "ink",
         "ink-muted",
         "ink-faint",
+        "ink-inverse",
         "surface",
         "surface-elevated",
         "border",

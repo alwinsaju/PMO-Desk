@@ -21,11 +21,11 @@ interface AppMenuEntryProps {
   icon: Icon;
   onOpen: () => void;
   /**
-   * Present only for a pinnable (App Store catalog) entry — omitted for
-   * the 5 built-ins, which are always in the dock and have no unpin action
-   * this pass (see `pinnedAppsStore.ts`). When present, the tile is
-   * draggable and gets a right-click "Add to Dock"/"Remove from Dock"
-   * context menu; when absent, it's a plain button with neither.
+   * Present for every entry the taskbar can hold — built-in apps and
+   * installed App Store catalog apps alike (see `pinnedAppsStore.ts`).
+   * When present, the tile is draggable (drop it on the dock to pin it) and
+   * gets a right-click "Pin to taskbar"/"Unpin from taskbar" context menu;
+   * when absent, it's a plain button with neither.
    */
   pinning?: AppMenuEntryPinning;
 }
@@ -33,7 +33,7 @@ interface AppMenuEntryProps {
 /**
  * One tile in the App Menu's grid (AppMenu.tsx): an icon, a label below it,
  * and — for a pinnable entry — the drag source + right-click menu that lets
- * it be added to (or removed from) the Dock. Mirrors AppCard.tsx's
+ * it be pinned to (or unpinned from) the taskbar. Mirrors AppCard.tsx's
  * icon+label pairing, just stacked vertically for a launcher grid instead
  * of a list row.
  *
@@ -77,7 +77,7 @@ export function AppMenuEntry({
       <ContextMenuTrigger className="contents">{tile}</ContextMenuTrigger>
       <ContextMenuContent>
         <ContextMenuItem onSelect={pinning.onTogglePinned}>
-          {pinning.isPinned ? "Remove from Dock" : "Add to Dock"}
+          {pinning.isPinned ? "Unpin from taskbar" : "Pin to taskbar"}
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>

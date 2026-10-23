@@ -1,6 +1,6 @@
 // This file has no component/hook of its own, but needs "use client" anyway
 // because it imports live Phosphor icon component VALUES (not just types) —
-// see the `pinnedAppIcons` map below. Without this directive, a Server
+// see the `icon` of each `builtInApps` entry below. Without this directive, a Server
 // Component reaching this module through an unprotected path (e.g. this
 // package's own barrel re-exporting it alongside a "use client" component)
 // pulls those icon components into the SERVER/RSC compilation, where
@@ -16,6 +16,7 @@
 "use client";
 
 import {
+  ClipboardTextIcon,
   FolderIcon,
   GlobeIcon,
   ListChecksIcon,
@@ -24,43 +25,52 @@ import {
   type Icon,
 } from "@phosphor-icons/react";
 
+export interface BuiltInApp {
+  /** Doubles as the appId passed to `windowStore.openWindow` and as the
+   *  key the app registers under via `registerApp`. */
+  id: string;
+  title: string;
+  icon: Icon;
+}
+
 /**
- * The 5 apps always present in the dock — a fixed baseline, not the whole
- * pinned list. `id` doubles as the appId passed to `windowStore.openWindow`.
+ * Every built-in app, in the order they appear on a DEFAULT taskbar — the
+ * single place to add one. A built-in is just a window-manager app id with a
+ * title and an icon; `id` is also what the app registers itself under (see
+ * ARCHITECTURE.md's "app registry" section), which is what makes its tile /
+ * App Menu entry resolve to a real app.
  *
- * This exact list is the shared contract with the App Store and Demo Apps
- * workstreams: they register their apps under these same ids via
- * `registerApp` (see ARCHITECTURE.md's "app registry" section), which is
- * what makes a tile here resolve to a real app once those workstreams land.
- * Keep this list's ids/shape exactly as specified; other workstreams depend
- * on them matching byte for byte.
+ * This list is the DEFAULT, not a fixed baseline: the user can unpin any of
+ * these (including App Store) from the taskbar, reorder them, and bring them
+ * back with "Pin to taskbar" or "Reset taskbar to default" — see
+ * pinnedAppsStore.ts and taskbarLayout.ts. An unpinned built-in is still
+ * listed in the App Menu, still opens, and still gets a (temporary) taskbar
+ * tile while one of its windows is open. Ids remain a shared contract:
+ * other workstreams register their apps under these exact ids, so never
+ * rename or reuse one — adding is fine, changing is not.
+ *
+ * ADDING A BUILT-IN APP is one entry here (plus its icon in the import list
+ * above), e.g. `{ id: "pmo-todo", title: "PMO To-Do", icon: ClipboardTextIcon }`,
+ * and the app's own `registerApp("pmo-todo", ...)` import in
+ * `src/components/apps/index.ts`. Nothing else: the dock, the App Menu and
+ * the persisted-layout migration all derive from this array. Anyone who
+ * already saved a customized taskbar gets the new app appended once (see
+ * `reconcileBuiltIns` in taskbarLayout.ts) rather than never seeing it.
  *
  * Renamed from `pinnedApps` to `builtInApps` when the App Menu workstream
- * added `pinnedAppsStore.ts`'s growable, ADDITIONALLY-pinned list — with
- * both a fixed baseline and a growable list in play, "pinnedApps" stopped
- * being an accurate name for just this static half. There is deliberately
- * no way to remove one of these 5 this pass — see pinnedAppsStore.ts.
+ * added the growable ADDITIONALLY-pinned list; that list and this one are
+ * now merged into one user-editable layout in pinnedAppsStore.ts.
  */
 export const builtInApps = [
-  { id: "files", title: "Files", icon: "Folder" },
-  { id: "notes", title: "Notes", icon: "NotePencil" },
-  { id: "browser", title: "Browser", icon: "Globe" },
-  { id: "tasks", title: "Tasks", icon: "ListChecks" },
-  { id: "app-store", title: "App Store", icon: "SquaresFour" },
-] as const;
+  { id: "files", title: "Files", icon: FolderIcon },
+  { id: "notes", title: "Notes", icon: NotePencilIcon },
+  { id: "browser", title: "Browser", icon: GlobeIcon },
+  { id: "tasks", title: "Tasks", icon: ListChecksIcon },
+  { id: "app-store", title: "App Store", icon: SquaresFourIcon },
+  { id: "pmo-todo", title: "PMO To-Do", icon: ClipboardTextIcon },
+] satisfies readonly BuiltInApp[];
 
-export type PinnedApp = (typeof builtInApps)[number];
+export type PinnedApp = BuiltInApp;
 
-/**
- * Resolves each entry's `icon` field to the actual Phosphor component that
- * renders it. Kept as a separate map (rather than storing the component
- * itself on `builtInApps`) so `builtInApps` stays plain, framework-agnostic
- * data — a plain string is also what's specified by the shared contract.
- */
-export const pinnedAppIcons: Record<PinnedApp["icon"], Icon> = {
-  Folder: FolderIcon,
-  NotePencil: NotePencilIcon,
-  Globe: GlobeIcon,
-  ListChecks: ListChecksIcon,
-  SquaresFour: SquaresFourIcon,
-};
+/** Ids of every built-in app, in default taskbar order. */
+export const builtInAppIds: readonly string[] = builtInApps.map((app) => app.id);

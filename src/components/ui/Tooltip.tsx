@@ -22,7 +22,7 @@ export const TooltipContent = React.forwardRef<
       ref={ref}
       sideOffset={sideOffset}
       className={cn(
-        "bg-ink shadow-float-sm z-[var(--z-overlay)] rounded-md px-2.5 py-1.5 text-[12px] font-medium text-white",
+        "bg-ink shadow-float-sm text-ink-inverse z-[var(--z-overlay)] rounded-md px-2.5 py-1.5 text-[12px] font-medium",
         "origin-[var(--radix-tooltip-content-transform-origin)]",
         overlayEnter,
         overlayExit,

@@ -34,6 +34,7 @@ export const colors = {
   ink: "#181818",
   inkMuted: "#6b6b6e",
   inkFaint: "#8a8a8c",
+  inkInverse: "#ffffff",
   accent: {
     50: "#eaf3f1",
     100: "#d2e6e1",

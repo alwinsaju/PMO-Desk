@@ -383,3 +383,154 @@ shapes the three parts share (manifest keys, endpoints, JSON files) are fixed in
 [`agent-apps/TASK-PLATFORM-CONTRACT.md`](./agent-apps/TASK-PLATFORM-CONTRACT.md). Task decisions and assumptions:
 [`agent-apps/DECISIONS-AND-ASSUMPTIONS.md`](./agent-apps/DECISIONS-AND-ASSUMPTIONS.md); how to run them the first
 time: [`agent-apps/FIRST-RUN-GUIDE.md`](./agent-apps/FIRST-RUN-GUIDE.md).
+
+## Local AI runtime (`src/lib/ai-runtime/`)
+
+The firm does not allow internal messages to go to a cloud model, so AI
+features run on a local Ollama model. This server-side module is the one
+place that talks to it; feature code imports it and never names a model or a
+URL. Import from server code only (route handlers, server modules).
+
+```ts
+import { generateJson, generateText, getRuntimeStatus } from "@/lib/ai-runtime";
+
+const todo = await generateJson({ system, prompt: rawMessage, schema: todoZodSchema });
+// -> z.output<typeof todoZodSchema>; optional: model, timeoutMs
+const text = await generateText({ system, prompt }); // optional: model, timeoutMs, temperature
+```
+
+`generateJson` sends the zod schema as Ollama's structured-output `format`,
+runs at temperature 0, validates the reply against the schema, and does one
+repair round-trip (the validation problems are fed back) before giving up.
+Failures reject with `AiRuntimeError` whose `code` is `"runtime-down"`,
+`"model-missing"`, `"timeout"` or `"invalid-output"` (use `isAiRuntimeError`).
+All calls go through one FIFO queue with concurrency 1. Inference is CPU-only
+here (a cold load is ~15-20s, a warm short extraction ~3-5s, long inputs
+minutes), so call it from background work, not a blocking UI path. The default
+timeout is 5 minutes per attempt and does not count time spent waiting in
+the queue.
+
+Config (all optional env vars; defaults in `core.ts`): `OLLAMA_MODEL`
+(default `qwen2.5:7b-instruct-q4_K_M`), `OLLAMA_BASE_URL` (default
+`http://127.0.0.1:11434`), `AI_OS_OLLAMA_EXE`, `AI_OS_AI_AUTOSTART=0` (never
+spawn Ollama), `AI_OS_AI_PREWARM=0`, `AI_OS_AI_KEEP_ALIVE`,
+`AI_OS_AI_TIMEOUT_MS`, `AI_OS_AI_NUM_CTX` (default 8192, sent on every call:
+a changing `num_ctx` makes Ollama reload the model, so `/api/ai/command` sends
+the same value).
+
+**Lifecycle and ownership** (`lifecycle.ts`, mirroring the agent-office
+backend's owned lifecycle): `src/instrumentation.ts` calls `ensureRuntime()`
+when the Next server starts (`pnpm dev`, `next start`, and the server the
+Electron shell spawns). If something already answers on the base URL it is
+reused and is never killed (`ownedByUs: false`). Otherwise, and only for a
+loopback URL, AI OS spawns `ollama serve` (resolved from `AI_OS_OLLAMA_EXE`,
+then PATH, then `%LOCALAPPDATA%\Programs\Ollama`; fixed args, `shell: false`,
+`windowsHide`, log in the OS temp dir) and owns it. `generateJson` also
+re-runs this check before every call, so an Ollama that died is restarted
+transparently. The default model is pre-warmed in the background (through the
+queue). On quit, an owned server has its models unloaded (`keep_alive: 0`) and
+its process tree killed (`taskkill /T`): `desktop/main.cjs` calls
+`POST /api/ai/runtime/stop` (desktop mode only) next to the Agent Office stop,
+and a `process.on("exit")` hook covers dev-server exits. The Ollama child is
+deliberately non-detached, so a hard kill of the Next process also takes it
+down (Windows job object). As a last net, a pidfile in the OS temp dir lets
+the next run adopt an Ollama that a crashed run left behind, but only if the
+recorded owner process is dead and the PID's image is really `ollama.exe`.
+Lifecycle state, and the queue, live on `globalThis` because Next compiles
+instrumentation and each route into separate module graphs.
+
+`GET /api/ai/runtime` is a read-only status snapshot (`running`, `ownedByUs`,
+`modelLoaded`, `queue.waiting`/`active`, ...); it never starts or stops
+anything. There is no UI indicator yet. `/api/ai/command` shares the config
+but still calls Ollama itself, because it needs `/api/chat` tool calling and
+should not queue behind long background jobs. Tests (`core.test.mjs`) cover
+the queue, JSON repair/validation, exe resolution and the client against a
+fake `fetch`; none need a real Ollama. Pure logic lives in `core.ts` with no
+extensionless sibling imports, which is what lets plain Node import it.
+
+## PMO To-Do (`src/lib/pmo/`, `src/components/apps/pmo-todo-app/`, `pmo-intake/`)
+
+A built-in app (`"pmo-todo"`, the sixth dock entry) for the PMO lead. Raw
+Teams messages and Outlook emails arrive as JSON files in an inbox folder; the
+**local** model (through `src/lib/ai-runtime`, never a cloud API) turns each
+into a to-do *proposal*; proposals wait in a **Review Queue**, and only a human
+**Approve** creates a to-do. **Phase 1 sends nothing anywhere** (no email, no
+Teams post, no notification) and never calls agent-office: no code under
+`src/lib/pmo`, `src/app/api/pmo` or the app imports
+`src/app/api/agent-office/*`. Phase 2 (Outlook COM producer) and the
+notification phase are not built.
+
+**Runs inside the existing Next server.** No new process and no cloud store.
+`ensureIngest()` (`server/service.ts`) starts the inbox poller and the
+structuring worker lazily on the first `/api/pmo/*` call and keeps them on
+`globalThis` (Next compiles every route into its own module graph).
+
+```
+pmo-intake/             The producer contract: PMO-INTAKE-CONTRACT.md,
+                        intake.v1.schema.json, examples/, PA-FLOW-RECIPES.md
+                        (click-by-click Power Automate flows, standard
+                        connectors only), scripts/New-SampleIntake.ps1.
+src/lib/pmo/            Pure logic, one co-located *.test.mjs per area
+                        (`pnpm test` imports the .ts directly, so imports
+                        between these files carry the .ts extension, enabled by
+                        `allowImportingTsExtensions`, and parameter properties /
+                        enums are avoided).
+  types.ts                zod: Intake, Proposal, Todo, TodoDraft, the model's
+                          AiStructuredSchema (length limits live in the JSON
+                          Schema via .meta(), clamping in transforms), config.
+  filter.ts               The Deloitte-only filter (pure, first reject wins).
+  dedupe.ts               source + sha256(sourceId), with the documented fallback.
+  preprocess.ts           HTML -> text, strip quoted reply chains, drop base64 and
+                          tracking links, truncate to ~12k chars. Client-safe.
+  quote.ts                Hallucination guard: is `quote` really in the message?
+  structurePrompt.ts      System/user prompts (message in <message> delimiters,
+                          marked as untrusted data).
+  todoLogic.ts            Draft -> Todo, derived stage/progress, patches.
+                          Client-safe (no node imports).
+  checkpointTemplates.ts  The fixed catalog: simple, deliverable, approval, followup.
+  server/                 Server only; never import from client code.
+    store.ts, fsx.ts      Per-record JSON files, atomic temp-then-rename writes,
+                          in-process promise-chain mutex (`withLock`).
+    ingest.ts             Polls the inbox (readdir every 15 s, not fs.watch).
+    structure.ts          FIFO queue, concurrency 1, injectable `Generator`.
+    actions.ts            The ONLY code that creates/changes to-dos: approve,
+                          reject, retry, manual create, patch, config.
+    originCheck.ts, http.ts  Origin/Host guard + { ok, reason? } envelope.
+    aiGenerator.ts        The real model (src/lib/ai-runtime generateJson).
+    stubGenerator.ts      Fake model for tests / `PMO_AI_STUB=1`.
+src/app/api/pmo/        state, ingest/scan, queue/[id] (PATCH) + approve|reject|retry,
+                        raw/[intakeId], todos, todos/[id], config. Each route
+                        checks Origin/Host first (raw message text is served),
+                        touches only local files, replies HTTP 200 with
+                        { ok, reason? }.
+```
+
+**Data directory**: env `AI_OS_PMO_DATA_DIR`; `desktop/main.cjs` sets it to
+`<userData>\pmo`; the dev default is `%LOCALAPPDATA%\AI OS\pmo` (outside the
+repo). Layout: `config.json`, `raw/<intakeId>.json` (immutable snapshot incl. the
+original text), `quarantine/` (filtered items: metadata and reason, body
+dropped), `rejected-files/` (unparsable producer files + `.reason.txt`),
+`queue/<proposalId>.json`, `todos/<todoId>.json`, `state/seen.json` (dedupe
+index), `logs/ingest.jsonl`, `logs/ai-calls.jsonl` (no message text),
+`audit.jsonl` (approve/reject/edit/complete with the OS user).
+
+**Inbox**: `config.inboxDir`, default
+`C:\Users\alsaju\OneDrive - Deloitte\PMO-Inbox` (a Power Automate flow writes
+there, OneDrive syncs it), overridden by env `AI_OS_PMO_INBOX_DIR`. **Use temp
+folders for every test**: `AI_OS_PMO_INBOX_DIR` + `AI_OS_PMO_DATA_DIR`, and
+`PMO_AI_STUB=1` to skip the model. Files younger than 3 s and larger than 1 MB
+are skipped; the app deletes each file it has dealt with and never writes into
+the folder. **Teams is filtered by default** until a tenant ID or chat is
+allowlisted (the tenant GUID ships empty): the status bar says so, a filtered
+Teams item has an *Allow this tenant* button, and `config.json` can be edited
+by hand (see PMO-INTAKE-CONTRACT.md).
+
+**Review gate**: nothing but `POST /api/pmo/queue/[id]/approve` (or a manual
+create, where the human is the reviewer) writes `todos/`. A proposal keeps the
+model's `draft` untouched; the reviewer's changes are `edits`. Local model
+failures are local state only: `runtime-down` / `model-missing` pause the queue
+and leave items `pending` (banner in the UI; every scan retries), a timeout is
+retried once then `failed`, `invalid-output` is `failed` after the runtime's own
+repair, at most 3 model attempts per item, and failed items offer *Retry* and
+*Create manually from original*. A 7B model on this CPU takes roughly a minute
+per message, so structuring is strictly background work.

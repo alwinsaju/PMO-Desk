@@ -55,6 +55,11 @@
   --color-ink-faint: var(
     --color-neutral-500
   ); /* tertiary / placeholder / disabled text */
+  /* Text/icon color to place on top of a SOLID `bg-ink` fill (tooltips) —
+     the mirror image of `ink`, so it flips with the theme. A hard-coded
+     `text-white` on `bg-ink` is invisible in dark mode, where `ink` is
+     near-white. (Not for the accent: that has its own `accent-contrast`.) */
+  --color-ink-inverse: var(--color-surface-elevated);
 
   /* ---------------------------------------------------------------------
    * Accent — the ONE accent color in the whole system (deep teal). Reserve
@@ -210,6 +215,7 @@
   --color-ink: var(--color-neutral-900);
   --color-ink-muted: var(--color-neutral-600);
   --color-ink-faint: var(--color-neutral-500);
+  --color-ink-inverse: var(--color-surface-elevated);
 
   /* Shadows stay neutral/black (never color-tinted — same rule as light
      mode) but need more opacity to still read as "lifted": a light-mode-

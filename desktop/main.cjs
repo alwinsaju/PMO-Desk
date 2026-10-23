@@ -55,6 +55,8 @@ async function startNextServer() {
       env: {
         ...process.env,
         AI_OS_DESKTOP_MODE: "1",
+        // PMO To-Do keeps its records here: outside the install dir and OneDrive.
+        AI_OS_PMO_DATA_DIR: path.join(app.getPath("userData"), "pmo"),
         ELECTRON_RUN_AS_NODE: "1",
         NODE_ENV: "production",
       },
@@ -190,7 +192,28 @@ async function stopServices() {
     );
   }
 
+  await stopAiRuntime();
   await stopProcess(nextServer);
+}
+
+// The AI runtime (Ollama) is started by the Next server itself
+// (src/instrumentation.ts); on quit, ask it to stop the Ollama it owns. A
+// reused external Ollama is left running by that route.
+async function stopAiRuntime() {
+  try {
+    await fetch(`${appUrl}/api/ai/runtime/stop`, {
+      method: "POST",
+      headers: { "x-ai-os-desktop": "1" },
+      signal: AbortSignal.timeout(15_000),
+    });
+  } catch (error) {
+    desktopLog(
+      `Could not request an AI runtime shutdown: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+      "error",
+    );
+  }
 }
 
 function stopProcess(child) {

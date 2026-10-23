@@ -42,8 +42,8 @@ export const appCategories: AppCategory[] = [
  * Resolves each catalog entry's `icon` field to the actual Phosphor
  * component that renders it. Kept as a separate map (rather than storing
  * the component itself on each `AppListing`) so `appCatalog` stays plain,
- * framework-agnostic data — same split as `pinnedApps.ts`'s
- * `pinnedAppIcons`.
+ * framework-agnostic data — a different split from `pinnedApps.ts`, whose
+ * `builtInApps` entries carry their icon component directly.
  */
 export const appIcons: Record<AppIconName, Icon> = {
   Kanban: KanbanIcon,

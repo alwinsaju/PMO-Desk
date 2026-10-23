@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { getAiRuntimeConfig } from "@/lib/ai-runtime";
 import type {
   AiCommandAppId,
   AiCommandRequest,
@@ -24,12 +25,19 @@ export const dynamic = "force-dynamic";
  * lets OLLAMA_BASE_URL change (a different machine, a tunnel, whatever)
  * without touching a single client bundle.
  *
- * Overridable via env vars for a machine where Ollama runs somewhere other
- * than the default, or has a different model pulled — same pattern as
- * tasks-app/api.ts's `AGENT_OFFICE_API_URL`.
+ * Overridable via env vars (OLLAMA_BASE_URL, OLLAMA_MODEL) for a machine
+ * where Ollama runs somewhere other than the default, or has a different
+ * model pulled. Both now come from the shared local AI runtime config
+ * (src/lib/ai-runtime), so one setting drives every AI feature. This route
+ * still talks to Ollama itself rather than through generateJson/generateText:
+ * it needs `/api/chat` tool calling and the un-queued 60s latency behavior
+ * below, which those helpers don't offer.
  */
-const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL?.trim() || "http://localhost:11434";
-const OLLAMA_MODEL = process.env.OLLAMA_MODEL?.trim() || "qwen2.5:7b-instruct-q4_K_M";
+const {
+  baseUrl: OLLAMA_BASE_URL,
+  defaultModel: OLLAMA_MODEL,
+  numCtx,
+} = getAiRuntimeConfig();
 
 /**
  * Real local inference latency varies a LOT on this hardware — a cold
@@ -273,7 +281,10 @@ export async function POST(request: Request) {
     // conversational variety — this is a command surface, not a chat
     // companion, and a lower temperature measurably helped this 7B model
     // pick the right tool during manual verification.
-    options: { temperature: 0.2 },
+    // num_ctx matches the shared runtime's: a different value would make
+    // Ollama reload the model every time the command bar and another AI
+    // feature alternate.
+    options: { temperature: 0.2, num_ctx: numCtx },
     messages: [
       {
         role: "system",
