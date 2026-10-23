@@ -7,12 +7,14 @@ import {
   PresenceAvatars,
 } from "@/components/ai-layer";
 import { DesktopContextMenu } from "./DesktopContextMenu";
+import { SettingsMenu } from "./SettingsMenu";
 import { Wallpaper } from "./Wallpaper";
 
 /**
  * The whole screen. A Server Component on purpose — it has no interactivity
  * of its own, it just composes the wallpaper (wrapped in a right-click
- * context menu), the window layer, the dock, and the AI Agent Layer. Each of
+ * context menu), the window layer, the dock, the top-right settings menu,
+ * and the AI Agent Layer. Each of
  * those is its own Client Component where it needs interactivity; a Server
  * Component can render Client Components as children just fine, so there's
  * no need for "use client" on this file.
@@ -31,6 +33,7 @@ export function Desktop() {
       </DesktopContextMenu>
       <WindowManager />
       <Dock />
+      <SettingsMenu />
 
       <CommandBar />
       <AICursor />

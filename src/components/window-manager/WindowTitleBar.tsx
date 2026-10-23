@@ -52,7 +52,14 @@ export function WindowTitleBar({
       {...(dragBlocked ? {} : bindDrag())}
       onDoubleClick={dragDisabled ? undefined : onMaximizeToggle}
       className={cn(
-        "group h-titlebar flex shrink-0 touch-none items-center gap-2 pr-2 pl-3 select-none",
+        "group h-titlebar flex shrink-0 touch-none items-center gap-2 pl-3 select-none",
+        // A maximized window's top-right corner sits under the settings gear
+        // (SettingsMenu.tsx, z-chrome, 56px wide at right-4; from `sm` up — below
+        // that it drops under the dock). Reserve that
+        // width so minimize/maximize/close stay clickable. Keep in sync with
+        // the gear's size/offset; a restored window never reaches the corner
+        // unless the user drags it there on purpose.
+        isMaximized ? "pr-2 sm:pr-[4.5rem]" : "pr-2",
         dragBlocked ? "cursor-default" : "cursor-grab active:cursor-grabbing",
       )}
     >

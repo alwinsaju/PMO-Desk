@@ -5,6 +5,7 @@ import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu";
 import { CaretRightIcon, CheckIcon } from "@phosphor-icons/react";
 import { cn } from "@/lib/cn";
 import { overlayEnter, overlayExit } from "@/lib/motion";
+import { Switch } from "./Switch";
 
 export const DropdownMenu = DropdownMenuPrimitive.Root;
 export const DropdownMenuTrigger = DropdownMenuPrimitive.Trigger;
@@ -84,6 +85,45 @@ export const DropdownMenuCheckboxItem = React.forwardRef<
   </DropdownMenuPrimitive.CheckboxItem>
 ));
 DropdownMenuCheckboxItem.displayName = "DropdownMenuCheckboxItem";
+
+/**
+ * A settings-style row: leading content + label on the left, a visual
+ * `Switch` on the right. The ROW is the interactive element (Radix
+ * `menuitemcheckbox`, so arrow keys / Enter / Space / typeahead / Esc all
+ * come from the menu); the Switch is purely a visual indicator of
+ * `checked` (`aria-hidden`, not focusable, no pointer events — clicks land
+ * on the row). Selecting does not close the menu, so the new state is
+ * visible immediately.
+ */
+export const DropdownMenuSwitchItem = React.forwardRef<
+  React.ElementRef<typeof DropdownMenuPrimitive.CheckboxItem>,
+  Omit<
+    React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.CheckboxItem>,
+    "checked"
+  > & {
+    checked: boolean;
+  }
+>(({ className, children, checked, onSelect, ...props }, ref) => (
+  <DropdownMenuPrimitive.CheckboxItem
+    ref={ref}
+    checked={checked}
+    onSelect={(event) => {
+      event.preventDefault();
+      onSelect?.(event);
+    }}
+    className={cn(itemClassName, "gap-3 py-2", className)}
+    {...props}
+  >
+    {children}
+    <Switch
+      checked={checked}
+      aria-hidden
+      tabIndex={-1}
+      className="pointer-events-none ml-auto"
+    />
+  </DropdownMenuPrimitive.CheckboxItem>
+));
+DropdownMenuSwitchItem.displayName = "DropdownMenuSwitchItem";
 
 export const DropdownMenuRadioItem = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.RadioItem>,

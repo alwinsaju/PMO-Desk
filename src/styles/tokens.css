@@ -154,7 +154,7 @@
  * shadows. This is an attribute-toggle theme with no `prefers-color-scheme`
  * fallback: the OS defaults to light and only switches when
  * `data-theme="dark"` is present on <html>, which only happens via the
- * toggle in DesktopContextMenu.tsx (persisted to localStorage by
+ * toggle in SettingsMenu.tsx (persisted to localStorage by
  * src/lib/theme.ts). Every component already reads color exclusively
  * through these variables — directly (`bg-neutral-100`, `border-border`,
  * ...) or through the semantic aliases above — so overriding the

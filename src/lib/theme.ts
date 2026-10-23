@@ -1,6 +1,6 @@
 /**
- * Dark-mode persistence. There is no Settings app yet (the toggle currently
- * lives in DesktopContextMenu.tsx — see the comment there) and no
+ * Dark-mode persistence. There is no Settings app (the toggle lives in the
+ * top-right SettingsMenu.tsx, which reads it via `useTheme`) and no
  * backend-persisted settings concept in this project, so localStorage is
  * the whole story. Absence of a stored value means "light" — this app
  * intentionally does NOT fall back to the OS's `prefers-color-scheme`, so

@@ -321,7 +321,9 @@ themselves, not a task list.
    `src/components/taskbar/*`) — the top floating dock (`Dock.tsx` and
    `DockTile.tsx`, driven by the shared `{ id, title, icon }` contract in
    `taskbar/pinnedApps.ts`) and a right-click context menu on the desktop
-   background (`DesktopContextMenu.tsx`), mounted as siblings of
+   background (`DesktopContextMenu.tsx`), plus a top-right settings gear
+   (`SettingsMenu.tsx` — the single home of the dark-mode switch; add new
+   settings as rows in its `settingsRows` list), mounted as siblings of
    `<WindowManager />` in `Desktop.tsx` at the `z-chrome` layer. There is no
    desktop icon grid — the dock is the only app launcher; an earlier V1 had
    a `DesktopIcons.tsx` mirroring the dock's 4 pinned apps, since removed.
