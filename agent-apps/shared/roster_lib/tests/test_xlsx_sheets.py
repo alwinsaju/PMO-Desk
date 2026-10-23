@@ -308,3 +308,18 @@ def test_workbook_without_app_xml_or_numfmts(pkg, tmp_path):
     dst = tmp_path / "o.xlsx"
     add_sheets(stripped, dst, specs())
     assert load_workbook(dst).sheetnames[-3:] == ["Summary", "_snapshot", "Hid"]
+
+
+def test_combined_styles_and_dates_in_styled_rows(pkg, tmp_path):
+    dst = tmp_path / "o.xlsx"
+    add_sheets(
+        pkg.path,
+        dst,
+        [SheetSpec("D", [["a", date(2026, 3, 1)], [Cell(date(2026, 3, 2), "flag_red")]], row_styles={0: "flag_amber"})],
+    )
+    ws = load_workbook(dst)["D"]
+    assert ws["B1"].value.date() == date(2026, 3, 1) and ws["B1"].fill.fgColor.rgb == "FFFFEB9C"
+    assert ws["A1"].fill.fgColor.rgb == "FFFFEB9C"
+    assert ws["A2"].value.date() == date(2026, 3, 2) and ws["A2"].fill.fgColor.rgb == "FFFFC7CE"
+    with pytest.raises(XlsxSheetsError, match="unknown style"):
+        add_sheets(pkg.path, tmp_path / "o2.xlsx", [SheetSpec("E", [[Cell("a", "bold+nope")]])])

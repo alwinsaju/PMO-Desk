@@ -171,6 +171,32 @@ _STYLE_DEFS: dict[str, _StyleDef] = {
 }
 
 
+def _style_def(name: str) -> _StyleDef:
+    """A named style, or several joined with '+' (e.g. "flag_red+date"); later names add to earlier ones."""
+    out = _StyleDef()
+    for part in name.split("+"):
+        sd = _STYLE_DEFS.get(part)
+        if sd is None:
+            raise XlsxSheetsError(f"unknown style {part!r}; known: {list(STYLE_NAMES)}")
+        out = _StyleDef(
+            bold=out.bold or sd.bold,
+            italic=out.italic or sd.italic,
+            font_rgb=sd.font_rgb or out.font_rgb,
+            fill_rgb=sd.fill_rgb or out.fill_rgb,
+            wrap=out.wrap or sd.wrap,
+            border_bottom=out.border_bottom or sd.border_bottom,
+            numfmt=sd.numfmt or out.numfmt,
+        )
+    return out
+
+
+def _date_style(style: Optional[str]) -> str:
+    """The style a date cell needs: its own style plus the date number format."""
+    if style is None:
+        return "date"
+    return style if _style_def(style).numfmt else f"{style}+date"
+
+
 def _count_children(root, local: str) -> Optional[int]:
     el = root.find(f"{{{NS_MAIN}}}{local}")
     return None if el is None else len(el)
@@ -244,7 +270,7 @@ def _extend_styles(data: bytes, used: Sequence[str]) -> tuple[bytes, dict[str, i
     for name in used:
         if name in mapping:
             continue
-        sd = _STYLE_DEFS[name]
+        sd = _style_def(name)
         fkey = (sd.bold, sd.italic, sd.font_rgb)
         if fkey not in font_ids:
             color = f'<color rgb="{sd.font_rgb}"/>' if sd.font_rgb else ""
@@ -336,19 +362,18 @@ def _used_styles(spec: SheetSpec) -> list[str]:
     def add(s: Optional[str]) -> None:
         if s is None:
             return
-        if s not in _STYLE_DEFS:
-            raise XlsxSheetsError(f"unknown style {s!r}; known: {list(STYLE_NAMES)}")
+        _style_def(s)  # validates
         if s not in used:
             used.append(s)
 
     for s in spec.row_styles.values():
         add(s)
-    for row in spec.rows:
+    for ri, row in enumerate(spec.rows):
         for item in row:
             v, s = _cell_parts(item)
-            add(s)
-            if isinstance(v, date) and s is None:
-                add("date")
+            if isinstance(v, datetime):
+                v = v.date()
+            add(_date_style(s or spec.row_styles.get(ri)) if isinstance(v, date) else s)
     return used
 
 
@@ -390,8 +415,8 @@ def _sheet_xml(spec: SheetSpec, xf_of: Mapping[str, int]) -> bytes:
                 v = v.date()
             if style is None:
                 style = default_style
-            if isinstance(v, date) and style is None:
-                style = "date"
+            if isinstance(v, date):
+                style = _date_style(style)
             sattr = f' s="{xf_of[style]}"' if style is not None else ""
             ref = format_ref(ri + 1, ci + 1)
             if v is None:
