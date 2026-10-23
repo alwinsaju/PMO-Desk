@@ -14,11 +14,12 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui";
-import { fetchTaskHistory, fetchTaskLog, openTaskNotification } from "./api";
+import { fetchTaskHistory, fetchTaskLog } from "./api";
 import { DiffGatePanel } from "./DiffGatePanel";
 import { FlagsGatePanel } from "./FlagsGatePanel";
 import { FormGatePanel } from "./FormGatePanel";
 import { GateNote } from "./GateParts";
+import { OpenFileButtons } from "./OpenFileButtons";
 import { ReviewPanel } from "./ReviewPanel";
 import { StepTracker } from "./StepTracker";
 import { TaskActions } from "./TaskActions";
@@ -263,18 +264,11 @@ export function TaskDetailDialog({
                             {notification.body}
                           </p>
                         </div>
-                        {notification.outputPath && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="shrink-0"
-                            onClick={() =>
-                              openTaskNotification(lastTask.id, notification.id)
-                            }
-                          >
-                            Open
-                          </Button>
-                        )}
+                        <OpenFileButtons
+                          taskId={lastTask.id}
+                          notification={notification}
+                          className="shrink-0 justify-end"
+                        />
                       </li>
                     ))}
                 </ul>

@@ -12,6 +12,7 @@
 import type {
   ActionResult,
   Agent,
+  OutputFile,
   Task,
   TaskNotification,
   TaskState,
@@ -161,6 +162,42 @@ export function latestArtifactNotification(task: Task): TaskNotification | null 
     if (task.notifications[i].outputPath) return task.notifications[i];
   }
   return null;
+}
+
+/** Every file a notification offers an Open button for: its `outputPaths`
+ *  (duplicates dropped), else the single `outputPath` of an older backend. */
+export function notificationFiles(notification: TaskNotification): OutputFile[] {
+  const listed = Array.isArray(notification.outputPaths) ? notification.outputPaths : [];
+  const files: OutputFile[] = [];
+  for (const entry of listed) {
+    if (!entry || typeof entry.path !== "string" || !entry.path) continue;
+    if (files.some((file) => file.path === entry.path)) continue;
+    files.push({
+      label:
+        typeof entry.label === "string" && entry.label.trim() ? entry.label.trim() : null,
+      path: entry.path,
+    });
+  }
+  if (files.length === 0 && notification.outputPath) {
+    files.push({ label: null, path: notification.outputPath });
+  }
+  return files;
+}
+
+/** Text of one Open button. A labelled file reads "Open <label>" (plus
+ *  "draft" at the draft-review gate, unless the label already says so); an
+ *  unlabelled one reads "Open draft workbook" there, "Open workbook" next to
+ *  other files, else plain "Open". */
+export function openButtonLabel(
+  file: OutputFile,
+  options: { count: number; draft?: boolean },
+): string {
+  if (file.label) {
+    const draft = options.draft && !/draft/i.test(file.label) ? " draft" : "";
+    return `Open ${file.label}${draft}`;
+  }
+  if (options.count > 1) return "Open workbook";
+  return options.draft ? "Open draft workbook" : "Open";
 }
 
 /** Review-ready text for the status line: the notification body exactly as

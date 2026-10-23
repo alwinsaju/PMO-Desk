@@ -3,7 +3,7 @@ import type {
   Agent,
   DiffPayload,
   FlagsPayload,
-  FormAnswers,
+  FormAnswerPatch,
   FormPayload,
   HistoryRun,
   InputsPayload,
@@ -123,13 +123,17 @@ export function resetTask(taskId: string): Promise<ActionResult> {
 
 /** Tells the backend (running locally on this same machine) to open a
  *  notification's output artifact with the OS default app. Safe/local —
- *  not one of the five state-machine actions above. */
+ *  not one of the five state-machine actions above. With `path` it opens
+ *  that one of the notification's `outputPaths` (the backend refuses any
+ *  path the notification doesn't list); without it, the primary file. */
 export function openTaskNotification(
   taskId: string,
   notificationId: string,
+  path?: string,
 ): Promise<ActionResult> {
+  const base = `/tasks/${encodeURIComponent(taskId)}/notifications/${encodeURIComponent(notificationId)}/open`;
   return postAction(
-    `/tasks/${encodeURIComponent(taskId)}/notifications/${encodeURIComponent(notificationId)}/open`,
+    path === undefined ? base : `${base}?path=${encodeURIComponent(path)}`,
   );
 }
 
@@ -296,10 +300,11 @@ export function getForm(taskId: string): Promise<Reply<FormPayload>> {
   return callJson<FormPayload>(`${taskPath(taskId)}/form`);
 }
 
-/** Merges answers (`{fieldId: value}`) into the saved answers file. */
+/** Merges answers (`{fieldId: value}`) into the saved answers file; a
+ *  `null` value clears that answer. */
 export function saveForm(
   taskId: string,
-  answers: FormAnswers,
+  answers: FormAnswerPatch,
 ): Promise<Reply<{ pending: string[] }>> {
   return callJson<{ pending: string[] }>(`${taskPath(taskId)}/form`, {
     method: "POST",

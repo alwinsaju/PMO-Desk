@@ -25,12 +25,17 @@ import {
 } from "./flagsView.ts";
 import {
   answersToSave,
+  dateFormatHint,
   effectiveAnswers,
   filterFields,
   formSummary,
   groupFields,
   hasUserEdits,
+  isAnswered,
+  isEdited,
+  isTextField,
   localPending,
+  TEXT_MAX_CHARS,
 } from "./formGate.ts";
 import {
   canPrepare,
@@ -47,6 +52,8 @@ import {
   describeApproval,
   hasPanelGates,
   hasStartForm,
+  notificationFiles,
+  openButtonLabel,
   refusalText,
   reviewReadyText,
   statusSentence,
@@ -831,5 +838,346 @@ describe("backend nulls (real flags have person/date null)", () => {
       refusalText({ ok: false, reason: null, pending: null, blocking: null }),
       "request was rejected",
     );
+  });
+});
+
+describe("form gate: text fields and optional defaults (December Disconnect availability rows)", () => {
+  const DATES_HELP =
+    "YYYY-MM-DD, comma separated (a range works too: 2026-12-28..2026-12-30)";
+  const people = [
+    { value: "NONE", label: "No exception" },
+    { value: "P1", label: "P1" },
+  ];
+  const schema = {
+    fields: [
+      {
+        id: "shift:N",
+        group: "New people",
+        label: "N",
+        type: "select",
+        required: true,
+        default: "S1",
+        options: [{ value: "S1", label: "S1" }],
+      },
+      {
+        id: "avail_person_1",
+        group: "Availability exceptions",
+        label: "Main plan: exception 1, person",
+        type: "select",
+        required: false,
+        default: "NONE",
+        options: people,
+      },
+      {
+        id: "avail_dates_1",
+        group: "Availability exceptions",
+        label: "Main plan: exception 1, dates",
+        description: DATES_HELP,
+        type: "text",
+        required: false,
+        default: "",
+      },
+      {
+        id: "avail_mode_1",
+        group: "Availability exceptions",
+        label: "Main plan: exception 1, rule",
+        type: "select",
+        required: false,
+        default: "unavailable",
+        options: [
+          { value: "unavailable", label: "Not available" },
+          { value: "only_available", label: "Only available" },
+        ],
+      },
+      {
+        id: "note",
+        group: "Other",
+        label: "Why",
+        type: "text",
+        required: true,
+      },
+    ],
+  };
+  const [shift, person, dates, , note] = schema.fields;
+  const eff = (saved = {}, edits = {}) => effectiveAnswers(schema, saved, edits);
+
+  it("recognises text fields (anything that is not a select)", () => {
+    assert.equal(isTextField(dates), true);
+    assert.equal(isTextField(shift), false);
+    assert.equal(isTextField({ ...dates, type: "number" }), true);
+    assert.equal(TEXT_MAX_CHARS, 500);
+  });
+
+  it("shows a text field's saved answer, its edit, or empty", () => {
+    assert.equal(eff()["avail_dates_1"], "");
+    assert.equal(eff({ avail_dates_1: "2026-12-28" })["avail_dates_1"], "2026-12-28");
+    assert.equal(
+      eff({ avail_dates_1: "2026-12-28" }, { avail_dates_1: "2026-12-29" })[
+        "avail_dates_1"
+      ],
+      "2026-12-29",
+    );
+    // an emptied text field stays empty: the edit wins over the saved answer
+    assert.equal(
+      eff({ avail_dates_1: "2026-12-28" }, { avail_dates_1: "" })["avail_dates_1"],
+      "",
+    );
+  });
+
+  it("counts a required text answer like the backend: trimmed and non-empty", () => {
+    assert.equal(isAnswered(note, "  "), false);
+    assert.equal(isAnswered(note, "\n\t"), false);
+    assert.equal(isAnswered(note, undefined), false);
+    assert.equal(isAnswered(note, " x "), true);
+    assert.equal(isAnswered(shift, ""), false);
+    assert.deepEqual(localPending(schema, eff()), ["note"]);
+    assert.deepEqual(localPending(schema, eff({}, { note: "   " })), ["note"]);
+    assert.deepEqual(localPending(schema, eff({}, { note: " because " })), []);
+    // optional fields never pend, however empty
+    assert.equal(localPending(schema, eff()).includes("avail_dates_1"), false);
+    assert.equal(localPending(schema, eff()).includes("avail_person_1"), false);
+  });
+
+  it("'needs answer' filter and search work for text fields", () => {
+    const e = eff();
+    const ids = (f) => filterFields(schema.fields, f, e).map((x) => x.id);
+    assert.deepEqual(ids({ query: "", onlyPending: true }), ["note"]);
+    assert.deepEqual(ids({ query: "dates", onlyPending: false }), ["avail_dates_1"]);
+    assert.deepEqual(ids({ query: "2026-12-28..2026-12-30", onlyPending: false }), [
+      "avail_dates_1",
+    ]);
+    assert.deepEqual(ids({ query: "exception", onlyPending: false }), [
+      "avail_person_1",
+      "avail_dates_1",
+      "avail_mode_1",
+    ]);
+    const typed = eff({}, { note: "x" });
+    assert.deepEqual(
+      filterFields(schema.fields, { query: "", onlyPending: true }, typed).map(
+        (x) => x.id,
+      ),
+      [],
+    );
+  });
+
+  it("Save sends trimmed text, required defaults and edits, but not untouched optional defaults", () => {
+    const edits = { avail_dates_1: "  2026-12-28, 2026-12-29  ", note: " why " };
+    const patch = answersToSave(schema, {}, eff({}, edits), edits);
+    assert.deepEqual(patch, {
+      "shift:N": "S1", // a required default is recorded
+      avail_dates_1: "2026-12-28, 2026-12-29", // trimmed
+      note: "why",
+    });
+    assert.equal("avail_person_1" in patch, false); // untouched optional default NONE
+    assert.equal("avail_mode_1" in patch, false);
+    // without `edits` every differing value goes (the older call shape)
+    assert.equal(answersToSave(schema, {}, eff({}, edits))["avail_person_1"], "NONE");
+  });
+
+  it("an optional select the user changed is sent, also back to its default once something is saved", () => {
+    const base = { "shift:N": "S1", note: "x" };
+    const edits = { avail_person_1: "P1", avail_mode_1: "only_available" };
+    assert.deepEqual(answersToSave(schema, base, eff(base, edits), edits), {
+      avail_person_1: "P1",
+      avail_mode_1: "only_available",
+    });
+    const saved = { ...base, avail_person_1: "P1" };
+    const back = { avail_person_1: "NONE" };
+    assert.deepEqual(answersToSave(schema, saved, eff(saved, back), back), {
+      avail_person_1: "NONE",
+    });
+  });
+
+  it("clearing a saved text answer sends null; clearing a required one makes it pending again", () => {
+    const saved = { "shift:N": "S1", note: "x", avail_dates_1: "2026-12-28" };
+    const edits = { avail_dates_1: "   ", note: "" };
+    const effective = eff(saved, edits);
+    assert.deepEqual(answersToSave(schema, saved, effective, edits), {
+      avail_dates_1: null,
+      note: null,
+    });
+    assert.deepEqual(localPending(schema, effective), ["note"]);
+    // nothing saved and nothing typed: no null for an answer the backend never had
+    const blank = { avail_dates_1: "" };
+    assert.deepEqual(answersToSave(schema, {}, eff({}, blank), blank), {
+      "shift:N": "S1",
+    });
+    // an optional text saved as empty and left empty is not re-sent
+    const savedEmpty = { "shift:N": "S1", note: "x", avail_dates_1: "" };
+    assert.deepEqual(answersToSave(schema, savedEmpty, eff(savedEmpty, {}), {}), {});
+  });
+
+  it("whitespace-only changes are not edits; real changes are", () => {
+    assert.equal(isEdited(dates, undefined, "a"), false);
+    assert.equal(isEdited(dates, " a ", "a"), false);
+    assert.equal(isEdited(dates, "", undefined), false);
+    assert.equal(isEdited(dates, "", "a"), true);
+    assert.equal(isEdited(dates, "b", "a"), true);
+    assert.equal(isEdited(person, "P1", undefined), true);
+    assert.equal(isEdited(person, "P1", "P1"), false);
+    assert.equal(hasUserEdits(schema, {}, {}), false);
+    assert.equal(hasUserEdits(schema, { note: "x" }, { note: "" }), true);
+    assert.equal(hasUserEdits(schema, { note: "x" }, { note: " x" }), false);
+    assert.equal(hasUserEdits(schema, {}, { avail_dates_1: "2026-12-28" }), true);
+  });
+
+  it("hints (never blocks) when a date field's text is not a date list", () => {
+    const hint = (v) => dateFormatHint(dates, v);
+    for (const ok of [
+      "",
+      "   ",
+      "2026-12-28",
+      "2026-12-28,2026-12-29",
+      " 2026-12-28 , 2026-12-30 ",
+      "2026-12-28;2026-12-29",
+      "2026-12-28\n2026-12-29",
+      "2026-12-28..2026-12-30",
+      "2026-12-28,2026-12-30..2026-12-31,",
+    ]) {
+      assert.equal(hint(ok), null, JSON.stringify(ok));
+    }
+    for (const bad of [
+      "28/12/2026",
+      "2026-12-28 2026-12-29",
+      "2026-13-01",
+      "2026-02-30",
+      "Dec 28",
+      "2026-12-30..2026-12-28",
+      "2026-12-28..",
+      "2026-12-28..2026-12-29..2026-12-30",
+      "2026-12-28, tomorrow",
+    ]) {
+      assert.match(hint(bad), /YYYY-MM-DD/, JSON.stringify(bad));
+    }
+    // only fields that ask for dates, only text fields
+    assert.equal(dateFormatHint(note, "nonsense"), null);
+    assert.equal(dateFormatHint({ ...dates, description: "" }, "nonsense"), null);
+    assert.equal(dateFormatHint({ ...dates, description: undefined }, "nonsense"), null);
+    assert.equal(dateFormatHint({ ...dates, type: "select" }, "nonsense"), null);
+    // and the hint changes nothing about what is saved
+    const edits = { avail_dates_1: "nonsense" };
+    const saved = { "shift:N": "S1", note: "x" };
+    assert.deepEqual(answersToSave(schema, saved, eff(saved, edits), edits), {
+      avail_dates_1: "nonsense",
+    });
+  });
+
+  it("the form summary counts required fields only (optional text and selects do not)", () => {
+    assert.equal(
+      formSummary(schema, ["note"]),
+      "1 of 2 required questions still need an answer",
+    );
+    assert.equal(formSummary(schema, []), "All 2 required questions answered");
+  });
+});
+
+describe("several output files (Open buttons)", () => {
+  const note = (over = {}) => ({
+    id: "n1",
+    kind: "task.review_ready",
+    title: "t",
+    body: "b",
+    outputPath: "C:/t/output/main.xlsx",
+    createdAt: "2026-10-23T00:00:00Z",
+    ...over,
+  });
+
+  it("lists outputPaths, falling back to the single outputPath of an older backend", () => {
+    assert.deepEqual(notificationFiles(note()), [
+      { label: null, path: "C:/t/output/main.xlsx" },
+    ]);
+    assert.deepEqual(notificationFiles(note({ outputPaths: [] })), [
+      { label: null, path: "C:/t/output/main.xlsx" },
+    ]);
+    assert.deepEqual(notificationFiles(note({ outputPath: null })), []);
+    assert.deepEqual(notificationFiles(note({ outputPath: null, outputPaths: [] })), []);
+    assert.deepEqual(
+      notificationFiles(
+        note({
+          outputPaths: [
+            { label: "Main plan", path: "C:/t/output/main.xlsx" },
+            { label: " Analytics plan ", path: "C:/t/output/an.xlsx" },
+            { label: "Again", path: "C:/t/output/an.xlsx" },
+            { label: "", path: "C:/t/output/third.xlsx" },
+            { label: "No path", path: "" },
+            null,
+          ],
+        }),
+      ),
+      [
+        { label: "Main plan", path: "C:/t/output/main.xlsx" },
+        { label: "Analytics plan", path: "C:/t/output/an.xlsx" },
+        { label: null, path: "C:/t/output/third.xlsx" },
+      ],
+    );
+  });
+
+  it("words each button from its label, the gate and how many files there are", () => {
+    const plain = { label: null, path: "p" };
+    assert.equal(openButtonLabel(plain, { count: 1 }), "Open");
+    assert.equal(
+      openButtonLabel(plain, { count: 1, draft: true }),
+      "Open draft workbook",
+    );
+    assert.equal(openButtonLabel(plain, { count: 2 }), "Open workbook");
+    assert.equal(openButtonLabel(plain, { count: 2, draft: true }), "Open workbook");
+    const main = { label: "Main plan", path: "p" };
+    assert.equal(openButtonLabel(main, { count: 2 }), "Open Main plan");
+    assert.equal(
+      openButtonLabel(main, { count: 2, draft: true }),
+      "Open Main plan draft",
+    );
+    assert.equal(
+      openButtonLabel({ label: "Analytics plan", path: "q" }, { count: 2, draft: true }),
+      "Open Analytics plan draft",
+    );
+    assert.equal(
+      openButtonLabel({ label: "Draft roster", path: "q" }, { count: 2, draft: true }),
+      "Open Draft roster",
+    );
+    assert.equal(
+      openButtonLabel({ label: "Next-year roster", path: "q" }, { count: 2 }),
+      "Open Next-year roster",
+    );
+  });
+});
+
+describe("api: open a listed file, clear an answer", () => {
+  const realFetch = globalThis.fetch;
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+  });
+  function fake() {
+    const calls = [];
+    globalThis.fetch = async (url, init = {}) => {
+      calls.push({ url: String(url), init });
+      return { ok: true, status: 200, json: async () => ({ ok: true }) };
+    };
+    return calls;
+  }
+
+  it("opens the primary file without a path and a listed file with its encoded path", async () => {
+    const calls = fake();
+    await api.openTaskNotification("december-disconnect", "n 1");
+    await api.openTaskNotification(
+      "december-disconnect",
+      "n 1",
+      "C:\\t\\output\\An plan.xlsx",
+    );
+    const base = `${AGENT_OFFICE_API_URL}/tasks/december-disconnect/notifications/n%201/open`;
+    assert.equal(calls[0].url, base);
+    assert.equal(calls[1].url, `${base}?path=C%3A%5Ct%5Coutput%5CAn%20plan.xlsx`);
+    assert.deepEqual(
+      calls.map((c) => c.init.method),
+      ["POST", "POST"],
+    );
+  });
+
+  it("posts a null to clear a saved text answer", async () => {
+    const calls = fake();
+    await api.saveForm("december-disconnect", { avail_dates_1: null, note: "x" });
+    assert.deepEqual(JSON.parse(calls[0].init.body), {
+      answers: { avail_dates_1: null, note: "x" },
+    });
   });
 });

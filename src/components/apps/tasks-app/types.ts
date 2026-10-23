@@ -70,7 +70,18 @@ export interface TaskNotification {
   title: string;
   body: string;
   outputPath: string | null;
+  /** Every file this notification offers an Open button for (report-data's
+   *  `workbook_path` first, then its `extra_paths`); the paths are absolute
+   *  and the only ones the backend will open. Absent on an older backend. */
+  outputPaths?: OutputFile[];
   createdAt: string;
+}
+
+/** One openable output file of a notification. `label` names it when the
+ *  task labelled it ("Analytics plan"); null for an unlabelled primary file. */
+export interface OutputFile {
+  label: string | null;
+  path: string;
 }
 
 export interface Task {
@@ -267,7 +278,8 @@ export interface FormField {
   group: string;
   label: string;
   description?: string;
-  type: "select" | (string & {});
+  /** "select" (pick an option) or "text" (free text, trimmed, <= 500 chars). */
+  type: "select" | "text" | (string & {});
   options?: FormOption[];
   default?: string;
   required?: boolean;
@@ -281,6 +293,9 @@ export interface FormSchema {
 
 /** The flat answers file: `{fieldId: value}`. */
 export type FormAnswers = Record<string, string>;
+
+/** What Save POSTs: like the answers file, but `null` clears a saved answer. */
+export type FormAnswerPatch = Record<string, string | null>;
 
 export interface FormPayload {
   schema: FormSchema;

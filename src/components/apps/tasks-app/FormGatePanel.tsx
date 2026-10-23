@@ -15,11 +15,16 @@ import { saveForm } from "./api";
 import { FilterChip, GateNote, NativeSelect, SearchField } from "./GateParts";
 import {
   answersToSave,
+  dateFormatHint,
   effectiveAnswers,
   filterFields,
   groupFields,
   hasUserEdits,
+  isAnswered,
+  isEdited,
+  isTextField,
   localPending,
+  TEXT_MAX_CHARS,
 } from "./formGate";
 import { notifyGateChanged, type GateData } from "./useGateData";
 import type { FormAnswers, FormField } from "./types";
@@ -37,8 +42,11 @@ interface FormGatePanelProps {
 /**
  * The "Answer questions" panel for a `form` gate: ask-me.json rendered as
  * compact rows grouped by `group` (Ask-me / Unclassified / New people / PTO
- * matches), a select per field with defaults preselected, a search box and a
- * "Needs answer" filter so ~20 fields stay manageable, and Save. Approve
+ * matches / Availability exceptions), a select per `select` field with
+ * defaults preselected and an input box per `text` field (the schema's
+ * description is its placeholder; a date field gets a non-blocking format
+ * hint), a search box and a "Needs answer" filter so ~20 fields stay
+ * manageable, and Save. Approve
  * lives in the action bar below the tabs and stays disabled until the
  * backend's own `pending` list is empty — Save is what empties it.
  */
@@ -65,8 +73,8 @@ export function FormGatePanel({
     [schema, saved, edits],
   );
   const toSave = useMemo(
-    () => (schema && saved ? answersToSave(schema, saved, effective) : {}),
-    [schema, saved, effective],
+    () => (schema && saved ? answersToSave(schema, saved, effective, edits) : {}),
+    [schema, saved, effective, edits],
   );
   const dirty = schema && saved ? hasUserEdits(schema, saved, edits) : false;
   const pendingLocal = useMemo(
@@ -200,9 +208,8 @@ export function FormGatePanel({
                       domId={`${idPrefix}-${field.id}`}
                       value={effective[field.id] ?? ""}
                       savedValue={saved[field.id]}
-                      edited={
-                        Boolean(edits[field.id]) && edits[field.id] !== saved[field.id]
-                      }
+                      edited={isEdited(field, edits[field.id], saved[field.id])}
+                      willSave={field.id in toSave}
                       onChange={(value) =>
                         setEdits((current) => ({ ...current, [field.id]: value }))
                       }
@@ -224,6 +231,7 @@ function FieldRow({
   value,
   savedValue,
   edited,
+  willSave,
   onChange,
 }: {
   field: FormField;
@@ -231,10 +239,18 @@ function FieldRow({
   value: string;
   savedValue: string | undefined;
   edited: boolean;
+  /** Save would send this field (an unsaved edit or required default). */
+  willSave: boolean;
   onChange: (value: string) => void;
 }) {
-  const pending = Boolean(field.required) && !value;
-  const isSaved = Boolean(savedValue) && savedValue === value;
+  const pending = Boolean(field.required) && !isAnswered(field, value);
+  const isSaved =
+    isAnswered(field, savedValue) &&
+    (isTextField(field)
+      ? value.trim() === (savedValue ?? "").trim()
+      : savedValue === value);
+  const hint = dateFormatHint(field, value);
+  const hintId = `${domId}-hint`;
   return (
     <li
       data-pending={pending}
@@ -256,6 +272,11 @@ function FieldRow({
         {field.description && (
           <p className="text-ink-faint text-[11px] break-words">{field.description}</p>
         )}
+        {hint && (
+          <p id={hintId} role="status" className="text-ink-muted text-[11px] break-words">
+            {hint}
+          </p>
+        )}
       </div>
       <div className="flex items-center gap-2">
         {field.type === "select" ? (
@@ -275,8 +296,15 @@ function FieldRow({
         ) : (
           <input
             id={domId}
+            type="text"
             value={value}
             onChange={(event) => onChange(event.target.value)}
+            placeholder={field.description || undefined}
+            maxLength={TEXT_MAX_CHARS}
+            autoComplete="off"
+            spellCheck={false}
+            aria-invalid={pending || hint ? true : undefined}
+            aria-describedby={hint ? hintId : undefined}
             className="rounded-control border-border bg-surface-elevated text-ink focus-visible:border-accent focus-visible:ring-accent/30 h-8 w-full border px-2 text-[12px] focus-visible:ring-2 focus-visible:outline-none"
           />
         )}
@@ -292,7 +320,7 @@ function FieldRow({
               className="text-ink-faint"
               aria-label="Saved"
             />
-          ) : edited || value ? (
+          ) : edited || willSave ? (
             <span className="bg-accent h-1.5 w-1.5 rounded-full" title="Not saved yet" />
           ) : null}
         </span>

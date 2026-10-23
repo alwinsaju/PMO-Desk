@@ -1,9 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { CopyIcon, FileXlsIcon } from "@phosphor-icons/react";
+import { CopyIcon } from "@phosphor-icons/react";
 import { Button, ScrollArea } from "@/components/ui";
-import { openTaskNotification } from "./api";
 import {
   FilterChip,
   GateNote,
@@ -19,6 +18,7 @@ import {
   severityCounts,
   type FlagFilter,
 } from "./flagsView";
+import { OpenFileButtons } from "./OpenFileButtons";
 import { latestArtifactNotification } from "./taskPresenter";
 import type { GateData } from "./useGateData";
 import type { FlagSeverity, Task } from "./types";
@@ -41,7 +41,6 @@ export function FlagsGatePanel({ task, gate }: { task: Task; gate: GateData }) {
   });
   const [limit, setLimit] = useState(PAGE_SIZE);
   const [copied, setCopied] = useState<"idle" | "copied" | "failed">("idle");
-  const [openState, setOpenState] = useState<"idle" | "opening" | "failed">("idle");
 
   const file = gate.flags;
   const artifact = latestArtifactNotification(task);
@@ -49,17 +48,6 @@ export function FlagsGatePanel({ task, gate }: { task: Task; gate: GateData }) {
   const counts = useMemo(() => (file ? severityCounts(file) : null), [file]);
   const kinds = useMemo(() => flagKinds(file?.flags ?? []), [file]);
   const visible = useMemo(() => filterFlags(file?.flags ?? [], filter), [file, filter]);
-
-  const open = async () => {
-    if (!artifact) return;
-    setOpenState("opening");
-    try {
-      const result = await openTaskNotification(task.id, artifact.id);
-      setOpenState(result.ok ? "idle" : "failed");
-    } catch {
-      setOpenState("failed");
-    }
-  };
 
   const copy = async () => {
     try {
@@ -86,24 +74,11 @@ export function FlagsGatePanel({ task, gate }: { task: Task; gate: GateData }) {
           Your edits are compared with the plan in the next step.
         </p>
         {artifact ? (
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={open}
-            disabled={openState === "opening"}
-          >
-            <FileXlsIcon size={14} weight="bold" aria-hidden />
-            {openState === "opening" ? "Opening…" : "Open draft workbook"}
-          </Button>
+          <OpenFileButtons taskId={task.id} notification={artifact} draft icon />
         ) : (
           <span className="text-ink-faint text-[11px]">
             The draft workbook&apos;s Open button appears here once it&apos;s ready.
           </span>
-        )}
-        {openState === "failed" && (
-          <p className="text-ink-muted w-full text-[11px]">
-            Couldn&apos;t open the workbook — open it from the output folder instead.
-          </p>
         )}
       </div>
 
