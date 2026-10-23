@@ -1,0 +1,20 @@
+{
+  "schema": "pmo-intake/1",
+  "producer": "pa-cloud-flow",
+  "source": "outlook",
+  "sourceId": "AAMkAGExample0002=",
+  "receivedAt": "2026-10-22T10:30:00+05:30",
+  "sender": { "name": "Jordan Sample", "address": "jordan.sample@deloitte.com" },
+  "recipients": [
+    { "name": "Alwin Saju", "address": "alsaju@deloitte.com", "role": "to" }
+  ],
+  "subject": "FYI: steering committee moved to Thursday",
+  "body": {
+    "text": "<html><body><p>Hi all,</p><p>FYI the steering committee has moved to Thursday 29 October, same time. No action needed from you - the invite has already been updated.</p><p>Thanks,<br>Jordan</p></body></html>",
+    "format": "html"
+  },
+  "thread": {},
+  "context": { "mailbox": "alsaju@deloitte.com", "importance": "normal" },
+  "attachments": [],
+  "link": "outlook:00000000EXAMPLEENTRYID0002"
+}

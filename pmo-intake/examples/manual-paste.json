@@ -1,0 +1,13 @@
+{
+  "schema": "pmo-intake/1",
+  "producer": "manual-paste",
+  "source": "manual",
+  "sourceId": "manual-2026-10-22-0001",
+  "receivedAt": "2026-10-22T15:45:00+05:30",
+  "sender": { "name": "Pat Sample" },
+  "subject": "Hallway ask",
+  "body": {
+    "text": "Pat asked me to chase the vendor for the revised SOW before Friday.",
+    "format": "text"
+  }
+}

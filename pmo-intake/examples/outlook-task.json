@@ -1,0 +1,21 @@
+{
+  "schema": "pmo-intake/1",
+  "producer": "pa-cloud-flow",
+  "source": "outlook",
+  "sourceId": "AAMkAGExample0001=",
+  "receivedAt": "2026-10-22T09:14:00+05:30",
+  "sender": { "name": "Pat Sample", "address": "pat.sample@deloitte.com" },
+  "recipients": [
+    { "name": "Alwin Saju", "address": "alsaju@deloitte.com", "role": "to" },
+    { "name": "Jordan Sample", "address": "jordan.sample@deloitte.com", "role": "cc" }
+  ],
+  "subject": "Q4 programme status pack - input needed",
+  "body": {
+    "text": "Hi Alwin,\n\nCould you please send me the consolidated RAID log for the Contoso Programme by Tuesday 27 October? I need it for the steering committee pre-read.\n\nAlso, please confirm whether the milestone M4 date has moved.\n\nThanks,\nPat\n\n________________________________\nFrom: Jordan Sample <jordan.sample@deloitte.com>\nSent: 21 October 2026 16:40\nTo: Pat Sample\nSubject: RE: Q4 programme status pack\n\nPat, the template is on the shared drive.",
+    "format": "text"
+  },
+  "thread": { "conversationId": "AAQkAGExampleConv1=", "parentId": null },
+  "context": { "mailbox": "alsaju@deloitte.com", "importance": "high" },
+  "attachments": [],
+  "link": "outlook:00000000EXAMPLEENTRYID0001"
+}

@@ -1,0 +1,98 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "pmo-intake/1",
+  "title": "PMO intake message, version 1",
+  "description": "One raw Teams message or Outlook email, delivered as one JSON file into the PMO inbox folder. See PMO-INTAKE-CONTRACT.md. Null is treated like a missing key everywhere except where a field is required.",
+  "type": "object",
+  "required": ["schema", "source", "sourceId", "receivedAt", "sender", "subject", "body"],
+  "additionalProperties": true,
+  "properties": {
+    "schema": { "const": "pmo-intake/1" },
+    "producer": {
+      "description": "Who wrote the file. Informational.",
+      "type": ["string", "null"],
+      "examples": ["pa-cloud-flow", "outlook-com", "manual-paste", "other"]
+    },
+    "source": { "enum": ["outlook", "teams", "manual"] },
+    "sourceId": {
+      "description": "Stable id of the message in its source system. Used for de-duplication: the same sourceId is only ever turned into one proposal. Outlook: the message id. Teams: the message id (messagePayload id), or a value derived from the deep link.",
+      "type": "string",
+      "minLength": 1
+    },
+    "receivedAt": {
+      "description": "ISO 8601 date-time the message was sent/received, with offset or Z.",
+      "type": "string",
+      "format": "date-time"
+    },
+    "sender": {
+      "type": "object",
+      "description": "Teams gives a display name only, so neither field is required on its own.",
+      "properties": {
+        "name": { "type": ["string", "null"] },
+        "address": { "type": ["string", "null"] }
+      }
+    },
+    "recipients": {
+      "type": ["array", "null"],
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": { "type": ["string", "null"] },
+          "address": { "type": ["string", "null"] },
+          "role": { "type": ["string", "null"], "examples": ["to", "cc", "bcc"] }
+        }
+      }
+    },
+    "subject": {
+      "description": "Email subject, or the Teams chat/channel name. May be empty.",
+      "type": ["string", "null"]
+    },
+    "body": {
+      "type": "object",
+      "required": ["text"],
+      "properties": {
+        "text": { "type": "string" },
+        "format": { "enum": ["text", "html", null] }
+      }
+    },
+    "thread": {
+      "type": ["object", "null"],
+      "properties": {
+        "conversationId": { "type": ["string", "null"] },
+        "parentId": { "type": ["string", "null"] }
+      }
+    },
+    "context": {
+      "type": ["object", "null"],
+      "properties": {
+        "tenantId": {
+          "description": "Microsoft Entra tenant of the Teams message. The Deloitte-only filter checks it against config.allowedTenantIds. If absent it is read from the Teams deep link in `link`.",
+          "type": ["string", "null"]
+        },
+        "chatId": { "type": ["string", "null"] },
+        "chatType": { "type": ["string", "null"] },
+        "teamName": { "type": ["string", "null"] },
+        "channelName": { "type": ["string", "null"] },
+        "mailbox": { "type": ["string", "null"] },
+        "importance": { "type": ["string", "null"] }
+      }
+    },
+    "attachments": {
+      "description": "References only. The app never opens or downloads an attachment.",
+      "type": ["array", "null"],
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": { "type": ["string", "null"] },
+          "contentType": { "type": ["string", "null"] },
+          "size": { "type": ["number", "null"] },
+          "ref": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "link": {
+      "description": "Teams message deep link (https://teams.microsoft.com/l/message/...) or outlook:<EntryID>.",
+      "type": ["string", "null"]
+    }
+  }
+}

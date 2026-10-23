@@ -1,0 +1,55 @@
+// The real structuring model: the local AI runtime (src/lib/ai-runtime),
+// which talks only to Ollama on 127.0.0.1. No cloud model, no claude CLI.
+import { generateJson, getAiRuntimeConfig, getRuntimeStatus } from "@/lib/ai-runtime";
+import { AiStructuredSchema, type RuntimeSummary } from "../types.ts";
+import type { Generator } from "./structure.ts";
+
+/** A 7B model on CPU reading a 12k-character message can take minutes; the
+ *  queue is background work, so this is generous on purpose. */
+const TIMEOUT_MS = Number(process.env.AI_OS_PMO_AI_TIMEOUT_MS) || 240_000;
+
+export function createRuntimeGenerator(): Generator {
+  return {
+    model: () => getAiRuntimeConfig().defaultModel,
+    generate: ({ system, prompt }) =>
+      generateJson({ system, prompt, schema: AiStructuredSchema, timeoutMs: TIMEOUT_MS }),
+  };
+}
+
+let cached: { at: number; value: RuntimeSummary } | null = null;
+
+/** Read-only probe of the local runtime for the status bar, cached briefly
+ *  because the UI polls every few seconds. Never starts anything. */
+export async function runtimeSummary(): Promise<RuntimeSummary> {
+  if (cached && Date.now() - cached.at < 8_000) return cached.value;
+  let value: RuntimeSummary;
+  try {
+    const status = await getRuntimeStatus();
+    const model = status.defaultModel;
+    if (!status.running) {
+      value = { state: "down", model, message: "Local model not running." };
+    } else if (status.modelInstalled === false) {
+      value = {
+        state: "model-missing",
+        model,
+        message: `Model missing: run ollama pull ${model}`,
+      };
+    } else {
+      value = {
+        state: status.modelLoaded ? "ready" : "cold",
+        model,
+        message: status.modelLoaded
+          ? null
+          : "Model not loaded yet; the first message takes longer.",
+      };
+    }
+  } catch {
+    value = {
+      state: "unknown",
+      model: null,
+      message: "Could not check the local model.",
+    };
+  }
+  cached = { at: Date.now(), value };
+  return value;
+}

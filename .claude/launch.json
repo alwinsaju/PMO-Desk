@@ -6,6 +6,32 @@
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["dev"],
       "port": 3000
+    },
+    {
+      "name": "ai-os-pmo-preview",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["dev", "-p", "3055"],
+      "port": 3055,
+      "env": {
+        "AI_OS_PMO_DATA_DIR": "C:\\Users\\alsaju\\AppData\\Local\\Temp\\claude\\C--Projects-AI-OS\\396d21f6-e23b-4999-8502-ccaa0cd823ea\\scratchpad\\pmo-preview\\data",
+        "AI_OS_PMO_INBOX_DIR": "C:\\Users\\alsaju\\AppData\\Local\\Temp\\claude\\C--Projects-AI-OS\\396d21f6-e23b-4999-8502-ccaa0cd823ea\\scratchpad\\pmo-preview\\inbox",
+        "PMO_AI_STUB": "1",
+        "PMO_AI_STUB_DELAY_MS": "1500",
+        "AI_OS_PMO_SCAN_MS": "5000",
+        "AI_OS_AI_AUTOSTART": "0",
+        "AI_OS_AI_PREWARM": "0"
+      }
+    },
+    {
+      "name": "ai-os-pmo-real-model",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["dev", "-p", "3056"],
+      "port": 3056,
+      "env": {
+        "AI_OS_PMO_DATA_DIR": "C:\\Users\\alsaju\\AppData\\Local\\Temp\\claude\\C--Projects-AI-OS\\396d21f6-e23b-4999-8502-ccaa0cd823ea\\scratchpad\\pmo-real\\data",
+        "AI_OS_PMO_INBOX_DIR": "C:\\Users\\alsaju\\AppData\\Local\\Temp\\claude\\C--Projects-AI-OS\\396d21f6-e23b-4999-8502-ccaa0cd823ea\\scratchpad\\pmo-real\\inbox",
+        "AI_OS_PMO_SCAN_MS": "5000"
+      }
     }
   ]
 }

@@ -1,0 +1,277 @@
+// Pure rules for proposals and to-dos: drafts, building a Todo from an
+// approved draft, the derived stage/progress, and patch application. Shared
+// by the server (which persists) and the UI (which displays), so it imports
+// nothing from node.
+import { z } from "zod";
+import { CHECKPOINT_TEMPLATES } from "./checkpointTemplates.ts";
+import type {
+  ActionItem,
+  AiStructured,
+  Checkpoint,
+  Proposal,
+  Todo,
+  TodoDraft,
+  TodoSource,
+} from "./types.ts";
+import { PRIORITIES, TodoStatusSchema } from "./types.ts";
+
+export function newId(prefix: string): string {
+  return `${prefix}_${globalThis.crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`;
+}
+
+// ---------------------------------------------------------------------------
+// Drafts
+// ---------------------------------------------------------------------------
+
+export function emptyDraft(title = ""): TodoDraft {
+  return {
+    title,
+    description: "",
+    owner: { name: null, email: null, isMe: null },
+    requester: { name: null, email: null },
+    dueAt: null,
+    priority: "normal",
+    actionItems: [],
+    checkpointTemplate: "simple",
+    waitingOn: null,
+    tags: [],
+  };
+}
+
+/** The editable draft the model's output starts out as. */
+export function draftFromAi(ai: AiStructured, fallbackTitle = ""): TodoDraft {
+  return {
+    title: ai.title || fallbackTitle,
+    description: ai.description,
+    owner: ai.owner,
+    requester: ai.requester,
+    // A date the model labels "none" is noise, not a due date.
+    dueAt: ai.dueBasis === "none" ? null : ai.dueAt,
+    priority: ai.priority,
+    actionItems: ai.actionItems.map((item) => ({ ...item })),
+    checkpointTemplate: ai.checkpointTemplate,
+    waitingOn: ai.waitingOn,
+    tags: ai.tags,
+  };
+}
+
+/** What the review form shows first: staged edits, else the AI draft, else a
+ *  blank draft titled from the message subject. */
+export function effectiveDraft(proposal: Proposal): TodoDraft {
+  if (proposal.edits) return proposal.edits;
+  if (proposal.draft) return draftFromAi(proposal.draft, proposal.summary.subject);
+  return emptyDraft(proposal.summary.subject);
+}
+
+// ---------------------------------------------------------------------------
+// Todos
+// ---------------------------------------------------------------------------
+
+export function buildCheckpoints(
+  templateId: TodoDraft["checkpointTemplate"],
+): Checkpoint[] {
+  return CHECKPOINT_TEMPLATES[templateId].steps.map((step) => ({
+    id: newId("cp"),
+    label: step.label,
+    kind: step.kind,
+    state: "pending" as const,
+  }));
+}
+
+export interface BuildTodoContext {
+  now: string;
+  approvedBy: string;
+  source: TodoSource;
+}
+
+export function buildTodo(draft: TodoDraft, context: BuildTodoContext): Todo {
+  return {
+    id: newId("td"),
+    title: draft.title.trim(),
+    description: draft.description.trim(),
+    owner: draft.owner,
+    requester: draft.requester,
+    dueAt: draft.dueAt,
+    priority: draft.priority,
+    actionItems: draft.actionItems.map((item): ActionItem => ({
+      id: newId("ai"),
+      text: item.text.trim(),
+      done: false,
+      owner: item.owner,
+      dueAt: item.dueAt,
+    })),
+    checkpoints: buildCheckpoints(draft.checkpointTemplate),
+    status: "open",
+    waitingOn: draft.waitingOn,
+    tags: draft.tags,
+    source: context.source,
+    // Phase 1 sends no notifications; the shape is here so a later phase
+    // doesn't need a migration.
+    reminders: {
+      enabled: false,
+      remindAt: null,
+      snoozedUntil: null,
+      lastRemindedAt: null,
+    },
+    createdAt: context.now,
+    approvedAt: context.now,
+    approvedBy: context.approvedBy,
+    updatedAt: context.now,
+    completedAt: null,
+  };
+}
+
+const complete = (checkpoint: Checkpoint) => checkpoint.state !== "pending";
+
+/** Label of the first checkpoint that isn't done or skipped; derived on every
+ *  read, never stored. null = nothing left (or no checkpoints). */
+export function deriveStage(todo: Pick<Todo, "checkpoints">): string | null {
+  return todo.checkpoints.find((checkpoint) => !complete(checkpoint))?.label ?? null;
+}
+
+export function checkpointProgress(todo: Pick<Todo, "checkpoints">): {
+  done: number;
+  total: number;
+} {
+  return {
+    done: todo.checkpoints.filter(complete).length,
+    total: todo.checkpoints.length,
+  };
+}
+
+export function allCheckpointsComplete(
+  todo: Pick<Todo, "checkpoints" | "status">,
+): boolean {
+  return (
+    todo.status === "open" &&
+    todo.checkpoints.length > 0 &&
+    todo.checkpoints.every(complete)
+  );
+}
+
+export function isOverdue(todo: Pick<Todo, "dueAt" | "status">, today: string): boolean {
+  return todo.status === "open" && todo.dueAt !== null && todo.dueAt < today;
+}
+
+// ---------------------------------------------------------------------------
+// Patching
+// ---------------------------------------------------------------------------
+
+const isoDay = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+
+export const TodoPatchSchema = z.object({
+  title: z.string().trim().min(1).max(200).optional(),
+  description: z.string().max(4000).optional(),
+  owner: z
+    .object({
+      name: z.string().nullable(),
+      email: z.string().nullable(),
+      isMe: z.boolean().nullable(),
+    })
+    .optional(),
+  requester: z
+    .object({ name: z.string().nullable(), email: z.string().nullable() })
+    .optional(),
+  dueAt: isoDay.nullable().optional(),
+  priority: z.enum(PRIORITIES).optional(),
+  waitingOn: z.string().nullable().optional(),
+  tags: z.array(z.string()).max(10).optional(),
+  status: TodoStatusSchema.optional(),
+  /** Check / uncheck existing action items. */
+  actionItems: z.array(z.object({ id: z.string(), done: z.boolean() })).optional(),
+  addActionItems: z
+    .array(z.object({ text: z.string().trim().min(1).max(200) }))
+    .max(20)
+    .optional(),
+  removeActionItemIds: z.array(z.string()).optional(),
+  checkpoints: z
+    .array(z.object({ id: z.string(), state: z.enum(["pending", "done", "skipped"]) }))
+    .optional(),
+});
+export type TodoPatch = z.infer<typeof TodoPatchSchema>;
+
+export interface PatchResult {
+  todo: Todo;
+  /** Every checkpoint is now done/skipped but the to-do is still open: the UI
+   *  asks the human whether to mark it done. Never done automatically. */
+  offerDone: boolean;
+  /** For the audit log. */
+  kinds: Array<"edit" | "complete" | "cancel" | "reopen" | "progress">;
+}
+
+const FIELD_KEYS = [
+  "title",
+  "description",
+  "owner",
+  "requester",
+  "dueAt",
+  "priority",
+  "waitingOn",
+  "tags",
+  "addActionItems",
+  "removeActionItemIds",
+] as const;
+
+export function applyTodoPatch(todo: Todo, patch: TodoPatch, now: string): PatchResult {
+  const next: Todo = { ...todo, updatedAt: now };
+  const kinds: PatchResult["kinds"] = [];
+
+  if (patch.title !== undefined) next.title = patch.title;
+  if (patch.description !== undefined) next.description = patch.description;
+  if (patch.owner !== undefined) next.owner = patch.owner;
+  if (patch.requester !== undefined) next.requester = patch.requester;
+  if (patch.dueAt !== undefined) next.dueAt = patch.dueAt;
+  if (patch.priority !== undefined) next.priority = patch.priority;
+  if (patch.waitingOn !== undefined) next.waitingOn = patch.waitingOn;
+  if (patch.tags !== undefined) next.tags = patch.tags;
+  if (FIELD_KEYS.some((key) => patch[key] !== undefined)) kinds.push("edit");
+
+  let items = next.actionItems;
+  if (patch.removeActionItemIds?.length) {
+    const drop = new Set(patch.removeActionItemIds);
+    items = items.filter((item) => !drop.has(item.id));
+  }
+  if (patch.addActionItems?.length) {
+    items = [
+      ...items,
+      ...patch.addActionItems.map((item): ActionItem => ({
+        id: newId("ai"),
+        text: item.text,
+        done: false,
+      })),
+    ];
+  }
+  if (patch.actionItems?.length) {
+    const wanted = new Map(patch.actionItems.map((item) => [item.id, item.done]));
+    items = items.map((item) => {
+      const done = wanted.get(item.id);
+      return done === undefined || done === item.done ? item : { ...item, done };
+    });
+    kinds.push("progress");
+  }
+  next.actionItems = items;
+
+  if (patch.checkpoints?.length) {
+    const wanted = new Map(patch.checkpoints.map((c) => [c.id, c.state]));
+    next.checkpoints = next.checkpoints.map((checkpoint) => {
+      const state = wanted.get(checkpoint.id);
+      if (state === undefined || state === checkpoint.state) return checkpoint;
+      return { ...checkpoint, state, doneAt: state === "pending" ? null : now };
+    });
+    kinds.push("progress");
+  }
+
+  if (patch.status !== undefined && patch.status !== next.status) {
+    next.status = patch.status;
+    next.completedAt = patch.status === "done" ? now : null;
+    kinds.push(
+      patch.status === "done"
+        ? "complete"
+        : patch.status === "cancelled"
+          ? "cancel"
+          : "reopen",
+    );
+  }
+
+  return { todo: next, offerDone: allCheckpointsComplete(next), kinds };
+}
