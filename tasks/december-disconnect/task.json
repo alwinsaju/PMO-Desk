@@ -1,7 +1,6 @@
 {
   "id": "december-disconnect",
   "displayName": "December Disconnect",
-  "runtime": "local",
   "completedMessage": "The final winter plans (main plan and Analytics plan) and the audit log are ready in the output folder.",
   "inputs": [
     {

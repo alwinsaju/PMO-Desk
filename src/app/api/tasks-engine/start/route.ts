@@ -4,7 +4,16 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { NextResponse } from "next/server";
 import { resolvePython } from "../python";
-import { isEngineRunning, registerDesktopEngine } from "../shared";
+import {
+  configuredEngineUrl,
+  engineUrlFor,
+  findRunningEngine,
+  hasConfiguredEngine,
+  isTasksEngine,
+  pickFreePort,
+  registerDesktopEngine,
+  rememberEngineUrl,
+} from "../shared";
 
 // Launches a live local process and polls it — never safe to treat as
 // static/cacheable content.
@@ -26,7 +35,6 @@ export const dynamic = "force-dynamic";
 // dev server" at once, which turned out not to be possible with `python.exe`
 // no matter how `detached`/`windowsHide` were combined.
 const ENGINE_DIR = path.join(process.cwd(), "tasks-engine");
-const UVICORN_ARGS = ["-m", "uvicorn", "main:app", "--host", "127.0.0.1", "--port", "8000"];
 
 /** Bounded window to confirm the engine actually came up before giving up
  *  and reporting failure — long enough for a cold `uvicorn` boot, short
@@ -43,7 +51,9 @@ const LOG_PATH = path.join(tmpdir(), "ai-os-tasks-engine.log");
  *  instead of sending the user spelunking for a log file. */
 const LOG_TAIL_CHARS = 800;
 
-type StartResult = { ok: true; alreadyRunning: boolean } | { ok: false; reason: string };
+type StartResult =
+  | { ok: true; alreadyRunning: boolean; url: string }
+  | { ok: false; reason: string };
 
 // Module-scoped: concurrent/rapid POSTs to this route while the dev server
 // is up (React StrictMode's dev-only double-effect, two Tasks windows
@@ -66,8 +76,15 @@ export async function POST() {
 }
 
 async function attemptStart(): Promise<StartResult> {
-  if (await isEngineRunning()) {
-    return { ok: true, alreadyRunning: true };
+  const running = await findRunningEngine();
+  if (running) {
+    return { ok: true, alreadyRunning: true, url: running };
+  }
+  if (hasConfiguredEngine()) {
+    return {
+      ok: false,
+      reason: `AI_OS_TASKS_ENGINE_URL is set (${configuredEngineUrl()}) but no Tasks engine answers there.`,
+    };
   }
 
   const pythonExe = resolvePython();
@@ -81,6 +98,12 @@ async function attemptStart(): Promise<StartResult> {
   if (!existsSync(ENGINE_DIR)) {
     return { ok: false, reason: `tasks-engine folder not found at ${ENGINE_DIR}.` };
   }
+  const port = await pickFreePort();
+  if (port === null) {
+    return { ok: false, reason: "No free port for the Tasks engine (8000-8019 are all in use)." };
+  }
+  const url = engineUrlFor(port);
+  const engineArgs = ["main.py", "--port", String(port)];
 
   let child: ChildProcess;
   try {
@@ -96,7 +119,7 @@ async function attemptStart(): Promise<StartResult> {
     // keeps it without reconnecting the child to us.
     const outFd = openSync(LOG_PATH, "a");
     const errFd = openSync(LOG_PATH, "a");
-    child = spawn(pythonExe, UVICORN_ARGS, {
+    child = spawn(pythonExe, engineArgs, {
       cwd: ENGINE_DIR,
       detached: !DESKTOP_MODE,
       stdio: ["ignore", outFd, errFd],
@@ -187,7 +210,7 @@ async function attemptStart(): Promise<StartResult> {
     child.unref();
   }
 
-  console.log(`[tasks-engine] launching: ${pythonExe} ${UVICORN_ARGS.join(" ")}`);
+  console.log(`[tasks-engine] launching: ${pythonExe} ${engineArgs.join(" ")}`);
 
   const deadline = Date.now() + START_TIMEOUT_MS;
   while (Date.now() < deadline) {
@@ -195,15 +218,13 @@ async function attemptStart(): Promise<StartResult> {
       console.error(`[tasks-engine] spawn error: ${spawnError}`);
       return { ok: false, reason: `Couldn't launch the engine: ${spawnError}` };
     }
-    if (await isEngineRunning()) {
-      console.log("[tasks-engine] engine is up");
-      return { ok: true, alreadyRunning: false };
+    if (await isTasksEngine(url)) {
+      rememberEngineUrl(url);
+      console.log(`[tasks-engine] engine is up at ${url}`);
+      return { ok: true, alreadyRunning: false, url };
     }
-    // The child exiting doesn't necessarily mean failure on its own — e.g.
-    // it may have lost a startup race to bind :8000 against another
-    // instance that's now serving the port just fine, which the
-    // isEngineRunning() check above already would have caught. Only
-    // treat a non-zero exit as fatal once the port also isn't answering.
+    // A non-zero exit before the port answers is fatal; the check above runs
+    // first so an exit that merely follows a successful boot is not.
     if (exitCode !== null && exitCode !== 0) {
       console.error(`[tasks-engine] process exited with code ${exitCode}`);
       return {

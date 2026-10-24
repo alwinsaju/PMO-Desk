@@ -1,7 +1,0 @@
-{
-  "id": "lucy",
-  "displayName": "Lucy",
-  "avatar": "lucy.png",
-  "capabilities": ["quality_review", "recipient_verification", "outlook_composition"],
-  "traits": "careful, review-minded, thorough"
-}

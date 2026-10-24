@@ -4,7 +4,7 @@
 // nothing here ever touches the network or the live Tasks engine.
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
-import { TASKS_ENGINE_URL } from "./api.ts";
+import { setEngineUrl } from "./engineUrl.ts";
 import * as api from "./api.ts";
 import {
   blockers,
@@ -78,6 +78,9 @@ import {
   statusSentence,
   stepLabel,
 } from "./taskPresenter.ts";
+
+const TASKS_ENGINE_URL = "http://127.0.0.1:8123";
+setEngineUrl(TASKS_ENGINE_URL);
 
 function task(overrides = {}) {
   return {

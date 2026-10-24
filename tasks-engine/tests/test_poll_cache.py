@@ -1,11 +1,11 @@
-"""Poll-path caching: the read-only GETs the Tasks app polls (/tasks, /agents,
+"""Poll-path caching: the read-only GETs the Tasks app polls (/tasks,
 /tasks/<id>/log|inputs|form|flags|diff|options|history) must be cheap per call
 WITHOUT changing a single byte of any response, and a cache must never serve
 stale data once a file changed.
 
 Hermetic like the rest of the suite: every task folder is a synthetic temp dir
-(TASKS_ROOT patched to tmp_path), the Claude CLI runtime is off, nothing here can
-reach Outlook or the live backend on :8000."""
+(TASKS_ROOT patched to tmp_path) and nothing here can reach Outlook or a
+running engine."""
 import hashlib
 import json
 import os
@@ -19,31 +19,6 @@ from fastapi.testclient import TestClient
 
 import main as backend
 from test_platform import FORM_SCHEMA, at_gate, make_link, make_platform_task, upload, write
-
-
-@pytest.fixture(autouse=True)
-def isolate_state(tmp_path, monkeypatch):
-    saved_tasks = dict(backend.tasks)
-    saved_enabled = backend.session_manager.enabled
-    backend.tasks.clear()
-    for w in backend.workers.values():
-        w.current_task_id = None
-    backend.session_manager.enabled = False
-    monkeypatch.setattr(backend, "WORKSPACE_ROOT", tmp_path)
-    monkeypatch.setattr(backend, "TASKS_ROOT", tmp_path)
-    monkeypatch.setattr(backend, "HISTORY_FILE", tmp_path / "history.jsonl")
-    for cache in (backend._sha_cache, backend._json_cache, backend._body_cache,
-                  backend._resolve_memo, backend._realpath_memo):
-        cache.clear()
-    backend._history_cache = None
-    backend._json_cache_bytes = 0
-    backend._body_cache_bytes = 0
-    yield
-    backend.tasks.clear()
-    backend.tasks.update(saved_tasks)
-    backend.session_manager.enabled = saved_enabled
-    for w in backend.workers.values():
-        w.current_task_id = None
 
 
 def client():
@@ -488,8 +463,8 @@ def test_body_cache_is_bounded_and_skips_racy_and_oversized_bodies(tmp_path, mon
 
 # --- history ----------------------------------------------------------------------
 
-def record(n, task="plat", agent="adam", outcome="completed", approvals=True):
-    r = {"run_id": f"r{n}", "task_id": task, "agent_id": agent, "outcome": outcome,
+def record(n, task="plat", outcome="completed", approvals=True):
+    r = {"run_id": f"r{n}", "task_id": task, "outcome": outcome,
          "started_at": "2026-10-01T01:00:00+00:00", "ended_at": "2026-10-01T01:10:00+00:00"}
     if approvals:
         r["approvals"] = [{"step": "s", "kind": "approve", "user": "u", "at": "t"}]
@@ -534,8 +509,7 @@ def test_history_parsed_once_then_invalidated_by_append_or_rewrite(tmp_path, mon
     c = client()
     for _ in range(3):
         assert [r["run_id"] for r in c.get("/tasks/plat/history").json()["runs"]] == ["r2", "r1"]
-    assert c.get("/agents/adam/metrics").status_code == 200
-    assert len(reads) == 1  # one parse serves history AND metrics
+    assert len(reads) == 1  # one parse serves every poll
 
     backend._append_history(record(3))  # the app's own writer: size changes
     assert [r["run_id"] for r in c.get("/tasks/plat/history").json()["runs"]] == ["r3", "r2", "r1"]
@@ -553,16 +527,7 @@ def test_history_just_written_is_not_cached(tmp_path):
     assert backend._history_cache is None  # modified moments ago: re-read until it settles
 
 
-def test_metrics_are_unchanged(tmp_path):
-    make_platform_task(tmp_path)
-    recs = [record(1, outcome="completed"), record(2, outcome="failed"), record(3, agent="nancy"), record(4, outcome="completed")]
-    age(write_history(tmp_path, recs))
-    body = client().get("/agents/adam/metrics").json()
-    assert body["ok"] and body["tasks_completed"] == 2 and body["tasks_failed"] == 1
-    assert body["success_rate"] == 2 / 3 and body["avg_duration_seconds"] == 600.0
-
-
-# --- /log, /tasks, /agents ---------------------------------------------------------
+# --- /log, /tasks ---------------------------------------------------------
 
 def test_log_body_is_byte_identical_cached_and_tracks_every_change(tmp_path):
     make_platform_task(tmp_path)
@@ -595,7 +560,7 @@ def test_log_body_is_byte_identical_cached_and_tracks_every_change(tmp_path):
     assert c.get("/tasks/ghost/log").json() == {"ok": False, "reason": "unknown task"}
 
 
-def test_tasks_and_agents_bodies_are_byte_identical_to_the_plain_encoding(tmp_path):
+def test_tasks_body_is_byte_identical_to_the_plain_encoding(tmp_path):
     make_platform_task(tmp_path)
     make_platform_task(tmp_path, "second", prepare={}, inputs=[])
     backend.push_notification(backend.tasks["plat"], "task.completed", "T", "b", "x", [{"label": None, "path": "x"}])
@@ -604,9 +569,6 @@ def test_tasks_and_agents_bodies_are_byte_identical_to_the_plain_encoding(tmp_pa
     assert tasks.headers["content-type"] == "application/json"
     assert tasks.content == compact([t.to_dict() for t in backend.tasks.values()])
     assert [t["id"] for t in tasks.json()] == ["plat", "second"]
-    agents = c.get("/agents")
-    assert agents.headers["content-type"] == "application/json"
-    assert agents.content == compact([w.to_dict() for w in backend.workers.values()])
 
 
 # --- concurrency -----------------------------------------------------------------

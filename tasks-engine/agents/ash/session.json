@@ -1,9 +1,0 @@
-{
-  "model": "claude-sonnet-4-6",
-  "permission_mode": "default",
-  "allowed_tools": ["Bash(python *)", "Bash(powershell *)", "Read", "Glob", "Grep"],
-  "disallowed_tools": [],
-  "max_budget_usd": 0.5,
-  "step_timeout_seconds": 600,
-  "restart_on_error": true
-}

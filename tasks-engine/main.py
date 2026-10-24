@@ -1,3 +1,4 @@
+import argparse
 import asyncio
 import getpass
 import hashlib
@@ -11,11 +12,8 @@ import subprocess
 import sys
 import threading
 import time
-import urllib.error
-import urllib.request
 import uuid
 from collections import OrderedDict
-from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -24,22 +22,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 
-import session_manager as sm
-
 log = logging.getLogger("tasks-engine")
 
-OLLAMA_URL = "http://localhost:11434/api/generate"
-OLLAMA_MODEL = "qwen2.5:7b-instruct-q4_K_M"
-
 ENGINE_DIR = Path(__file__).resolve().parent
-WORKSPACE_ROOT = ENGINE_DIR.parent
+ROOT_DIR = ENGINE_DIR.parent
 SKIP_DIRS = {"shared"}
-AGENTS_DIR = ENGINE_DIR / "agents"
 
 # Task folders live in the tasks/ folder beside this engine (in the repo and in
 # the installed app's resources); each task resolves its sibling shared/
 # relative to that folder. Override with AI_OS_TASKS_DIR to look elsewhere.
-TASKS_ROOT = Path(os.environ.get("AI_OS_TASKS_DIR") or WORKSPACE_ROOT / "tasks").resolve()
+TASKS_ROOT = Path(os.environ.get("AI_OS_TASKS_DIR") or ROOT_DIR / "tasks").resolve()
 
 # Append-only audit log of finished/failed runs. Local-only runtime data (the
 # file's own header line says so) kept under DATA_DIR, which is gitignored: it
@@ -51,48 +43,22 @@ HISTORY_HEADER = {
 }
 MAX_RUNS_PER_TASK = 100
 
-async def _scheduler_loop():
-    """Check every 30s whether any resting task's daily time has hit; if so,
-    start it. Conservative by design - the pipeline's own gates still pause for
-    the human, so a scheduled run only ever produces a draft, never a send."""
-    while True:
-        await asyncio.sleep(30)
-        now = datetime.now()
-        hhmm = now.strftime("%H:%M")
-        today = now.date().isoformat()
-        for task in tasks.values():
-            if (
-                task.schedule
-                and task.schedule.get("daily") == hhmm
-                and task.state == "resting"
-                and task.last_auto_start != today
-            ):
-                task.last_auto_start = today
-                await start_task(task.id)
-
-
-@asynccontextmanager
-async def lifespan(_app: FastAPI):
-    # Spawn one Claude CLI session per worker with the server so agents are
-    # genuinely idle-waiting; stop them all cleanly on shutdown. Local mode or
-    # a missing CLI leaves workers fully functional via the subprocess path.
-    # (session_manager is defined further down; lifespan runs after module load.)
-    if session_manager.enabled:
-        loop = asyncio.get_running_loop()
-        loop.run_in_executor(None, session_manager.spawn_all, workers)
-    scheduler = asyncio.create_task(_scheduler_loop())
-    yield
-    scheduler.cancel()
-    session_manager.stop_all()
-
-
-app = FastAPI(lifespan=lifespan)
+app = FastAPI()
+# The Tasks app talks to this engine straight from the browser (or the Electron
+# window), so the only origins allowed are loopback pages on any port.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origin_regex=r"^http://(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$",
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.get("/health")
+async def health():
+    """Identity probe: lets the launcher tell this engine from any other
+    process that happens to answer on a port."""
+    return {"ok": True, "service": "tasks-engine"}
 
 
 class Task:
@@ -106,10 +72,8 @@ class Task:
         self.error = None
         self.entry_id = None
         self.current_step = None
-        self.assigned_agent_id: str | None = None
         self.notifications: list[dict] = []
         self.completed_steps: set[str] = set()
-        self.runtime = "local"  # "claude" once a worker's CLI session has taken the run
         # Set by start_task when a run actually begins executing steps; cleared
         # when the run's history record is written (or the run is abandoned).
         self.run_id: str | None = None
@@ -118,11 +82,6 @@ class Task:
         # per-step stdout viewer. In-memory only (cleared on each new run).
         self.step_output: list[dict] = []
         self._log_cache: tuple | None = None  # see log_json()
-        # Optional auto-start schedule (e.g. {"daily": "09:00"} in task.json).
-        # The scheduler only ever STARTS the pipeline - the human review/confirm
-        # gates still require manual clicks, so nothing sends unattended.
-        self.schedule: dict | None = manifest.get("schedule")
-        self.last_auto_start: str | None = None
         # Approver stamps (OS user + UTC time) for this run's approve/send
         # clicks; written into the run's history record, then cleared.
         self.approvals: list[dict] = []
@@ -130,15 +89,10 @@ class Task:
         self.preparing = False
 
     def apply_manifest(self, manifest: dict):
-        """Manifest-derived fields - set at construction and refreshed by
-        rescan_tasks() on tasks that are already tracked."""
+        """Manifest-derived fields (name, steps, inputs, prepare, cleanup)."""
         self.display_name = manifest.get("displayName", self.id)
         self.steps = manifest["steps"]
-        # Platform additions (all optional; absent = behavior exactly as before).
-        # manifest_runtime is distinct from self.runtime, which records which
-        # runtime a run actually used ("local" | "claude").
-        self.manifest_runtime = manifest.get("runtime")
-        self.force_local = self.manifest_runtime == "local"
+        # Platform additions (all optional).
         inputs = manifest.get("inputs")
         self.inputs: list[dict] = [i for i in inputs if isinstance(i, dict) and i.get("id")] if isinstance(inputs, list) else []
         prepare = manifest.get("prepare")
@@ -179,7 +133,6 @@ class Task:
             "state": self.state,
             "error": self.error,
             "currentStep": self.current_step,
-            "assignedAgentId": self.assigned_agent_id,
             "steps": [
                 {
                     "id": s["id"],
@@ -190,8 +143,6 @@ class Task:
                 for s in self.steps
             ],
             "notifications": self.notifications,
-            "schedule": self.schedule,
-            "runtime": self.manifest_runtime,
             # `persist` is always present so the UI never has to guess; every
             # other manifest key passes through untouched.
             "inputs": [{**i, "persist": i.get("persist") is True} for i in self.inputs],
@@ -200,113 +151,12 @@ class Task:
         }
 
 
-class Worker:
-    """An idle-until-assigned colleague. Identity comes from agents/<id>/ -
-    agent.json (manifest), agent.md (persona fed to the CLI session's system
-    prompt), session.json (CLI runtime config). Workers hold no pipeline state
-    themselves - just a pointer to the task they're currently on."""
-
-    def __init__(self, manifest: dict, folder: Path):
-        self.id = manifest["id"]
-        self.display_name = manifest.get("displayName", self.id)
-        self.folder = folder
-        self.manifest = manifest
-        persona_file = folder / "agent.md"
-        self.persona = persona_file.read_text(encoding="utf-8") if persona_file.exists() else ""
-        session_file = folder / "session.json"
-        try:
-            self.session_config = json.loads(session_file.read_text()) if session_file.exists() else {}
-        except (json.JSONDecodeError, OSError):
-            self.session_config = {}
-        self.current_task_id: str | None = None
-
-    def to_dict(self):
-        task = tasks.get(self.current_task_id) if self.current_task_id else None
-        return {
-            "id": self.id,
-            "displayName": self.display_name,
-            "state": task.state if task else "resting",
-            "currentTaskId": task.id if task else None,
-            "currentTaskName": task.display_name if task else None,
-            "currentStep": task.current_step if task else None,
-        }
-
-
-def discover_workers(agents_dir: Path) -> dict[str, Worker]:
-    """The agent pool is whatever's on disk under agents/ - add a folder with
-    an agent.json and a new colleague shows up; delete one and it's gone."""
-    found: dict[str, Worker] = {}
-    if not agents_dir.is_dir():
-        return found
-    for folder in sorted(agents_dir.iterdir()):
-        manifest_path = folder / "agent.json"
-        if not folder.is_dir() or not manifest_path.exists():
-            continue
-        try:
-            manifest = json.loads(manifest_path.read_text())
-            worker = Worker(manifest, folder)
-        except (json.JSONDecodeError, OSError, KeyError):
-            continue  # a malformed agent folder must not take down the whole pool
-        found[worker.id] = worker
-    return found
-
-
-def apply_pool_config(found: dict[str, Worker], agents_dir: Path) -> dict[str, Worker]:
-    """Optional agents/pool.json restricts and reorders the active pool:
-    {"enabled": ["adam", "nancy"]} keeps just those workers, in that order.
-    Absent file = every discovered worker (the original behavior). Any broken
-    config (bad JSON, missing/empty 'enabled', unknown ids) is logged and
-    ignored - a typo must never silently empty the pool."""
-    pool_file = agents_dir / "pool.json"
-    if not pool_file.exists():
-        return found
-    try:
-        enabled = json.loads(pool_file.read_text())["enabled"]
-        if not isinstance(enabled, list) or not enabled:
-            raise ValueError("'enabled' must be a non-empty list of worker ids")
-        missing = [str(i) for i in enabled if i not in found]
-        if missing:
-            raise ValueError(f"unknown worker ids: {', '.join(missing)}")
-        return {i: found[i] for i in enabled}
-    except (json.JSONDecodeError, OSError, KeyError, TypeError, ValueError) as exc:
-        log.warning("ignoring %s: %s", pool_file, exc)
-        return found
-
-
-workers: dict[str, Worker] = apply_pool_config(discover_workers(AGENTS_DIR), AGENTS_DIR)
 tasks: dict[str, Task] = {}
-
-# Runtime switch: AGENT_OFFICE_RUNTIME=local forces the subprocess pipeline even
-# with the CLI installed (useful for demos/tests). Default: claude when available.
-session_manager = sm.SessionManager(
-    WORKSPACE_ROOT, enabled=os.environ.get("AGENT_OFFICE_RUNTIME", "claude") != "local"
-)
 
 # Task scripts include console-subsystem Python and PowerShell executables.
 # Suppress the transient console window on Windows while leaving POSIX process
 # creation unchanged.
 STEP_POPEN_EXTRA_KWARGS = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
-
-
-def assign_worker(task: Task, worker: Worker):
-    task.assigned_agent_id = worker.id
-    worker.current_task_id = task.id
-
-
-def release_worker(task: Task):
-    worker = workers.get(task.assigned_agent_id or "")
-    if worker and worker.current_task_id == task.id:
-        worker.current_task_id = None
-    task.assigned_agent_id = None
-
-
-def first_idle_worker() -> Worker | None:
-    return next((w for w in workers.values() if w.current_task_id is None), None)
-
-
-def worker_name(task: Task) -> str | None:
-    worker = workers.get(task.assigned_agent_id or "")
-    return worker.display_name if worker else None
 
 
 def discover_tasks():
@@ -318,114 +168,6 @@ def discover_tasks():
         if manifest_path.exists():
             manifest = json.loads(manifest_path.read_text())
             tasks[manifest["id"]] = Task(manifest, folder)
-
-
-def rescan_tasks():
-    # Unlike discover_tasks() (startup only), this must not wipe tasks that
-    # are mid-pipeline - it only adds newly-manifested folders and refreshes
-    # the manifest-derived fields (name/steps) on ones already tracked. Tasks
-    # whose folder/manifest disappeared get pruned (and their worker released);
-    # a folder deleted mid-run leaves its pipeline task alive and it errors
-    # out on its next step.
-    seen_ids = set()
-    for folder in sorted(TASKS_ROOT.iterdir()):
-        if not folder.is_dir() or folder.name in SKIP_DIRS:
-            continue
-        manifest_path = folder / "task.json"
-        if not manifest_path.exists():
-            continue
-        try:
-            manifest = json.loads(manifest_path.read_text())
-            task_id = manifest["id"]
-        except (json.JSONDecodeError, OSError, KeyError):
-            continue
-        seen_ids.add(task_id)
-        existing = tasks.get(task_id)
-        if existing:
-            existing.apply_manifest(manifest)
-        else:
-            tasks[task_id] = Task(manifest, folder)
-    for task_id in [tid for tid in tasks if tid not in seen_ids]:
-        release_worker(tasks[task_id])
-        del tasks[task_id]
-
-
-def persist_display_name(folder: Path, display_name: str):
-    manifest_path = folder / "task.json"
-    manifest = json.loads(manifest_path.read_text())
-    manifest["displayName"] = display_name
-    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
-
-
-def humanize_folder_name(name: str) -> str:
-    words = re.split(r"[-_]+", name)
-    return " ".join(w.capitalize() for w in words if w)
-
-
-def normalize_name_spacing(name: str) -> str:
-    # Small local models don't reliably follow a "no camelCase" instruction -
-    # insert spaces deterministically instead of trusting compliance.
-    return re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", name).strip()
-
-
-def gather_folder_context(folder: Path) -> str:
-    # TASK.md/README + each script's first lines (usually its docstring/purpose
-    # comment) is enough for a small model to infer what the agent does without
-    # sending it the whole (possibly large, possibly client-data-adjacent) folder.
-    parts = []
-    for doc_name in ("TASK.md", "README.md"):
-        doc = folder / doc_name
-        if doc.exists():
-            try:
-                parts.append(f"--- {doc_name} ---\n{doc.read_text(encoding='utf-8', errors='ignore')[:3000]}")
-            except OSError:
-                pass
-            break
-    scripts_dir = folder / "scripts"
-    if scripts_dir.is_dir():
-        script_files = sorted(scripts_dir.glob("*.py")) + sorted(scripts_dir.glob("*.ps1"))
-        for f in script_files[:12]:
-            try:
-                head = "\n".join(f.read_text(encoding="utf-8", errors="ignore").splitlines()[:25])
-                parts.append(f"--- scripts/{f.name} (first lines) ---\n{head}")
-            except OSError:
-                continue
-    return "\n\n".join(parts)[:8000]
-
-
-def suggest_name_via_ollama(folder_name: str, context: str) -> dict:
-    fallback = {"name": humanize_folder_name(folder_name), "description": ""}
-    if not context.strip():
-        return fallback
-    prompt = (
-        "You are naming an internal business-automation agent for a PMO dashboard, "
-        "based on its folder contents below. Existing agents are named things like "
-        '"Aging Report Bot" and "Backlog Report Bot" - short, plain, professional, 3-6 words, '
-        "regular English with spaces between every word. Never camelCase or PascalCase "
-        '(write "Staffing Variance Bot", never "StaffingVarianceBot").\n\n'
-        f"Folder name: {folder_name}\n\n{context}\n\n"
-        'Respond with ONLY a JSON object and nothing else, no markdown fences: '
-        '{"name": "...", "description": "one plain sentence describing what it does"}'
-    )
-    payload = json.dumps({"model": OLLAMA_MODEL, "prompt": prompt, "stream": False}).encode("utf-8")
-    req = urllib.request.Request(
-        OLLAMA_URL, data=payload, headers={"Content-Type": "application/json"}, method="POST"
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=45) as resp:
-            raw = json.loads(resp.read().decode("utf-8")).get("response", "")
-    except (urllib.error.URLError, OSError, json.JSONDecodeError, TimeoutError):
-        return fallback
-    match = re.search(r"\{.*\}", raw, re.DOTALL)
-    if not match:
-        return fallback
-    try:
-        parsed = json.loads(match.group(0))
-    except json.JSONDecodeError:
-        return fallback
-    name = normalize_name_spacing(str(parsed.get("name") or "").strip().strip('"'))
-    description = str(parsed.get("description") or "").strip()
-    return {"name": name, "description": description} if name else fallback
 
 
 def set_state(task: Task, state: str, **kw):
@@ -613,7 +355,7 @@ def _read_history() -> list[dict]:
     return records
 
 
-# GET /tasks/<id>/history and /agents/<id>/metrics used to re-read and re-parse
+# GET /tasks/<id>/history used to re-read and re-parse
 # the whole (append-only, ever-growing) history.jsonl on every call. The parsed
 # result is kept per (path, mtime_ns, size): an append changes the size and any
 # rewrite changes the mtime, so a changed file is always re-read. The snapshot is
@@ -661,18 +403,13 @@ def _append_history(record: dict):
 
 def _finalize_run_record(task: Task, outcome: str, error: str | None = None, cleanup: dict | None = None):
     """Write the terminal record for a started run, exactly once. Runs that
-    never started (reject/reset from resting, direct run_pipeline calls in
-    scripts) have no run_started_at and leave no trace."""
+    never started (reject/reset from resting) have no run_started_at and leave no trace."""
     if task.run_started_at is None:
         return
-    worker = workers.get(task.assigned_agent_id or "")
     record = {
         "run_id": task.run_id,
         "task_id": task.id,
         "task_name": task.display_name,
-        "agent_id": task.assigned_agent_id,
-        "agent_name": worker.display_name if worker else None,
-        "runtime": task.runtime,
         "started_at": task.run_started_at,
         "ended_at": datetime.now(timezone.utc).isoformat(),
         "outcome": outcome,
@@ -703,28 +440,19 @@ def _fail_task(task: Task, step_id: str, error_text: str):
 
 def _finish_task(task: Task, steps: list[dict]):
     # Every successful finish funnels through here (python-only pipelines, runs
-    # ended by a confirm/send, the CLI fallback), so this is the one place a
-    # task's `cleanup` runs. Failed runs, resets and rejects never reach it.
+    # ended by a confirm/send), so this is the one place a task's `cleanup` runs. Failed runs, resets and rejects never reach it.
     cleanup = _cleanup_after_run(task)
     if steps:
-        who = worker_name(task)
         push_notification(
             task,
             "task.completed",
             f"{task.display_name}: task complete",
-            (
-                task.completed_message
-                or (f"{who} sent it - nothing else needed from you." if who else "Sent successfully - nothing else needed from you.")
-            )
+            (task.completed_message or "Sent successfully - nothing else needed from you.")
             + _cleanup_note(cleanup),
             *resolve_outputs(task),
         )
-    # Record before releasing: the worker's identity belongs on the record,
-    # and current_step must still name the last executed step.
+    # Record first: current_step must still name the last executed step.
     _finalize_run_record(task, "completed", cleanup=cleanup)
-    # Finished — the worker goes back to the idle pool. Error paths keep the
-    # assignment so Retry reuses the same worker; Reset/Reject release instead.
-    release_worker(task)
     set_state(task, "resting", current_step=None)
 
 
@@ -741,14 +469,11 @@ def _review_gate(task: Task, step: dict):
             *resolve_outputs(task),
         )
         return
-    who = worker_name(task)
     push_notification(
         task,
         "task.review_ready",
         f"{task.display_name}: draft ready for your review",
-        f"{who} has it built and waiting in Outlook - take a look before it goes out."
-        if who
-        else "The report's built and a draft is waiting in Outlook - take a look before it goes out.",
+        "The report's built and a draft is waiting in Outlook - take a look before it goes out.",
         *resolve_outputs(task),
     )
 
@@ -768,10 +493,9 @@ def _confirm_gate(task: Task, step: dict):
         )
 
 
-async def run_steps_local(task: Task, steps: list[dict]):
-    """Deterministic path: the backend runs each step's command as a
-    subprocess itself. Also the fallback whenever the Claude CLI session is
-    unavailable, desyncs, or dies mid-run (already-completed steps are skipped)."""
+async def run_steps(task: Task, steps: list[dict]):
+    """Run each step's command as a subprocess until a gate pauses the task or
+    the steps run out (already-completed steps are skipped)."""
     loop = asyncio.get_running_loop()
     for step in steps:
         if step["type"] == "review":
@@ -781,7 +505,7 @@ async def run_steps_local(task: Task, steps: list[dict]):
             _confirm_gate(task, step)
             return
         if step["id"] in task.completed_steps:
-            continue  # already ran under the CLI before it dropped - never re-run
+            continue  # already ran (a retry resumes after the last good step)
 
         set_state(task, task.state, current_step=step["id"])
         try:
@@ -806,213 +530,11 @@ async def run_steps_local(task: Task, steps: list[dict]):
     _finish_task(task, steps)
 
 
-def build_briefing(task: Task, steps: list[dict]) -> str:
-    """The task-briefing message sent to the worker's CLI session."""
-    lines = [
-        f"New task assignment: {task.display_name} (id: {task.id}).",
-        f"Task folder: {task.folder} - run every command from inside it.",
-        "",
-    ]
-    agent_doc = task.folder / "TASK.md"
-    if agent_doc.exists():
-        try:
-            lines += ["The task's own instructions follow:", "", agent_doc.read_text(encoding="utf-8")[:4000], ""]
-        except OSError:
-            pass
-    lines.append("Steps to execute, strictly in order:")
-    for i, step in enumerate(steps, 1):
-        if step["type"] == "review":
-            lines.append(f"{i}. REVIEW GATE (id: {step['id']}) - emit {sm.MARKER_GATE} review and STOP.")
-        elif step["type"] == "confirm":
-            lines.append(
-                f"{i}. CONFIRM GATE (id: {step['id']}) - guards a real email send. "
-                f"Emit {sm.MARKER_GATE} confirm and STOP until the human confirms."
-            )
-        elif step["type"] == "python":
-            args = " ".join(step.get("args", []))
-            lines.append(
-                f"{i}. Run: python {step['cmd']}" + (f" {args}" if args else "")
-                + f" - then emit {sm.MARKER_STEP_DONE} {step['id']} (or {sm.MARKER_STEP_FAIL} {step['id']} on failure)."
-            )
-        elif step["type"] == "powershell":
-            args = " ".join(step.get("args", []))
-            lines.append(
-                f"{i}. Run: powershell -NoProfile -ExecutionPolicy Bypass -File {step['cmd']}"
-                + (f" {args}" if args else "")
-                + f" - then emit {sm.MARKER_STEP_DONE} {step['id']} (or {sm.MARKER_STEP_FAIL} {step['id']} on failure)."
-            )
-    lines.append("")
-    lines.append(f"When the last step is done, emit {sm.MARKER_DONE}. Begin now.")
-    return "\n".join(lines)
-
-
-def _step_ids(steps: list[dict]) -> set[str]:
-    return {s["id"] for s in steps if s["type"] not in ("review", "confirm")}
-
-
-class _GatePause(Exception):
-    """Internal unwind marker: the watcher stopped at a gate. Not an error -
-    the task is parked waiting on the human's Approve/Confirm click."""
-
-
-async def consume_claude_events(task: Task, session, steps: list[dict]):
-    """Watch the worker's CLI stream until a gate, completion, or desync.
-
-    Gates: the state is set (awaiting_review/awaiting_send) and this function
-    RETURNS immediately, detaching from the stream - the turn's result event is
-    left for the endpoint that resumes the run, which waits for it as the
-    ready signal before sending the human's decision. Raises ClaudeSessionError
-    on anything ambiguous so the caller can resume the uncompleted steps
-    locally."""
-    cfg_timeout = (session.worker.session_config or {}).get("step_timeout_seconds", 600)
-    needed = _step_ids(steps) - task.completed_steps
-    while True:
-        event = await session.next_event(timeout=cfg_timeout)
-        etype = event.get("type")
-        if etype == "assistant":
-            for block in event.get("message", {}).get("content", []):
-                if block.get("type") == "tool_use":
-                    cmd = str(block.get("input", {}).get("command", ""))
-                    for step in steps:
-                        if step["type"] in ("review", "confirm"):
-                            continue
-                        if step["cmd"] in cmd and step["id"] not in task.completed_steps:
-                            set_state(task, task.state, current_step=step["id"])
-                            task.log_step(step["id"], "cmd", cmd)
-                elif block.get("type") == "text":
-                    for line in block.get("text", "").splitlines():
-                        parts = line.strip().split()
-                        if not parts:
-                            continue
-                        if parts[0] == sm.MARKER_STEP_DONE and len(parts) > 1:
-                            step_id = parts[1]
-                            task.completed_steps.add(step_id)
-                            step = next((s for s in task.steps if s["id"] == step_id), None)
-                            if step and step.get("capturesEntryId"):
-                                entry_file = task.folder / "output" / "draft-entry-id.txt"
-                                if entry_file.exists():
-                                    task.entry_id = entry_file.read_text().strip()
-                        elif parts[0] == sm.MARKER_STEP_FAIL and len(parts) > 1:
-                            _fail_task(task, parts[1], " ".join(parts[2:]) if len(parts) > 2 else "step failed")
-                            return
-                        elif parts[0] == sm.MARKER_GATE and len(parts) > 1:
-                            gate = next(
-                                (s for s in steps if s["type"] == ("review" if parts[1] == "review" else "confirm")
-                                 and s["id"] not in task.completed_steps),
-                                None,
-                            )
-                            if gate is None:
-                                raise sm.ClaudeSessionError(f"gate marker '{parts[1]}' with no matching gate step")
-                            task.completed_steps.add(gate["id"])  # never re-pause at a passed gate
-                            if gate["type"] == "review":
-                                _review_gate(task, gate)
-                            else:
-                                _confirm_gate(task, gate)
-                            return
-        elif etype == "user":
-            # Tool results carry the step's stdout/stderr - surface them in the
-            # per-step log so the viewer shows real script output, not just markers.
-            result = event.get("tool_use_result")
-            if isinstance(result, dict):
-                step_id = task.current_step or ""
-                task.log_step(step_id, "stdout", result.get("stdout", ""))
-                task.log_step(step_id, "stderr", result.get("stderr", ""))
-        elif etype == "result":
-            if event.get("is_error"):
-                raise sm.ClaudeSessionError(str(event.get("result", "claude turn failed"))[:500])
-            if needed - task.completed_steps:
-                missing = sorted(needed - task.completed_steps)
-                raise sm.ClaudeSessionError(
-                    f"session finished without completing steps: {', '.join(missing)}"
-                )
-            _finish_task(task, steps)
-            return
-
-
-async def run_pipeline_claude(task: Task, worker: Worker, session, steps: list[dict]):
-    task.runtime = "claude"
-    session.tasks_run += 1
-    session.send(build_briefing(task, steps))
-    await consume_claude_events(task, session, steps)
-
-
-async def run_pipeline(task: Task, steps: list[dict]):
-    worker = workers.get(task.assigned_agent_id or "")
-    # A manifest "runtime": "local" task never goes through a Claude-CLI worker.
-    if session_manager.enabled and worker and not task.force_local:
-        session = session_manager.ensure(worker)
-        if session:
-            try:
-                await run_pipeline_claude(task, worker, session, steps)
-                return
-            except sm.ClaudeSessionError as exc:
-                # CLI desynced/died mid-run - finish the uncompleted steps
-                # deterministically. Gate pauses return normally above, so an
-                # exception here always means "not at a gate".
-                task.runtime = "local"
-                steps = [s for s in steps if s["id"] not in task.completed_steps]
-                if not steps:
-                    _finish_task(task, steps)
-                    return
-    await run_steps_local(task, steps)
-
-
 def _steps_after(task: Task, gate_id: str) -> list[dict] | None:
-    # None when the gate id no longer exists in the manifest - rescan_tasks()
-    # refreshes steps on live tasks, so a manifest edited mid-gate must degrade
-    # to ok:false, not an unhandled StopIteration 500.
+    # None when the gate id no longer exists in the manifest (edited mid-gate):
+    # that must degrade to ok:false, not an unhandled StopIteration 500.
     idx = next((i for i, s in enumerate(task.steps) if s["id"] == gate_id), None)
     return None if idx is None else task.steps[idx + 1 :]
-
-
-@app.get("/agents")
-async def list_agents():
-    # JSONResponse directly: skips FastAPI's recursive jsonable_encoder pass
-    # (same final json.dumps, so the body is byte-identical).
-    return JSONResponse([w.to_dict() for w in workers.values()])
-
-
-@app.get("/agents/{worker_id}/health")
-async def worker_health(worker_id: str):
-    if worker_id not in workers:
-        return {"ok": False, "reason": "unknown agent"}
-    return {"ok": True, **session_manager.health(worker_id)}
-
-
-def _duration_seconds(record: dict) -> float | None:
-    try:
-        started = datetime.fromisoformat(record["started_at"])
-        ended = datetime.fromisoformat(record["ended_at"])
-    except (KeyError, TypeError, ValueError):
-        return None
-    return (ended - started).total_seconds()
-
-
-@app.get("/agents/{worker_id}/metrics")
-async def worker_metrics(worker_id: str):
-    """Aggregates over this worker's history.jsonl records. Read-and-aggregate
-    per call is fine at this file's size; a missing/corrupt file yields zeroed
-    metrics, never a 500."""
-    worker = workers.get(worker_id)
-    if not worker:
-        return {"ok": False, "reason": "unknown agent"}
-    runs = [r for r in _history_snapshot()[0] if r.get("agent_id") == worker_id]
-    completed = [r for r in runs if r.get("outcome") == "completed"]
-    failed = [r for r in runs if r.get("outcome") == "failed"]
-    durations = [d for d in (_duration_seconds(r) for r in completed) if d is not None]
-    ended = [r["ended_at"] for r in runs if r.get("ended_at")]
-    return {
-        "ok": True,
-        "agent_id": worker_id,
-        "display_name": worker.display_name,
-        "tasks_completed": len(completed),
-        "tasks_failed": len(failed),
-        "success_rate": (len(completed) / len(runs)) if runs else None,
-        "avg_duration_seconds": (sum(durations) / len(durations)) if durations else None,
-        "last_active_at": max(ended) if ended else None,
-        # which runtime a new run would use (mirrors /health's runtime field)
-        "runtime_note": "claude" if session_manager.enabled else "local",
-    }
 
 
 @app.get("/tasks")
@@ -1040,32 +562,6 @@ async def task_log(task_id: str):
     return Response(task.log_json(), media_type="application/json")
 
 
-class ScheduleRequest(BaseModel):
-    daily: str | None = None  # "HH:MM" local, or null/absent to clear
-
-
-@app.post("/tasks/{task_id}/schedule")
-async def set_schedule(task_id: str, req: ScheduleRequest):
-    task = tasks.get(task_id)
-    if not task:
-        return {"ok": False, "reason": "unknown task"}
-    if req.daily is not None and not re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", req.daily):
-        return {"ok": False, "reason": "daily must be HH:MM (24h)"}
-    task.schedule = {"daily": req.daily} if req.daily else None
-    # Persist into the task's manifest so the schedule survives restarts.
-    try:
-        manifest_path = task.folder / "task.json"
-        manifest = json.loads(manifest_path.read_text())
-        if req.daily:
-            manifest["schedule"] = {"daily": req.daily}
-        else:
-            manifest.pop("schedule", None)
-        manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
-    except (OSError, json.JSONDecodeError) as exc:
-        return {"ok": False, "reason": f"could not persist schedule: {exc}"}
-    return {"ok": True, "schedule": task.schedule}
-
-
 @app.post("/tasks/{task_id}/start")
 async def start_task(task_id: str):
     task = tasks.get(task_id)
@@ -1076,21 +572,7 @@ async def start_task(task_id: str):
     missing = _missing_required_inputs(task)
     if missing:
         return {"ok": False, "reason": f"missing required input(s): {', '.join(missing)}", "missing": missing}
-    worker = None
-    is_retry = task.state == "error" and bool(task.assigned_agent_id)
-    if is_retry:
-        held = workers.get(task.assigned_agent_id)
-        if held and held.current_task_id == task.id:
-            worker = held  # a retry keeps the worker that hit the error
-        else:
-            is_retry = False
-    if worker is None:
-        release_worker(task)  # clears any stale half-assignment
-        worker = first_idle_worker()
-        is_retry = False
-    if not worker:
-        return {"ok": False, "reason": "no idle agents"}
-    assign_worker(task, worker)
+    is_retry = task.state == "error"
     # A retry resumes after whatever already completed rather than re-running
     # the whole pipeline - steps like create_draft have real-world side
     # effects (an Outlook draft), and re-running them on every retry after a
@@ -1107,45 +589,11 @@ async def start_task(task_id: str):
         task.step_output.clear()
         task.approvals = []
         entry_id = None
-    task.runtime = "local"
     task.run_id = str(uuid.uuid4())
     task.run_started_at = datetime.now(timezone.utc).isoformat()
     set_state(task, "working", error=None, entry_id=entry_id, current_step=None)
-    asyncio.create_task(run_pipeline(task, steps))
-    return {"ok": True, "agent": worker.id}
-
-
-async def _resume_claude(task: Task, message: str, remaining: list[dict]) -> bool:
-    """Hand the human's gate decision to the worker's CLI session and keep
-    watching. False when there's no live session - caller falls back local.
-
-    The session's previous turn ended when the watcher detached at the gate,
-    but its result event may still be in flight: that's the ready signal - we
-    wait for it before sending, so the decision message can never interleave
-    with a busy turn."""
-    session = session_manager.get(task.assigned_agent_id or "")
-    if not session:
-        return False
-
-    async def watch():
-        try:
-            await session.next_event(
-                timeout=(session.worker.session_config or {}).get("step_timeout_seconds", 600)
-            )  # previous turn's result
-            session.send(message)
-            await consume_claude_events(task, session, remaining)
-        except sm.ClaudeSessionError:
-            # Session desynced/died around the gate - finish what the CLI
-            # didn't get to, deterministically.
-            task.runtime = "local"
-            leftover = [s for s in remaining if s["id"] not in task.completed_steps]
-            if leftover:
-                await run_steps_local(task, leftover)
-            elif task.state not in ("awaiting_review", "awaiting_send"):
-                _finish_task(task, leftover)
-
-    asyncio.create_task(watch())
-    return True
+    asyncio.create_task(run_steps(task, steps))
+    return {"ok": True}
 
 
 @app.post("/tasks/{task_id}/approve")
@@ -1170,16 +618,7 @@ async def approve_task(task_id: str):
         return {"ok": False, "reason": "gate no longer exists in the manifest - reset the task"}
     _stamp_approval(task, "approve")
     set_state(task, "working")
-    if task.runtime == "claude" and await _resume_claude(
-        task,
-        "The human approved the draft. Continue with the remaining steps of the "
-        "same task, strictly in order, same marker protocol. Next up:\n"
-        + build_briefing(task, remaining).split("Steps to execute, strictly in order:", 1)[-1],
-        remaining,
-    ):
-        return {"ok": True}
-    task.runtime = "local"  # session died at the gate - finish locally
-    asyncio.create_task(run_steps_local(task, remaining))
+    asyncio.create_task(run_steps(task, remaining))
     return {"ok": True}
 
 
@@ -1190,7 +629,6 @@ async def reject_task(task_id: str):
         return {"ok": False, "reason": "unknown task"}
     if task.state != "awaiting_review":
         return {"ok": False, "reason": f"task is {task.state}"}
-    release_worker(task)
     # A rejected run writes no record - outcomes are only completed/failed.
     task.run_id = None
     task.run_started_at = None
@@ -1214,16 +652,7 @@ async def send_task(task_id: str):
         return {"ok": False, "reason": "gate no longer exists in the manifest - reset the task"}
     _stamp_approval(task, "send")
     set_state(task, "finishing")
-    if task.runtime == "claude" and await _resume_claude(
-        task,
-        "The human explicitly confirmed the send. Run the remaining steps now, "
-        "same marker protocol. Next up:\n"
-        + build_briefing(task, remaining).split("Steps to execute, strictly in order:", 1)[-1],
-        remaining,
-    ):
-        return {"ok": True}
-    task.runtime = "local"  # session died at the gate - finish locally
-    asyncio.create_task(run_steps_local(task, remaining))
+    asyncio.create_task(run_steps(task, remaining))
     return {"ok": True}
 
 
@@ -1232,37 +661,12 @@ async def reset_task(task_id: str):
     task = tasks.get(task_id)
     if not task:
         return {"ok": False, "reason": "unknown task"}
-    release_worker(task)
     task.completed_steps.clear()
-    task.runtime = "local"
     task.run_id = None
     task.run_started_at = None
     task.approvals = []
     set_state(task, "resting", error=None, current_step=None, entry_id=None)
     return {"ok": True}
-
-
-class RenameRequest(BaseModel):
-    displayName: str
-
-
-@app.post("/tasks/{task_id}/rename")
-async def rename_task(task_id: str, req: RenameRequest):
-    task = tasks.get(task_id)
-    if not task:
-        return {"ok": False, "reason": "unknown task"}
-    new_name = req.displayName.strip()
-    if not new_name:
-        return {"ok": False, "reason": "name cannot be empty"}
-    task.display_name = new_name
-    persist_display_name(task.folder, new_name)
-    return {"ok": True}
-
-
-@app.post("/tasks/rescan")
-async def rescan():
-    rescan_tasks()
-    return {"ok": True, "count": len(tasks)}
 
 
 # --- In-app incident review (monthly-report-deck) ---------------------------
@@ -1352,63 +756,9 @@ async def save_review_resolutions(task_id: str, req: ResolutionsRequest):
     return {"ok": True, "pending": len(_pending_review_numbers(task))}
 
 
-@app.get("/tasks/candidate-folders")
-async def candidate_folders():
-    # Top-level folders that could be added: not already registered, not a
-    # reserved name. Surfaced so "Add task" can offer a picker instead of
-    # requiring the user to type an exact path.
-    registered = {t.folder.name for t in tasks.values()}
-    out = []
-    for folder in sorted(TASKS_ROOT.iterdir()):
-        if not folder.is_dir() or folder.name in SKIP_DIRS or folder.name.startswith(".") or folder.name in registered:
-            continue
-        out.append({"name": folder.name, "hasManifest": (folder / "task.json").exists()})
-    return out
-
-
-class InspectRequest(BaseModel):
-    folder: str
-
-
-@app.post("/tasks/inspect")
-async def inspect_folder(req: InspectRequest):
-    folder = (TASKS_ROOT / req.folder).resolve()
-    try:
-        folder.relative_to(TASKS_ROOT.resolve())
-    except ValueError:
-        return {"ok": False, "reason": "path must be inside the tasks root"}
-    if not folder.is_dir():
-        return {"ok": False, "reason": "folder not found"}
-    if folder.name in SKIP_DIRS:
-        return {"ok": False, "reason": "reserved folder name"}
-
-    manifest_path = folder / "task.json"
-    has_manifest = manifest_path.exists()
-    existing_id = existing_name = None
-    if has_manifest:
-        try:
-            manifest = json.loads(manifest_path.read_text())
-            existing_id = manifest.get("id")
-            existing_name = manifest.get("displayName")
-        except (json.JSONDecodeError, OSError):
-            pass
-
-    loop = asyncio.get_event_loop()
-    context = await loop.run_in_executor(None, gather_folder_context, folder)
-    suggestion = await loop.run_in_executor(None, suggest_name_via_ollama, folder.name, context)
-    return {
-        "ok": True,
-        "hasManifest": has_manifest,
-        "existingId": existing_id,
-        "existingDisplayName": existing_name,
-        "suggestedName": suggestion["name"],
-        "suggestedDescription": suggestion["description"],
-    }
-
-
 def _open_with_default_app(path: str):
     # The task agents themselves stay Windows-only (Excel/Outlook COM) - this
-    # just keeps the backend importable and testable off-Windows.
+    # just keeps the engine importable and testable off-Windows.
     system = platform.system()
     if system == "Windows":
         os.startfile(path)
@@ -1455,7 +805,7 @@ async def open_notification_output(task_id: str, notif_id: str, path: str | None
 # Manifest-driven additions (see tasks/TASK-PLATFORM-CONTRACT.md). Every
 # endpoint replies HTTP 200 with {ok, reason?}. None of this touches Outlook:
 # the only process it ever spawns is a manifest-declared `prepare` python
-# script, run with this backend's interpreter. Every file it reads or writes
+# script, run with this engine's interpreter. Every file it reads or writes
 # stays inside the task's own input/ or output/ folder (no traversal, no
 # symlinks/junctions), and writes are atomic (temp file + os.replace).
 
@@ -1497,7 +847,7 @@ def _is_link(path: Path) -> bool:
 
 
 # --- poll-path caches ----------------------------------------------------------
-# The Tasks app polls GET /tasks and /agents every 2 s and, while a task dialog
+# The Tasks app polls GET /tasks every 2 s and, while a task dialog
 # is open, /log + /inputs (+ form/flags/diff/history on open). Everything below
 # exists so those GETs do not redo expensive work (path realpath calls, JSON
 # parsing, file hashing) when nothing on disk changed. Every cache is bounded,
@@ -1880,7 +1230,7 @@ async def _json_body(request: Request, key: str) -> dict:
 
 # --- input cleanup ("kept on file" vs. cleared after a run) --------------------
 # A manifest `cleanup: {"onComplete": true, "keep": ["input/..."]}` makes the
-# backend delete the task's uploaded input files once a run finishes
+# engine delete the task's uploaded input files once a run finishes
 # SUCCESSFULLY (the person's real data should not linger on disk), and
 # POST /tasks/{id}/cleanup does the same on demand while the task is resting.
 # One helper (_cleanup_inputs) serves both. It only ever removes regular files
@@ -2128,7 +1478,7 @@ def _cleanup_note(cleanup: dict | None) -> str:
 # The disk-reading poll GETs (inputs, form, diff, flags, history) are plain `def`
 # handlers on purpose: FastAPI runs them in its worker-thread pool, so a cold
 # cache (first hash of an uploaded file, first parse of a big gate file) never
-# stalls the event loop that also serves the 2-second /tasks and /agents polls.
+# stalls the event loop that also serves the 2-second /tasks poll.
 
 @app.get("/tasks/{task_id}/inputs")
 def get_inputs(task_id: str):
@@ -2283,7 +1633,7 @@ _register_upload_route(app, _multipart_installed())
 
 
 def _run_prepare(task: Task, cmd_path: Path) -> subprocess.CompletedProcess:
-    # No shell, stdin closed, the task's own folder as cwd, the backend's python.
+    # No shell, stdin closed, the task's own folder as cwd, the engine's python.
     return subprocess.run(
         [sys.executable, "-u", str(cmd_path)],
         cwd=task.folder, stdin=subprocess.DEVNULL, capture_output=True,
@@ -2562,5 +1912,20 @@ def get_flags(task_id: str):
         return exc.payload()
 
 
-discover_tasks()  # runs on every --reload restart, so folders removed since the last start don't linger
+discover_tasks()
+
+
+def main(argv: list[str] | None = None) -> None:
+    """`python main.py --port N`: serve on 127.0.0.1 only. The launcher picks a
+    free port and passes it here (the port is never hardcoded)."""
+    parser = argparse.ArgumentParser(description="AI OS Tasks engine")
+    parser.add_argument("--port", type=int, required=True, help="port to listen on (127.0.0.1 only)")
+    args = parser.parse_args(argv)
+    import uvicorn
+
+    uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="info")
+
+
+if __name__ == "__main__":
+    main()
 

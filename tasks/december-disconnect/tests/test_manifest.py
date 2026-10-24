@@ -19,7 +19,6 @@ ENGINE = Path(__file__).resolve().parents[3] / "tasks-engine"
 
 def test_manifest_shape():
     assert MANIFEST["id"] == "december-disconnect" and MANIFEST["displayName"] == "December Disconnect"
-    assert MANIFEST["runtime"] == "local"
     assert "final" in MANIFEST["completedMessage"] and "audit log" in MANIFEST["completedMessage"]
     assert "sent" not in MANIFEST["completedMessage"].lower()
     steps = MANIFEST["steps"]
@@ -86,10 +85,8 @@ def test_scripts_document_every_manifest_path():
     assert "output/final/" in text["finalize"] and "config/backups/" in text["finalize"]
 
 
-def test_agent_md_core_instructions_stay_short():
-    """Older runtimes truncate TASK.md: the core instructions must fit in 4000 characters."""
+def test_task_md_has_the_standard_sections():
     text = (TASK / "TASK.md").read_text(encoding="utf-8")
-    assert len(text) < 4000
     for heading in ("Purpose", "Inputs", "Current Workflow", "Testing"):
         assert re.search(rf"^## {heading}", text, re.M), heading
 
@@ -137,9 +134,9 @@ def test_engine_reads_the_manifest():
         "m = json.loads(Path(sys.argv[2]).read_text(encoding='utf-8'));"
         "t = engine.Task(m, Path(sys.argv[3]));"
         "d = t.to_dict();"
-        "print(json.dumps({'id': d['id'], 'runtime': d['runtime'], 'prepare': d['prepare'],"
+        "print(json.dumps({'id': d['id'], 'prepare': d['prepare'],"
         " 'inputs': [i['id'] for i in d['inputs']], 'steps': [(s['id'], s['type'], (s['gate'] or {}).get('type')) for s in d['steps']],"
-        " 'force_local': t.force_local, 'completed': getattr(t, 'completed_message', None)}))"
+        " 'completed': getattr(t, 'completed_message', None)}))"
     )
     done = subprocess.run([sys.executable, "-c", code, str(ENGINE), str(TASK / "task.json"), str(TASK)],
                           capture_output=True, text=True, timeout=120, cwd=TASK)
@@ -147,7 +144,7 @@ def test_engine_reads_the_manifest():
         pytest.skip("the engine's dependencies are not installed in this interpreter: " + done.stderr.strip().splitlines()[-1])
     assert done.returncode == 0, done.stderr[-800:]
     info = json.loads(done.stdout.strip().splitlines()[-1])
-    assert info["id"] == "december-disconnect" and info["runtime"] == "local" and info["force_local"] is True
+    assert info["id"] == "december-disconnect"
     assert info["prepare"] is True and info["inputs"] == ["roster", "staff", "analytics_a", "analytics_b", "window"]
     assert info["steps"] == [["analyze", "python", None], ["answers", "review", "form"],
                              ["build_draft", "python", None], ["review_draft", "review", "flags"],

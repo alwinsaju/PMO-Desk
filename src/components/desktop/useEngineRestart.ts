@@ -1,7 +1,7 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
-import { TASKS_ENGINE_URL } from "@/components/apps/tasks-app/api";
+import { getEngineUrl, resetEngineUrl } from "@/components/apps/tasks-app/engineUrl";
 import {
   ENGINE_RESTARTED_EVENT,
   probeEngine,
@@ -48,7 +48,7 @@ const browserFetch = (...args: Parameters<typeof fetch>) => fetch(...args);
 async function requestRestart() {
   if (status.kind === "checking" || status.kind === "working") return;
   setStatus({ kind: "checking" });
-  const probe = await probeEngine(browserFetch, TASKS_ENGINE_URL);
+  const probe = await probeEngine(browserFetch, await getEngineUrl());
   if (probe.reachable && probe.busy.length > 0) {
     setStatus({ kind: "confirm", busy: probe.busy });
     return;
@@ -62,7 +62,7 @@ async function runRestart() {
   setStatus({ kind: "working", phase: "stopping" });
   const outcome = await restartEngine({
     fetchImpl: browserFetch,
-    apiUrl: TASKS_ENGINE_URL,
+    apiUrl: await getEngineUrl(),
     onPhase: (phase) => setStatus({ kind: "working", phase }),
   });
 
@@ -71,6 +71,7 @@ async function runRestart() {
     return;
   }
 
+  resetEngineUrl(); // the new engine may be on another port
   window.dispatchEvent(new Event(ENGINE_RESTARTED_EVENT));
   const done: EngineRestartStatus = { kind: "done", message: outcome.message };
   setStatus(done);

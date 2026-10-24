@@ -15,17 +15,7 @@ import type {
   Task,
   UploadPayload,
 } from "./types";
-
-/**
- * Base URL of the Tasks engine (`tasks-engine/main.py` in this repo), a
- * separate local process this app is a live client of.
- * A single named constant rather than a literal repeated at every call
- * site; override via `NEXT_PUBLIC_TASKS_ENGINE_URL` if it ever runs
- * somewhere other than the default. Its CORS is already wide open
- * (`allow_origins=["*"]`), so this calls it directly with no proxy.
- */
-export const TASKS_ENGINE_URL =
-  process.env.NEXT_PUBLIC_TASKS_ENGINE_URL?.trim() || "http://localhost:8000";
+import { getEngineUrl } from "./engineUrl.ts";
 
 /** Every request is time-boxed so a half-dead connection (e.g. the engine
  *  restarting mid keep-alive) rejects promptly instead of hanging the poll
@@ -33,7 +23,7 @@ export const TASKS_ENGINE_URL =
 const REQUEST_TIMEOUT_MS = 8000;
 
 async function getJson<T>(path: string): Promise<T> {
-  const res = await fetch(`${TASKS_ENGINE_URL}${path}`, {
+  const res = await fetch(`${await getEngineUrl()}${path}`, {
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
   if (!res.ok) throw new Error(`GET ${path} failed: ${res.status}`);
@@ -55,7 +45,7 @@ const MAX_SHARED_PATHS = 64;
 const MAX_SHARED_TEXT = 2_000_000;
 
 async function getJsonShared<T>(path: string): Promise<T> {
-  const res = await fetch(`${TASKS_ENGINE_URL}${path}`, {
+  const res = await fetch(`${await getEngineUrl()}${path}`, {
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
   if (!res.ok) throw new Error(`GET ${path} failed: ${res.status}`);
@@ -77,7 +67,7 @@ async function readShared<T>(path: string, res: Response): Promise<T> {
 }
 
 async function postAction(path: string): Promise<ActionResult> {
-  const res = await fetch(`${TASKS_ENGINE_URL}${path}`, {
+  const res = await fetch(`${await getEngineUrl()}${path}`, {
     method: "POST",
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
@@ -213,7 +203,7 @@ export async function postReviewResolutions(
   resolutions: { number: string; subcategory2: string }[],
 ): Promise<ActionResult> {
   const res = await fetch(
-    `${TASKS_ENGINE_URL}/tasks/${encodeURIComponent(taskId)}/review-resolutions`,
+    `${await getEngineUrl()}/tasks/${encodeURIComponent(taskId)}/review-resolutions`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -259,7 +249,7 @@ async function callJson<T extends object>(
   { method = "GET", body, headers, timeoutMs = REQUEST_TIMEOUT_MS }: CallOptions = {},
 ): Promise<Reply<T>> {
   try {
-    const res = await fetch(`${TASKS_ENGINE_URL}${path}`, {
+    const res = await fetch(`${await getEngineUrl()}${path}`, {
       method,
       body,
       headers,

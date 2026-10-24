@@ -1,15 +1,15 @@
 import { NextResponse } from "next/server";
-import { isEngineRunning } from "../shared";
+import { findRunningEngine } from "../shared";
 
-// This reports live process state (is something answering on :8000 right
-// now) — never safe to treat as static/cacheable content.
+// This reports live process state (is a Tasks engine answering right now) —
+// never safe to treat as static/cacheable content.
 export const dynamic = "force-dynamic";
 
-/** GET /api/tasks-engine/status -> { running: boolean }. Cheap, read-only
- *  probe — see ../shared.ts. Not currently polled by the Tasks app itself
- *  (the start route below already blocks until it knows the outcome), but
- *  kept as its own endpoint per the feature's spec and as a small
- *  standalone "is it up" check other tooling can hit directly. */
+/** GET /api/tasks-engine/status -> { running: boolean, url: string | null }.
+ *  Cheap, read-only probe — see ../shared.ts. Not polled by the Tasks app
+ *  itself (the start route blocks until it knows the outcome); kept as a
+ *  standalone "is it up" check for other tooling. */
 export async function GET() {
-  return NextResponse.json({ running: await isEngineRunning() });
+  const url = await findRunningEngine();
+  return NextResponse.json({ running: url !== null, url });
 }

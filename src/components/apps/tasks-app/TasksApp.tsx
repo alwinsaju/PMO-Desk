@@ -2,7 +2,6 @@
 
 import { useCallback, useMemo, useState } from "react";
 import { ScrollArea, Tabs, TabsList, TabsTrigger } from "@/components/ui";
-import { TASKS_ENGINE_URL } from "./api";
 import { TaskCard } from "./TaskCard";
 import { TaskDetailDialog } from "./TaskDetailDialog";
 import { useTasksData } from "./useTasksData";
@@ -167,11 +166,8 @@ function EngineUnreachableNotice() {
         Can&apos;t reach the Tasks engine
       </p>
       <p className="text-ink-muted text-[13.5px]">
-        Make sure it&apos;s running on{" "}
-        <code className="text-ink-soft font-mono text-[12px]">
-          {TASKS_ENGINE_URL}
-        </code>
-        . This will connect automatically once it&apos;s available.
+        It starts with AI OS, so this is usually a moment&apos;s wait. This will
+        connect automatically once it&apos;s available.
       </p>
     </div>
   );

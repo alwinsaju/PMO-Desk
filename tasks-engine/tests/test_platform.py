@@ -1,10 +1,10 @@
 """Task platform extensions (tasks/TASK-PLATFORM-CONTRACT.md): manifest
 inputs/prepare/gates, upload, prepare, options, params, form, diff, flags, the
-start/approve/send guards, the approver stamp and `runtime: "local"`.
+start/approve/send guards and the approver stamp.
 
 Hermetic by construction: every task folder is a synthetic temp dir
-(TASKS_ROOT is patched to tmp_path), the Claude CLI runtime is disabled or
-faked, and nothing here can reach Outlook or the live backend on :8000."""
+(TASKS_ROOT is patched to tmp_path) and nothing here can reach Outlook or a
+running engine."""
 import asyncio
 import builtins
 import json
@@ -18,26 +18,6 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 import main as backend
-
-
-@pytest.fixture(autouse=True)
-def isolate_state(tmp_path, monkeypatch):
-    saved_tasks = dict(backend.tasks)
-    saved_enabled = backend.session_manager.enabled
-    backend.tasks.clear()
-    for w in backend.workers.values():
-        w.current_task_id = None
-    # Tests must never spawn or talk to a real Claude CLI.
-    backend.session_manager.enabled = False
-    monkeypatch.setattr(backend, "WORKSPACE_ROOT", tmp_path)
-    monkeypatch.setattr(backend, "TASKS_ROOT", tmp_path)
-    monkeypatch.setattr(backend, "HISTORY_FILE", tmp_path / "history.jsonl")
-    yield
-    backend.tasks.clear()
-    backend.tasks.update(saved_tasks)
-    backend.session_manager.enabled = saved_enabled
-    for w in backend.workers.values():
-        w.current_task_id = None
 
 
 # --- builders -----------------------------------------------------------------
@@ -89,7 +69,7 @@ PLATFORM_INPUTS = [
 ]
 
 
-def make_platform_task(root, name="plat", *, steps=None, inputs=None, prepare=None, runtime="local",
+def make_platform_task(root, name="plat", *, steps=None, inputs=None, prepare=None,
                        extra=None, prepare_script=PREPARE_OK):
     folder = root / name
     (folder / "scripts").mkdir(parents=True)
@@ -100,8 +80,6 @@ def make_platform_task(root, name="plat", *, steps=None, inputs=None, prepare=No
         "inputs": inputs if inputs is not None else PLATFORM_INPUTS,
         "prepare": prepare if prepare is not None else {"cmd": "scripts/prepare_options.py", "after": ["roster", "holidays"]},
     }
-    if runtime:
-        manifest["runtime"] = runtime
     manifest.update(extra or {})
     (folder / "task.json").write_text(json.dumps(manifest))
     (folder / "scripts" / "noop.py").write_text(NOOP)
@@ -158,8 +136,7 @@ def upload(c, task_id, input_id, name="a.xlsx", data=b"PK-data"):
                   files={"file": (name, data, "application/octet-stream")}).json()
 
 
-def at_gate(task, step_id, state="awaiting_review", worker="adam"):
-    backend.assign_worker(task, backend.workers[worker])
+def at_gate(task, step_id, state="awaiting_review"):
     backend.set_state(task, state, current_step=step_id)
 
 
@@ -173,7 +150,7 @@ async def wait_for(predicate, tries=500):
 
 # --- manifest parsing and GET /tasks -------------------------------------------
 
-LEGACY_KEYS = {"id", "displayName", "state", "error", "currentStep", "assignedAgentId", "steps", "notifications", "schedule"}
+LEGACY_KEYS = {"id", "displayName", "state", "error", "currentStep", "steps", "notifications"}
 
 
 def test_legacy_task_to_dict_only_gains_keys(tmp_path):
@@ -185,10 +162,10 @@ def test_legacy_task_to_dict_only_gains_keys(tmp_path):
     d = backend.tasks["legacy"].to_dict()
 
     assert LEGACY_KEYS <= set(d)
-    assert set(d) - LEGACY_KEYS == {"runtime", "inputs", "prepare", "cleanup"}
+    assert set(d) - LEGACY_KEYS == {"inputs", "prepare", "cleanup"}
     assert (d["id"], d["displayName"], d["state"], d["error"]) == ("legacy", "legacy", "resting", None)
-    assert (d["currentStep"], d["assignedAgentId"], d["notifications"], d["schedule"]) == (None, None, [], None)
-    assert d["inputs"] == [] and d["prepare"] is False and d["runtime"] is None and d["cleanup"] is None
+    assert (d["currentStep"], d["notifications"]) == (None, [])
+    assert d["inputs"] == [] and d["prepare"] is False and d["cleanup"] is None
     for step, expected in zip(d["steps"], [("build", "python"), ("review_gate", "review"), ("send_gate", "confirm")]):
         assert (step["id"], step["type"]) == expected
         assert step["label"] is None and step["gate"] is None
@@ -199,7 +176,6 @@ def test_platform_task_exposes_manifest_additions(tmp_path):
     make_platform_task(tmp_path)
     body = client().get("/tasks").json()[0]
 
-    assert body["runtime"] == "local"
     assert body["prepare"] is True
     assert [i["id"] for i in body["inputs"]] == ["roster", "holidays", "pto", "cycle"]
     assert body["inputs"][0]["dest"] == "input/roster.xlsx"
@@ -212,31 +188,14 @@ def test_platform_task_exposes_manifest_additions(tmp_path):
 def test_malformed_platform_keys_are_ignored(tmp_path):
     make_platform_task(tmp_path, inputs=[{"label": "no id"}, "junk", {"id": "ok", "type": "file"}],
                        prepare={"after": ["x"]},
-                       steps=[{"id": "a", "type": "review", "gate": "oops"}, {"id": "b", "type": "review", "gate": {"file": "x"}}],
-                       runtime=None)
+                       steps=[{"id": "a", "type": "review", "gate": "oops"}, {"id": "b", "type": "review", "gate": {"file": "x"}}])
     d = backend.tasks["plat"].to_dict()
 
     assert [i["id"] for i in d["inputs"]] == ["ok"]
     assert d["prepare"] is False
     assert [s["gate"] for s in d["steps"]] == [None, None]
-    assert d["runtime"] is None
     backend.tasks["plat"].apply_manifest({"id": "plat", "steps": [], "inputs": "nope", "prepare": "nope"})
     assert backend.tasks["plat"].inputs == [] and backend.tasks["plat"].prepare is None
-
-
-def test_rescan_refreshes_platform_fields(tmp_path):
-    folder = make_platform_task(tmp_path, runtime=None)
-    task = backend.tasks["plat"]
-    assert task.force_local is False
-    manifest = json.loads((folder / "task.json").read_text())
-    manifest["runtime"] = "local"
-    manifest["inputs"] = []
-    (folder / "task.json").write_text(json.dumps(manifest))
-
-    backend.rescan_tasks()
-
-    assert backend.tasks["plat"] is task
-    assert task.force_local is True and task.inputs == []
 
 
 # --- path safety --------------------------------------------------------------
@@ -885,7 +844,7 @@ def test_start_refused_until_required_inputs_present(tmp_path):
     resp = asyncio.run(backend.start_task("plat"))
     assert resp["ok"] is False and resp["missing"] == ["cycle"]
     assert "cycle" in resp["reason"]
-    assert backend.tasks["plat"].assigned_agent_id is None and backend.tasks["plat"].state == "resting"
+    assert backend.tasks["plat"].state == "resting"
 
     (folder / "input" / "holiday-roster.xlsx").unlink()
     assert asyncio.run(backend.start_task("plat"))["missing"] == ["holidays", "cycle"]
@@ -1127,7 +1086,6 @@ def test_form_post_refuses_answers_path_outside_task_or_through_a_link(tmp_path)
         at_gate(task, "answers")
         body = client().post(f"/tasks/{task.id}/form", json={"answers": {"note": "x"}}).json()
         assert body["ok"] is False
-        backend.release_worker(task)
     assert not (tmp_path / "answers.json").exists()
 
     steps = [{"id": "answers", "type": "review",
@@ -1135,7 +1093,7 @@ def test_form_post_refuses_answers_path_outside_task_or_through_a_link(tmp_path)
     folder = make_platform_task(tmp_path, name="linked", steps=steps)
     write(folder, "output/ask-me.json", FORM_SCHEMA)
     make_link(folder / "output" / "linked", outside)
-    at_gate(backend.tasks["linked"], "answers", worker="ash")
+    at_gate(backend.tasks["linked"], "answers")
     body = client().post("/tasks/linked/form", json={"answers": {"note": "x"}}).json()
     assert body["ok"] is False and "symbolic" in body["reason"]
     assert list(outside.iterdir()) == []
@@ -1157,7 +1115,6 @@ def test_approve_refused_at_form_gate_with_pending_required_fields(tmp_path):
 
     assert resp["ok"] is False and resp["pending"] == ["note"]
     assert task.state == "awaiting_review" and task.approvals == []
-    assert backend.workers["adam"].current_task_id == "plat"
 
 
 def test_approve_refused_when_form_schema_is_missing(tmp_path):
@@ -1313,7 +1270,7 @@ def test_full_run_stamps_every_approve_and_send_into_history(tmp_path, monkeypat
     asyncio.run(go())
 
     (record,) = [json.loads(line) for line in (tmp_path / "history.jsonl").read_text().splitlines() if "run_id" in line]
-    assert record["outcome"] == "completed" and record["runtime"] == "local"
+    assert record["outcome"] == "completed"
     assert [(a["step"], a["kind"], a["user"]) for a in record["approvals"]] == [
         ("answers", "approve", "alice"), ("review_draft", "approve", "alice"), ("confirm_diff", "send", "alice")]
     for a in record["approvals"]:
@@ -1422,57 +1379,6 @@ def test_history_endpoint_adds_empty_approvals_to_old_records(tmp_path):
     assert "approvals" not in json.loads((tmp_path / "history.jsonl").read_text().splitlines()[0])  # file untouched
 
 
-# --- runtime: local -------------------------------------------------------------
-
-class _ExplodingSessions:
-    enabled = True
-
-    def ensure(self, worker):
-        raise AssertionError("a runtime:local task must never reach a Claude CLI session")
-
-    def get(self, worker_id):
-        return None
-
-
-def test_runtime_local_task_never_uses_a_claude_session(tmp_path, monkeypatch):
-    make_platform_task(tmp_path, steps=[{"id": "noop", "type": "python", "cmd": "scripts/noop.py"}], inputs=[], prepare=None)
-    monkeypatch.setattr(backend, "session_manager", _ExplodingSessions())
-    task = backend.tasks["plat"]
-    backend.assign_worker(task, backend.workers["adam"])
-
-    asyncio.run(backend.run_pipeline(task, task.steps))
-
-    assert task.state == "resting" and task.runtime == "local" and task.completed_steps == {"noop"}
-
-
-def test_task_without_runtime_key_still_uses_the_claude_session(tmp_path, monkeypatch):
-    make_platform_task(tmp_path, steps=[{"id": "noop", "type": "python", "cmd": "scripts/noop.py"}], inputs=[], prepare=None, runtime=None)
-    used = []
-
-    class Session:
-        tasks_run = 0
-        worker = types.SimpleNamespace(session_config={"step_timeout_seconds": 5})
-        sent = []
-
-        def send(self, text):
-            self.sent.append(text)
-
-        async def next_event(self, timeout):
-            return {"type": "result", "is_error": False}
-
-    def ensure(worker):
-        used.append(worker.id)
-        return Session()
-
-    monkeypatch.setattr(backend, "session_manager", types.SimpleNamespace(enabled=True, ensure=ensure, get=lambda _id: None))
-    task = backend.tasks["plat"]
-    backend.assign_worker(task, backend.workers["adam"])
-
-    asyncio.run(backend.run_pipeline(task, task.steps))
-
-    assert used == ["adam"]  # CLI path attempted (then desync fallback) - unchanged behavior
-
-
 # --- reviewMessage notifications --------------------------------------------------
 
 def test_review_gate_uses_manifest_review_message(tmp_path):
@@ -1510,8 +1416,7 @@ def test_pipeline_pause_at_confirm_with_message_notifies(tmp_path):
         {"id": "c", "type": "confirm", "reviewMessage": "Please confirm"},
     ], inputs=[], prepare=None)
     task = backend.tasks["plat"]
-    backend.assign_worker(task, backend.workers["adam"])
-    asyncio.run(backend.run_pipeline(task, task.steps))
+    asyncio.run(backend.run_steps(task, task.steps))
     assert task.state == "awaiting_send" and task.notifications[0]["body"] == "Please confirm"
 
 
@@ -1572,7 +1477,6 @@ def test_completed_message_replaces_the_sent_it_text(tmp_path):
     make_platform_task(tmp_path, extra={"completedMessage": "  The final roster is ready.  "})
     task = backend.tasks["plat"]
     assert task.completed_message == "The final roster is ready."
-    backend.assign_worker(task, backend.workers["adam"])
     backend._finish_task(task, task.steps)
     assert task.notifications[-1]["kind"] == "task.completed"
     assert task.notifications[-1]["body"] == "The final roster is ready."

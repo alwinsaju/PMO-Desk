@@ -1,4 +1,4 @@
-"""Shift Roster end to end through the REAL backend code.
+"""Shift Roster end to end through the REAL engine code.
 
 Drives the whole lifecycle of the `shift-roster` task (tasks/TASK-PLATFORM-CONTRACT.md)
 through FastAPI's TestClient: manifest -> uploads -> prepare -> options -> params -> start ->
@@ -8,14 +8,11 @@ reads. The task's scripts really run as subprocesses with this interpreter, exac
 production (`[sys.executable, "-u", cmd]`, cwd = the task folder).
 
 Hermetic by construction:
-* TASKS_ROOT / HISTORY_FILE / WORKSPACE_ROOT point at a temp dir; the live backend (port 8000)
-  is never contacted and never started;
+* TASKS_ROOT / HISTORY_FILE point at a temp dir; no engine is ever contacted or started;
 * the task folder is a COPY of task.json + scripts/ (plus the shared roster_lib the scripts
   import) - no real input, config or output; every workbook comes from the task's own
   synthetic test helpers (`shift-roster/tests/synth.py`, fictional "Person NN" names);
-* the Claude-CLI runtime is off (manifest `runtime: "local"`, AI_OS_TASKS_RUNTIME=local,
-  `session_manager.enabled = False`), nothing here can reach Outlook/COM, and opening a file
-  with the OS default app is stubbed.
+* nothing here can reach Outlook/COM, and opening a file with the OS default app is stubbed.
 
 The tests skip when the AI OS tasks folder is not on this machine
 (override its location with AI_OS_TASKS_SRC).
@@ -65,26 +62,6 @@ EDITS = {
 
 
 # --- fixtures -----------------------------------------------------------------
-
-
-@pytest.fixture(autouse=True)
-def isolate_state(tmp_path, monkeypatch):
-    saved_tasks = dict(backend.tasks)
-    saved_enabled = backend.session_manager.enabled
-    backend.tasks.clear()
-    for w in backend.workers.values():
-        w.current_task_id = None
-    backend.session_manager.enabled = False  # never spawn or talk to a real Claude CLI
-    monkeypatch.setenv("AI_OS_TASKS_RUNTIME", "local")
-    monkeypatch.setattr(backend, "WORKSPACE_ROOT", tmp_path)
-    monkeypatch.setattr(backend, "TASKS_ROOT", tmp_path / "apps")
-    monkeypatch.setattr(backend, "HISTORY_FILE", tmp_path / "history.jsonl")
-    yield
-    backend.tasks.clear()
-    backend.tasks.update(saved_tasks)
-    backend.session_manager.enabled = saved_enabled
-    for w in backend.workers.values():
-        w.current_task_id = None
 
 
 _KIT = {}
@@ -153,8 +130,8 @@ class Env:
 
 @pytest.fixture
 def env(tmp_path, monkeypatch):
-    assert backend.session_manager.enabled is False
     e = Env(tmp_path)
+    monkeypatch.setattr(backend, "TASKS_ROOT", e.apps)
     monkeypatch.setattr(backend, "_open_with_default_app", lambda path: e.opened.append(str(path)))
     backend.discover_tasks()
     assert set(backend.tasks) == {TASK_ID}
@@ -293,9 +270,9 @@ def test_full_lifecycle(env, client):
 
     # 1. manifest parsed by GET /tasks: what the Tasks app renders
     t = task_json(c)
-    assert {"id", "displayName", "state", "error", "currentStep", "assignedAgentId", "steps",
-            "notifications", "schedule", "inputs", "prepare", "runtime"} <= set(t)
-    assert (t["state"], t["runtime"], t["prepare"]) == ("resting", "local", True)
+    assert {"id", "displayName", "state", "error", "currentStep", "steps",
+            "notifications", "inputs", "prepare"} <= set(t)
+    assert (t["state"], t["prepare"]) == ("resting", True)
     assert [i["id"] for i in t["inputs"]] == ["roster", "holidays", "pto", "cycle"]
     assert {i["id"]: i["required"] for i in t["inputs"]} == {"roster": True, "holidays": False, "pto": False, "cycle": True}
     # the Holiday Roster is optional and kept on file; only the roster gates Check inputs
@@ -474,7 +451,7 @@ def test_full_lifecycle(env, client):
     assert sha(master_copy) == master_sha
     assert post(c, "/send") == {"ok": True}
     t = wait_for_state(c, "resting")
-    assert t["error"] is None and t["currentStep"] is None and t["assignedAgentId"] is None
+    assert t["error"] is None and t["currentStep"] is None
 
     # 12. what the run left behind
     final = env.p(f"output/final/{FINAL_NAME}")
@@ -533,12 +510,12 @@ def test_full_lifecycle(env, client):
     runs = history(c)
     assert len(runs) == 1
     run = runs[0]
-    assert (run["outcome"], run["runtime"], run["error"], run["task_id"]) == ("completed", "local", None, TASK_ID)
+    assert (run["outcome"], run["error"], run["task_id"]) == ("completed", None, TASK_ID)
     assert run["steps_completed"] == ["analyze", "build_draft", "diff_draft", "finalize"]
     assert [(a["step"], a["kind"], a["user"]) for a in run["approvals"]] == [
         ("answers", "approve", OS_USER), ("review_draft", "approve", OS_USER), ("confirm_diff", "send", OS_USER)]
     assert all(a["at"] for a in run["approvals"])
-    assert {"run_id", "task_name", "agent_id", "agent_name", "started_at", "ended_at",
+    assert {"run_id", "task_name", "started_at", "ended_at",
             "current_step_at_end", "steps_completed", "approvals", "cleanup"} <= set(run)
     assert run["cleanup"]["removed"] == 2 and run["cleanup"]["skipped"] == 0 and run["cleanup"]["bytes"] > 0
     assert "Cleaned up 2 input files (" in done_note["body"]

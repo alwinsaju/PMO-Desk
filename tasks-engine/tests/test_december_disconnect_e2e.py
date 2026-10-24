@@ -1,4 +1,4 @@
-"""December Disconnect end to end through the REAL backend code.
+"""December Disconnect end to end through the REAL engine code.
 
 Drives the whole lifecycle of the `december-disconnect` task (tasks/TASK-PLATFORM-CONTRACT.md)
 through FastAPI's TestClient: manifest -> uploads (two required, two optional) -> prepare ->
@@ -11,17 +11,14 @@ The task's scripts really run as subprocesses with this interpreter, exactly as 
 (`[sys.executable, "-u", cmd]`, cwd = the task folder); each build solves two MILPs.
 
 Hermetic by construction:
-* TASKS_ROOT / HISTORY_FILE / WORKSPACE_ROOT point at a temp dir; the live backend (port 8000)
-  is never contacted and never started;
+* TASKS_ROOT / HISTORY_FILE point at a temp dir; no engine is ever contacted or started;
 * the task folder is a COPY of task.json + scripts/ plus the shared roster_lib and winter_lib the
   scripts import; every workbook and config comes from the task's own synthetic test helpers
   (`december-disconnect/tests/synth.py`: fictional "DIS01 Sample" / "Alpha Tester" names), which run
   in a SUBPROCESS so their module names (`synth`, `_common`, ...) never collide with the other
   e2e tests' in this pytest process. No real input, config or output is read;
 * the shift-roster config the cross-task step edits is a synthetic copy in the temp tasks root;
-* the Claude-CLI runtime is off (manifest `runtime: "local"`, AI_OS_TASKS_RUNTIME=local,
-  `session_manager.enabled = False`), nothing here can reach Outlook/COM, and opening a file
-  with the OS default app is stubbed.
+* nothing here can reach Outlook/COM, and opening a file with the OS default app is stubbed.
 
 The tests skip when the AI OS tasks folder is not on this machine
 (override its location with AI_OS_TASKS_SRC).
@@ -73,26 +70,6 @@ CONFIG_ROTATION = "config/rotation-config.json"
 
 
 # --- fixtures -----------------------------------------------------------------
-
-
-@pytest.fixture(autouse=True)
-def isolate_state(tmp_path, monkeypatch):
-    saved_tasks = dict(backend.tasks)
-    saved_enabled = backend.session_manager.enabled
-    backend.tasks.clear()
-    for w in backend.workers.values():
-        w.current_task_id = None
-    backend.session_manager.enabled = False  # never spawn or talk to a real Claude CLI
-    monkeypatch.setenv("AI_OS_TASKS_RUNTIME", "local")
-    monkeypatch.setattr(backend, "WORKSPACE_ROOT", tmp_path)
-    monkeypatch.setattr(backend, "TASKS_ROOT", tmp_path / "apps")
-    monkeypatch.setattr(backend, "HISTORY_FILE", tmp_path / "history.jsonl")
-    yield
-    backend.tasks.clear()
-    backend.tasks.update(saved_tasks)
-    backend.session_manager.enabled = saved_enabled
-    for w in backend.workers.values():
-        w.current_task_id = None
 
 
 _WORLD_BUILDER = """
@@ -169,14 +146,12 @@ class Env:
 
 @pytest.fixture
 def env(monkeypatch, world_template):
-    assert backend.session_manager.enabled is False
     # A SHORT temp root (not pytest's tmp_path): the task's archive step nests long file names
     # ("Analytics Winter Coverage DRAFT <window>.xlsx.snapshot.json") three folders deeper, which
     # overflows Windows' 260 character limit under a deep --basetemp. The real task lives in a
     # short path, so this is a test-environment concern only.
     root = Path(tempfile.mkdtemp(prefix="dd-"))
     try:
-        monkeypatch.setattr(backend, "WORKSPACE_ROOT", root)
         monkeypatch.setattr(backend, "TASKS_ROOT", root / "apps")
         monkeypatch.setattr(backend, "HISTORY_FILE", root / "history.jsonl")
         e = Env(root, world_template)
@@ -457,9 +432,9 @@ def test_full_lifecycle(env, client):
 
     # 1. manifest parsed by GET /tasks: what the Tasks app renders
     t = task_json(c)
-    assert {"id", "displayName", "state", "error", "currentStep", "assignedAgentId", "steps",
-            "notifications", "schedule", "inputs", "prepare", "runtime"} <= set(t)
-    assert (t["state"], t["runtime"], t["prepare"]) == ("resting", "local", True)
+    assert {"id", "displayName", "state", "error", "currentStep", "steps",
+            "notifications", "inputs", "prepare"} <= set(t)
+    assert (t["state"], t["prepare"]) == ("resting", True)
     assert [i["id"] for i in t["inputs"]] == ["roster", "staff", "analytics_a", "analytics_b", "window"]
     assert {i["id"]: i["required"] for i in t["inputs"]} == {
         "roster": True, "staff": True, "analytics_a": False, "analytics_b": False, "window": True}
@@ -699,7 +674,7 @@ def test_full_lifecycle(env, client):
     saved_main_sha, saved_an_sha = sha(env.main_draft), sha(env.an_draft)
     assert post(c, "/send") == {"ok": True}
     t = wait_for_state(c, "resting")
-    assert t["error"] is None and t["currentStep"] is None and t["assignedAgentId"] is None
+    assert t["error"] is None and t["currentStep"] is None
 
     # 12. both final files exist and ARE the confirmed saved drafts, byte for byte
     final_main, final_an = env.p(f"output/final/{MAIN_FINAL}"), env.p(f"output/final/{AN_FINAL}")
@@ -764,7 +739,7 @@ def test_full_lifecycle(env, client):
     runs = history(c)
     assert len(runs) == 1
     run = runs[0]
-    assert (run["outcome"], run["runtime"], run["error"], run["task_id"]) == ("completed", "local", None, TASK_ID)
+    assert (run["outcome"], run["error"], run["task_id"]) == ("completed", None, TASK_ID)
     assert run["steps_completed"] == ["analyze", "build_draft", "diff_draft", "finalize"]
     assert [(a["step"], a["kind"], a["user"]) for a in run["approvals"]] == [
         ("answers", "approve", OS_USER), ("review_draft", "approve", OS_USER), ("confirm_diff", "send", OS_USER)]

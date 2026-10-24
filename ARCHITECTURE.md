@@ -510,7 +510,11 @@ and shared Python libraries (`shared/roster_lib`, `shared/winter_lib`). The Task
 (`src/components/apps/tasks-app/`) is a client of the separate Tasks engine
 (`tasks-engine/` in this repo, a FastAPI service on 127.0.0.1), which discovers the task folders, runs each step as a
 subprocess and serves the platform endpoints (uploads, prepare, options, params, questions form, diff, flags,
-approver stamp). The next dev server starts that engine through `src/app/api/tasks-engine/start/route.ts`. The
+approver stamp). There is no worker pool: a task runs unless it is already running or waiting at a gate, and
+every step is a plain subprocess of the engine's own Python. The engine binds to 127.0.0.1 on a free port (first
+free of 8000-8019); `src/app/api/tasks-engine/start/route.ts` picks it, starts the engine (`python main.py --port N`),
+and the browser learns the address from `GET /api/tasks-engine/config` (`tasks-app/engineUrl.ts`). `GET /health` is
+the identity probe. The
 shapes the three parts share (manifest keys, endpoints, JSON files) are fixed in
 [`tasks/TASK-PLATFORM-CONTRACT.md`](./tasks/TASK-PLATFORM-CONTRACT.md). Task decisions and assumptions:
 [`tasks/DECISIONS-AND-ASSUMPTIONS.md`](./tasks/DECISIONS-AND-ASSUMPTIONS.md); how to run them the first

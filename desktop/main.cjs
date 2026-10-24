@@ -38,8 +38,6 @@ const PORT_SPAN = 100;
 const TASKS_ENGINE_START_TIMEOUT_MS = 60_000;
 const SERVER_STOP_TIMEOUT_MS = 10_000;
 const PORT_FREE_TIMEOUT_MS = 10_000;
-const TASKS_ENGINE_URL =
-  process.env.NEXT_PUBLIC_TASKS_ENGINE_URL?.trim() || "http://localhost:8000";
 const OUTPUT_TAIL_LINES = 25;
 
 let mainWindow;
@@ -383,7 +381,15 @@ async function restartUiServer({ confirmIfBusy }) {
 /** Read-only: names of tasks that are not resting. Empty if unreachable. */
 async function listBusyTasks() {
   try {
-    const response = await fetch(`${TASKS_ENGINE_URL}/tasks`, {
+    // The engine's port is picked at launch; ask the UI server where it is.
+    const config = await fetch(`${appUrl}/api/tasks-engine/config`, {
+      signal: AbortSignal.timeout(2_000),
+    });
+    const { url } = config.ok ? await config.json() : {};
+    if (!url) {
+      return [];
+    }
+    const response = await fetch(`${url}/tasks`, {
       signal: AbortSignal.timeout(2_000),
     });
     if (!response.ok) {

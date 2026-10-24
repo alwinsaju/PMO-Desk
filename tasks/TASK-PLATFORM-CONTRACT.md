@@ -1,7 +1,7 @@
 # Task platform contract (inputs, forms, diff gates)
 
 Shared contract between three parts of the Shift Roster / December Disconnect work:
-the agent-office backend (extensions), the task scripts (`tasks/<task>/scripts`),
+the Tasks engine (`tasks-engine/`), the task scripts (`tasks/<task>/scripts`),
 and the AI OS Tasks app (`src/components/apps/tasks-app`). All three code against
 this file. The existing behavior for the four older tasks and the hard-coded
 `review_incidents` gate MUST keep working unchanged.
@@ -19,7 +19,6 @@ All optional; tasks without them behave as today.
 {
   "id": "shift-roster",
   "displayName": "Shift Roster",
-  "runtime": "local",
   "completedMessage": "The final roster and the next-year file are ready in the output folder. The audit log is saved with them.",
   "inputs": [
     {"id": "roster",   "label": "Roster workbook",   "type": "file", "accept": [".xlsx"], "dest": "input/roster.xlsx",          "required": true},
@@ -43,13 +42,12 @@ All optional; tasks without them behave as today.
 }
 ```
 
-- `runtime: "local"`: the backend runs this task's python/powershell steps with its own subprocess path, never through a Claude-CLI worker.
 - `completedMessage` (optional, task level): plain-words body of the task-complete notification, used instead of the legacy "sent it" text.
 - `steps[].label` / `reviewMessage` (optional): UI text; the backend uses `reviewMessage` for the review-ready notification instead of the hard-coded text.
 - `steps[].gate` (optional, only meaningful on `review` / `confirm` steps): `type` is `form` | `flags` | `diff` | `none`; file paths are relative to the task folder.
 - `inputs[].type`: `file` (upload; `accept` extension allow-list; `dest` is under the task's `input/`) or `select` (options come from a JSON file written by the `prepare` script; `optionsKey` names the array in that file).
 - `prepare`: a read-only computation script run on demand while the task is `resting`, after the listed inputs exist; it writes `output/options.json`.
-- Step ids stay unique. `GET /tasks` exposes `inputs` (each entry also carries `persist`, always a boolean), `prepare` (bool), `runtime`, `cleanup` (the normalised manifest object or `null`), and each step's `id`, `type`, `label`, `gate: {type, ...file names}`.
+- Step ids stay unique. `GET /tasks` exposes `inputs` (each entry also carries `persist`, always a boolean), `prepare` (bool), `cleanup` (the normalised manifest object or `null`), and each step's `id`, `type`, `label`, `gate: {type, ...file names}`.
 - `inputs[].persist` (optional, `true` only; default false): the file is **kept on file** across runs (e.g. the Holiday Roster, which is also `required: false` and then falls back to a reference file; the app shows it as "on file" with its `modified` date, and the task's scripts must treat it as read-only and may check its coverage themselves, e.g. `prepare_options.py` disables a cycle whose calendar year has no row in it). It stays after a run, is never removed by cleanup (automatic or manual), and the `required` check is satisfied while the file exists. Re-uploading replaces it atomically like any other upload; if the input is listed in `prepare.after`, the existing rule still applies (options and saved select params are invalidated). An optional kept file (`required: false`) is left out of `prepare.after` so it never gates Check inputs or Start; the Tasks app shows an "Optional" tag and, while it is absent, "Not uploaded - the reference file will be used.", re-runs an earlier Check when it is uploaded, and shows options.json's optional `holiday_source` (`kind` `uploaded|reference`, `file`, `covers_years`) as a quiet line under the Check.
 - `cleanup` (optional, task level; absent = no cleanup, so tasks without it behave exactly as before): `{"onComplete": true, "keep": ["input/some-relative-path", ...]}`. `onComplete` must be exactly `true` to clean after runs (anything else, or an empty object, means manual cleanup only); `keep` lists paths relative to the task folder under `input/` (a file, or a folder to keep whole), matched case-insensitively; unsafe entries (`..`, absolute, drive letters, outside `input/`) never match anything. A task that declares `cleanup` must mark its main weekly/monthly upload `required: true` (after a cleanup the next run needs a fresh upload). `config/` and `output/` (apart from the stale options file below) are never touched, and a failed or abandoned run keeps its input so it can be retried.
   - When a run finishes SUCCESSFULLY (outcome `completed`, task back to `resting`; every step type, including runs ended by a `confirm`/send) the backend deletes the task's input files: every regular file under `input/` (recursively, then the now-empty subfolders) EXCEPT inputs flagged `persist`, `cleanup.keep` paths, dotfiles (`.gitkeep`) and anything that is a symlink/junction (never followed or deleted through; skipped and counted). It also deletes `input/run-params.json`, the `input/.uploads-meta.json` entries of removed files (the file itself when it ends up empty) and the stale prepare options file (the manifest options file, `output/options.json` by default - only for tasks that declare `prepare` or a `select` input). It NEVER deletes anything else under `output/` (finals, drafts, audit logs, backups stay).
@@ -57,10 +55,11 @@ All optional; tasks without them behave as today.
   - A file that cannot be deleted (e.g. open in Excel on Windows) is skipped and counted in `skipped`; the run's outcome stays `completed`.
   - The run's history record gains `cleanup: {"removed": n, "bytes": n, "skipped": n}` (counts only, no file names; the key is absent for tasks without `cleanup.onComplete`). When the run has a completion notification, its body gains a trailing " Cleaned up N input file(s) (12.4 MB)." (and " N input file(s) could not be removed (open in another program?)." when `skipped` > 0); the legacy/`completedMessage` text is otherwise unchanged. A run whose last step is the `confirm` has no completion notification (as before) but still cleans and records.
 
-## 2. Backend endpoints (new; all JSON, all `ok`/`reason`)
+## 2. Tasks engine endpoints (all JSON, all `ok`/`reason`)
 
 | Method | Path | Behavior |
 |---|---|---|
+| GET | `/health` | `{ok: true, service: "tasks-engine"}`. The identity probe the launcher uses to tell the engine from any other process on a port. |
 | GET | `/tasks/{id}/inputs` | `{ok, inputs: [{id,label,type,required,persist,present,modified,filename?,size?,sha256?}], params: {...saved}, cleanable: {files, bytes}}`. `persist` is a boolean; `modified` is the file's ISO-8601 UTC mtime (e.g. `2026-10-23T08:15:02.123456+00:00`), `null` when the input is absent (always `null` for `select` inputs); `cleanable` counts what a cleanup would remove right now (zeros when the task has neither `cleanup` nor inputs), so the UI can show "Clear input files (3 files, 12 MB)". |
 | POST | `/tasks/{id}/cleanup` | Clears the task's input files on demand with exactly the same rules and exclusions as the after-run cleanup. Only while `resting` (refused while running / awaiting / erroring, and while a prepare is running). Available for any task that declares `cleanup` OR any `inputs`; a task with neither replies `{ok:false, reason:"Nothing to clean"}`. Reply `{ok, removed, bytes, skipped}`. Does not write a history record (it is not a run). |
 | POST | `/tasks/{id}/upload?input=<id>` | multipart field `file`. Only while the task is `resting`. Checks: input exists and is `file`, extension in `accept` (case-insensitive), size <= 50 MB, resolved `dest` stays inside the task's `input/`, atomic write (temp then replace). Returns `{ok, input, filename, size, sha256}`. |

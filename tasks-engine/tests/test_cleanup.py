@@ -4,8 +4,8 @@
 POST /tasks/{id}/cleanup.
 
 Hermetic by construction: every task folder is a synthetic temp dir
-(TASKS_ROOT is patched to tmp_path), the Claude CLI runtime is disabled, and
-nothing here can reach Outlook or the live backend on :8000."""
+(TASKS_ROOT is patched to tmp_path) and nothing here can reach Outlook or a
+running engine."""
 import asyncio
 import json
 import os
@@ -18,25 +18,6 @@ from test_platform import (
     NOOP, PLATFORM_INPUTS, PLATFORM_STEPS, client, make_legacy_task, make_link, make_platform_task,
     upload, wait_for, write,
 )
-
-
-@pytest.fixture(autouse=True)
-def isolate_state(tmp_path, monkeypatch):
-    saved_tasks = dict(backend.tasks)
-    saved_enabled = backend.session_manager.enabled
-    backend.tasks.clear()
-    for w in backend.workers.values():
-        w.current_task_id = None
-    backend.session_manager.enabled = False
-    monkeypatch.setattr(backend, "WORKSPACE_ROOT", tmp_path)
-    monkeypatch.setattr(backend, "TASKS_ROOT", tmp_path)
-    monkeypatch.setattr(backend, "HISTORY_FILE", tmp_path / "history.jsonl")
-    yield
-    backend.tasks.clear()
-    backend.tasks.update(saved_tasks)
-    backend.session_manager.enabled = saved_enabled
-    for w in backend.workers.values():
-        w.current_task_id = None
 
 
 # --- builders -----------------------------------------------------------------
@@ -135,17 +116,6 @@ def test_persist_must_be_a_real_true(tmp_path):
     make_platform_task(tmp_path, inputs=inputs, prepare=None)
     assert client().get("/tasks").json()[0]["inputs"][0]["persist"] is False
     assert client().get("/tasks/plat/inputs").json()["inputs"][0]["persist"] is False
-
-
-def test_rescan_refreshes_cleanup(tmp_path):
-    folder = cleanup_task(tmp_path, seed=False)
-    task = backend.tasks["plat"]
-    assert task.cleanup is None
-    manifest = json.loads((folder / "task.json").read_text())
-    manifest["cleanup"] = {"onComplete": True}
-    (folder / "task.json").write_text(json.dumps(manifest))
-    backend.rescan_tasks()
-    assert task.cleanup == {"onComplete": True, "keep": []}
 
 
 # --- GET /inputs: persist, modified, cleanable -----------------------------------
@@ -262,7 +232,7 @@ def test_note_sizes_and_plurals():
 def test_nothing_to_clean_leaves_the_message_untouched_but_records_zero_counts(tmp_path):
     cleanup_task(tmp_path, cleanup={"onComplete": True}, inputs=OPTIONAL_INPUTS, seed=False)
     task = run_to_rest("plat")
-    assert task.notifications[0]["body"].endswith("sent it - nothing else needed from you.")
+    assert task.notifications[0]["body"].endswith("Sent successfully - nothing else needed from you.")
     assert "Cleaned up" not in task.notifications[0]["body"]
     assert history(tmp_path)[0]["cleanup"] == {"removed": 0, "bytes": 0, "skipped": 0}
 
@@ -321,7 +291,6 @@ def test_run_whose_last_step_is_the_confirm_still_cleans_and_records(tmp_path):
 def test_confirm_flow_cleans_when_the_cli_fallback_finishes_the_run(tmp_path):
     folder = cleanup_task(tmp_path, cleanup={"onComplete": True})
     task = backend.tasks["plat"]
-    backend.assign_worker(task, backend.workers["adam"])
     backend._finish_task(task, [])  # what the CLI-desync fallback calls when nothing is left
     assert not (folder / "input" / "roster.xlsx").exists()
     assert task.state == "resting"
@@ -342,14 +311,13 @@ def test_legacy_task_run_is_unchanged(tmp_path):
     write(folder, "input/data.csv", b"keep me")
     write(folder, "output/options.json", {"x": 1})
     task = backend.tasks["legacy"]
-    backend.assign_worker(task, backend.workers["adam"])
     task.run_id, task.run_started_at = "r1", "2026-01-01T00:00:00+00:00"
-    asyncio.run(backend.run_pipeline(task, task.steps))
+    asyncio.run(backend.run_steps(task, task.steps))
 
     assert (folder / "input" / "data.csv").exists() and (folder / "output" / "options.json").exists()
     (record,) = history(tmp_path)
     assert "cleanup" not in record
-    assert task.notifications[0]["body"].endswith("sent it - nothing else needed from you.")
+    assert task.notifications[0]["body"].endswith("Sent successfully - nothing else needed from you.")
 
 
 def test_failed_run_does_not_clean(tmp_path):

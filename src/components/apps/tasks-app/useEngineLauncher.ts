@@ -1,10 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { setEngineUrl } from "./engineUrl";
 
 export type LaunchPhase = "launching" | "ready" | "failed";
 
-export interface BackendLauncherState {
+export interface EngineLauncherState {
   phase: LaunchPhase;
   /** Set only when phase === "failed" — what to show the user. */
   reason: string | null;
@@ -15,6 +16,8 @@ export interface BackendLauncherState {
 interface StartResponse {
   ok: boolean;
   alreadyRunning?: boolean;
+  /** Where the engine listens (it picks a free port at launch). */
+  url?: string;
   reason?: string;
 }
 
@@ -40,7 +43,7 @@ const REQUEST_TIMEOUT_MS = 30_000;
  * useTasksData's own polling never even starts until the engine is
  * already known to be reachable — its very first poll should succeed.
  */
-export function useEngineLauncher(): BackendLauncherState {
+export function useEngineLauncher(): EngineLauncherState {
   const [phase, setPhase] = useState<LaunchPhase>("launching");
   const [reason, setReason] = useState<string | null>(null);
 
@@ -62,7 +65,8 @@ export function useEngineLauncher(): BackendLauncherState {
       .then((res) => res.json() as Promise<StartResponse>)
       .then((result) => {
         if (!aliveRef.current || token !== tokenRef.current) return;
-        if (result.ok) {
+        if (result.ok && result.url) {
+          setEngineUrl(result.url);
           setPhase("ready");
         } else {
           setPhase("failed");

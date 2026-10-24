@@ -21,7 +21,14 @@ tasks-engine\.venv\Scripts\python.exe -m pip install -r tasks-engine\requirement
 (path to any interpreter with the two requirements files installed), `tasks-engine/.venv`,
 then `pythonw`/`python` on PATH.
 
-To run it by hand: `cd tasks-engine` then `python -m uvicorn main:app --host 127.0.0.1 --port 8000`.
+The engine listens on **127.0.0.1 only**, on the port it is given: `python main.py --port N`.
+The launcher takes the first free port from 8000 to 8019 and tells the UI where it is
+(`GET /api/tasks-engine/config`); nothing is hardcoded. `GET /health` answers
+`{"ok": true, "service": "tasks-engine"}` so the launcher can tell it from any other process.
+
+To run it by hand: `cd tasks-engine` then `python main.py --port 8123`, and set
+`AI_OS_TASKS_ENGINE_URL=http://127.0.0.1:8123` for the UI server so it uses that engine
+instead of starting its own.
 
 ## Settings
 
@@ -30,6 +37,7 @@ To run it by hand: `cd tasks-engine` then `python -m uvicorn main:app --host 127
 | `AI_OS_TASKS_DIR` | Folder holding the task folders and `shared/`. Default: `../tasks`. |
 | `AI_OS_TASKS_DATA_DIR` | Where run history is kept. Default: `tasks-engine/.data` (gitignored). |
 | `AI_OS_TASKS_PYTHON` | Python used to launch the engine (and so every task step). |
+| `AI_OS_TASKS_ENGINE_URL` | Set on the UI server to use an engine you started by hand. |
 
 ## Tests
 

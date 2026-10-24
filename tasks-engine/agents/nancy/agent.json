@@ -1,7 +1,0 @@
-{
-  "id": "nancy",
-  "displayName": "Nancy",
-  "avatar": "nancy.png",
-  "capabilities": ["servicenow_data_matching", "excel_pivot_tables", "schedule_tracking"],
-  "traits": "steady, process-driven, dependable"
-}
