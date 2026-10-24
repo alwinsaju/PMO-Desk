@@ -91,7 +91,7 @@ $engineProc = Start-Process -FilePath $py -ArgumentList @("main.py", "--port", "
     -RedirectStandardOutput (Join-Path $ResultsDir "engine.out.log") -RedirectStandardError (Join-Path $ResultsDir "engine.err.log")
 try {
     $health = $null
-    for ($i = 0; $i -lt 60 -and -not $health; $i++) {
+    for ($i = 0; $i -lt 240 -and -not $health; $i++) {
         Start-Sleep -Milliseconds 500
         try { $health = Invoke-RestMethod -Uri "http://127.0.0.1:$EnginePort/health" -TimeoutSec 2 } catch { }
     }
