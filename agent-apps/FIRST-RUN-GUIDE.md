@@ -33,7 +33,10 @@ confirm), [`ACCEPTANCE.md`](./ACCEPTANCE.md) (test evidence per criterion),
    browser; the two tasks appear with an `inputs` list.)
 3. **Have these files ready** (any location; you upload them in the app):
    - the live roster workbook (the file with the sheet `PDT Operate`);
-   - the Holiday Roster 2026 file (Holiday name, Date, one column per location, `X` = off);
+   - optional: a new Holiday Roster (Holiday name, Date, one column per location, `X` = off). You do **not** need one:
+     the Holiday Roster 2026 reference copy in `agent-apps\shared\roster-reference\` is used automatically. When the
+     PMO shares next year's file, drop `Holiday Roster 2027.xlsx` into that folder (or upload it in the app); the file
+     that covers the cycle (newest first) is chosen;
    - optional: a PTO import (Name, From, To, Code P/T/SL);
    - for December Disconnect: the PDT staff roster, and optionally the two monthly Analytics rosters (Oct, Nov).
    Templates: `agent-apps\shared\roster_lib\examples\holiday_roster_template.xlsx` and `pto_import_template.xlsx`.
@@ -53,17 +56,19 @@ confirm), [`ACCEPTANCE.md`](./ACCEPTANCE.md) (test evidence per criterion),
 | Backup of the master | `shift-roster\output\backups\roster.<hash>.xlsx` |
 | Settings you can edit | `shift-roster\config\rotation-config.json`, `december-disconnect\config\winter-config.json`, `analytics-config.json`, optional `task-config.json` |
 | Config backups | `shift-roster\config\backups\rotation-config.<UTC time>.json` (made before each change) |
-| Reference copies for developers | `agent-apps\shared\roster-reference\`: only for tests and the seed script, **not read by the Tasks app** |
+| Reference copies | `agent-apps\shared\roster-reference\`: used by tests and the seed script; the Shift Roster task also reads its `Holiday Roster*.xlsx` file(s) when you do not upload a Holiday Roster (read-only, never changed or deleted) |
 
 `input/`, `output/` and `config/` hold real employee data and are gitignored.
 
 ## 2. Shift Roster, step by step
 
 1. In the Tasks app press **Run** on **Shift Roster**. The Run dialog opens.
-2. **Upload** the roster workbook and the **Holiday Roster 2026** file (drag and drop, or choose). Optionally upload
-   the PTO import.
-3. Press **Check inputs**. It reads the files (up to a minute) and lists the cycles. Problems (for example a bad
-   Holiday Roster row) appear in a list.
+2. **Upload** the roster workbook (drag and drop, or choose). Optionally upload the PTO import and, only if you have a
+   newer one, a Holiday Roster; otherwise the reference file is used (the dialog says "Not uploaded - the reference
+   file will be used").
+3. Press **Check inputs** (available as soon as the roster is uploaded). It reads the files (up to a minute) and lists
+   the cycles; a quiet line under it says which Holiday Roster will be used ("reference file (covers 2026-2027)" or
+   "uploaded file"). Problems (for example a bad Holiday Roster row) appear in a list.
 4. **Choose the cycle**: the default is Dec 2026 - Jan 2027 (`2026-12`). A greyed-out cycle explains itself when you
    hover (previous cycle not at 95% data, config or Holiday Roster unusable).
 5. Press **Start**. The task analyses the roster and stops at **Answer questions** (a few seconds).
@@ -201,6 +206,8 @@ Scripts print counts only (no names) in their log lines, so the Log tab is safe 
 |---|---|---|
 | A cycle is greyed out; hover says the previous cycle has too little data | Fewer than 95% of person-weeks of the previous cycle have a code | Fill the previous cycle in the roster, or pick the cycle that is enabled. |
 | "no cycle can be selected" / "The Holiday Roster cannot be used: ..." | Bad or missing rows in the Holiday Roster (messages quote row numbers) | Fix the file, upload it again, **Check inputs** again. |
+| A cycle is greyed out with "Holiday Roster (reference file) has no 2027 rows ..." | The reference Holiday Roster does not cover a year the cycle touches | Drop the new year's `Holiday Roster 2027.xlsx` into `agent-apps\shared\roster-reference\`, or upload it in the dialog, then **Check inputs** again. |
+| "no Holiday Roster: upload one or add one to roster-reference" | No upload and no `Holiday Roster*.xlsx` in the reference folder | Upload a Holiday Roster, or put one in `agent-apps\shared\roster-reference\`. |
 | **Run** does not show upload boxes | Old backend still running | Section 0, step 1. |
 | Start is greyed out ("Still needed: ...") | A required file or the cycle/window is missing | Upload it or choose the option. |
 | Approve is refused at Questions | A required answer is missing, or you have unsaved answers | Press **Save answers** first, answer the required (marked) questions. |
@@ -240,3 +247,18 @@ Scripts print counts only (no names) in their log lines, so the Log tab is safe 
    `Winter Plan` cell. Approve. The Changes tab should show a blocking row and the confirm button should be refused.
    Press **Start over**.
 3. **Open the Log tab** during a run to see the live progress lines.
+
+## 10. Getting fixes without reinstalling
+
+You should not need to reinstall AI OS when a bug is fixed:
+
+* **Screen/layout fixes** (the Tasks app, dialogs, menus) show up on their own: the installed app runs the UI from
+  the project folder (`C:\Projects\AI OS`) and reloads when the code changes. The window title shows
+  `AI OS (live-dev: ...)` when this is active; `Help > About AI OS` explains it if it fell back to the bundled copy.
+  If a page looks stale, use `View > Reload`, or `Developer > Restart UI server` (this also restarts the backend).
+* **Task and backend fixes** (scripts, `agent.json` manifests, the agent-office code) load when the backend
+  restarts: click the **gear icon (top right) > Restart backend**. It first looks at the Tasks app state: if a task
+  is **working**, **needs review** or **needs confirm**, it lists it and asks you to confirm, because a restart
+  stops that run (default is Cancel). Finish or reset the run first when in doubt. It works only on a backend that AI
+  OS itself started; if you started the backend by hand it tells you so and leaves it alone.
+* A reinstall is needed only when the Electron shell itself changes (you will be told).

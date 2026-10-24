@@ -2,7 +2,7 @@
 // start/route.ts). Not a route itself — Next.js's App Router only treats an
 // exact `route.ts` filename as a route, so a plain module living alongside
 // them is never exposed as an endpoint; it's just code both routes import.
-import type { ChildProcess } from "node:child_process";
+import { spawnSync, type ChildProcess } from "node:child_process";
 import { AGENT_OFFICE_API_URL } from "@/components/apps/tasks-app/api";
 
 declare global {
@@ -66,7 +66,7 @@ export async function stopDesktopBackend(): Promise<boolean> {
     }, STOP_TIMEOUT_MS);
 
     child.once("exit", onExit);
-    if (!child.kill()) {
+    if (!terminateProcessTree(child)) {
       clearTimeout(timeout);
       child.removeListener("exit", onExit);
       reject(new Error("The owned Agent Office backend could not be terminated."));
@@ -74,4 +74,23 @@ export async function stopDesktopBackend(): Promise<boolean> {
   });
 
   return true;
+}
+
+/**
+ * Stops the backend and everything it started. On Windows the venv's
+ * `pythonw.exe` can be a launcher that relays to the real interpreter, so a
+ * plain `child.kill()` could leave uvicorn running and holding the port;
+ * `taskkill /T /F` takes the whole tree. Elsewhere a normal kill is enough.
+ */
+function terminateProcessTree(child: ChildProcess): boolean {
+  if (process.platform === "win32" && child.pid) {
+    const result = spawnSync("taskkill", ["/PID", String(child.pid), "/T", "/F"], {
+      stdio: "ignore",
+      windowsHide: true,
+      shell: false,
+      timeout: 5_000,
+    });
+    if (result.status === 0) return true;
+  }
+  return child.kill();
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { BACKEND_RESTARTED_EVENT } from "@/lib/backendRestart";
 import { fetchAgents, fetchTasks } from "./api";
 import { canStartFromAgents } from "./taskPresenter";
 import type { Agent, Task } from "./types";
@@ -98,6 +99,14 @@ export function useAgentOfficeData(): AgentOfficeData {
 
   const refetch = useCallback(() => {
     pollRef.current();
+  }, []);
+
+  // The settings menu's "Restart backend" fires this once the new backend is
+  // up, so tasks reappear at once instead of at the next 2s tick.
+  useEffect(() => {
+    const onRestarted = () => pollRef.current();
+    window.addEventListener(BACKEND_RESTARTED_EVENT, onRestarted);
+    return () => window.removeEventListener(BACKEND_RESTARTED_EVENT, onRestarted);
   }, []);
 
   const canStart = useMemo(() => canStartFromAgents(agents), [agents]);

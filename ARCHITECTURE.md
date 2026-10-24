@@ -384,6 +384,12 @@ shapes the three parts share (manifest keys, endpoints, JSON files) are fixed in
 [`agent-apps/DECISIONS-AND-ASSUMPTIONS.md`](./agent-apps/DECISIONS-AND-ASSUMPTIONS.md); how to run them the first
 time: [`agent-apps/FIRST-RUN-GUIDE.md`](./agent-apps/FIRST-RUN-GUIDE.md).
 
+**Updates without reinstalling:** the Electron shell (`desktop/main.cjs`, mode logic in `desktop/launch-config.cjs`)
+runs the UI as `next dev` from the project folder (`live-dev`; `live-build` and `bundled` are the alternatives, with
+fallback to bundled), so `src/**` edits hot-reload; the backend and the task manifests already load from disk, and
+the settings gear's "Restart backend" row (`src/lib/backendRestart.ts`, via the `/api/agent-office/{stop,start}`
+routes only) reloads them. Reinstall is needed only for `desktop/` or `package.json` build-config changes.
+
 ## Local AI runtime (`src/lib/ai-runtime/`)
 
 The firm does not allow internal messages to go to a cloud model, so AI

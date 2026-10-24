@@ -63,3 +63,6 @@ __pycache__/
 
 # agent-apps: real employee roster (names/emails) - never commit
 agent-apps/shared/roster/Names.xlsx
+
+# local live-mode override for the Electron shell (see README)
+/desktop/live-config.json

@@ -1,16 +1,25 @@
 "use client";
 
-import type { ComponentType } from "react";
-import { GearSixIcon, MoonIcon, SunIcon } from "@phosphor-icons/react";
+import { useEffect, useRef, type ComponentType } from "react";
+import {
+  ArrowsClockwiseIcon,
+  CircleNotchIcon,
+  GearSixIcon,
+  MoonIcon,
+  SunIcon,
+} from "@phosphor-icons/react";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuSwitchItem,
   DropdownMenuTrigger,
 } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { useTheme } from "@/lib/useTheme";
+import { useBackendRestart, type BackendRestartStatus } from "./useBackendRestart";
 
 /**
  * Top-right settings control: a gear pill (same frosted chrome as the dock,
@@ -41,8 +50,114 @@ function DarkModeRow() {
   );
 }
 
+const RESTART_HINT = "Loads backend and task changes";
+
+function restartHint(status: BackendRestartStatus): string {
+  switch (status.kind) {
+    case "checking":
+      return "Checking for running tasks...";
+    case "working":
+      return status.phase === "stopping" ? "Stopping backend..." : "Starting backend...";
+    case "done":
+    case "error":
+      return status.message;
+    default:
+      return RESTART_HINT;
+  }
+}
+
+/** "Restart backend" - restarts the Agent Office backend this app launched,
+ *  so backend code and task manifest changes load without quitting AI OS.
+ *  Warns first if a task is mid-run. Only uses the app's own launcher routes
+ *  (see src/lib/backendRestart.ts); never a backend action endpoint. */
+function RestartBackendRow() {
+  const { status, requestRestart, confirmRestart, cancelRestart } = useBackendRestart();
+  const cancelRef = useRef<HTMLDivElement>(null);
+  const confirming = status.kind === "confirm";
+
+  // Cancel is the default choice while the warning is showing.
+  useEffect(() => {
+    if (confirming) cancelRef.current?.focus();
+  }, [confirming]);
+
+  if (status.kind === "confirm") {
+    return (
+      <>
+        <DropdownMenuSeparator />
+        <div role="alert" className="px-2.5 py-1.5 text-[12px] leading-snug">
+          <p className="text-ink font-medium">A task is still in progress</p>
+          <ul className="text-ink-muted mt-1 max-w-[17rem] list-disc pl-4">
+            {status.busy.map((task, index) => (
+              <li key={`${task.label}-${index}`} className="break-words">
+                {task.label} ({task.state})
+              </li>
+            ))}
+          </ul>
+          <p className="text-ink-muted mt-1 max-w-[17rem]">
+            Restarting the backend stops these runs. Files already written stay on disk.
+          </p>
+        </div>
+        <DropdownMenuItem
+          ref={cancelRef}
+          onSelect={(event) => {
+            event.preventDefault();
+            cancelRestart();
+          }}
+        >
+          Cancel
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onSelect={(event) => {
+            event.preventDefault();
+            confirmRestart();
+          }}
+        >
+          Stop runs and restart
+        </DropdownMenuItem>
+      </>
+    );
+  }
+
+  const inProgress = status.kind === "checking" || status.kind === "working";
+  const Glyph = inProgress ? CircleNotchIcon : ArrowsClockwiseIcon;
+  return (
+    <>
+      <DropdownMenuSeparator />
+      <DropdownMenuItem
+        aria-disabled={inProgress}
+        onSelect={(event) => {
+          event.preventDefault(); // keep the menu open so progress stays visible
+          if (!inProgress) requestRestart();
+        }}
+        className="items-start gap-3 py-2"
+      >
+        <Glyph
+          size={16}
+          weight="regular"
+          aria-hidden
+          className={cn("mt-0.5 shrink-0", inProgress && "animate-spin")}
+        />
+        <span className="flex min-w-0 flex-col">
+          <span>Restart backend</span>
+          <span
+            role="status"
+            aria-live="polite"
+            className={cn(
+              "mt-0.5 max-w-[15rem] text-[11px] leading-snug break-words",
+              status.kind === "error" ? "text-ink" : "text-ink-faint",
+            )}
+          >
+            {restartHint(status)}
+          </span>
+        </span>
+      </DropdownMenuItem>
+    </>
+  );
+}
+
 const settingsRows: { id: string; Row: ComponentType }[] = [
   { id: "dark-mode", Row: DarkModeRow },
+  { id: "restart-backend", Row: RestartBackendRow },
 ];
 
 export function SettingsMenu() {

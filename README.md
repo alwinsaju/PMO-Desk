@@ -65,11 +65,51 @@ different folder in the installer). The installer creates Start-menu and
 desktop shortcuts; pin either to the Windows taskbar. The installed app does
 not need HTTPS, a browser tab, or a terminal.
 
-For development, `pnpm desktop` opens the Electron shell against a local
-production build. Run `pnpm build` first after source changes. The PWA manifest
-remains available for browser-based use on `localhost`, but the Electron
-launcher is the supported option when the application and Agent Office backend
-must stop together on close.
+### Getting fixes without reinstalling
+
+The installed app does not run its own bundled UI by default. On launch it
+looks for the project folder (`C:\Projects\AI OS`, or `AI_OS_PROJECT_DIR`) and,
+if it has `package.json` and `node_modules`, runs the UI from there:
+
+| Mode | What runs | When to use |
+| --- | --- | --- |
+| `live-dev` (default when the project folder is usable) | `next dev` (Turbopack, as `pnpm dev`) from the project folder, on the first free port from 3100 | Normal use: edits to `src/**` hot-reload in the open window |
+| `live-build` | `next start` from the project folder's own `.next` | Run `pnpm build`, then View > Reload (or Developer > Restart UI server) |
+| `bundled` | `next start` from the copy installed with the app | Fallback, and the mode on a machine without the project |
+
+Choose the mode and folder with, in order of priority: the environment
+variables `AI_OS_MODE` (`live-dev`, `live-build`, `bundled`) and
+`AI_OS_PROJECT_DIR`; a `live-config.json` next to `AI OS.exe` or in the app's
+`desktop` folder (`{ "projectDir": "C:\\Projects\\AI OS", "mode": "live-dev" }`, both keys
+optional; see `desktop/launch-config.cjs`); then the default. If a live mode
+cannot be used (folder missing, no `node_modules/next`, no build for
+`live-build`) or the server does not answer within 90 seconds, AI OS logs the
+reason in `%APPDATA%\ai-os\desktop.log` and starts the bundled app instead
+(Help > About AI OS shows the reason). The window title shows the active mode,
+for example `AI OS (live-dev: C:\Projects\AI OS)`.
+
+The **Developer** menu has *Restart UI server* (stops and respawns the server
+and the backend it owns, then reloads; it warns first if a task is running),
+*Open project folder* and *Open logs folder*. If the UI server crashes, AI OS
+offers to restart it. Do not run `pnpm dev` or `pnpm build` against the same
+folder while a live mode is running (they share `.next`); live mode replaces
+the dev server.
+
+How updates reach the app now:
+
+- **UI changes** (`src/**`): live-reload in `live-dev`; nothing to do.
+- **Backend and task changes** (agent-office `main.py`, `agent-apps/**`
+  scripts and manifests): gear menu (top right) > **Restart backend**. It checks
+  for running tasks first and asks for confirmation if any are not idle. It only
+  restarts a backend that this AI OS started; one started from a terminal is
+  reported and left alone.
+- **Reinstall** only when `desktop/` (the Electron shell) or the `build`
+  config in `package.json` changes, or to refresh the bundled fallback.
+
+For development without installing, `pnpm desktop` opens the Electron shell
+from the project folder (same modes). The PWA manifest remains available for
+browser-based use on `localhost`, but the Electron launcher is the supported
+option when the application and Agent Office backend must stop together on close.
 
 Other scripts:
 

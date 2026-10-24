@@ -69,7 +69,13 @@
       ".next/**/*",
       "public/**/*",
       "package.json",
-      "node_modules/**/*"
+      "node_modules/**/*",
+      "!.next/cache/**",
+      "!.next/dev/**",
+      "!.next/trace*",
+      "!node_modules/.cache/**",
+      "!desktop/*.test.cjs",
+      "!desktop/live-config.json"
     ],
     "win": {
       "target": "nsis"
