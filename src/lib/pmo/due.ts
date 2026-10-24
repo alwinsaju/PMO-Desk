@@ -20,6 +20,7 @@
 //               the window opens (it has not been delivered yet, so it fires).
 //  - snooze: `reminders.snoozedUntil` silences one to-do until that instant.
 // Dedupe is by `key`: the server records delivered keys in state/notify.json.
+import { approverName, awaitingSignoff } from "./signoff.ts";
 import type { ReminderPrefs, Todo } from "./types.ts";
 
 export type DueKind = "due-soon" | "overdue" | "chaser" | "digest";
@@ -339,12 +340,20 @@ export function computeDue(
 
     const waiting = waitingState(todo, now, prefs);
     if (dayKindsOpen && waiting?.chaseDue) {
+      // A sign-off request is a kind of waiting: same clock, same cadence, same
+      // notification kind; only the wording says what is pending.
+      const signoff = awaitingSignoff(todo);
+      const pending = signoff
+        ? (approverName(signoff.approver) ?? todo.waitingOn?.trim())
+        : null;
       out.push({
         todoId: todo.id,
         kind: "chaser",
         key: `chaser:${todo.id}:${waiting.sinceDay}:${waiting.round}`,
         title: todo.title,
-        body: `Waiting on ${todo.waitingOn?.trim()} with no update for ${plural(waiting.quietDays, "working day")}. Time to chase?`,
+        body: pending
+          ? `Sign-off pending from ${pending} with no update for ${plural(waiting.quietDays, "working day")}. Time to chase?`
+          : `Waiting on ${todo.waitingOn?.trim()} with no update for ${plural(waiting.quietDays, "working day")}. Time to chase?`,
       });
     }
   }

@@ -860,6 +860,20 @@ describe("nothing is ever sent", () => {
       "src/app/api/pmo/reports/[id]/route.ts",
       "src/components/apps/pmo-todo-app/ReportsTab.tsx",
       "src/components/apps/pmo-todo-app/reportView.ts",
+      // Phase 6 (sign-off); signoff.server.test.mjs checks these more strictly.
+      "src/lib/pmo/signoff.ts",
+      "src/lib/pmo/signoffView.ts",
+      "src/lib/pmo/signoffRequest.ts",
+      "src/lib/pmo/server/signoff.ts",
+      "src/lib/pmo/server/signoffDrafts.ts",
+      "src/app/api/pmo/todos/[id]/signoff/request/route.ts",
+      "src/app/api/pmo/todos/[id]/signoff/record/route.ts",
+      "src/app/api/pmo/todos/[id]/signoff/revoke/route.ts",
+      "src/app/api/pmo/todos/[id]/signoff/conditions/route.ts",
+      "src/app/api/pmo/todos/[id]/signoff/draft/route.ts",
+      "src/components/apps/pmo-todo-app/SignoffPanel.tsx",
+      "src/components/apps/pmo-todo-app/SignoffRequestDialog.tsx",
+      "src/components/apps/pmo-todo-app/signoffUi.ts",
     ];
     for (const file of files) {
       const text = await readFile(path.join(root, file), "utf8");
@@ -874,6 +888,6 @@ describe("nothing is ever sent", () => {
     assert.match(dialog, /href=\{mailto\.url\}/);
     assert.ok(!/dangerouslySetInnerHTML/.test(dialog), "model text is shown as plain text");
     const names = await readdir(path.join(root, "src/app/api/pmo/todos/[id]"));
-    assert.deepEqual(names.sort(), ["chaser", "route.ts"]);
+    assert.deepEqual(names.sort(), ["chaser", "route.ts", "signoff"]);
   });
 });

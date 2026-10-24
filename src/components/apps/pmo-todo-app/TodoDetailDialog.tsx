@@ -23,12 +23,14 @@ import {
 import {
   PRIORITIES,
   type ChaserJob,
+  type PmoConfig,
   type ReminderPrefs,
   type Todo,
 } from "@/lib/pmo/types";
 import { ChaserDialog } from "./ChaserDialog";
 import { patchTodo, startChaser } from "./api";
 import { OriginalMessage } from "./OriginalMessage";
+import { SignoffRequestDialog } from "./SignoffRequestDialog";
 import { SnoozeMenu } from "./SnoozeMenu";
 import { Field, ScrollBody, Segmented, SourceBadge, TextArea } from "./parts";
 import { formatDay } from "./queueView";
@@ -45,6 +47,10 @@ interface TodoDetailDialogProps {
   nowIso: string;
   /** The chaser draft for this to-do (polled state), if there is one. */
   chaser?: ChaserJob;
+  /** The AI-improved sign-off request text for this to-do, if one was started. */
+  signoffDraft?: ChaserJob;
+  /** Who "me" is, for the sign-off of a request text. */
+  me: PmoConfig["me"];
   onSettled: () => void;
   onOpenChange: (open: boolean) => void;
 }
@@ -91,6 +97,8 @@ export function TodoDetailDialog({
   reminders,
   nowIso,
   chaser,
+  signoffDraft,
+  me,
   onSettled,
   onOpenChange,
 }: TodoDetailDialogProps) {
@@ -102,6 +110,8 @@ export function TodoDetailDialog({
   const [error, setError] = useState<string | null>(null);
   const [dismissedOffer, setDismissedOffer] = useState<string | null>(null);
   const [chaserOpen, setChaserOpen] = useState(false);
+  /** The sign-off checkpoint whose request dialog is open. */
+  const [signoffFor, setSignoffFor] = useState<string | null>(null);
 
   if (todo && todo !== last) setLast(todo);
   if (todo && todo.id !== fieldsFor) {
@@ -110,6 +120,7 @@ export function TodoDetailDialog({
     setDirty(false);
     setError(null);
     setChaserOpen(false);
+    setSignoffFor(null);
   }
   const shown = todo ?? last;
   if (!shown || !fields) return null;
@@ -406,6 +417,12 @@ export function TodoDetailDialog({
                 busy={busy}
                 apply={apply}
                 stage={stage}
+                signoff={{
+                  prefs: reminders,
+                  nowIso,
+                  onRequest: setSignoffFor,
+                  onSettled,
+                }}
               />
             </ScrollBody>
           </TabsContent>
@@ -472,6 +489,17 @@ export function TodoDetailDialog({
           </Button>
         </div>
       </DialogContent>
+      <SignoffRequestDialog
+        todo={shown}
+        checkpoint={shown.checkpoints.find((c) => c.id === signoffFor) ?? null}
+        job={signoffDraft}
+        me={me}
+        open={signoffFor !== null && open}
+        onOpenChange={(next) => {
+          if (!next) setSignoffFor(null);
+        }}
+        onSettled={onSettled}
+      />
       <ChaserDialog
         todo={shown}
         job={chaser}

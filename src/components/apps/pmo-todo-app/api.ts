@@ -16,6 +16,7 @@ import type { PeriodRequest, SavedReportSummary } from "@/lib/pmo/report";
 import type { ManualPasteInput } from "@/lib/pmo/manualIntake";
 import type { Attention, DueNotification, Toast } from "@/lib/pmo/due";
 import type { TodoPatch } from "@/lib/pmo/todoLogic";
+import type { RecordableOutcome } from "@/lib/pmo/signoff";
 import type { GeneratedReport, OpenedReport, saveBody } from "./reportView";
 
 const BASE = "/api/pmo";
@@ -84,6 +85,37 @@ export const startChaser = (todoId: string) =>
   call<{ job: ChaserJob }>(`/todos/${todoId}/chaser`, "POST");
 export const discardChaser = (todoId: string) =>
   call(`/todos/${todoId}/chaser`, "DELETE");
+
+// --- sign-off (phase 6): the server stamps who and when; nothing is sent ----------------
+
+type SignoffReply = { todo: Todo };
+/** "I've sent it": the person says the request went out. The server records the
+ *  time and the OS user; the client sends only the approver. */
+export const requestSignoff = (
+  todoId: string,
+  body: { checkpointId?: string; approver?: string | null },
+) => call<SignoffReply>(`/todos/${todoId}/signoff/request`, "POST", body);
+/** Record the answer. Who recorded it and when are decided by the server. */
+export const recordSignoff = (
+  todoId: string,
+  body: {
+    checkpointId?: string;
+    outcome: RecordableOutcome;
+    conditions?: string;
+    note?: string;
+    intakeId?: string | null;
+  },
+) => call<SignoffReply>(`/todos/${todoId}/signoff/record`, "POST", body);
+export const confirmSignoffConditions = (todoId: string, checkpointId?: string) =>
+  call<SignoffReply>(`/todos/${todoId}/signoff/conditions`, "POST", { checkpointId });
+/** The only undo of a recorded sign-off; the reason is required. */
+export const revokeSignoff = (todoId: string, reason: string, checkpointId?: string) =>
+  call<SignoffReply>(`/todos/${todoId}/signoff/revoke`, "POST", { checkpointId, reason });
+/** The optional "improve with AI" text (local model, copy-only). */
+export const startSignoffDraft = (todoId: string, approver: string | null) =>
+  call<{ job: ChaserJob }>(`/todos/${todoId}/signoff/draft`, "POST", { approver });
+export const discardSignoffDraft = (todoId: string) =>
+  call(`/todos/${todoId}/signoff/draft`, "DELETE");
 
 // --- weekly report: built by code, local text, never sent ------------------------------
 

@@ -13,6 +13,11 @@ import {
   type ReportData,
   type SavedReportSummary,
 } from "../report.ts";
+import {
+  recordSignoff,
+  signoffKeysInPatchBody,
+  signoffPatchProblem,
+} from "../signoff.ts";
 import { threadKeyOf } from "../thread.ts";
 import {
   appendHistory,
@@ -41,6 +46,7 @@ import {
   planUpdate,
 } from "../updateLogic.ts";
 import type { ChaserDrafts } from "./chaserDrafts.ts";
+import type { SignoffDrafts } from "./signoffDrafts.ts";
 import { syncDesktopPrefs } from "./desktopPrefs.ts";
 import type { Ingestor } from "./ingest.ts";
 import type { ReportDrafts } from "./reportDrafts.ts";
@@ -63,6 +69,8 @@ export interface Pmo {
   worker: StructuringWorker;
   /** Local, copy-only follow-up drafts (nothing is ever sent). */
   chaser: ChaserDrafts;
+  /** Local, copy-only "improve with AI" sign-off request texts (never sent). */
+  signoffDrafts: SignoffDrafts;
   /** Local, verified weekly-report highlights (nothing is ever sent). */
   reportDrafts: ReportDrafts;
   now: () => Date;
@@ -308,11 +316,40 @@ export function approveUpdate(
         from: sender.name ?? sender.address ?? null,
       },
     );
-    const { todo: next, kinds } = applyTodoPatch(
+    const patched = applyTodoPatch(
       { ...todo, history: appendHistory(todo.history, message) },
       patch.data,
       now,
     );
+    let next = patched.todo;
+    const kinds = patched.kinds;
+    // A ticked sign-off suggestion is recorded by the same logic as the record
+    // endpoint: the identity is the OS user who is approving this card and the
+    // time is the server's, never anything from the request; the evidence is
+    // this very message. If it cannot be recorded (someone recorded or revoked
+    // meanwhile) nothing at all is applied.
+    const signoffChange = applied.find((change) => change.kind === "signoff");
+    let signoffAudit: Record<string, unknown> | null = null;
+    if (signoffChange?.signoff) {
+      const { checkpointId, outcome, conditions, quote } = signoffChange.signoff;
+      const who = sender.name ?? sender.address ?? "the sender";
+      const recorded = recordSignoff(next, {
+        checkpointId,
+        outcome,
+        conditions,
+        evidence: {
+          intakeId: proposal.intakeId,
+          messageLink: raw?.intake.link ?? proposal.summary.link ?? null,
+          note: `Reply from ${who}${quote ? `: "${quote}"` : ""}`.slice(0, 500),
+        },
+        now,
+        by: osUser(),
+        from: who,
+      });
+      if (!recorded.ok) return fail(recorded.reason);
+      next = recorded.todo;
+      signoffAudit = recorded.audit;
+    }
     const tooMuch = todoLimitProblem(next);
     if (tooMuch) return fail(tooMuch);
 
@@ -330,6 +367,14 @@ export function approveUpdate(
       applied: applied.map((change) => change.id),
       kinds,
     });
+    if (signoffAudit) {
+      await pmo.store.audit("signoff-record", {
+        todoId: next.id,
+        via: "update-card",
+        proposalId: proposal.id,
+        ...signoffAudit,
+      });
+    }
     return { ok: true as const, todo: next };
   });
 }
@@ -518,18 +563,36 @@ export function createManualTodo(
   });
 }
 
-export function patchTodo(
+export async function patchTodo(
   pmo: Pmo,
   id: string,
   body: unknown,
 ): Promise<ActionResult<{ todo: Todo; offerDone: boolean }>> {
+  // The generic edit route can neither write a sign-off nor fake one: a body
+  // that carries any sign-off field is refused outright (the schema below would
+  // only drop it silently), and so is one that ticks a sign-off step as done.
+  const forged = signoffKeysInPatchBody(body);
+  if (forged.length > 0) {
+    await pmo.store.audit("signoff-refused", {
+      todoId: id,
+      via: "patch",
+      fields: forged,
+    });
+    return fail(
+      `Sign-off details can only be recorded with the sign-off actions (Request sign-off / Record sign-off), not by editing the to-do. Remove: ${forged.join(", ")}.`,
+    );
+  }
   const parsed = TodoPatchSchema.safeParse(body);
-  if (!parsed.success)
-    return Promise.resolve(fail(`Invalid change: ${firstIssue(parsed.error)}`));
+  if (!parsed.success) return fail(`Invalid change: ${firstIssue(parsed.error)}`);
 
   return pmo.store.withLock(async () => {
     const todo = await pmo.store.getTodo(id);
     if (!todo) return fail("That to-do no longer exists.");
+    const refused = signoffPatchProblem(todo, parsed.data);
+    if (refused) {
+      await pmo.store.audit("signoff-refused", { todoId: id, via: "patch", fields: [] });
+      return fail(refused);
+    }
     const {
       todo: next,
       offerDone,

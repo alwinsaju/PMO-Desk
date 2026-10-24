@@ -1,11 +1,15 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ArrowRightIcon, WarningIcon } from "@phosphor-icons/react";
+import { ArrowRightIcon, SealCheckIcon, WarningIcon } from "@phosphor-icons/react";
 import { Button } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { MAX_AI_ATTEMPTS, type PmoState, type Proposal } from "@/lib/pmo/types";
-import { UPDATE_KIND_LABEL, planUpdate } from "@/lib/pmo/updateLogic";
+import {
+  UPDATE_KIND_LABEL,
+  planUpdate,
+  type SignoffSuggestion,
+} from "@/lib/pmo/updateLogic";
 import { applyUpdate, rejectProposal, retryProposal, separateUpdate } from "./api";
 import { OriginalMessage } from "./OriginalMessage";
 import { Chip, ProposalStatusBadge } from "./parts";
@@ -96,6 +100,12 @@ export function UpdateCard({ proposal, state, onOpenTodo, onSettled }: UpdateCar
           {ready && plan && (
             <Chip tone={nothing ? "neutral" : "accent"}>
               {UPDATE_KIND_LABEL[plan.kind]}
+            </Chip>
+          )}
+          {ready && plan?.signoff && (
+            <Chip tone="accent" className="gap-1" data-testid="signoff-reply-chip">
+              <SealCheckIcon size={11} weight="fill" />
+              Sign-off reply
             </Chip>
           )}
           {ready && proposal.quoteVerified === false && (
@@ -208,7 +218,8 @@ export function UpdateCard({ proposal, state, onOpenTodo, onSettled }: UpdateCar
                         <span
                           className={cn(
                             "mt-0.5 block text-[11px]",
-                            change.kind === "waiting" && plan.replyFrom
+                            (change.kind === "waiting" && plan.replyFrom) ||
+                              (change.kind === "signoff" && change.defaultOn)
                               ? "text-accent-800 dark:text-accent-300 font-medium"
                               : "text-ink-faint",
                           )}
@@ -221,6 +232,12 @@ export function UpdateCard({ proposal, state, onOpenTodo, onSettled }: UpdateCar
                 );
               })}
             </ul>
+          )}
+          {plan.signoff && (
+            <SignoffReading
+              suggestion={plan.signoff}
+              onOpenTodo={todo ? () => onOpenTodo(todo.id) : undefined}
+            />
           )}
         </>
       )}
@@ -238,7 +255,7 @@ export function UpdateCard({ proposal, state, onOpenTodo, onSettled }: UpdateCar
           <div className="border-border mt-2 flex h-56 flex-col rounded-lg border p-3">
             <OriginalMessage
               intakeId={proposal.intakeId}
-              quote={ready ? result?.quote : null}
+              quote={ready ? result?.signoffQuote || result?.quote : null}
               className="flex min-h-0 flex-1 flex-col"
             />
           </div>
@@ -296,6 +313,79 @@ export function UpdateCard({ proposal, state, onOpenTodo, onSettled }: UpdateCar
           </Button>
         )}
       </div>
+    </div>
+  );
+}
+
+const CLASS_LABEL: Record<SignoffSuggestion["classification"], string> = {
+  approved: "approved",
+  approved_with_conditions: "approved with conditions",
+  changes_requested: "asked for changes",
+  rejected: "declined",
+  unclear: "unclear",
+  not_a_signoff: "not a sign-off",
+};
+
+/** What the model made of the reply as a sign-off, in the open: its reasoning,
+ *  the sentence it relied on, and anything that made the server cautious. The
+ *  model's text is plain text here, never HTML. */
+function SignoffReading({
+  suggestion,
+  onOpenTodo,
+}: {
+  suggestion: SignoffSuggestion;
+  onOpenTodo?: () => void;
+}) {
+  const unclear = suggestion.classification === "unclear";
+  return (
+    <div
+      data-testid="signoff-reading"
+      className="border-border flex flex-col gap-1 rounded-lg border bg-neutral-50 px-3 py-2 text-[12px]"
+    >
+      <p className="text-ink font-medium">
+        {unclear
+          ? `This reply may be about the sign-off, but it is unclear (${suggestion.from}).`
+          : `Model's reading: ${suggestion.from} ${CLASS_LABEL[suggestion.classification]}.`}
+      </p>
+      <p className="text-ink-muted break-words">
+        Reasoning: {suggestion.reason || "none given"}
+      </p>
+      {suggestion.quote && (
+        <p className="text-ink-muted break-words">
+          Quoted: &ldquo;{suggestion.quote}&rdquo;
+          {!suggestion.quoteVerified && (
+            <span className="text-ink font-medium">
+              {" "}
+              (not found in the message: check the original)
+            </span>
+          )}
+        </p>
+      )}
+      {suggestion.guard && <p className="text-ink font-medium">{suggestion.guard}</p>}
+      {unclear && (
+        <p className="text-ink-faint">
+          Nothing is recorded from this. Approving only links the message; record the
+          sign-off yourself on the to-do if it was one.
+          {onOpenTodo && (
+            <>
+              {" "}
+              <button
+                type="button"
+                onClick={onOpenTodo}
+                className="text-ink-muted hover:text-ink rounded underline underline-offset-2"
+              >
+                Open the to-do
+              </button>
+            </>
+          )}
+        </p>
+      )}
+      {!unclear && (
+        <p className="text-ink-faint">
+          If you tick the sign-off, this message becomes its evidence and your Windows
+          user name and the time are stamped on it.
+        </p>
+      )}
     </div>
   );
 }

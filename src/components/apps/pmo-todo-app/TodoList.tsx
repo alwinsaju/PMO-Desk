@@ -7,6 +7,7 @@ import {
   FlagIcon,
   HourglassMediumIcon,
   PlusIcon,
+  SealCheckIcon,
 } from "@phosphor-icons/react";
 import { Button } from "@/components/ui";
 import { cn } from "@/lib/cn";
@@ -15,6 +16,7 @@ import type { PmoState, ReminderPrefs, Todo } from "@/lib/pmo/types";
 import { patchTodo } from "./api";
 import { CONTENT_WIDTH, Chip, PILL_STRIP, PanelMessage } from "./parts";
 import { SnoozeMenu } from "./SnoozeMenu";
+import { signoffBadgeText, signoffRowView } from "./signoffUi";
 import {
   SOURCE_LABEL,
   TODO_FILTERS,
@@ -193,6 +195,7 @@ const TodoCard = memo(function TodoCard({
   const now = new Date(nowIso);
   const row = todoRowView(todo, today, now);
   const waiting = row.open ? describeWaiting(todo, now, prefs, today) : null;
+  const signoff = signoffRowView(todo, now, prefs);
   const shownItems = todo.actionItems.slice(0, 3);
 
   async function change(patch: Parameters<typeof patchTodo>[1], id: string) {
@@ -283,6 +286,16 @@ const TodoCard = memo(function TodoCard({
             Got a reply
           </Button>
         </div>
+      )}
+      {signoff && (
+        <p
+          data-testid="signoff-chip"
+          className="text-ink-muted flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px]"
+        >
+          <SealCheckIcon size={13} className="shrink-0" />
+          <span className="min-w-0 break-words">{signoff.text}</span>
+          <Chip tone={signoff.tone}>{signoffBadgeText(signoff)}</Chip>
+        </p>
       )}
       {row.snoozed && (
         <p className="text-ink-muted flex items-center gap-1.5 text-[12px]">

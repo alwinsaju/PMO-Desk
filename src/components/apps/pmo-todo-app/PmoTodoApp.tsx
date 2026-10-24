@@ -182,6 +182,8 @@ export function PmoTodoApp({ windowId }: { windowId: string }) {
         reminders={state.config.reminders}
         nowIso={state.serverTime}
         chaser={todo ? state.chasers?.[todo.id] : undefined}
+        signoffDraft={todo ? state.signoffDrafts?.[todo.id] : undefined}
+        me={state.config.me}
         onSettled={refetch}
         onOpenChange={(open) => {
           if (!open) setTodoId(null);

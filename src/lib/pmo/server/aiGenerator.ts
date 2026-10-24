@@ -8,7 +8,12 @@ import {
   getRuntimeStatus,
 } from "@/lib/ai-runtime";
 import { AiNarrativeSchema } from "../reportNarrative.ts";
-import { AiStructuredSchema, AiUpdateSchema, type RuntimeSummary } from "../types.ts";
+import {
+  AiStructuredSchema,
+  AiUpdateModelSchema,
+  AiUpdateSignoffModelSchema,
+  type RuntimeSummary,
+} from "../types.ts";
 import type { Generator } from "./structure.ts";
 
 /** A 12B model on CPU reading a 12k-character message can take minutes; the
@@ -30,18 +35,29 @@ export function createRuntimeGenerator(): Generator {
         timeoutMs: TIMEOUT_MS,
         think: false,
       }),
-    // Same runtime, same queue (concurrency 1), same think: false.
-    generateUpdate: ({ system, prompt }) =>
+    // Same runtime, same queue (concurrency 1), same think: false. A to-do that
+    // is awaiting a sign-off also gets the reply classified (a few more fields).
+    generateUpdate: ({ system, prompt, signoff }) =>
       generateJson({
         system,
         prompt,
-        schema: AiUpdateSchema,
+        schema: signoff ? AiUpdateSignoffModelSchema : AiUpdateModelSchema,
         timeoutMs: TIMEOUT_MS,
         think: false,
       }),
     // Plain text, a little warmer than the structured calls so two drafts are
     // not word for word the same; still local, still never sent.
     draftChaser: ({ system, prompt }) =>
+      generateText({
+        system,
+        prompt,
+        timeoutMs: TIMEOUT_MS,
+        temperature: 0.4,
+        think: false,
+      }),
+    // The optional "improve with AI" version of a sign-off request: plain text,
+    // like the chaser, never sent by this app.
+    draftSignoffRequest: ({ system, prompt }) =>
       generateText({
         system,
         prompt,

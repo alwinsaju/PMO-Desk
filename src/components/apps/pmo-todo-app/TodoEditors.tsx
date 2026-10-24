@@ -5,7 +5,9 @@ import { ArrowDownIcon, ArrowUpIcon, XIcon } from "@phosphor-icons/react";
 import { Button, IconButton, Input } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import type { TodoPatch } from "@/lib/pmo/todoLogic";
-import type { ActionItem, Checkpoint, Todo } from "@/lib/pmo/types";
+import { signoffOf } from "@/lib/pmo/signoff";
+import type { ActionItem, Checkpoint, ReminderPrefs, Todo } from "@/lib/pmo/types";
+import { SignoffPanel } from "./SignoffPanel";
 
 /** Sends one PATCH; resolves true when the server accepted it. */
 export type ApplyPatch = (patch: TodoPatch) => Promise<boolean>;
@@ -209,13 +211,23 @@ function ActionItemRow({
 // Checkpoints: add, rename, reorder, remove, skip, complete
 // ---------------------------------------------------------------------------
 
+/** What the sign-off steps need from the dialog: the clock, and how to open the
+ *  request dialog. */
+export interface SignoffContext {
+  prefs: ReminderPrefs;
+  nowIso: string;
+  onRequest: (checkpointId: string) => void;
+  onSettled: () => void;
+}
+
 export function CheckpointsEditor({
   todo,
   open,
   busy,
   apply,
   stage,
-}: EditorProps & { stage: string | null }) {
+  signoff,
+}: EditorProps & { stage: string | null; signoff?: SignoffContext }) {
   const [label, setLabel] = useState("");
   const [signOff, setSignOff] = useState(false);
 
@@ -258,6 +270,19 @@ export function CheckpointsEditor({
             busy={busy}
             apply={apply}
             onMove={(by) => move(index, by)}
+            panel={
+              checkpoint.kind === "approval" && signoff ? (
+                <SignoffPanel
+                  todo={todo}
+                  checkpoint={checkpoint}
+                  prefs={signoff.prefs}
+                  nowIso={signoff.nowIso}
+                  open={open}
+                  onRequest={() => signoff.onRequest(checkpoint.id)}
+                  onSettled={signoff.onSettled}
+                />
+              ) : null
+            }
           />
         ))}
       </ol>
@@ -305,6 +330,7 @@ function CheckpointRow({
   busy,
   apply,
   onMove,
+  panel,
 }: {
   checkpoint: Checkpoint;
   current: boolean;
@@ -314,7 +340,14 @@ function CheckpointRow({
   busy: boolean;
   apply: ApplyPatch;
   onMove: (by: -1 | 1) => void;
+  /** The sign-off panel of an approval step, shown under its row. */
+  panel?: React.ReactNode;
 }) {
+  // A sign-off step is completed by recording the sign-off, never by ticking it,
+  // and one with a stamp cannot be moved or removed here (the server refuses
+  // both): undoing it is Revoke.
+  const isSignoff = checkpoint.kind === "approval";
+  const stamped = isSignoff && !!signoffOf(checkpoint).stamp;
   const [label, setLabel] = useState(checkpoint.label);
   const [savedLabel, setSavedLabel] = useState(checkpoint.label);
   if (savedLabel !== checkpoint.label) {
@@ -381,14 +414,16 @@ function CheckpointRow({
         <div className="flex shrink-0 items-center gap-1">
           {checkpoint.state === "pending" ? (
             <>
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={busy}
-                onClick={() => setState("done")}
-              >
-                Done
-              </Button>
+              {!isSignoff && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={busy}
+                  onClick={() => setState("done")}
+                >
+                  Done
+                </Button>
+              )}
               <Button
                 size="sm"
                 variant="ghost"
@@ -399,14 +434,16 @@ function CheckpointRow({
               </Button>
             </>
           ) : (
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={busy}
-              onClick={() => setState("pending")}
-            >
-              Reopen
-            </Button>
+            !stamped && (
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={busy}
+                onClick={() => setState("pending")}
+              >
+                Reopen
+              </Button>
+            )
           )}
           <IconButton
             aria-label={`Move ${checkpoint.label} up`}
@@ -427,13 +464,15 @@ function CheckpointRow({
           <IconButton
             aria-label={`Remove checkpoint ${checkpoint.label}`}
             size="sm"
-            disabled={busy}
+            disabled={busy || stamped}
+            title={stamped ? "Revoke the sign-off first" : undefined}
             onClick={() => void apply({ removeCheckpointIds: [checkpoint.id] })}
           >
             <XIcon size={14} />
           </IconButton>
         </div>
       )}
+      {panel}
     </li>
   );
 }

@@ -5,19 +5,29 @@
 //   [[stub-invalid]]   -> AiRuntimeError("invalid-output")
 //   [[stub-bad-quote]] -> an answer whose quote is not in the message
 //   [[stub-unrelated]] -> (updates) "this is about something else"
+//   [[stub-signoff:approved|approved_with_conditions|changes_requested|rejected|
+//     unclear|not_a_signoff]] -> (updates of a to-do awaiting a sign-off) that
+//     classification; without a marker the reply is read by simple wording rules.
+//     The server's own guards (quote check, hostile wording) still apply to it.
 // and a file named `stub-runtime-down` in the data directory makes every call
 // fail as "runtime-down" until it is deleted (the "stop the model" switch).
 //
-// All four tasks answer deterministically from the prompt text:
+// All five tasks answer deterministically from the prompt text:
 //   generate        message -> to-do proposal
 //   generateUpdate  new message + existing to-do -> what changed (reply / new
 //                   date / new action / new info / nothing)
 //   draftChaser     a short polite follow-up built from the facts block
+//   draftSignoffRequest  a short sign-off request built from the facts block
 //   draftNarrative  weekly-report highlights / risks / next week, from the facts
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { AiNarrativeSchema } from "../reportNarrative.ts";
-import { AiStructuredSchema, AiUpdateSchema } from "../types.ts";
+import {
+  AiStructuredSchema,
+  AiUpdateSchema,
+  SIGNOFF_CLASSES,
+  type SignoffClass,
+} from "../types.ts";
 import type { Generator } from "./structure.ts";
 
 function runtimeError(code: string, message: string): Error {
@@ -43,6 +53,53 @@ const sentences = (text: string) =>
 
 const bodyOf = (prompt: string) =>
   /<message [^>]*>\n([\s\S]*?)\n<\/message>/.exec(prompt)?.[1] ?? prompt;
+
+const SIGNOFF_MARKER = /\[\[stub-signoff:([a-z_]+)\]\]/;
+const SO_REJECT =
+  /\b(reject\w*|declin\w*|not approv\w*|cannot approve|can'?t approve|won'?t approve|do not approve)\b/i;
+const SO_CHANGES =
+  /\b(please (change|update|fix|revise|amend|correct|add|remove)|needs? to be (changed|updated|fixed|revised|reworked)|can you (change|update|fix|revise))\b/i;
+const SO_CONDITIONS =
+  /\b(subject to|provided that|as long as|on condition|only if|once (you|the)|before (we|i) (proceed|sign|go))\b/i;
+const SO_APPROVE = /\b(approved?|sign(ed)?[- ]?off|happy to proceed|go ahead|lgtm)\b/i;
+const SO_VAGUE =
+  /\b(looks (good|fine|great)|thanks|thank you|noted|will (take a )?look|got it)\b/i;
+
+/** The stub's reading of a reply to a sign-off request. */
+function stubSignoff(
+  lines: string[],
+  body: string,
+): { signoff: SignoffClass; quote: string; reason: string } {
+  const marked = SIGNOFF_MARKER.exec(body)?.[1];
+  const fixed = SIGNOFF_CLASSES.find((c) => c === marked);
+  const pick = (pattern: RegExp) =>
+    lines.find((line) => pattern.test(line)) ?? lines[0] ?? "";
+  let signoff: SignoffClass;
+  let pattern: RegExp;
+  if (SO_REJECT.test(body)) [signoff, pattern] = ["rejected", SO_REJECT];
+  else if (SO_CHANGES.test(body)) [signoff, pattern] = ["changes_requested", SO_CHANGES];
+  else if (SO_CONDITIONS.test(body))
+    [signoff, pattern] = ["approved_with_conditions", SO_CONDITIONS];
+  else if (SO_APPROVE.test(body)) [signoff, pattern] = ["approved", SO_APPROVE];
+  else if (SO_VAGUE.test(body)) [signoff, pattern] = ["unclear", SO_VAGUE];
+  else [signoff, pattern] = ["not_a_signoff", /./];
+  if (fixed) {
+    signoff = fixed;
+    pattern = {
+      approved: SO_APPROVE,
+      approved_with_conditions: SO_CONDITIONS,
+      changes_requested: SO_CHANGES,
+      rejected: SO_REJECT,
+      unclear: SO_VAGUE,
+      not_a_signoff: /./,
+    }[fixed];
+  }
+  return {
+    signoff,
+    quote: signoff === "not_a_signoff" ? "" : pick(pattern).slice(0, 250),
+    reason: `Stub reading: ${signoff.replace(/_/g, " ")}.`,
+  };
+}
 
 export function createStubGenerator(
   options: { dataDir?: string; delayMs?: number } = {},
@@ -105,7 +162,7 @@ export function createStubGenerator(
       });
     },
 
-    async generateUpdate({ prompt }) {
+    async generateUpdate({ prompt, signoff: signoffMode }) {
       const body = bodyOf(prompt);
       await gate(prompt, body);
 
@@ -133,8 +190,27 @@ export function createStubGenerator(
       else if (newDue) kind = "due-change";
       else if (ask) kind = "new-action";
 
+      // A to-do that awaits a sign-off: classify the reply too.
+      const reading = signoffMode
+        ? stubSignoff(lines.map(clean).filter(Boolean), body)
+        : null;
+      const answers =
+        !!reading &&
+        reading.signoff !== "unclear" &&
+        reading.signoff !== "not_a_signoff" &&
+        !unrelated;
+      if (answers && waitingOn !== "nobody") kind = "reply";
       const actionable = kind !== "unrelated" && kind !== "nothing";
       return AiUpdateSchema.parse({
+        ...(reading
+          ? {
+              signoffReason: reading.reason,
+              signoff: reading.signoff,
+              signoffQuote: body.includes("[[stub-bad-quote]]")
+                ? "This sentence does not appear anywhere in the message."
+                : reading.quote,
+            }
+          : {}),
         reason: unrelated
           ? "The message is about a different subject."
           : nothing
@@ -142,7 +218,7 @@ export function createStubGenerator(
             : "The message adds to the to-do.",
         kind,
         summary: nothing ? "Acknowledgement only." : main,
-        clearsWaiting: actionable && waitingOn !== "nobody" && delivered,
+        clearsWaiting: actionable && waitingOn !== "nobody" && (delivered || answers),
         newDueAt: actionable ? newDue : null,
         newActionItems:
           actionable && ask && kind !== "reply"
@@ -167,6 +243,25 @@ export function createStubGenerator(
         `Hi ${first},`,
         "",
         `Just checking in on "${title}"${waited ? `: it has been ${waited} since I asked` : ""}. Could you let me know where things stand when you get a moment?`,
+        "",
+        "Thanks,",
+        "Alwin",
+      ].join("\n");
+    },
+
+    // A short sign-off request from the facts block (sign-off request dialog).
+    async draftSignoffRequest({ prompt }) {
+      await gate(prompt, prompt);
+      const field = (label: string) =>
+        new RegExp(`^${label}: (.+)$`, "m").exec(prompt)?.[1]?.trim() ?? "";
+      const approver = field("Approver");
+      const first =
+        approver && !approver.startsWith("(") ? approver.split(/[\s(,]/)[0] : "";
+      const due = field("Due date");
+      return [
+        first ? `Hi ${first},` : "Hi,",
+        "",
+        `Please could you review and sign off "${field("Title") || "this"}"${due && due !== "none" ? ` by ${due}` : ""}? A short reply confirming your approval, or telling me what to change, is all I need.`,
         "",
         "Thanks,",
         "Alwin",

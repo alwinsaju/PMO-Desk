@@ -339,6 +339,7 @@ export const HISTORY_LABEL: Record<HistoryKind, string> = {
   due: "Due date",
   status: "Status",
   chaser: "Chaser",
+  signoff: "Sign-off",
 };
 
 /** Who to show for a to-do: the owner's name, "Me" for the PMO lead. */

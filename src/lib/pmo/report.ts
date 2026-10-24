@@ -22,6 +22,8 @@
 //  - Cancelled to-dos appear nowhere but one count.
 import { z } from "zod";
 import { addDays, isSnoozed, localParts, waitingState, zonedInstant } from "./due.ts";
+import { signoffNeedsAttention, signoffSummary } from "./signoffView.ts";
+import type { SignoffState } from "./signoff.ts";
 import { checkpointProgress, deriveStage } from "./todoLogic.ts";
 import { isValidTimeZone } from "./time.ts";
 import { DEFAULT_TIME_ZONE, type PmoConfig, type Priority, type Todo } from "./types.ts";
@@ -240,9 +242,26 @@ export interface WaitingItem extends OpenItem {
   workingDays: number;
 }
 
+/** Where a to-do's sign-off stands, for "Needs a decision". */
+export interface DecisionSignoff {
+  state: SignoffState;
+  approver: string | null;
+  /** Awaiting only: the day it was requested and how long ago. */
+  sinceDay: string | null;
+  days: number | null;
+  workingDays: number | null;
+  /** Awaiting and past the chase cadence. */
+  overdue: boolean;
+  /** The conditions, or the changes asked for. */
+  conditions: string;
+}
+
 export interface DecisionItem extends OpenItem {
-  /** The approval checkpoint that is the current stage. */
+  /** The approval checkpoint that is the current stage (or, when the answer sent
+   *  the work back, the sign-off step it is waiting to pass). */
   checkpoint: string;
+  /** Sign-off status; null when no request or answer is on record yet. */
+  signoff: DecisionSignoff | null;
 }
 
 export interface NewItem extends ReportItem {
@@ -416,9 +435,34 @@ export function buildReport(
     ) {
       dueNext.push(item);
     }
+    // A decision is pending when the current stage is an approval step, or when a
+    // sign-off is open: requested and unanswered, approved with conditions, or sent
+    // back (changes requested / rejected, which reopen the Draft step).
     const current = todo.checkpoints.find((c) => c.state === "pending");
-    if (current?.kind === "approval")
-      decisions.push({ ...item, checkpoint: current.label });
+    const sign = signoffSummary(todo, now, prefs);
+    const openSignoff = signoffNeedsAttention(sign);
+    if (current?.kind === "approval" || openSignoff) {
+      const hasRecord = !!sign && sign.state !== "not_requested";
+      decisions.push({
+        ...item,
+        checkpoint:
+          current?.kind === "approval"
+            ? current.label
+            : (sign?.checkpointLabel ?? current!.label),
+        signoff:
+          sign && hasRecord
+            ? {
+                state: sign.state,
+                approver: sign.approver,
+                sinceDay: sign.sinceDay,
+                days: sign.calendarDays,
+                workingDays: sign.quietDays,
+                overdue: sign.overdue,
+                conditions: sign.conditions,
+              }
+            : null,
+      });
+    }
   }
 
   completed.sort((a, b) => b.closedAt.localeCompare(a.closedAt) || byTitle(a, b));
@@ -609,7 +653,10 @@ export function renderMarkdown(data: ReportData, options: RenderOptions = {}): s
       data.decisions,
       max,
       (i) =>
-        row(i, `: decision pending at "${esc(i.checkpoint)}"${tail(dueText(i.dueAt))}`),
+        row(
+          i,
+          `: decision pending at "${esc(i.checkpoint)}"${tail(dueText(i.dueAt))}${tail(signoffText(i.signoff))}`,
+        ),
       { omitWhenEmpty: true },
     ),
     ...section("Completed this period", data.completed, max, (i) =>
@@ -663,6 +710,33 @@ export function renderMarkdown(data: ReportData, options: RenderOptions = {}): s
 }
 
 const tail = (text: string | null | undefined): string => (text ? `, ${text}` : "");
+
+const clip = (text: string, max = 160) =>
+  text.length > max ? `${text.slice(0, max - 1).trimEnd()}…` : text;
+
+/** The sign-off part of a "Needs a decision" line: who, since when, or what was
+ *  said. All user text goes through `esc`. */
+function signoffText(sign: DecisionSignoff | null): string | null {
+  if (!sign) return null;
+  const by = sign.approver ? ` by ${esc(sign.approver)}` : "";
+  const said = sign.conditions ? `: ${esc(clip(sign.conditions))}` : "";
+  switch (sign.state) {
+    case "awaiting":
+      return `awaiting sign-off${sign.approver ? ` from ${esc(sign.approver)}` : ""}${
+        sign.sinceDay
+          ? ` since ${dayLabel(sign.sinceDay)} (${plural(sign.days ?? 0, "day")})`
+          : ""
+      }${sign.overdue ? ", time to chase" : ""}`;
+    case "conditions":
+      return `approved with conditions${by}${said}; conditions not yet confirmed as met`;
+    case "changes_requested":
+      return `changes requested${by}${said}`;
+    case "rejected":
+      return `rejected${by}${said}`;
+    default:
+      return null;
+  }
+}
 
 /** The report as plain text for pasting into Outlook or Teams. */
 export function renderPlainText(data: ReportData, options: RenderOptions = {}): string {

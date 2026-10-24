@@ -198,7 +198,11 @@ export function buildNarrativeFacts(
       "NEEDS A DECISION",
       data.decisions,
       (i) =>
-        `${quote(i.title)} | owner: ${who(i.owner)} | pending_step: ${plain(i.checkpoint)}`,
+        `${quote(i.title)} | owner: ${who(i.owner)} | pending_step: ${plain(i.checkpoint)}${
+          i.signoff
+            ? ` | signoff: ${i.signoff.state.replace(/_/g, " ")}${i.signoff.approver ? ` from ${who(i.signoff.approver)}` : ""}${i.signoff.sinceDay ? ` since ${day(i.signoff.sinceDay)}` : ""}`
+            : ""
+        }`,
     ),
     block(
       "IN PROGRESS",

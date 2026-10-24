@@ -187,6 +187,88 @@ export const ActionItemSchema = z.object({
 });
 export type ActionItem = z.infer<typeof ActionItemSchema>;
 
+// --- sign-off (phase 6) ------------------------------------------------------------
+// An approval-kind checkpoint can carry sign-off state. Everything that proves a
+// sign-off (who recorded it, when, on what evidence) is written ONLY by the
+// server's sign-off actions (server/signoff.ts): the client never supplies an
+// identity or a time, and the generic PATCH route cannot touch any of it. See
+// ARCHITECTURE.md, "Phase 6".
+
+export const SIGNOFF_OUTCOMES = [
+  "pending",
+  "approved",
+  "approved_with_conditions",
+  "changes_requested",
+  "rejected",
+] as const;
+export type SignoffOutcome = (typeof SIGNOFF_OUTCOMES)[number];
+
+/** Limits on the free text a sign-off carries. */
+export const MAX_SIGNOFF_TEXT = 1000;
+export const MAX_SIGNOFF_NOTE = 500;
+export const MAX_SIGNOFF_REASON = 300;
+export const MAX_SIGNOFF_APPROVER = 200;
+/** Superseded or revoked sign-offs kept on a checkpoint (the audit log keeps all). */
+export const MAX_SIGNOFF_PREVIOUS = 10;
+
+export const SignoffEvidenceSchema = z.object({
+  /** A message in this app (raw/<intakeId>.json) that shows the sign-off. */
+  intakeId: z.string().nullable().default(null),
+  /** The message's own link, when it had one. */
+  messageLink: z.string().nullable().default(null),
+  note: z.string().default(""),
+});
+export type SignoffEvidence = z.infer<typeof SignoffEvidenceSchema>;
+
+/** Written once, by the server, and never edited: the only way to undo it is
+ *  `revokeSignoff`, which moves it (unchanged) into `previous`. */
+export const SignoffStampSchema = z.object({
+  /** The OS user of the machine running the server; never taken from a request. */
+  recordedBy: z.string(),
+  /** UTC instant from the server's clock; never taken from a request. */
+  recordedAt: z.string(),
+  evidence: SignoffEvidenceSchema,
+});
+export type SignoffStamp = z.infer<typeof SignoffStampSchema>;
+
+export const PreviousSignoffSchema = z.object({
+  approver: z.string().nullable().default(null),
+  requestedAt: z.string().nullable().default(null),
+  outcome: z.enum(SIGNOFF_OUTCOMES),
+  conditions: z.string().default(""),
+  stamp: SignoffStampSchema.nullable().default(null),
+  /** How it ended: a person revoked it (with a reason), or a new request replaced
+   *  a "changes requested" / "rejected" answer. */
+  ended: z.object({
+    kind: z.enum(["revoked", "superseded"]),
+    by: z.string(),
+    at: z.string(),
+    reason: z.string().default(""),
+  }),
+});
+export type PreviousSignoff = z.infer<typeof PreviousSignoffSchema>;
+
+export const SignoffSchema = z.object({
+  /** Who must sign off: a name, an address, or both ("Priya Nair (priya@x.com)"). */
+  approver: z.string().nullable().default(null),
+  /** When the person marked the request as sent (server clock) and who did. */
+  requestedAt: z.string().nullable().default(null),
+  requestedBy: z.string().nullable().default(null),
+  /** What the request put in the to-do's "waiting on", so that recording the
+   *  answer can clear it again (and only it). */
+  waitingMarked: z.string().nullable().default(null),
+  outcome: z.enum(SIGNOFF_OUTCOMES).default("pending"),
+  /** The conditions, or the changes asked for, in the approver's words. */
+  conditions: z.string().default(""),
+  /** "Approved with conditions" completes the step only when a person confirms
+   *  the conditions are met (server clock and OS user). */
+  conditionsConfirmedAt: z.string().nullable().default(null),
+  conditionsConfirmedBy: z.string().nullable().default(null),
+  stamp: SignoffStampSchema.nullable().default(null),
+  previous: z.array(PreviousSignoffSchema).default([]),
+});
+export type Signoff = z.infer<typeof SignoffSchema>;
+
 export const CheckpointSchema = z.object({
   id: z.string(),
   label: z.string(),
@@ -194,6 +276,9 @@ export const CheckpointSchema = z.object({
   state: z.enum(["pending", "done", "skipped"]),
   dueAt: isoDay.nullable().optional(),
   doneAt: z.string().nullable().optional(),
+  /** Sign-off state; only meaningful on a `kind: "approval"` checkpoint. A record
+   *  from before phase 6 has none (read as an empty sign-off). */
+  signoff: SignoffSchema.optional(),
 });
 export type Checkpoint = z.infer<typeof CheckpointSchema>;
 
@@ -229,6 +314,7 @@ export const HISTORY_KINDS = [
   "due",
   "status",
   "chaser",
+  "signoff",
 ] as const;
 export type HistoryKind = (typeof HISTORY_KINDS)[number];
 
@@ -379,7 +465,18 @@ export const UPDATE_KINDS = [
 ] as const;
 export type UpdateKind = (typeof UPDATE_KINDS)[number];
 
-export const AiUpdateSchema = z.object({
+/** What a reply says about a sign-off the to-do is awaiting (phase 6). */
+export const SIGNOFF_CLASSES = [
+  "approved",
+  "approved_with_conditions",
+  "changes_requested",
+  "rejected",
+  "unclear",
+  "not_a_signoff",
+] as const;
+export type SignoffClass = (typeof SIGNOFF_CLASSES)[number];
+
+const aiUpdateCore = {
   reason: clip(200),
   kind: z.enum(UPDATE_KINDS),
   /** One sentence: what this message changes. */
@@ -401,6 +498,34 @@ export const AiUpdateSchema = z.object({
   /** New information worth keeping in the description, else null. */
   note: clipNullable(300),
   quote: clip(300),
+};
+
+/** What the model is asked for on an ordinary update (a to-do that is not
+ *  awaiting a sign-off): exactly the fields above. */
+export const AiUpdateModelSchema = z.object(aiUpdateCore);
+
+/** What it is asked for when the to-do IS awaiting a sign-off: the same fields
+ *  plus a small classification. The reason comes before the verdict, the quote
+ *  last (constrained decoding emits keys in this order). */
+export const AiUpdateSignoffModelSchema = z.object({
+  ...aiUpdateCore,
+  signoffReason: clip(200),
+  signoff: z.enum(SIGNOFF_CLASSES),
+  signoffQuote: clip(300),
+});
+
+/** The stored answer (proposal.update.result). The sign-off fields are optional
+ *  so every earlier record still parses; `signoffQuoteVerified` and
+ *  `signoffGuard` are added by the server, not by the model. */
+export const AiUpdateSchema = z.object({
+  ...aiUpdateCore,
+  signoffReason: clip(200).optional(),
+  signoff: z.enum(SIGNOFF_CLASSES).optional(),
+  signoffQuote: clip(300).optional(),
+  /** Is `signoffQuote` really a sentence of the message? */
+  signoffQuoteVerified: z.boolean().optional(),
+  /** Why the server lowered the model's classification, when it did. */
+  signoffGuard: z.string().nullish(),
 });
 export type AiUpdate = z.output<typeof AiUpdateSchema>;
 
@@ -737,4 +862,7 @@ export interface PmoState {
   dataDir: string;
   /** Chaser drafts in flight or finished, by to-do id. */
   chasers: Record<string, ChaserJob>;
+  /** AI-improved sign-off request texts in flight or finished, by to-do id. The
+   *  deterministic template needs no job (the dialog builds it itself). */
+  signoffDrafts: Record<string, ChaserJob>;
 }

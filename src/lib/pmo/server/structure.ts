@@ -4,6 +4,7 @@
 // in service.ts. Failures here are local state only: nothing is sent anywhere.
 import { prepareForModel, displayText } from "../preprocess.ts";
 import { groundQuote } from "../quote.ts";
+import { awaitingSignoff, readSignoff } from "../signoff.ts";
 import type { AiNarrative } from "../reportNarrative.ts";
 import { PROMPT_VERSION, buildSystemPrompt, buildUserPrompt } from "../structurePrompt.ts";
 import {
@@ -24,15 +25,24 @@ export interface ModelRequest {
   prompt: string;
 }
 
+/** An update request; `signoff` asks for the sign-off classification too (the
+ *  to-do is awaiting a sign-off), which changes the schema the model answers. */
+export interface UpdateRequest extends ModelRequest {
+  signoff?: boolean;
+}
+
 export interface Generator {
   /** Name of the model that answers (for the log and the review UI). */
   model(): string;
   /** Message -> to-do proposal. */
   generate(request: ModelRequest): Promise<AiStructured>;
   /** New message + existing to-do -> what changed (thread-aware intake). */
-  generateUpdate(request: ModelRequest): Promise<AiUpdate>;
+  generateUpdate(request: UpdateRequest): Promise<AiUpdate>;
   /** A follow-up message to review and copy. Plain text, untrusted. */
   draftChaser(request: ModelRequest): Promise<string>;
+  /** A sign-off request to review and copy (the optional "improve with AI"; the
+   *  deterministic template needs no model). Plain text, untrusted. */
+  draftSignoffRequest(request: ModelRequest): Promise<string>;
   /** The weekly report's highlights, risks and next-week focus, from the report's
    *  own data only. Untrusted: the caller verifies it before anyone sees it. */
   draftNarrative(request: ModelRequest): Promise<AiNarrative>;
@@ -233,27 +243,45 @@ export class StructuringWorker {
         await this.toNormalProposal(id, "to-do no longer open");
         return "requeue";
       }
-      const system = buildUpdateSystemPrompt(config.me);
+      // A to-do that is awaiting a sign-off also gets the reply classified.
+      const signoff = awaitingSignoff(todo) !== null;
+      const system = buildUpdateSystemPrompt(config.me, { signoff });
       const prompt = buildUpdateUserPrompt(todo, intake, bodyText);
       return this.attempts<AiUpdate>({
         id,
         claimed,
         bytes: Buffer.byteLength(system) + Buffer.byteLength(prompt),
         promptVersion: UPDATE_PROMPT_VERSION,
-        task: "update",
-        call: () => this.generator.generateUpdate({ system, prompt }),
+        task: signoff ? "update-signoff" : "update",
+        call: () => this.generator.generateUpdate({ system, prompt, signoff }),
         onOk: async (output, durationMs, attempts) => {
           if (output.kind === "unrelated") {
             await this.toNormalProposal(id, "the model says it is about something else");
             return "requeue";
           }
           const grounded = groundQuote(displayText(intake), output.quote);
+          let result: AiUpdate = { ...output, quote: grounded.quote };
+          if (signoff) {
+            // The sign-off quote is checked against what the model was shown (the
+            // reply without its quoted chain), so a sentence of OUR earlier request
+            // can never pass as the approver's answer; and a reply that carries
+            // wording aimed at the assistant is lowered to "unclear".
+            result = {
+              ...result,
+              ...readSignoff(output, bodyText, intake.subject),
+            };
+          } else {
+            result = {
+              ...result,
+              signoff: undefined,
+              signoffQuote: undefined,
+              signoffReason: undefined,
+            };
+          }
           await this.setStatus(id, ["structuring"], (p) => ({
             ...p,
             status: "ready",
-            update: p.update
-              ? { ...p.update, result: { ...output, quote: grounded.quote } }
-              : p.update,
+            update: p.update ? { ...p.update, result } : p.update,
             isActionable: output.kind !== "nothing",
             quoteVerified: grounded.verified,
             ai: { model: this.generator.model(), durationMs, attempts, error: null },
@@ -296,7 +324,7 @@ export class StructuringWorker {
     claimed: Proposal;
     bytes: number;
     promptVersion: number;
-    task: "structure" | "update";
+    task: "structure" | "update" | "update-signoff";
     call: () => Promise<T>;
     onOk: (
       output: T,
