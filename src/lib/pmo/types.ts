@@ -135,6 +135,14 @@ export const PRIORITIES = ["low", "normal", "high"] as const;
 export type Priority = (typeof PRIORITIES)[number];
 
 const isoDay = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+const isoInstant = z
+  .string()
+  .refine((value) => !Number.isNaN(Date.parse(value)), {
+    message: "Not an ISO 8601 date-time",
+  });
+
+export const DEFAULT_CHASER_DAYS = 2;
+export const MAX_CHASER_DAYS = 30;
 
 const OwnerSchema = z.object({
   name: z.string().nullable(),
@@ -166,6 +174,8 @@ export const TodoDraftSchema = z.object({
   actionItems: z.array(ActionItemDraftSchema).max(30),
   checkpointTemplate: z.enum(CHECKPOINT_TEMPLATE_IDS),
   waitingOn: z.string().nullable(),
+  /** When the waiting started; absent = the moment of approval. */
+  waitingSince: isoInstant.nullable().optional(),
   tags: z.array(z.string()).max(10),
 });
 export type TodoDraft = z.infer<typeof TodoDraftSchema>;
@@ -197,6 +207,9 @@ export const TodoSourceSchema = z.object({
   subject: z.string(),
   sender: z.string().nullable(),
   receivedAt: z.string().nullable(),
+  /** Conversation key of the source message (src/lib/pmo/thread.ts); a later
+   *  message with the same key becomes an update to this to-do. */
+  threadKey: z.string().nullable().default(null),
 });
 export type TodoSource = z.infer<typeof TodoSourceSchema>;
 
@@ -210,6 +223,32 @@ export const RemindersSchema = z.object({
   lastRemindedAt: z.string().nullable(),
 });
 export type Reminders = z.infer<typeof RemindersSchema>;
+
+export const HISTORY_KINDS = [
+  "created",
+  "message",
+  "waiting",
+  "due",
+  "status",
+  "chaser",
+] as const;
+export type HistoryKind = (typeof HISTORY_KINDS)[number];
+
+/** The to-do's timeline: the message it came from, linked follow-ups and the
+ *  changes made by approved updates. Capped at MAX_HISTORY (the oldest entries
+ *  after the first go). */
+export const MAX_HISTORY = 60;
+export const HistoryEntrySchema = z.object({
+  id: z.string(),
+  at: z.string(),
+  kind: z.enum(HISTORY_KINDS),
+  text: z.string(),
+  /** A linked message, openable from the timeline (raw/<intakeId>.json). */
+  intakeId: z.string().nullable().default(null),
+  /** Who wrote that message. */
+  from: z.string().nullable().default(null),
+});
+export type HistoryEntry = z.infer<typeof HistoryEntrySchema>;
 
 export const TodoStatusSchema = z.enum(["open", "done", "cancelled"]);
 export type TodoStatus = z.infer<typeof TodoStatusSchema>;
@@ -227,6 +266,11 @@ export const TodoSchema = z.object({
   checkpoints: z.array(CheckpointSchema),
   status: TodoStatusSchema,
   waitingOn: z.string().nullable(),
+  /** When "waiting on" was set; the chaser clock starts here. null on a to-do
+   *  from before phase 4 (its last update is used instead). */
+  waitingSince: z.string().nullable().default(null),
+  /** Chase after this many quiet working days; null = the global default. */
+  chaserDays: z.number().int().min(1).max(MAX_CHASER_DAYS).nullable().default(null),
   tags: z.array(z.string()),
   source: TodoSourceSchema,
   reminders: RemindersSchema,
@@ -235,6 +279,7 @@ export const TodoSchema = z.object({
   approvedBy: z.string(),
   updatedAt: z.string(),
   completedAt: z.string().nullable().optional(),
+  history: z.array(HistoryEntrySchema).default([]),
 });
 export type Todo = z.infer<typeof TodoSchema>;
 
@@ -323,6 +368,44 @@ export const AiStructuredSchema = z.object({
 });
 export type AiStructured = z.output<typeof AiStructuredSchema>;
 
+// What the model says a new message changes about an EXISTING to-do (thread-
+// aware intake). Small on purpose: the patch itself is built from these fields
+// by code (updateLogic.ts), never by the model.
+export const UPDATE_KINDS = [
+  "unrelated",
+  "reply",
+  "new-info",
+  "new-action",
+  "due-change",
+  "nothing",
+] as const;
+export type UpdateKind = (typeof UPDATE_KINDS)[number];
+
+export const AiUpdateSchema = z.object({
+  reason: clip(200),
+  kind: z.enum(UPDATE_KINDS),
+  /** One sentence: what this message changes. */
+  summary: clip(220),
+  /** The message supplies what the to-do was waiting for. */
+  clearsWaiting: z.boolean(),
+  /** A new deadline the message states, else null. */
+  newDueAt: dayOrNull,
+  newActionItems: z
+    .array(
+      z.object({
+        text: clip(200),
+        owner: clipNullable(120),
+        dueAt: dayOrNull,
+      }),
+    )
+    .transform((items) => items.filter((item) => item.text).slice(0, 4))
+    .meta({ maxItems: 4 }),
+  /** New information worth keeping in the description, else null. */
+  note: clipNullable(300),
+  quote: clip(300),
+});
+export type AiUpdate = z.output<typeof AiUpdateSchema>;
+
 // ---------------------------------------------------------------------------
 // Proposals (the review queue)
 // ---------------------------------------------------------------------------
@@ -359,6 +442,16 @@ export const ProposalSchema = z.object({
     error: z.string().nullable().optional(),
   }),
   todoId: z.string().nullable().optional(),
+  /** Set when the message belongs to the thread of an open to-do: this is an
+   *  "update to existing to-do" card, not a new proposal. `draft` stays null. */
+  update: z
+    .object({
+      todoId: z.string(),
+      todoTitle: z.string(),
+      threadKey: z.string(),
+      result: AiUpdateSchema.nullable(),
+    })
+    .nullish(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -368,7 +461,7 @@ export type Proposal = z.infer<typeof ProposalSchema>;
 // Config
 // ---------------------------------------------------------------------------
 
-export const DEFAULT_INBOX_DIR = "C:\\Users\\alsaju\\OneDrive - Deloitte\\PMO-Inbox";
+export const DEFAULT_INBOX_DIR = "C:\\Users\\alsaju\\OneDrive - Deloitte (O365D)\\PMO-Inbox";
 
 export const DEFAULT_RETENTION_DAYS = 90;
 export const MIN_RETENTION_DAYS = 7;
@@ -380,8 +473,6 @@ const stringList = (fallback: string[]) => z.array(z.string()).default(fallback)
 
 export const DEFAULT_TIME_ZONE = "Asia/Kolkata";
 export const DEFAULT_WORK_DAYS = [1, 2, 3, 4, 5]; // Mon-Fri; 0 = Sunday
-export const DEFAULT_CHASER_DAYS = 2;
-export const MAX_CHASER_DAYS = 30;
 
 const clockTime = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use a time like 09:00.");
 
@@ -557,6 +648,24 @@ export interface StructuringInfo {
   } | null;
 }
 
+/** A "draft a chaser" request and its result (server/chaser.ts). In memory
+ *  only; the text is local, copy-only, and never sent by this app. */
+export interface ChaserJob {
+  id: string;
+  todoId: string;
+  status: "drafting" | "ready" | "failed";
+  startedAt: string;
+  finishedAt: string | null;
+  /** The reviewable message body (plain text). */
+  text: string | null;
+  /** Suggested subject for a mail window. */
+  subject: string | null;
+  /** A recipient found in the original message that matches "waiting on". */
+  to: string | null;
+  error: string | null;
+  model: string | null;
+}
+
 export interface PmoState {
   ok: true;
   serverTime: string;
@@ -572,4 +681,6 @@ export interface PmoState {
   runtime: RuntimeSummary;
   config: PmoConfig;
   dataDir: string;
+  /** Chaser drafts in flight or finished, by to-do id. */
+  chasers: Record<string, ChaserJob>;
 }

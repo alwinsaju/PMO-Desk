@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode, TextareaHTMLAttributes } from "react";
+import type { ComponentProps, ReactNode } from "react";
 import { Badge } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import type { Proposal, StructuringInfo } from "@/lib/pmo/types";
@@ -29,7 +29,7 @@ export function Field({
 export function TextArea({
   className,
   ...props
-}: TextareaHTMLAttributes<HTMLTextAreaElement>) {
+}: ComponentProps<"textarea">) {
   return (
     <textarea
       className={cn(

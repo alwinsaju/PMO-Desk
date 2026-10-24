@@ -16,14 +16,14 @@ the filter, retention, the Outlook script).
 
 ## 1. Check the drop folder (2 minutes)
 
-1. Open File Explorer, then `OneDrive - Deloitte`.
+1. Open File Explorer, then `OneDrive - Deloitte (O365D)`.
 2. Check that two folders exist in its root. Create them if not (right-click,
    New, Folder):
    - `PMO-Inbox` (the real one; keep it empty)
    - `PMO-Debug` (scratch space for capturing a Teams message; the app never
      reads it)
 3. The full path of the first one must be exactly
-   `C:\Users\alsaju\OneDrive - Deloitte\PMO-Inbox`. If yours is different, open
+   `C:\Users\alsaju\OneDrive - Deloitte (O365D)\PMO-Inbox`. If yours is different, open
    the app (step 2), click the gear, and read the **Inbox folder** line, then
    change `inboxDir` in `config.json` (the Data folder line shows where).
 4. Right-click `PMO-Inbox` and choose **Always keep on this device**, so
@@ -233,3 +233,31 @@ If no notification appears in the desktop app, check Windows **Focus assist / Do
 not disturb** and Settings, System, Notifications, **AI OS**. The log
 `desktop.log` (Developer menu, Open logs folder) says whether a notification was
 shown or failed.
+
+## 11. Waiting, chasers and replies in the same conversation (phase 4)
+
+Nothing here sends anything. The app only drafts text and shows you changes to
+approve.
+
+- **Waiting on someone.** Open a to-do, and in the Waiting box type who you are
+  waiting on and press *Mark waiting* (or pick the requester or sender). The list
+  then shows "Waiting on Priya Nair since Mon 19 Oct (7 days)". When they answer,
+  press *Got a reply (clear waiting)* (also on the list row). You can backdate the
+  start and change how soon you are reminded ("Chase after N working days") for
+  that to-do; the default is in Settings.
+- **Draft a chaser.** On a waiting to-do press *Draft a chaser*. The local model
+  writes a short polite follow-up (it can take a minute on this PC; you can close
+  the window and come back). Edit it, then *Copy*, or *Open as unsent mail draft*,
+  which opens a new message in your mail program with the text filled in. You press
+  Send yourself; the app never does.
+- **Replies in the same conversation.** When a new email (or Teams message in the
+  same chat) belongs to a to-do that is still open, it does not become a second
+  proposal. It appears in the Review Queue as **Update to existing to-do**: tick
+  the changes you want (clear "waiting", a new due date, a new action item, a note),
+  then *Approve*. *Reject* throws it away; *Create as separate to-do instead* treats
+  it as a new task. If it looks like a reply from the person you were waiting on,
+  the card suggests clearing "waiting". Approved messages are listed in the to-do's
+  **Timeline** tab, where you can open them.
+- Matching needs the producer to fill `thread.conversationId` (the Outlook script
+  and the Outlook flow do; a Teams message is matched by its chat). A paste never
+  matches an existing to-do.

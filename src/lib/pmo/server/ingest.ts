@@ -8,12 +8,14 @@ import { readFile, readdir, stat, unlink } from "node:fs/promises";
 import path from "node:path";
 import { dedupeKey, idsForKey } from "../dedupe.ts";
 import { filterIntake, teamsIdsOf } from "../filter.ts";
+import { pickMatchingTodo, threadKeyOf } from "../thread.ts";
 import {
   IntakeSchema,
   type Intake,
   type IntakeSummary,
   type PmoConfig,
   type Proposal,
+  type Todo,
 } from "../types.ts";
 import type { Store } from "./store.ts";
 
@@ -31,6 +33,9 @@ export interface ScanReport {
   duplicates: number;
   filtered: number;
   rejected: number;
+  /** Of `ingested`: messages that joined the thread of an open to-do and became
+   *  an "update to existing to-do" card instead of a new proposal. */
+  updates: number;
   /** Too new, too large or otherwise left for a later scan. */
   skipped: number;
   errors: string[];
@@ -87,6 +92,7 @@ export class Ingestor {
       duplicates: 0,
       filtered: 0,
       rejected: 0,
+      updates: 0,
       skipped: 0,
       errors: [],
     };
@@ -225,7 +231,8 @@ export class Ingestor {
       return;
     }
 
-    await this.store.withLock(async () => {
+    const matched = await this.store.withLock(async () => {
+      let found: { todo: Todo; threadKey: string } | null = null;
       await this.store.writeRaw({
         intakeId,
         dedupeKey: key,
@@ -237,6 +244,9 @@ export class Ingestor {
       // retry that follows just rewrites the same files; the proposal is only
       // created if it isn't there yet, so a retry never resets a live one.
       if (!(await this.store.getProposal(proposalId))) {
+        // Dedupe and the filter have already passed. A message in the thread of
+        // an open to-do becomes an update card, not a duplicate proposal.
+        found = await this.matchOpenTodo(intake);
         const proposal: Proposal = {
           id: proposalId,
           intakeId,
@@ -248,6 +258,14 @@ export class Ingestor {
           confidence: null,
           quoteVerified: null,
           ai: { model: null, durationMs: null, attempts: 0, error: null },
+          update: found
+            ? {
+                todoId: found.todo.id,
+                todoTitle: found.todo.title,
+                threadKey: found.threadKey,
+                result: null,
+              }
+            : null,
           createdAt: nowIso,
           updatedAt: nowIso,
         };
@@ -255,6 +273,7 @@ export class Ingestor {
       }
       await this.store.removeQuarantine(intakeId);
       await this.store.markSeen(key, { at: nowIso, intakeId });
+      return found;
     });
     await this.removeInboxFile(filePath, name);
     await this.store.logIngest({
@@ -263,8 +282,32 @@ export class Ingestor {
       intakeId,
       proposalId,
       source: intake.source,
+      ...(matched ? { updateOf: matched.todo.id } : {}),
     });
     report.ingested++;
+    if (matched) report.updates++;
+  }
+
+  /** The open to-do this message continues, by exact thread-key equality (see
+   *  thread.ts), or null. A to-do from before phase 4 has no stored key, so it
+   *  is derived from its source message when that is still on disk. */
+  private async matchOpenTodo(
+    intake: Intake,
+  ): Promise<{ todo: Todo; threadKey: string } | null> {
+    const key = threadKeyOf(intake);
+    if (!key) return null;
+    const candidates: { todo: Todo; key: string | null }[] = [];
+    for (const todo of await this.store.listTodos()) {
+      if (todo.status !== "open" || todo.source.source !== intake.source) continue;
+      let todoKey = todo.source.threadKey;
+      if (todoKey === null && todo.source.intakeId) {
+        const raw = await this.store.readRaw(todo.source.intakeId);
+        todoKey = raw ? threadKeyOf(raw.intake) : null;
+      }
+      candidates.push({ todo, key: todoKey });
+    }
+    const todo = pickMatchingTodo(key, candidates);
+    return todo ? { todo, threadKey: key } : null;
   }
 
   /** The file has been dealt with; remove it. If it can't be removed (a sync

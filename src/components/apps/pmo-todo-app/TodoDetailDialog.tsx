@@ -21,13 +21,16 @@ import {
   deriveStage,
   type TodoPatch,
 } from "@/lib/pmo/todoLogic";
-import { PRIORITIES, type ReminderPrefs, type Todo } from "@/lib/pmo/types";
-import { patchTodo } from "./api";
+import { PRIORITIES, type ChaserJob, type ReminderPrefs, type Todo } from "@/lib/pmo/types";
+import { ChaserDialog } from "./ChaserDialog";
+import { patchTodo, startChaser } from "./api";
 import { OriginalMessage } from "./OriginalMessage";
 import { SnoozeMenu } from "./SnoozeMenu";
 import { Field, Segmented, SourceBadge, TextArea } from "./parts";
 import { formatDay } from "./queueView";
+import { TimelineTab } from "./TimelineTab";
 import { ActionItemsEditor, CheckpointsEditor } from "./TodoEditors";
+import { WaitingPanel } from "./WaitingPanel";
 
 interface TodoDetailDialogProps {
   /** null closes the dialog. */
@@ -36,6 +39,8 @@ interface TodoDetailDialogProps {
   /** Reminder preferences and the server's clock, for the snooze presets. */
   reminders: ReminderPrefs;
   nowIso: string;
+  /** The chaser draft for this to-do (polled state), if there is one. */
+  chaser?: ChaserJob;
   onSettled: () => void;
   onOpenChange: (open: boolean) => void;
 }
@@ -48,7 +53,6 @@ interface Fields {
   requesterName: string;
   dueAt: string;
   priority: Todo["priority"];
-  waitingOn: string;
 }
 
 const fieldsOf = (todo: Todo): Fields => ({
@@ -59,7 +63,6 @@ const fieldsOf = (todo: Todo): Fields => ({
   requesterName: todo.requester.name ?? "",
   dueAt: todo.dueAt ?? "",
   priority: todo.priority,
-  waitingOn: todo.waitingOn ?? "",
 });
 
 /** Changes only when a checkpoint's id or state does, so a dismissed "mark it
@@ -73,6 +76,7 @@ export function TodoDetailDialog({
   today,
   reminders,
   nowIso,
+  chaser,
   onSettled,
   onOpenChange,
 }: TodoDetailDialogProps) {
@@ -83,6 +87,7 @@ export function TodoDetailDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dismissedOffer, setDismissedOffer] = useState<string | null>(null);
+  const [chaserOpen, setChaserOpen] = useState(false);
 
   if (todo && todo !== last) setLast(todo);
   if (todo && todo.id !== fieldsFor) {
@@ -90,6 +95,7 @@ export function TodoDetailDialog({
     setFields(fieldsOf(todo));
     setDirty(false);
     setError(null);
+    setChaserOpen(false);
   }
   const shown = todo ?? last;
   if (!shown || !fields) return null;
@@ -134,7 +140,6 @@ export function TodoDetailDialog({
       },
       dueAt: fields.dueAt || null,
       priority: fields.priority,
-      waitingOn: fields.waitingOn.trim() || null,
     });
     if (done) setDirty(false);
   };
@@ -146,6 +151,29 @@ export function TodoDetailDialog({
   const signature = checkpointSignature(shown);
   const offer = allCheckpointsComplete(shown) && dismissedOffer !== signature;
   const snoozed = open && isSnoozed(shown, new Date(nowIso));
+
+  /** Start (or reopen) the local model's chaser draft, then show it. */
+  const draftChaser = async () => {
+    if (chaser && chaser.status !== "failed") {
+      setChaserOpen(true);
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const reply = await startChaser(shown.id);
+      if (!reply.ok) {
+        setError(reply.reason);
+        return;
+      }
+      onSettled();
+      setChaserOpen(true);
+    } catch {
+      setError("Could not reach the app server.");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const dueChips: { label: string; value: string }[] = [
     { label: "Today", value: today },
@@ -236,6 +264,9 @@ export function TodoDetailDialog({
             <TabsTrigger value="checkpoints">
               Checkpoints ({progress.done}/{progress.total})
             </TabsTrigger>
+            <TabsTrigger value="timeline">
+              Timeline ({shown.history?.length ?? 0})
+            </TabsTrigger>
             <TabsTrigger value="original">Original message</TabsTrigger>
           </TabsList>
 
@@ -277,6 +308,16 @@ export function TodoDetailDialog({
                   />
                   This is mine (I am the owner)
                 </label>
+                <WaitingPanel
+                  todo={shown}
+                  prefs={reminders}
+                  nowIso={nowIso}
+                  today={today}
+                  busy={busy}
+                  job={chaser}
+                  apply={apply}
+                  onDraftChaser={() => void draftChaser()}
+                />
                 <div className="grid grid-cols-2 gap-3">
                   <Field label="Due date">
                     <Input
@@ -295,17 +336,6 @@ export function TodoDetailDialog({
                           {chip.label}
                         </button>
                       ))}
-                    </span>
-                  </Field>
-                  <Field label="Waiting on">
-                    <Input
-                      value={fields.waitingOn}
-                      placeholder="Nobody"
-                      onChange={(e) => edit({ waitingOn: e.target.value })}
-                    />
-                    <span className="text-ink-faint text-[11px] leading-relaxed">
-                      Set this to get a chaser if nothing changes for{" "}
-                      {reminders.chaserDays} working days.
                     </span>
                   </Field>
                 </div>
@@ -347,6 +377,12 @@ export function TodoDetailDialog({
                 apply={apply}
                 stage={stage}
               />
+            </ScrollArea>
+          </TabsContent>
+
+          <TabsContent value="timeline" className="mt-3 min-h-0 flex-1">
+            <ScrollArea className="h-full">
+              <TimelineTab todo={shown} />
             </ScrollArea>
           </TabsContent>
 
@@ -404,6 +440,13 @@ export function TodoDetailDialog({
           </Button>
         </div>
       </DialogContent>
+      <ChaserDialog
+        todo={shown}
+        job={chaser}
+        open={chaserOpen && open}
+        onOpenChange={setChaserOpen}
+        onSettled={onSettled}
+      />
     </Dialog>
   );
 }

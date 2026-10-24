@@ -45,6 +45,10 @@ export type AuditAction =
   | "retry"
   | "paste"
   | "snooze"
+  | "waiting"
+  | "update-apply"
+  | "update-separate"
+  | "chaser-draft"
   | "config";
 
 /** state/notify.json: reminders already delivered (by key) and the claims that

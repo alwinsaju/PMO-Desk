@@ -2,6 +2,7 @@
 // Mirrors the repo convention: HTTP 200 with an { ok, reason? } envelope, so
 // a business failure is a value here and only a network failure throws.
 import type {
+  ChaserJob,
   PmoConfig,
   ReminderPrefs,
   PmoConfigPatch,
@@ -22,7 +23,7 @@ export type Reply<T extends object = object> =
 
 async function call<T extends object>(
   path: string,
-  method: "GET" | "POST" | "PATCH" | "PUT" = "GET",
+  method: "GET" | "POST" | "PATCH" | "PUT" | "DELETE" = "GET",
   body?: unknown,
 ): Promise<Reply<T>> {
   const response = await fetch(`${BASE}${path}`, {
@@ -58,6 +59,11 @@ export const approveProposal = (id: string, draft: TodoDraft) =>
   call<{ todo: Todo }>(`/queue/${id}/approve`, "POST", { draft });
 export const rejectProposal = (id: string) => call(`/queue/${id}/reject`, "POST");
 export const retryProposal = (id: string) => call(`/queue/${id}/retry`, "POST");
+/** Apply an "update to existing to-do" card: `include` = the ticked change ids. */
+export const applyUpdate = (id: string, include?: string[]) =>
+  call<{ todo: Todo }>(`/queue/${id}/apply`, "POST", { include });
+/** "Create as separate to-do instead". */
+export const separateUpdate = (id: string) => call(`/queue/${id}/separate`, "POST");
 export const stageEdits = (id: string, draft: TodoDraft) =>
   call(`/queue/${id}`, "PATCH", { draft });
 
@@ -68,6 +74,12 @@ export const createTodo = (draft: TodoDraft, proposalId?: string) =>
   call<{ todo: Todo }>("/todos", "POST", { draft, proposalId });
 export const patchTodo = (id: string, patch: TodoPatch) =>
   call<{ todo: Todo; offerDone: boolean }>(`/todos/${id}`, "PATCH", patch);
+
+// --- chaser drafts: local model, text to copy, never sent ------------------------
+
+export const startChaser = (todoId: string) =>
+  call<{ job: ChaserJob }>(`/todos/${todoId}/chaser`, "POST");
+export const discardChaser = (todoId: string) => call(`/todos/${todoId}/chaser`, "DELETE");
 
 export const updateConfig = (patch: PmoConfigPatch) =>
   call<{ config: PmoConfig }>("/config", "PUT", patch);

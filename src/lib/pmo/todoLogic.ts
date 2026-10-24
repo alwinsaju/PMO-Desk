@@ -8,12 +8,14 @@ import type {
   ActionItem,
   AiStructured,
   Checkpoint,
+  HistoryEntry,
+  HistoryKind,
   Proposal,
   Todo,
   TodoDraft,
   TodoSource,
 } from "./types.ts";
-import { PRIORITIES, TodoStatusSchema } from "./types.ts";
+import { MAX_CHASER_DAYS, MAX_HISTORY, PRIORITIES, TodoStatusSchema } from "./types.ts";
 
 export function newId(prefix: string): string {
   return `${prefix}_${globalThis.crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`;
@@ -78,13 +80,50 @@ export function buildCheckpoints(
   }));
 }
 
+// ---------------------------------------------------------------------------
+// History (the timeline)
+// ---------------------------------------------------------------------------
+
+export function historyEntry(
+  kind: HistoryKind,
+  text: string,
+  at: string,
+  link: { intakeId?: string | null; from?: string | null } = {},
+): HistoryEntry {
+  return {
+    id: newId("hs"),
+    at,
+    kind,
+    text,
+    intakeId: link.intakeId ?? null,
+    from: link.from ?? null,
+  };
+}
+
+/** Appends and keeps the list within MAX_HISTORY: the first entry (where the
+ *  to-do came from) always stays, the oldest of the rest go. */
+export function appendHistory(
+  history: readonly HistoryEntry[],
+  ...entries: HistoryEntry[]
+): HistoryEntry[] {
+  const all = [...history, ...entries];
+  return all.length <= MAX_HISTORY
+    ? all
+    : [all[0], ...all.slice(all.length - (MAX_HISTORY - 1))];
+}
+
 export interface BuildTodoContext {
   now: string;
   approvedBy: string;
   source: TodoSource;
 }
 
+const trimToNull = (value: string | null | undefined): string | null =>
+  value?.trim() || null;
+
 export function buildTodo(draft: TodoDraft, context: BuildTodoContext): Todo {
+  const waitingOn = trimToNull(draft.waitingOn);
+  const { source } = context;
   return {
     id: newId("td"),
     title: draft.title.trim(),
@@ -102,9 +141,12 @@ export function buildTodo(draft: TodoDraft, context: BuildTodoContext): Todo {
     })),
     checkpoints: buildCheckpoints(draft.checkpointTemplate),
     status: "open",
-    waitingOn: draft.waitingOn,
+    waitingOn,
+    // Since the approval, unless the draft says when the waiting really began.
+    waitingSince: waitingOn ? (draft.waitingSince ?? context.now) : null,
+    chaserDays: null,
     tags: draft.tags,
-    source: context.source,
+    source,
     // Phase 1 sends no notifications; the shape is here so a later phase
     // doesn't need a migration.
     reminders: {
@@ -118,6 +160,19 @@ export function buildTodo(draft: TodoDraft, context: BuildTodoContext): Todo {
     approvedBy: context.approvedBy,
     updatedAt: context.now,
     completedAt: null,
+    history: [
+      historyEntry(
+        "created",
+        source.intakeId
+          ? `Created from ${source.source === "teams" ? "a Teams message" : source.source === "outlook" ? "an email" : "a pasted message"}${source.subject ? `: ${source.subject}` : ""}.`
+          : "Created by hand.",
+        context.now,
+        { intakeId: source.intakeId, from: source.sender },
+      ),
+      ...(waitingOn
+        ? [historyEntry("waiting", `Waiting on ${waitingOn}.`, context.now)]
+        : []),
+    ],
   };
 }
 
@@ -180,7 +235,17 @@ export const TodoPatchSchema = z.object({
     .optional(),
   dueAt: isoDay.nullable().optional(),
   priority: z.enum(PRIORITIES).optional(),
-  waitingOn: z.string().nullable().optional(),
+  waitingOn: z.string().max(200).nullable().optional(),
+  /** When the waiting began (ISO); defaults to now when `waitingOn` is set. */
+  waitingSince: z
+    .string()
+    .refine((value) => !Number.isNaN(Date.parse(value)), {
+      message: "waitingSince must be an ISO 8601 date-time",
+    })
+    .nullable()
+    .optional(),
+  /** Chase after this many quiet working days; null = the global default. */
+  chaserDays: z.number().int().min(1).max(MAX_CHASER_DAYS).nullable().optional(),
   tags: z.array(z.string()).max(10).optional(),
   status: TodoStatusSchema.optional(),
   /** Silence this to-do's reminders until this instant (ISO); null un-snoozes. */
@@ -248,7 +313,9 @@ export interface PatchResult {
    *  asks the human whether to mark it done. Never done automatically. */
   offerDone: boolean;
   /** For the audit log. */
-  kinds: Array<"edit" | "complete" | "cancel" | "reopen" | "progress" | "snooze">;
+  kinds: Array<
+    "edit" | "complete" | "cancel" | "reopen" | "progress" | "snooze" | "waiting"
+  >;
 }
 
 const FIELD_KEYS = [
@@ -259,6 +326,8 @@ const FIELD_KEYS = [
   "dueAt",
   "priority",
   "waitingOn",
+  "waitingSince",
+  "chaserDays",
   "tags",
   "addActionItems",
   "editActionItems",
@@ -290,8 +359,48 @@ export function applyTodoPatch(todo: Todo, patch: TodoPatch, now: string): Patch
   if (patch.requester !== undefined) next.requester = patch.requester;
   if (patch.dueAt !== undefined) next.dueAt = patch.dueAt;
   if (patch.priority !== undefined) next.priority = patch.priority;
-  if (patch.waitingOn !== undefined) next.waitingOn = patch.waitingOn;
+  let history = todo.history ?? [];
   if (patch.tags !== undefined) next.tags = patch.tags;
+  if (patch.chaserDays !== undefined) next.chaserDays = patch.chaserDays;
+  if (patch.waitingOn !== undefined) {
+    const before = trimToNull(todo.waitingOn);
+    const after = trimToNull(patch.waitingOn);
+    next.waitingOn = after;
+    if (after === null) {
+      next.waitingSince = null;
+    } else if (after !== before) {
+      // Newly waiting (or waiting on someone else): the clock starts now,
+      // unless the caller says when it really began.
+      next.waitingSince = patch.waitingSince ?? now;
+    } else if (patch.waitingSince !== undefined) {
+      next.waitingSince = patch.waitingSince ?? todo.waitingSince ?? now;
+    }
+    if (after !== before) {
+      kinds.push("waiting");
+      history = appendHistory(
+        history,
+        historyEntry(
+          "waiting",
+          after
+            ? `Waiting on ${after}.`
+            : `Got a reply / no longer waiting${before ? ` (was waiting on ${before})` : ""}.`,
+          now,
+        ),
+      );
+    }
+  } else if (patch.waitingSince !== undefined && trimToNull(todo.waitingOn)) {
+    next.waitingSince = patch.waitingSince ?? now;
+  }
+  if (patch.dueAt !== undefined && patch.dueAt !== todo.dueAt) {
+    history = appendHistory(
+      history,
+      historyEntry(
+        "due",
+        `Due date ${todo.dueAt ?? "(none)"} → ${patch.dueAt ?? "(none)"}.`,
+        now,
+      ),
+    );
+  }
   if (FIELD_KEYS.some((key) => patch[key] !== undefined)) kinds.push("edit");
 
   let items = next.actionItems;
@@ -394,7 +503,20 @@ export function applyTodoPatch(todo: Todo, patch: TodoPatch, now: string): Patch
           ? "cancel"
           : "reopen",
     );
+    history = appendHistory(
+      history,
+      historyEntry(
+        "status",
+        patch.status === "done"
+          ? "Marked done."
+          : patch.status === "cancelled"
+            ? "Cancelled."
+            : "Reopened.",
+        now,
+      ),
+    );
   }
+  next.history = history;
 
   // A snooze alone is not "an update": it must not restart the chaser clock
   // (the working days a to-do has gone quiet), so keep the old timestamp.

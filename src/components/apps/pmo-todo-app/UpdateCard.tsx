@@ -1,0 +1,284 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import { ArrowRightIcon } from "@phosphor-icons/react";
+import { Badge, Button } from "@/components/ui";
+import { cn } from "@/lib/cn";
+import { MAX_AI_ATTEMPTS, type PmoState, type Proposal } from "@/lib/pmo/types";
+import { UPDATE_KIND_LABEL, planUpdate } from "@/lib/pmo/updateLogic";
+import { applyUpdate, rejectProposal, retryProposal, separateUpdate } from "./api";
+import { OriginalMessage } from "./OriginalMessage";
+import { ProposalStatusBadge, SourceBadge } from "./parts";
+import { relativeTime } from "./queueView";
+
+interface UpdateCardProps {
+  proposal: Proposal;
+  state: PmoState;
+  onOpenTodo: (todoId: string) => void;
+  onSettled: () => void;
+}
+
+/**
+ * "Update to existing to-do": a new message in the same conversation as an open
+ * to-do. Shows the to-do, what the message would change (before -> after, each
+ * change tickable) and the message itself. Approve applies the ticked changes
+ * and links the message into the to-do's timeline; Reject discards it;
+ * "Create as separate to-do instead" falls back to the normal proposal.
+ */
+export function UpdateCard({ proposal, state, onOpenTodo, onSettled }: UpdateCardProps) {
+  const update = proposal.update!;
+  const { summary } = proposal;
+  const todo = state.todos.find((t) => t.id === update.todoId) ?? null;
+  const open = todo?.status === "open";
+  const result = update.result;
+  const [picked, setPicked] = useState<Record<string, boolean>>({});
+  const [showMessage, setShowMessage] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const plan = useMemo(
+    () =>
+      todo && result
+        ? planUpdate(todo, result, {
+            sender: { name: summary.senderName, address: summary.senderAddress },
+            receivedAt: summary.receivedAt,
+          })
+        : null,
+    [todo, result, summary.senderName, summary.senderAddress, summary.receivedAt],
+  );
+  const isOn = (id: string, fallback: boolean) => picked[id] ?? fallback;
+  const ticked = plan ? plan.changes.filter((c) => isOn(c.id, c.defaultOn)) : [];
+
+  const run = async (action: () => Promise<{ ok: boolean; reason?: string }>) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const reply = await action();
+      if (!reply.ok) setError(reply.reason ?? "That did not work.");
+      else onSettled();
+    } catch {
+      setError("Could not reach the app server.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const status = proposal.status;
+  const ready = status === "ready" && !!result && !!plan;
+  const sender = summary.senderName ?? summary.senderAddress ?? "Unknown sender";
+  const nothing = plan?.kind === "nothing";
+  const approveLabel =
+    ticked.length > 0
+      ? `Approve (apply ${ticked.length} change${ticked.length === 1 ? "" : "s"})`
+      : "Approve (just link the message)";
+
+  return (
+    <div
+      data-testid="update-card"
+      className="border-border/60 bg-surface-elevated flex flex-col gap-3 rounded-2xl border p-4"
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge variant="accent">Update to existing to-do</Badge>
+        <SourceBadge source={summary.source} />
+        <span className="text-ink-muted min-w-0 flex-1 truncate text-[12px]">
+          from {sender}
+          <span className="text-ink-faint">
+            {" · "}
+            {relativeTime(summary.receivedAt, Date.parse(state.serverTime))}
+            {summary.subject ? ` · ${summary.subject}` : ""}
+          </span>
+        </span>
+        {ready && plan && (
+          <Badge variant="outline">{UPDATE_KIND_LABEL[plan.kind]}</Badge>
+        )}
+        {ready && proposal.quoteVerified === false && (
+          <Badge className="bg-ink text-ink-inverse">check against original</Badge>
+        )}
+        {!ready && (
+          <ProposalStatusBadge proposal={proposal} structuring={state.structuring} />
+        )}
+      </div>
+
+      <p className="text-ink-muted text-[12px]">
+        To-do:{" "}
+        {todo ? (
+          <button
+            type="button"
+            onClick={() => onOpenTodo(todo.id)}
+            className="text-ink focus-visible:ring-accent rounded text-[13px] font-semibold underline-offset-2 outline-none hover:underline focus-visible:ring-2"
+          >
+            {todo.title}
+          </button>
+        ) : (
+          <span className="text-ink text-[13px] font-semibold">{update.todoTitle}</span>
+        )}
+        {todo?.waitingOn?.trim() && (
+          <span className="text-ink-faint"> · waiting on {todo.waitingOn}</span>
+        )}
+        {todo && !open && <span className="text-ink-faint"> · {todo.status}</span>}
+        {!todo && <span className="text-ink-faint"> · no longer exists</span>}
+      </p>
+
+      {(status === "pending" || status === "structuring") && (
+        <p className="text-ink-muted text-[12px]">
+          {state.structuring.paused
+            ? "Waiting for the local model to come back; this will be read automatically."
+            : "The local model is reading this message against the to-do (this can take a minute or two)."}
+        </p>
+      )}
+      {status === "failed" && (
+        <p className="border-border text-ink rounded-lg border bg-neutral-50 px-3 py-2 text-[12px]">
+          The local model could not read this message
+          {proposal.ai.error ? ` (${proposal.ai.error.replace(/\.$/, "")})` : ""}.
+          Attempts used: {proposal.ai.attempts} of {MAX_AI_ATTEMPTS}. Retry, or create it
+          as a separate to-do.
+        </p>
+      )}
+
+      {ready && result && plan && (
+        <>
+          {result.summary && (
+            <p className="text-ink text-[13px] leading-relaxed">{result.summary}</p>
+          )}
+          {plan.changes.length === 0 ? (
+            <p className="text-ink-muted text-[12px]">
+              {nothing
+                ? "Nothing actionable in this message."
+                : "Nothing to change on the to-do."}{" "}
+              Approving only links the message to the to-do&rsquo;s timeline.
+            </p>
+          ) : (
+            <ul className="flex flex-col gap-2" aria-label="Proposed changes">
+              {plan.changes.map((change) => {
+                const on = isOn(change.id, change.defaultOn);
+                return (
+                  <li key={change.id} className="flex items-start gap-2.5">
+                    <input
+                      id={`${proposal.id}-${change.id}`}
+                      type="checkbox"
+                      checked={on}
+                      disabled={busy || !open}
+                      onChange={(e) =>
+                        setPicked((prev) => ({ ...prev, [change.id]: e.target.checked }))
+                      }
+                      className="accent-accent mt-0.5 h-3.5 w-3.5 shrink-0"
+                    />
+                    <label
+                      htmlFor={`${proposal.id}-${change.id}`}
+                      className="min-w-0 flex-1 text-[12px]"
+                    >
+                      <span className="text-ink-faint block text-[10px] font-semibold tracking-wide uppercase">
+                        {change.label}
+                      </span>
+                      <span
+                        className={cn(
+                          "text-ink flex flex-wrap items-center gap-x-1.5 gap-y-0.5 break-words",
+                          !on && "opacity-60",
+                        )}
+                      >
+                        {change.before !== null && (
+                          <>
+                            <span className="text-ink-muted line-through decoration-1">
+                              {change.before}
+                            </span>
+                            <ArrowRightIcon size={11} className="text-ink-faint shrink-0" />
+                          </>
+                        )}
+                        <span className="font-medium whitespace-pre-wrap">
+                          {change.after}
+                        </span>
+                      </span>
+                      {change.hint && (
+                        <span
+                          className={cn(
+                            "mt-0.5 block text-[11px]",
+                            change.kind === "waiting" && plan.replyFrom
+                              ? "text-accent-800 font-medium"
+                              : "text-ink-faint",
+                          )}
+                        >
+                          {change.hint}
+                        </span>
+                      )}
+                    </label>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </>
+      )}
+
+      <div>
+        <button
+          type="button"
+          onClick={() => setShowMessage((v) => !v)}
+          aria-expanded={showMessage}
+          className="text-ink-muted hover:text-ink text-[12px] underline-offset-2 hover:underline"
+        >
+          {showMessage ? "Hide the new message" : "Show the new message"}
+        </button>
+        {showMessage && (
+          <div className="border-border/60 mt-2 flex h-56 flex-col rounded-lg border p-3">
+            <OriginalMessage
+              intakeId={proposal.intakeId}
+              quote={ready ? result?.quote : null}
+              className="flex min-h-0 flex-1 flex-col"
+            />
+          </div>
+        )}
+      </div>
+
+      {error && (
+        <p role="alert" className="text-ink text-[12px] font-medium">
+          {error}
+        </p>
+      )}
+
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={busy || status === "structuring"}
+          onClick={() => void run(() => separateUpdate(proposal.id))}
+        >
+          Create as separate to-do instead
+        </Button>
+        {status === "failed" && proposal.ai.attempts < MAX_AI_ATTEMPTS && (
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={busy}
+            onClick={() => void run(() => retryProposal(proposal.id))}
+          >
+            Retry
+          </Button>
+        )}
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={busy}
+          onClick={() => void run(() => rejectProposal(proposal.id))}
+        >
+          {nothing ? "Dismiss" : "Reject"}
+        </Button>
+        {ready && (
+          <Button
+            size="sm"
+            disabled={busy || !open}
+            onClick={() =>
+              void run(() =>
+                applyUpdate(
+                  proposal.id,
+                  ticked.map((c) => c.id),
+                ),
+              )
+            }
+          >
+            {approveLabel}
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}

@@ -72,7 +72,7 @@
 #>
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
-  [string]$InboxDir = 'C:\Users\alsaju\OneDrive - Deloitte\PMO-Inbox',
+  [string]$InboxDir = 'C:\Users\alsaju\OneDrive - Deloitte (O365D)\PMO-Inbox',
   [string]$FolderPath,
   [ValidateRange(1, 3650)][int]$SinceDays = 14,
   [string]$StatePath = (Join-Path $env:LOCALAPPDATA 'AI OS\pmo-intake\outlook-seen.json'),

@@ -4,11 +4,18 @@
 //   [[stub-timeout]]   -> AiRuntimeError("timeout")
 //   [[stub-invalid]]   -> AiRuntimeError("invalid-output")
 //   [[stub-bad-quote]] -> an answer whose quote is not in the message
+//   [[stub-unrelated]] -> (updates) "this is about something else"
 // and a file named `stub-runtime-down` in the data directory makes every call
 // fail as "runtime-down" until it is deleted (the "stop the model" switch).
+//
+// All three tasks answer deterministically from the prompt text:
+//   generate        message -> to-do proposal
+//   generateUpdate  new message + existing to-do -> what changed (reply / new
+//                   date / new action / new info / nothing)
+//   draftChaser     a short polite follow-up built from the facts block
 import { existsSync } from "node:fs";
 import path from "node:path";
-import { AiStructuredSchema } from "../types.ts";
+import { AiStructuredSchema, AiUpdateSchema } from "../types.ts";
 import type { Generator } from "./structure.ts";
 
 function runtimeError(code: string, message: string): Error {
@@ -19,38 +26,46 @@ function runtimeError(code: string, message: string): Error {
 }
 
 const FYI = /\b(fyi|for your information|no action|newsletter|unsubscribe)\b/i;
+const THANKS_ONLY = /^\s*(thanks|thank you|ok|okay|noted|cheers|great)\b[^.?!]{0,40}[.!]?\s*$/i;
+const DELIVERED =
+  /\b(attached|here (is|are)|done|completed|sent (it|them|over)|i have sent|confirmed|approved|signed off)\b/i;
+const NEW_ASK = /\b(could you (also )?|can you (also )?|please (also )?|also,? please)\b/i;
+
+const sentences = (text: string) =>
+  text
+    .split(/(?<=[.!?])\s+|\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+const bodyOf = (prompt: string) =>
+  /<message [^>]*>\n([\s\S]*?)\n<\/message>/.exec(prompt)?.[1] ?? prompt;
 
 export function createStubGenerator(
   options: { dataDir?: string; delayMs?: number } = {},
 ): Generator {
+  /** The delay, the "model is down" switch and the failure markers. */
+  async function gate(prompt: string, text: string): Promise<void> {
+    if (options.delayMs) await new Promise((resolve) => setTimeout(resolve, options.delayMs));
+    if (options.dataDir && existsSync(path.join(options.dataDir, "stub-runtime-down"))) {
+      throw runtimeError("runtime-down", "Could not reach the local AI runtime (stub).");
+    }
+    if (text.includes("[[stub-timeout]]") || prompt.includes("[[stub-timeout]]")) {
+      throw runtimeError("timeout", "The local AI model did not answer within 1s (stub).");
+    }
+    if (text.includes("[[stub-invalid]]") || prompt.includes("[[stub-invalid]]")) {
+      throw runtimeError(
+        "invalid-output",
+        "The local AI model did not return valid output (stub).",
+      );
+    }
+  }
+
   return {
     model: () => "stub",
-    async generate({ prompt }) {
-      if (options.delayMs)
-        await new Promise((resolve) => setTimeout(resolve, options.delayMs));
-      if (
-        options.dataDir &&
-        existsSync(path.join(options.dataDir, "stub-runtime-down"))
-      ) {
-        throw runtimeError(
-          "runtime-down",
-          "Could not reach the local AI runtime (stub).",
-        );
-      }
 
-      const body = /<message [^>]*>\n([\s\S]*?)\n<\/message>/.exec(prompt)?.[1] ?? prompt;
-      if (body.includes("[[stub-timeout]]")) {
-        throw runtimeError(
-          "timeout",
-          "The local AI model did not answer within 1s (stub).",
-        );
-      }
-      if (body.includes("[[stub-invalid]]")) {
-        throw runtimeError(
-          "invalid-output",
-          "The local AI model did not return valid output (stub).",
-        );
-      }
+    async generate({ prompt }) {
+      const body = bodyOf(prompt);
+      await gate(prompt, body);
 
       const first = body.split(/(?<=[.!?])\s+|\n/).find((line) => line.trim()) ?? body;
       const sentence = first.trim().slice(0, 250);
@@ -73,12 +88,78 @@ export function createStubGenerator(
           ? [{ text: sentence.slice(0, 120), owner: null, dueAt: null }]
           : [],
         checkpointTemplate: "simple",
-        waitingOn: null,
+        // Lets a preview show the waiting UX straight from an approved proposal.
+        waitingOn: /\[\[stub-waiting:([^\]]{1,60})\]\]/.exec(body)?.[1]?.trim() ?? null,
         tags: ["stub"],
         quote: body.includes("[[stub-bad-quote]]")
           ? "This sentence does not appear anywhere in the message."
           : sentence,
       });
+    },
+
+    async generateUpdate({ prompt }) {
+      const body = bodyOf(prompt);
+      await gate(prompt, body);
+
+      const lines = sentences(body);
+      const clean = (line: string) => line.replace(/\[\[[^\]]*\]\]/g, "").trim();
+      const main = clean(lines.find((line) => clean(line)) ?? body).slice(0, 250);
+      const todoBlock = /<todo>\n([\s\S]*?)\n<\/todo>/.exec(prompt)?.[1] ?? "";
+      const waitingOn = /^waiting on: (.+)$/m.exec(todoBlock)?.[1]?.trim() ?? "nobody";
+      const currentDue = /^due: (\S+)$/m.exec(todoBlock)?.[1] ?? "none";
+      const day = /\b(\d{4}-\d{2}-\d{2})\b/.exec(body)?.[1] ?? null;
+      const newDue = day && day !== currentDue ? day : null;
+      const delivered = DELIVERED.test(body);
+      const unrelated = body.includes("[[stub-unrelated]]");
+      const nothing = !unrelated && (THANKS_ONLY.test(body) || FYI.test(body));
+      const ask = NEW_ASK.test(body) ? lines.find((line) => NEW_ASK.test(line)) : undefined;
+
+      let kind: "unrelated" | "reply" | "new-info" | "new-action" | "due-change" | "nothing" =
+        "new-info";
+      if (unrelated) kind = "unrelated";
+      else if (nothing) kind = "nothing";
+      else if (waitingOn !== "nobody" && delivered) kind = "reply";
+      else if (newDue) kind = "due-change";
+      else if (ask) kind = "new-action";
+
+      const actionable = kind !== "unrelated" && kind !== "nothing";
+      return AiUpdateSchema.parse({
+        reason: unrelated
+          ? "The message is about a different subject."
+          : nothing
+            ? "Only an acknowledgement."
+            : "The message adds to the to-do.",
+        kind,
+        summary: nothing ? "Acknowledgement only." : main,
+        clearsWaiting: actionable && waitingOn !== "nobody" && delivered,
+        newDueAt: actionable ? newDue : null,
+        newActionItems:
+          actionable && ask && kind !== "reply"
+            ? [{ text: clean(ask).slice(0, 120), owner: null, dueAt: null }]
+            : [],
+        note: actionable ? main.slice(0, 200) : null,
+        quote: body.includes("[[stub-bad-quote]]")
+          ? "This sentence does not appear anywhere in the message."
+          : main,
+      });
+    },
+
+    async draftChaser({ prompt }) {
+      await gate(prompt, prompt);
+      const field = (label: string) =>
+        new RegExp(`^${label}: (.+)$`, "m").exec(prompt)?.[1]?.trim() ?? "";
+      const waitingOn = field("Waiting on") || "there";
+      const title = field("Title") || "this";
+      const waited = field("Waited so far");
+      const first = waitingOn.split(/[\s(,]/)[0] || waitingOn;
+      return [
+        `Hi ${first},`,
+        "",
+        `Just checking in on "${title}"${waited ? `: it has been ${waited} since I asked` : ""}. Could you let me know where things stand when you get a moment?`,
+        "",
+        "Thanks,",
+        "Alwin",
+      ].join("\n");
     },
   };
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { BellSlashIcon, PlusIcon } from "@phosphor-icons/react";
+import { BellSlashIcon, CheckIcon, HourglassMediumIcon, PlusIcon } from "@phosphor-icons/react";
 import { Badge, Button } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { describeInstant, isDueSoon, isSnoozed } from "@/lib/pmo/due";
@@ -19,6 +19,7 @@ import {
   TODO_SORTS,
   countByFilter,
   filterTodos,
+  describeWaiting,
   formatDay,
   ownerLabel,
   sortTodosBy,
@@ -148,6 +149,9 @@ function TodoCard({
   const stage = deriveStage(todo);
   const progress = checkpointProgress(todo);
   const percent = progress.total ? Math.round((progress.done / progress.total) * 100) : 0;
+  const waiting = open
+    ? describeWaiting(todo, new Date(state.serverTime), state.config.reminders, today)
+    : null;
   const shownItems = todo.actionItems.slice(0, 3);
   const finished = allCheckpointsComplete(todo);
 
@@ -185,6 +189,19 @@ function TodoCard({
           {overdue && <Badge className="bg-ink text-ink-inverse">Overdue</Badge>}
           {!overdue && dueSoon && <Badge variant="accent">Due soon</Badge>}
           {!open && <Badge variant="outline">{todo.status}</Badge>}
+          {waiting && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2.5 text-[12px]"
+              disabled={busyId === "reply"}
+              title={`Clear "waiting on ${waiting.who}"`}
+              onClick={() => void change({ waitingOn: null }, "reply")}
+            >
+              <CheckIcon size={12} weight="bold" />
+              Got a reply
+            </Button>
+          )}
           {open && (
             <SnoozeMenu
               todo={todo}
@@ -206,7 +223,20 @@ function TodoCard({
         <span className={cn(overdue && "text-ink font-semibold")}>
           {todo.dueAt ? `Due ${formatDay(todo.dueAt, today)}` : "No due date"}
         </span>
-        {todo.waitingOn && <span>Waiting on {todo.waitingOn}</span>}
+        {waiting && (
+          <span
+            data-testid="waiting-chip"
+            className="inline-flex flex-wrap items-center gap-1.5"
+          >
+            <HourglassMediumIcon size={12} />
+            Waiting on <strong className="text-ink font-medium">{waiting.who}</strong>
+            <span className="text-ink-faint">
+              {waiting.since}
+              {waiting.age && ` (${waiting.age})`}
+            </span>
+            {waiting.chaseDue && <Badge variant="accent">Time to chase</Badge>}
+          </span>
+        )}
         {snoozed && (
           <span className="inline-flex items-center gap-1">
             <BellSlashIcon size={12} />

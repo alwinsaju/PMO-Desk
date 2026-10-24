@@ -2,7 +2,7 @@
 
 Two cloud flows that each turn one message into one `pmo-intake/1` JSON file in
 your OneDrive folder `PMO-Inbox` (see [`PMO-INTAKE-CONTRACT.md`](./PMO-INTAKE-CONTRACT.md)).
-OneDrive syncs the folder to `C:\Users\alsaju\OneDrive - Deloitte\PMO-Inbox`,
+OneDrive syncs the folder to `C:\Users\alsaju\OneDrive - Deloitte (O365D)\PMO-Inbox`,
 where the PMO To-Do app picks the files up. For the whole set-up in order, start
 with [`HOW-TO-GET-STARTED.md`](./HOW-TO-GET-STARTED.md).
 

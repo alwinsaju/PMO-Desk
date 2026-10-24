@@ -1,19 +1,29 @@
 // Pure list/formatting helpers for the PMO To-Do window. No React, and
 // relative imports with the .ts extension, so `pnpm test` can load this file
 // under plain Node (see queueView.test.mjs).
-import { isDueSoon, isSnoozed, isWaiting } from "../../../lib/pmo/due.ts";
+import {
+  isDueSoon,
+  isSnoozed,
+  isWaiting,
+  waitingState,
+} from "../../../lib/pmo/due.ts";
 import { domainMatches, domainOf } from "../../../lib/pmo/filter.ts";
 import { checkpointProgress } from "../../../lib/pmo/todoLogic.ts";
 import type {
+  HistoryKind,
   PmoConfig,
   Priority,
   Proposal,
   QuarantineRecord,
+  ReminderPrefs,
   StructuringInfo,
   Todo,
 } from "../../../lib/pmo/types.ts";
 
 export interface QueueGroups {
+  /** Messages that continue an open to-do ("update to existing to-do" cards),
+   *  whatever their status: pending and failed ones show on the card too. */
+  updates: Proposal[];
   /** Structured, looks like a task: waiting for a human decision. */
   review: Proposal[];
   /** Waiting for, or in the middle of, the model. */
@@ -26,16 +36,29 @@ export interface QueueGroups {
 const byReceivedDesc = (a: Proposal, b: Proposal) =>
   b.summary.receivedAt.localeCompare(a.summary.receivedAt);
 
+export const isUpdateProposal = (p: Pick<Proposal, "update">): boolean => !!p.update;
+
 export function groupQueue(queue: Proposal[]): QueueGroups {
   const sorted = [...queue].sort(byReceivedDesc);
+  const updates = sorted.filter(isUpdateProposal);
+  const rest = sorted.filter((p) => !isUpdateProposal(p));
   return {
-    review: sorted.filter((p) => p.status === "ready" && p.isActionable !== false),
-    processing: [...sorted]
+    updates,
+    review: rest.filter((p) => p.status === "ready" && p.isActionable !== false),
+    processing: [...rest]
       .reverse() // the queue works oldest first, so show it that way
       .filter((p) => p.status === "pending" || p.status === "structuring"),
-    failed: sorted.filter((p) => p.status === "failed"),
-    notTask: sorted.filter((p) => p.status === "ready" && p.isActionable === false),
+    failed: rest.filter((p) => p.status === "failed"),
+    notTask: rest.filter((p) => p.status === "ready" && p.isActionable === false),
   };
+}
+
+/** The number on the Review Queue tab: items waiting for a human decision
+ *  (finished update cards count, "probably not a task" ones do not). */
+export function reviewCount(queue: Proposal[]): number {
+  return queue.filter(
+    (p) => p.status === "ready" && (isUpdateProposal(p) || p.isActionable !== false),
+  ).length;
 }
 
 /** What the badge on a queue row says. */
@@ -211,6 +234,65 @@ export function relativeTime(iso: string, nowMs: number): string {
     year: "numeric",
   }).format(new Date(then));
 }
+
+// --- waiting on someone -------------------------------------------------------
+
+export interface WaitingInfo {
+  who: string;
+  /** "since Mon 19 Oct" / "since yesterday". */
+  since: string;
+  /** The day the clock started, YYYY-MM-DD (for a date input). */
+  sinceDay: string;
+  /** "3 days" (calendar days waited); "" when it began today. */
+  age: string;
+  /** Working days with no reply reached the cadence: time to chase. */
+  chaseDue: boolean;
+  everyDays: number;
+  quietDays: number;
+  /** The to-do's own cadence is set (not the global default). */
+  customCadence: boolean;
+}
+
+/** The waiting state for a row or the detail panel; null when not waiting. */
+export function describeWaiting(
+  todo: Todo,
+  now: Date,
+  prefs: Pick<ReminderPrefs, "timeZone" | "workDays" | "chaserDays">,
+  today: string,
+): WaitingInfo | null {
+  const state = waitingState(todo, now, prefs);
+  if (!state) return null;
+  const diff = Math.round((utcDay(today) - utcDay(state.sinceDay)) / DAY_MS);
+  const when =
+    diff <= 0
+      ? "today"
+      : diff === 1
+        ? "yesterday"
+        : formatDay(state.sinceDay, today);
+  return {
+    who: todo.waitingOn?.trim() ?? "",
+    since: `since ${when}`,
+    sinceDay: state.sinceDay,
+    // Empty when the waiting began today ("since today" says it all).
+    age:
+      state.calendarDays === 0
+        ? ""
+        : `${state.calendarDays} day${state.calendarDays === 1 ? "" : "s"}`,
+    chaseDue: state.chaseDue,
+    everyDays: state.everyDays,
+    quietDays: state.quietDays,
+    customCadence: todo.chaserDays !== null && todo.chaserDays !== undefined,
+  };
+}
+
+export const HISTORY_LABEL: Record<HistoryKind, string> = {
+  created: "Created",
+  message: "Message",
+  waiting: "Waiting",
+  due: "Due date",
+  status: "Status",
+  chaser: "Chaser",
+};
 
 /** Who to show for a to-do: the owner's name, "Me" for the PMO lead. */
 export function ownerLabel(owner: Todo["owner"]): string {

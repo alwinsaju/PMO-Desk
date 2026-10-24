@@ -3,21 +3,33 @@
 // { ok, reason? } envelope the routes send back (HTTP 200 either way, the
 // repo convention). Approve is the one door into todos/: nothing else ever
 // builds a Todo from a proposal.
+import { threadKeyOf } from "../thread.ts";
 import {
+  appendHistory,
   applyTodoPatch,
   buildTodo,
+  historyEntry,
   todoLimitProblem,
   TodoPatchSchema,
 } from "../todoLogic.ts";
 import {
   PmoConfigPatchSchema,
   TodoDraftSchema,
+  type ChaserJob,
+  type Intake,
   type PmoConfig,
   type Proposal,
   type Todo,
   type TodoDraft,
   type TodoSource,
 } from "../types.ts";
+import {
+  defaultInclude,
+  describeApplied,
+  patchFromChanges,
+  planUpdate,
+} from "../updateLogic.ts";
+import type { ChaserDrafts } from "./chaserDrafts.ts";
 import { syncDesktopPrefs } from "./desktopPrefs.ts";
 import type { Ingestor } from "./ingest.ts";
 import { osUser, type Store } from "./store.ts";
@@ -28,6 +40,8 @@ export interface Pmo {
   store: Store;
   ingestor: Ingestor;
   worker: StructuringWorker;
+  /** Local, copy-only follow-up drafts (nothing is ever sent). */
+  chaser: ChaserDrafts;
   now: () => Date;
   /** The inbox folder for a config (env override applied). */
   inboxDir: (config: PmoConfig) => string;
@@ -58,7 +72,7 @@ function parseDraft(input: unknown): { draft: TodoDraft } | { reason: string } {
   };
 }
 
-function sourceOf(proposal: Proposal): TodoSource {
+function sourceOf(proposal: Proposal, intake: Intake | null): TodoSource {
   const { summary } = proposal;
   return {
     intakeId: proposal.intakeId,
@@ -67,8 +81,13 @@ function sourceOf(proposal: Proposal): TodoSource {
     subject: summary.subject,
     sender: summary.senderName ?? summary.senderAddress,
     receivedAt: summary.receivedAt,
+    // What later messages in the same conversation are matched against.
+    threadKey: intake ? threadKeyOf(intake) : null,
   };
 }
+
+const UPDATE_USE_APPLY =
+  "That message continues an existing to-do. Apply the update, or choose \u201cCreate as separate to-do instead\u201d.";
 
 const sameJson = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
@@ -96,6 +115,7 @@ export function approveProposal(
       const existing = await pmo.store.getTodo(proposal.todoId);
       if (existing) return { ok: true as const, todo: existing };
     }
+    if (proposal.update) return fail(UPDATE_USE_APPLY);
     if (proposal.status !== "ready") {
       return fail(
         proposal.status === "rejected"
@@ -105,10 +125,11 @@ export function approveProposal(
     }
 
     const now = pmo.now().toISOString();
+    const raw = await pmo.store.readRaw(proposal.intakeId);
     const todo = buildTodo(draft, {
       now,
       approvedBy: osUser(),
-      source: sourceOf(proposal),
+      source: sourceOf(proposal, raw?.intake ?? null),
     });
     await pmo.store.putTodo(todo);
     await pmo.store.putProposal({
@@ -180,6 +201,7 @@ export function stageEdits(pmo: Pmo, id: string, body: unknown): Promise<ActionR
     if (proposal.status === "approved" || proposal.status === "rejected") {
       return fail("That item has already been decided.");
     }
+    if (proposal.update) return fail(UPDATE_USE_APPLY);
     await pmo.store.putProposal({
       ...proposal,
       edits: parsed.draft,
@@ -188,6 +210,127 @@ export function stageEdits(pmo: Pmo, id: string, body: unknown): Promise<ActionR
     await pmo.store.audit("edit", { proposalId: proposal.id, stage: "proposal" });
     return { ok: true as const };
   });
+}
+
+// ---------------------------------------------------------------------------
+// Updates to existing to-dos (thread-aware intake)
+// ---------------------------------------------------------------------------
+
+const ApplyUpdateBody = z.object({
+  /** The change ids the reviewer left ticked (see planUpdate); omitted = the
+   *  card's defaults. An empty list links the message and changes nothing. */
+  include: z.array(z.string().max(40)).max(40).optional(),
+});
+
+/** Apply a reviewed "update to existing to-do": patch the to-do with the ticked
+ *  changes, link the new message into its history, audit it. The only way an
+ *  update touches a to-do; idempotent like approve. */
+export function approveUpdate(
+  pmo: Pmo,
+  id: string,
+  body: unknown,
+): Promise<ActionResult<{ todo: Todo }>> {
+  const input = ApplyUpdateBody.safeParse(body ?? {});
+  if (!input.success) return Promise.resolve(fail("Invalid update request."));
+
+  return pmo.store.withLock(async () => {
+    const proposal = await pmo.store.getProposal(id);
+    if (!proposal?.update) return fail("That update is no longer in the queue.");
+    if (proposal.status === "approved" && proposal.todoId) {
+      const existing = await pmo.store.getTodo(proposal.todoId);
+      if (existing) return { ok: true as const, todo: existing };
+    }
+    const { update } = proposal;
+    if (proposal.status === "rejected") return fail("That update was rejected.");
+    if (proposal.status !== "ready" || !update.result) {
+      return fail("Only an update the model has finished reading can be applied.");
+    }
+    const todo = await pmo.store.getTodo(update.todoId);
+    if (!todo) {
+      return fail(
+        "That to-do no longer exists. Choose \u201cCreate as separate to-do instead\u201d.",
+      );
+    }
+    if (todo.status !== "open") {
+      return fail(
+        "That to-do is closed. Reopen it first, or choose \u201cCreate as separate to-do instead\u201d.",
+      );
+    }
+
+    const raw = await pmo.store.readRaw(proposal.intakeId);
+    const sender = {
+      name: raw?.intake.sender.name ?? proposal.summary.senderName,
+      address: raw?.intake.sender.address ?? proposal.summary.senderAddress,
+    };
+    const plan = planUpdate(todo, update.result, {
+      sender,
+      receivedAt: proposal.summary.receivedAt,
+    });
+    const include = new Set(input.data.include ?? defaultInclude(plan.changes));
+    const applied = plan.changes.filter((change) => include.has(change.id));
+    const patch = TodoPatchSchema.safeParse(patchFromChanges(plan.changes, include));
+    if (!patch.success) return fail(`Invalid change: ${firstIssue(patch.error)}`);
+
+    const now = pmo.now().toISOString();
+    const message = historyEntry(
+      "message",
+      describeApplied(
+        update.result.summary,
+        applied,
+        plan.changes.length - applied.length,
+      ),
+      now,
+      {
+        intakeId: proposal.intakeId,
+        from: sender.name ?? sender.address ?? null,
+      },
+    );
+    const { todo: next, kinds } = applyTodoPatch(
+      { ...todo, history: appendHistory(todo.history, message) },
+      patch.data,
+      now,
+    );
+    const tooMuch = todoLimitProblem(next);
+    if (tooMuch) return fail(tooMuch);
+
+    await pmo.store.putTodo(next);
+    await pmo.store.putProposal({
+      ...proposal,
+      status: "approved",
+      todoId: next.id,
+      updatedAt: now,
+    });
+    await pmo.store.audit("update-apply", {
+      proposalId: proposal.id,
+      todoId: next.id,
+      intakeId: proposal.intakeId,
+      applied: applied.map((change) => change.id),
+      kinds,
+    });
+    return { ok: true as const, todo: next };
+  });
+}
+
+/** "Create as separate to-do instead": the update card falls back to an
+ *  ordinary proposal (the model structures the message as a new to-do). */
+export function separateUpdate(pmo: Pmo, id: string): Promise<ActionResult> {
+  return pmo.worker.separate(id);
+}
+
+// ---------------------------------------------------------------------------
+// Chaser drafts (local, copy-only)
+// ---------------------------------------------------------------------------
+
+export function startChaserDraft(
+  pmo: Pmo,
+  todoId: string,
+): Promise<ActionResult<{ job: ChaserJob }>> {
+  return pmo.chaser.start(todoId);
+}
+
+export function discardChaserDraft(pmo: Pmo, todoId: string): ActionResult {
+  pmo.chaser.discard(todoId);
+  return { ok: true };
 }
 
 // ---------------------------------------------------------------------------
@@ -217,12 +360,14 @@ export function createManualTodo(
       if (proposal.status === "approved" || proposal.status === "rejected") {
         return fail("That item has already been decided.");
       }
+      if (proposal.update) return fail(UPDATE_USE_APPLY);
     }
+    const raw = proposal ? await pmo.store.readRaw(proposal.intakeId) : null;
     const todo = buildTodo(draft, {
       now,
       approvedBy: osUser(),
       source: proposal
-        ? sourceOf(proposal)
+        ? sourceOf(proposal, raw?.intake ?? null)
         : {
             intakeId: null,
             source: "manual",
@@ -230,6 +375,7 @@ export function createManualTodo(
             subject: draft.title,
             sender: null,
             receivedAt: null,
+            threadKey: null,
           },
     });
     await pmo.store.putTodo(todo);

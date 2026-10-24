@@ -15,6 +15,7 @@ import { ReviewQueue } from "./ReviewQueue";
 import { SettingsDialog } from "./SettingsDialog";
 import { TodoDetailDialog } from "./TodoDetailDialog";
 import { TodoList } from "./TodoList";
+import { reviewCount as countReview } from "./queueView";
 import { usePmoData } from "./usePmoData";
 
 /**
@@ -75,9 +76,7 @@ export function PmoTodoApp({ windowId }: { windowId: string }) {
     ? (state.queue.find((p) => p.id === proposalId) ?? null)
     : null;
   const todo = todoId ? (state.todos.find((t) => t.id === todoId) ?? null) : null;
-  const reviewCount = state.queue.filter(
-    (p) => p.status === "ready" && p.isActionable !== false,
-  ).length;
+  const reviewCount = countReview(state.queue);
   const openCount = state.todos.filter((t) => t.status === "open").length;
 
   return (
@@ -107,7 +106,15 @@ export function PmoTodoApp({ windowId }: { windowId: string }) {
 
         <TabsContent value="review" className="min-h-0 flex-1">
           <ScrollArea className="h-full">
-            <ReviewQueue state={state} onOpen={setProposalId} onSettled={refetch} />
+            <ReviewQueue
+              state={state}
+              onOpen={setProposalId}
+              onOpenTodo={(id) => {
+                setTab("todos");
+                setTodoId(id);
+              }}
+              onSettled={refetch}
+            />
           </ScrollArea>
         </TabsContent>
         <TabsContent value="todos" className="min-h-0 flex-1">
@@ -144,6 +151,7 @@ export function PmoTodoApp({ windowId }: { windowId: string }) {
         today={state.today}
         reminders={state.config.reminders}
         nowIso={state.serverTime}
+        chaser={todo ? state.chasers?.[todo.id] : undefined}
         onSettled={refetch}
         onOpenChange={(open) => {
           if (!open) setTodoId(null);

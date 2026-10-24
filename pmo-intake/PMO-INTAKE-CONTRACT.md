@@ -20,7 +20,7 @@ document is the whole interface between the two. The producers are:
 
 | Setting      | Default                                         | Override                                                  |
 | ------------ | ----------------------------------------------- | --------------------------------------------------------- |
-| Inbox folder | `C:\Users\alsaju\OneDrive - Deloitte\PMO-Inbox` | env `AI_OS_PMO_INBOX_DIR`, or `inboxDir` in `config.json` |
+| Inbox folder | `C:\Users\alsaju\OneDrive - Deloitte (O365D)\PMO-Inbox` | env `AI_OS_PMO_INBOX_DIR`, or `inboxDir` in `config.json` |
 
 The app polls the folder every 15 seconds (and on **Scan now**). Rules for
 producers:
@@ -179,7 +179,7 @@ text, and the mapping is tested with fake items, without Outlook.
 
 | Parameter             | Default                                             | Meaning                                                                                                                       |
 | --------------------- | --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `-InboxDir`           | `C:\Users\alsaju\OneDrive - Deloitte\PMO-Inbox`     | Drop folder. Must exist; never created.                                                                                       |
+| `-InboxDir`           | `C:\Users\alsaju\OneDrive - Deloitte (O365D)\PMO-Inbox` | Drop folder. Must exist; never created.                                                                                       |
 | `-FolderPath`         | (none: flagged mail)                                | e.g. `Inbox\PMO`. Without it, every **flagged** mail in the default mailbox (the To-Do search folder), by last-modified time. |
 | `-SinceDays`          | 14                                                  | Window: received in the last N days (folder), or modified in the last N days (flagged).                                       |
 | `-StatePath`          | `%LOCALAPPDATA%\AI OS\pmo-intake\outlook-seen.json` | Its own seen-file, keyed by Message-ID (EntryID if none).                                                                     |

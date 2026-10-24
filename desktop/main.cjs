@@ -439,7 +439,10 @@ function createWindow() {
     if (url.startsWith(appUrl)) {
       return { action: "allow" };
     }
-    void shell.openExternal(url);
+    // Only web links and mailto: (the PMO "open as unsent mail draft" link,
+    // which just opens a compose window in the user's own mail program) are
+    // handed to the OS; any other scheme is dropped.
+    if (/^(https?|mailto):/i.test(url)) void shell.openExternal(url);
     return { action: "deny" };
   });
   mainWindow.once("ready-to-show", () => mainWindow.show());

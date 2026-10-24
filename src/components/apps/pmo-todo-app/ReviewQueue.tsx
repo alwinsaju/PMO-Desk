@@ -7,14 +7,17 @@ import type { PmoState, Proposal } from "@/lib/pmo/types";
 import { rejectProposal } from "./api";
 import { ProposalStatusBadge, SourceBadge } from "./parts";
 import { groupQueue, relativeTime } from "./queueView";
+import { UpdateCard } from "./UpdateCard";
 
 interface ReviewQueueProps {
   state: PmoState;
   onOpen: (proposalId: string) => void;
+  /** Open a to-do (from an update card). */
+  onOpenTodo: (todoId: string) => void;
   onSettled: () => void;
 }
 
-export function ReviewQueue({ state, onOpen, onSettled }: ReviewQueueProps) {
+export function ReviewQueue({ state, onOpen, onOpenTodo, onSettled }: ReviewQueueProps) {
   const [showNotTask, setShowNotTask] = useState(false);
   const groups = groupQueue(state.queue);
   const empty = state.queue.length === 0;
@@ -31,7 +34,11 @@ export function ReviewQueue({ state, onOpen, onSettled }: ReviewQueueProps) {
   }
 
   const nothingElse =
-    groups.review.length + groups.processing.length + groups.failed.length === 0;
+    groups.updates.length +
+      groups.review.length +
+      groups.processing.length +
+      groups.failed.length ===
+    0;
 
   return (
     <div className="flex flex-col gap-4 p-4">
@@ -40,6 +47,17 @@ export function ReviewQueue({ state, onOpen, onSettled }: ReviewQueueProps) {
           Nothing needs your review right now.
         </p>
       )}
+      <Section title="Updates to existing to-dos" count={groups.updates.length}>
+        {groups.updates.map((p) => (
+          <UpdateCard
+            key={p.id}
+            proposal={p}
+            state={state}
+            onOpenTodo={onOpenTodo}
+            onSettled={onSettled}
+          />
+        ))}
+      </Section>
       <Section title="Needs your review" count={groups.review.length}>
         {groups.review.map((p) => (
           <Row key={p.id} proposal={p} state={state} onOpen={onOpen} />

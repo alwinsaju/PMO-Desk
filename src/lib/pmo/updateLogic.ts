@@ -1,0 +1,213 @@
+// Turns the model's small "what does this new message change?" answer into a
+// concrete, reviewable patch for an existing to-do. The model only labels and
+// fills a few fields; everything that touches the to-do is built here, by
+// code, and shown to the human as a before -> after list they approve. Pure
+// (no node imports), shared by the server (which applies) and the review card
+// (which shows).
+import { istDate } from "./time.ts";
+import { looksLikeReplyFrom } from "./thread.ts";
+import type { TodoPatch } from "./todoLogic.ts";
+import type { AiUpdate, Todo, UpdateKind } from "./types.ts";
+
+export const UPDATE_KIND_LABEL: Record<UpdateKind, string> = {
+  unrelated: "Not about this to-do",
+  reply: "Reply",
+  "new-info": "New information",
+  "new-action": "New action item",
+  "due-change": "Changed due date",
+  nothing: "Nothing actionable",
+};
+
+export interface UpdateChange {
+  /** Stable within one plan: "waiting", "due", "note", "action:0", ... */
+  id: string;
+  kind: "waiting" | "due" | "note" | "action";
+  label: string;
+  /** What it says now and what it would say (display text). */
+  before: string | null;
+  after: string | null;
+  /** Ticked when the card opens. */
+  defaultOn: boolean;
+  /** A caution or suggestion shown under the line. */
+  hint?: string;
+  /** The to-do patch this change stands for. */
+  patch: TodoPatch;
+}
+
+export interface UpdateSender {
+  name?: string | null;
+  address?: string | null;
+}
+
+export interface UpdateContext {
+  sender: UpdateSender;
+  /** When the new message arrived (for the dated note). */
+  receivedAt: string;
+}
+
+export interface UpdatePlan {
+  changes: UpdateChange[];
+  /** The sender when they look like the person the to-do waits on. */
+  replyFrom: string | null;
+  /** What the card calls this: the model's kind, but "nothing" when no change
+   *  survives the checks below (a "nothing" answer stays "nothing" even if the
+   *  unticked reply suggestion is offered). */
+  kind: UpdateKind;
+}
+
+const dayLabel = (day: string) =>
+  new Intl.DateTimeFormat("en-GB", {
+    timeZone: "UTC",
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  }).format(new Date(`${day}T00:00:00Z`));
+
+const squash = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+
+const senderLabel = (sender: UpdateSender) =>
+  sender.name?.trim() || sender.address?.trim() || "the sender";
+
+/** The most a to-do description can hold (TodoPatchSchema). */
+const MAX_DESCRIPTION = 4000;
+
+/**
+ * What approving this update would change in `todo`. Checks that make it
+ * conservative: a due date equal to the current one, an action item the to-do
+ * already has, and "clear waiting" on a to-do that is not waiting are all
+ * dropped. "Clear waiting" is only ticked when the sender looks like the person
+ * waited on AND the model agrees the message answers it.
+ */
+export function planUpdate(todo: Todo, result: AiUpdate, ctx: UpdateContext): UpdatePlan {
+  const changes: UpdateChange[] = [];
+  const sender = senderLabel(ctx.sender);
+  const waitingOn = todo.waitingOn?.trim() || null;
+  const replyFrom = waitingOn && looksLikeReplyFrom(waitingOn, ctx.sender) ? sender : null;
+
+  if (result.kind !== "unrelated") {
+    if (waitingOn && (result.clearsWaiting || replyFrom)) {
+      const modelAgrees = result.clearsWaiting || result.kind === "reply";
+      changes.push({
+        id: "waiting",
+        kind: "waiting",
+        label: "Waiting on",
+        before: waitingOn,
+        after: "(not waiting)",
+        defaultOn: !!replyFrom && modelAgrees,
+        hint: replyFrom
+          ? `Looks like a reply from ${replyFrom}: clear waiting?`
+          : `The model thinks this answers what you were waiting for, but ${sender} is not obviously ${waitingOn}.`,
+        patch: { waitingOn: null },
+      });
+    }
+
+    if (result.newDueAt && result.newDueAt !== todo.dueAt) {
+      changes.push({
+        id: "due",
+        kind: "due",
+        label: "Due date",
+        before: todo.dueAt ? dayLabel(todo.dueAt) : "(none)",
+        after: dayLabel(result.newDueAt),
+        defaultOn: true,
+        patch: { dueAt: result.newDueAt },
+      });
+    }
+
+    const existing = new Set(todo.actionItems.map((item) => squash(item.text)));
+    result.newActionItems.forEach((item, index) => {
+      const key = squash(item.text);
+      if (!key || existing.has(key)) return;
+      existing.add(key);
+      const extra = [item.owner, item.dueAt ? `due ${dayLabel(item.dueAt)}` : null]
+        .filter(Boolean)
+        .join(", ");
+      changes.push({
+        id: `action:${index}`,
+        kind: "action",
+        label: "New action item",
+        before: null,
+        after: extra ? `${item.text} (${extra})` : item.text,
+        defaultOn: true,
+        patch: {
+          addActionItems: [{ text: item.text, owner: item.owner, dueAt: item.dueAt }],
+        },
+      });
+    });
+
+    // A "nothing" answer carries no information, whatever the model put in `note`.
+    const note = result.kind === "nothing" ? "" : result.note?.trim();
+    if (note) {
+      const received = Number.isNaN(Date.parse(ctx.receivedAt))
+        ? null
+        : istDate(ctx.receivedAt);
+      const line = `Update${received ? ` ${dayLabel(received)}` : ""}: ${note}`;
+      const description = todo.description.trimEnd();
+      const next = description ? `${description}\n\n${line}` : line;
+      if (next.length <= MAX_DESCRIPTION) {
+        changes.push({
+          id: "note",
+          kind: "note",
+          label: "Adds to the description",
+          before: null,
+          after: line,
+          defaultOn: true,
+          patch: { description: next },
+        });
+      }
+    }
+  }
+
+  const kind: UpdateKind =
+    result.kind === "unrelated"
+      ? "unrelated"
+      : changes.length === 0
+        ? "nothing"
+        : result.kind;
+  return { changes, replyFrom, kind };
+}
+
+/** Merge the patches of the ticked changes into one patch (an action item list
+ *  is concatenated; every other field is set once). */
+export function patchFromChanges(
+  changes: readonly UpdateChange[],
+  include: ReadonlySet<string>,
+): TodoPatch {
+  const merged: TodoPatch = {};
+  for (const change of changes) {
+    if (!include.has(change.id)) continue;
+    const { addActionItems, ...rest } = change.patch;
+    Object.assign(merged, rest);
+    if (addActionItems?.length) {
+      merged.addActionItems = [...(merged.addActionItems ?? []), ...addActionItems];
+    }
+  }
+  return merged;
+}
+
+/** The changes ticked when the card opens. */
+export const defaultInclude = (changes: readonly UpdateChange[]): string[] =>
+  changes.filter((change) => change.defaultOn).map((change) => change.id);
+
+/** One line for the to-do's timeline: what the message said and what was done. */
+export function describeApplied(
+  summary: string,
+  applied: readonly UpdateChange[],
+  declined: number,
+): string {
+  const parts = applied.map((change) => {
+    switch (change.kind) {
+      case "waiting":
+        return "cleared waiting";
+      case "due":
+        return `due date now ${change.after}`;
+      case "action":
+        return `added action item "${change.after}"`;
+      case "note":
+        return "added a note to the description";
+    }
+  });
+  const did = parts.length ? `Applied: ${parts.join("; ")}.` : "Linked, no changes applied.";
+  const skipped = declined > 0 ? ` (${declined} suggested change${declined === 1 ? "" : "s"} skipped.)` : "";
+  return `${summary ? `${summary.replace(/\s+$/, "")} ` : ""}${did}${skipped}`.trim();
+}

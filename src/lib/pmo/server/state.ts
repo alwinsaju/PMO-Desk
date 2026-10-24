@@ -71,5 +71,6 @@ export async function buildState(
     runtime,
     config,
     dataDir: deps.dataDir,
+    chasers: pmo.chaser.snapshot(),
   };
 }

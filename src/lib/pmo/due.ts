@@ -10,8 +10,10 @@
 //               the previous day and the overdue reminder takes over at 09:00
 //               on the due day itself.
 //  - overdue    09:00 (work start) on the due day, then once per working day.
-//  - chaser     a to-do with "waiting on" set, untouched for N working days;
-//               repeats every N working days after that.
+//  - chaser     a to-do with "waiting on" set and no reply for N working days
+//               (counted from `waitingSince`, else the last update; N is the
+//               to-do's own `chaserDays`, else the global default); repeats
+//               every N working days after that.
 //  - digest     optional, one summary of the open items per working day.
 //  - quiet hours: with `quietOutsideHours` nothing is produced outside the
 //               working window; the same notification simply becomes due when
@@ -214,6 +216,63 @@ export function describeInstant(instant: Date | string, timeZone: string): strin
 }
 
 // ---------------------------------------------------------------------------
+// Chasers: how long has a to-do been waiting, and is it time to chase?
+// ---------------------------------------------------------------------------
+
+/** When the chaser clock started: when "waiting on" was set, else (a to-do from
+ *  before phase 4) the last update. null if neither is a readable date. */
+export function chaserClockStart(
+  todo: Pick<Todo, "waitingSince" | "updatedAt">,
+): string | null {
+  const start = todo.waitingSince ?? todo.updatedAt;
+  return Number.isNaN(Date.parse(start)) ? null : start;
+}
+
+/** This to-do's own cadence, else the global one. */
+export const chaserDaysFor = (
+  todo: Pick<Todo, "chaserDays">,
+  prefs: Pick<ReminderPrefs, "chaserDays">,
+): number => todo.chaserDays ?? prefs.chaserDays;
+
+export interface WaitingState {
+  /** Working days with no reply so far. */
+  quietDays: number;
+  /** Calendar days since the waiting began. */
+  calendarDays: number;
+  /** The cadence in force. */
+  everyDays: number;
+  /** quietDays has reached the cadence: a chaser is due. */
+  chaseDue: boolean;
+  /** Which repeat this is (1 = first chaser, 2 = after another N days, ...). */
+  round: number;
+  /** IST day (in the prefs' zone) the clock started. */
+  sinceDay: string;
+}
+
+/** null when the to-do is not waiting on anyone. */
+export function waitingState(
+  todo: Pick<Todo, "waitingOn" | "waitingSince" | "updatedAt" | "chaserDays" | "status">,
+  now: Date,
+  prefs: Pick<ReminderPrefs, "timeZone" | "workDays" | "chaserDays">,
+): WaitingState | null {
+  if (todo.status !== "open" || !todo.waitingOn?.trim()) return null;
+  const start = chaserClockStart(todo);
+  if (!start) return null;
+  const sinceDay = localParts(start, prefs.timeZone).day;
+  const today = localParts(now, prefs.timeZone).day;
+  const quietDays = workingDaysBetween(sinceDay, today, prefs);
+  const everyDays = chaserDaysFor(todo, prefs);
+  return {
+    quietDays,
+    calendarDays: Math.max(0, calendarDaysBetween(sinceDay, today)),
+    everyDays,
+    chaseDue: quietDays >= everyDays,
+    round: Math.floor(quietDays / everyDays),
+    sinceDay,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // The engine
 // ---------------------------------------------------------------------------
 
@@ -278,20 +337,15 @@ export function computeDue(
       }
     }
 
-    const waitingOn = todo.waitingOn?.trim();
-    if (dayKindsOpen && waitingOn && !Number.isNaN(Date.parse(todo.updatedAt))) {
-      const lastTouched = localParts(todo.updatedAt, zone).day;
-      const quiet = workingDaysBetween(lastTouched, today, prefs);
-      if (quiet >= prefs.chaserDays) {
-        const round = Math.floor(quiet / prefs.chaserDays);
-        out.push({
-          todoId: todo.id,
-          kind: "chaser",
-          key: `chaser:${todo.id}:${lastTouched}:${round}`,
-          title: todo.title,
-          body: `Waiting on ${waitingOn} with no update for ${plural(quiet, "working day")}. Time to chase?`,
-        });
-      }
+    const waiting = waitingState(todo, now, prefs);
+    if (dayKindsOpen && waiting?.chaseDue) {
+      out.push({
+        todoId: todo.id,
+        kind: "chaser",
+        key: `chaser:${todo.id}:${waiting.sinceDay}:${waiting.round}`,
+        title: todo.title,
+        body: `Waiting on ${todo.waitingOn?.trim()} with no update for ${plural(waiting.quietDays, "working day")}. Time to chase?`,
+      });
     }
   }
 
@@ -401,12 +455,7 @@ export function attentionSummary(
       dueSoon++;
       ids.add(todo.id);
     }
-    if (
-      isWaiting(todo) &&
-      !Number.isNaN(Date.parse(todo.updatedAt)) &&
-      workingDaysBetween(localParts(todo.updatedAt, prefs.timeZone).day, today, prefs) >=
-        prefs.chaserDays
-    ) {
+    if (waitingState(todo, now, prefs)?.chaseDue) {
       waiting++;
       ids.add(todo.id);
     }

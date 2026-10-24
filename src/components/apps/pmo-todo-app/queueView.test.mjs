@@ -6,12 +6,14 @@ import {
   TODO_FILTERS,
   WHY_NO_BODY,
   countByFilter,
+  describeWaiting,
   filterTodos,
   sortTodosBy,
   filterByReason,
   formatDay,
   groupQueue,
   ownerLabel,
+  reviewCount,
   reasonCounts,
   relativeTime,
   resendGuidance,
@@ -335,5 +337,102 @@ describe("to-do filters and sorting", () => {
     const newest = sortTodosBy(list, "newest", today);
     assert.deepEqual(ids(newest), ["c", "b", "a"]);
     assert.deepEqual(ids(sortTodosBy([list[0], list[2]], "priority", today)), ["c", "a"]);
+  });
+});
+
+describe("update cards in the queue", () => {
+  const update = (id, status, extra = {}) =>
+    proposal(id, status, {
+      update: { todoId: "td_1", todoTitle: "t", threadKey: "k", result: null },
+      ...extra,
+    });
+
+  it("lists every update card in its own group, whatever its status, newest first", () => {
+    const groups = groupQueue([
+      proposal("p1", "ready"),
+      update("p2", "ready"),
+      update("p3", "pending"),
+      update("p4", "failed"),
+      update("p5", "ready", { isActionable: false }),
+    ]);
+    assert.deepEqual(
+      groups.updates.map((p) => p.id),
+      ["p5", "p4", "p3", "p2"],
+    );
+    // They are not also listed as new proposals.
+    assert.deepEqual(
+      groups.review.map((p) => p.id),
+      ["p1"],
+    );
+    assert.deepEqual(groups.processing, []);
+    assert.deepEqual(groups.failed, []);
+    assert.deepEqual(groups.notTask, []);
+  });
+
+  it("counts a finished update card as waiting for a decision, even a 'nothing actionable' one", () => {
+    assert.equal(
+      reviewCount([
+        proposal("p1", "ready"),
+        proposal("p2", "ready", { isActionable: false }),
+        update("p3", "ready"),
+        update("p4", "ready", { isActionable: false }),
+        update("p5", "pending"),
+        proposal("p6", "failed"),
+      ]),
+      3,
+    );
+  });
+});
+
+describe("waiting on someone, for the row and the panel", () => {
+  const prefs = { timeZone: "Asia/Kolkata", workDays: [1, 2, 3, 4, 5], chaserDays: 2 };
+  const ist = (stamp) => new Date(`${stamp}:00+05:30`);
+  const todo = (extra = {}) => ({
+    status: "open",
+    waitingOn: " Priya Nair ",
+    waitingSince: ist("2026-10-19T12:00").toISOString(),
+    updatedAt: ist("2026-10-23T12:00").toISOString(),
+    chaserDays: null,
+    ...extra,
+  });
+
+  it("says who, since when and for how long, and when a chaser is due", () => {
+    const info = describeWaiting(todo(), ist("2026-10-23T10:00"), prefs, "2026-10-23");
+    assert.equal(info.who, "Priya Nair");
+    assert.equal(info.since, "since Mon 19 Oct");
+    assert.equal(info.age, "4 days");
+    assert.equal(info.chaseDue, true);
+    assert.equal(info.everyDays, 2);
+    assert.equal(info.customCadence, false);
+    assert.equal(info.sinceDay, "2026-10-19");
+  });
+
+  it("uses plain words for today and yesterday, and the to-do's own cadence", () => {
+    const today = describeWaiting(
+      todo({ waitingSince: ist("2026-10-23T09:00").toISOString() }),
+      ist("2026-10-23T10:00"),
+      prefs,
+      "2026-10-23",
+    );
+    assert.equal(today.since, "since today");
+    assert.equal(today.age, "");
+    assert.equal(today.chaseDue, false);
+    const yesterday = describeWaiting(
+      todo({ waitingSince: ist("2026-10-22T09:00").toISOString(), chaserDays: 5 }),
+      ist("2026-10-23T10:00"),
+      prefs,
+      "2026-10-23",
+    );
+    assert.equal(yesterday.since, "since yesterday");
+    assert.equal(yesterday.age, "1 day");
+    assert.equal(yesterday.everyDays, 5);
+    assert.equal(yesterday.customCadence, true);
+  });
+
+  it("is null when the to-do is not waiting or is closed", () => {
+    const now = ist("2026-10-23T10:00");
+    assert.equal(describeWaiting(todo({ waitingOn: null }), now, prefs, "2026-10-23"), null);
+    assert.equal(describeWaiting(todo({ waitingOn: "  " }), now, prefs, "2026-10-23"), null);
+    assert.equal(describeWaiting(todo({ status: "done" }), now, prefs, "2026-10-23"), null);
   });
 });

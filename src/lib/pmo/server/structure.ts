@@ -5,13 +5,33 @@
 import { prepareForModel, displayText } from "../preprocess.ts";
 import { groundQuote } from "../quote.ts";
 import { PROMPT_VERSION, buildSystemPrompt, buildUserPrompt } from "../structurePrompt.ts";
-import { MAX_AI_ATTEMPTS, type AiStructured, type Proposal } from "../types.ts";
+import {
+  UPDATE_PROMPT_VERSION,
+  buildUpdateSystemPrompt,
+  buildUpdateUserPrompt,
+} from "../updatePrompt.ts";
+import {
+  MAX_AI_ATTEMPTS,
+  type AiStructured,
+  type AiUpdate,
+  type Proposal,
+} from "../types.ts";
 import type { Store } from "./store.ts";
+
+export interface ModelRequest {
+  system: string;
+  prompt: string;
+}
 
 export interface Generator {
   /** Name of the model that answers (for the log and the review UI). */
   model(): string;
-  generate(request: { system: string; prompt: string }): Promise<AiStructured>;
+  /** Message -> to-do proposal. */
+  generate(request: ModelRequest): Promise<AiStructured>;
+  /** New message + existing to-do -> what changed (thread-aware intake). */
+  generateUpdate(request: ModelRequest): Promise<AiUpdate>;
+  /** A follow-up message to review and copy. Plain text, untrusted. */
+  draftChaser(request: ModelRequest): Promise<string>;
 }
 
 /** Why the queue stopped; shown as a banner until the next scan retries. */
@@ -31,12 +51,12 @@ export interface StructuringState {
   paused: PauseState | null;
 }
 
-type ErrorKind =
+export type ErrorKind =
   "runtime-down" | "model-missing" | "timeout" | "invalid-output" | "error";
 
 /** Duck-typed (see isAiRuntimeError): the error may come from another copy of
  *  the module in Next's separate bundles. */
-function classify(error: unknown): { kind: ErrorKind; message: string } {
+export function classify(error: unknown): { kind: ErrorKind; message: string } {
   const e = error as { name?: string; code?: string; message?: string };
   const message = e?.message ?? String(error);
   if (e?.name === "AiRuntimeError") {
@@ -154,13 +174,20 @@ export class StructuringWorker {
     while (this.queue.length > 0 && !this.halted) {
       const id = this.queue.shift() as string;
       this.active = id;
+      let again = false;
       try {
-        await this.process(id);
+        again = (await this.process(id)) === "requeue";
       } catch (error) {
         // A storage failure on one item must not kill the queue.
         console.error(`[pmo] structuring ${id} failed unexpectedly:`, error);
       }
       this.done++;
+      // An update that turned out to be about something else is a normal
+      // proposal now: structure it next, as a new to-do proposal.
+      if (again && !this.queue.includes(id)) {
+        this.queue.push(id);
+        this.total++;
+      }
     }
   }
 
@@ -178,63 +205,130 @@ export class StructuringWorker {
     });
   }
 
-  private async process(id: string): Promise<void> {
+  private async process(id: string): Promise<"done" | "requeue"> {
     const claimed = await this.setStatus(id, ["pending"], (p) => ({
       ...p,
       status: "structuring",
     }));
-    if (!claimed) return; // rejected, approved or already handled meanwhile
+    if (!claimed) return "done"; // rejected, approved or already handled meanwhile
 
     const raw = await this.store.readRaw(claimed.intakeId);
     if (!raw) {
       await this.fail(id, claimed.ai.attempts, "The stored message could not be found.");
-      return;
+      return "done";
     }
     const config = await this.store.loadConfig();
     const intake = raw.intake;
-    const system = buildSystemPrompt(config.me);
-    const prompt = buildUserPrompt(intake, prepareForModel(intake));
-    const bytes = Buffer.byteLength(system) + Buffer.byteLength(prompt);
+    const bodyText = prepareForModel(intake);
 
-    let attempts = claimed.ai.attempts;
-    let retriedTimeout = false;
-    for (;;) {
-      const started = this.now();
-      try {
-        const output = await this.generator.generate({ system, prompt });
-        const durationMs = this.now() - started;
-        attempts++;
+    // Thread-aware branch: the message belongs to an open to-do.
+    if (claimed.update) {
+      const todo = await this.store.getTodo(claimed.update.todoId);
+      if (!todo || todo.status !== "open") {
+        // The to-do closed or went away since ingest: an ordinary proposal.
+        await this.toNormalProposal(id, "to-do no longer open");
+        return "requeue";
+      }
+      const system = buildUpdateSystemPrompt(config.me);
+      const prompt = buildUpdateUserPrompt(todo, intake, bodyText);
+      return this.attempts<AiUpdate>({
+        id,
+        claimed,
+        bytes: Buffer.byteLength(system) + Buffer.byteLength(prompt),
+        promptVersion: UPDATE_PROMPT_VERSION,
+        task: "update",
+        call: () => this.generator.generateUpdate({ system, prompt }),
+        onOk: async (output, durationMs, attempts) => {
+          if (output.kind === "unrelated") {
+            await this.toNormalProposal(id, "the model says it is about something else");
+            return "requeue";
+          }
+          const grounded = groundQuote(displayText(intake), output.quote);
+          await this.setStatus(id, ["structuring"], (p) => ({
+            ...p,
+            status: "ready",
+            update: p.update
+              ? { ...p.update, result: { ...output, quote: grounded.quote } }
+              : p.update,
+            isActionable: output.kind !== "nothing",
+            quoteVerified: grounded.verified,
+            ai: { model: this.generator.model(), durationMs, attempts, error: null },
+          }));
+          return "done";
+        },
+      });
+    }
+
+    const system = buildSystemPrompt(config.me);
+    const prompt = buildUserPrompt(intake, bodyText);
+    return this.attempts<AiStructured>({
+      id,
+      claimed,
+      bytes: Buffer.byteLength(system) + Buffer.byteLength(prompt),
+      promptVersion: PROMPT_VERSION,
+      task: "structure",
+      call: () => this.generator.generate({ system, prompt }),
+      onOk: async (output, durationMs, attempts) => {
         // Keep only the part of the quote that is really in the message.
         const grounded = groundQuote(displayText(intake), output.quote);
         const draft = { ...output, quote: grounded.quote };
-        const quoteVerified = grounded.verified;
-        await this.store.logAiCall({
-          intakeId: claimed.intakeId,
-          model: this.generator.model(),
-          bytes,
-          promptVersion: PROMPT_VERSION,
-          durationMs,
-          outcome: "ok",
-        });
-        this.paused = null;
         await this.setStatus(id, ["structuring"], (p) => ({
           ...p,
           status: "ready",
           draft,
           isActionable: output.isActionable,
           confidence: output.confidence,
-          quoteVerified,
+          quoteVerified: grounded.verified,
           ai: { model: this.generator.model(), durationMs, attempts, error: null },
         }));
-        return;
+        return "done";
+      },
+    });
+  }
+
+  /** The shared call / classify / retry loop for both model tasks. */
+  private async attempts<T>(job: {
+    id: string;
+    claimed: Proposal;
+    bytes: number;
+    promptVersion: number;
+    task: "structure" | "update";
+    call: () => Promise<T>;
+    onOk: (
+      output: T,
+      durationMs: number,
+      attempts: number,
+    ) => Promise<"done" | "requeue">;
+  }): Promise<"done" | "requeue"> {
+    const { id, claimed } = job;
+    let attempts = claimed.ai.attempts;
+    let retriedTimeout = false;
+    for (;;) {
+      const started = this.now();
+      try {
+        const output = await job.call();
+        const durationMs = this.now() - started;
+        attempts++;
+        await this.store.logAiCall({
+          intakeId: claimed.intakeId,
+          model: this.generator.model(),
+          bytes: job.bytes,
+          promptVersion: job.promptVersion,
+          task: job.task,
+          durationMs,
+          outcome: "ok",
+        });
+        this.paused = null;
+        return await job.onOk(output, durationMs, attempts);
       } catch (error) {
         const durationMs = this.now() - started;
         const { kind, message } = classify(error);
         await this.store.logAiCall({
           intakeId: claimed.intakeId,
           model: this.generator.model(),
-          bytes,
-          promptVersion: PROMPT_VERSION,
+          bytes: job.bytes,
+          promptVersion: job.promptVersion,
+          task: job.task,
           durationMs,
           outcome: kind,
         });
@@ -253,7 +347,7 @@ export class StructuringWorker {
             since: new Date(this.now()).toISOString(),
           };
           this.halted = true;
-          return;
+          return "done";
         }
 
         attempts++;
@@ -262,9 +356,24 @@ export class StructuringWorker {
           continue;
         }
         await this.fail(id, attempts, message, durationMs);
-        return;
+        return "done";
       }
     }
+  }
+
+  /** Drop the thread link: this becomes an ordinary to-do proposal, structured
+   *  next (used when the model says "unrelated" or the matched to-do is gone). */
+  private async toNormalProposal(id: string, why: string): Promise<void> {
+    const next = await this.setStatus(id, ["structuring", "pending"], (p) => ({
+      ...p,
+      status: "pending",
+      update: null,
+      draft: null,
+      isActionable: null,
+      quoteVerified: null,
+      ai: { model: null, durationMs: null, attempts: 0, error: null },
+    }));
+    if (next) await this.store.audit("update-separate", { proposalId: id, why });
   }
 
   private async fail(id: string, attempts: number, message: string, durationMs?: number) {
@@ -278,6 +387,37 @@ export class StructuringWorker {
         error: message,
       },
     }));
+  }
+
+  /** "Create as separate to-do instead": an update card becomes an ordinary
+   *  proposal and goes through normal structuring. */
+  async separate(id: string): Promise<{ ok: true } | { ok: false; reason: string }> {
+    const current = await this.store.getProposal(id);
+    if (!current?.update) {
+      return { ok: false, reason: "That item is not an update to an existing to-do." };
+    }
+    if (current.status === "approved" || current.status === "rejected") {
+      return { ok: false, reason: "That item has already been decided." };
+    }
+    if (current.status === "structuring") {
+      return {
+        ok: false,
+        reason: "The model is still working on it. Try again in a moment.",
+      };
+    }
+    const next = await this.setStatus(id, ["pending", "ready", "failed"], (p) => ({
+      ...p,
+      status: "pending",
+      update: null,
+      draft: null,
+      isActionable: null,
+      quoteVerified: null,
+      ai: { model: null, durationMs: null, attempts: 0, error: null },
+    }));
+    if (!next) return { ok: false, reason: "That item changed. Try again." };
+    await this.store.audit("update-separate", { proposalId: id, why: "chosen" });
+    await this.kick();
+    return { ok: true };
   }
 
   /** Back to the queue after the user clicks Retry. Returns false if the item

@@ -2,6 +2,7 @@
 // Kept apart from service.ts (which adds the timer and the real model) so
 // tests can build one on a temp directory with a fake model.
 import type { Pmo } from "./actions.ts";
+import { ChaserDrafts } from "./chaserDrafts.ts";
 import { Ingestor } from "./ingest.ts";
 import { resolveInboxDir } from "./paths.ts";
 import { Store } from "./store.ts";
@@ -30,5 +31,10 @@ export async function createPmo(options: {
     generator: options.generator,
     now: () => now().getTime(),
   });
-  return { store, ingestor, worker, now, inboxDir };
+  const chaser = new ChaserDrafts({
+    store,
+    generator: options.generator,
+    now: () => now().getTime(),
+  });
+  return { store, ingestor, worker, chaser, now, inboxDir };
 }

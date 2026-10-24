@@ -489,7 +489,9 @@ Teams post; the only notifications are local reminders on this computer, see
 queue; phase 2 added the read-only Outlook COM producer, the Paste dialog, the
 Settings dialog, the Filtered-tab guidance and the retention purge (below).
 Phase 3 added full to-do editing, the reminder engine, the desktop and browser
-notification paths and the dock badge ("Phase 3" at the end of this section).
+notification paths and the dock badge ("Phase 3"). Phase 4 added waiting-on
+tracking, local chaser drafts and thread-aware intake ("Phase 4" at the end of
+this section).
 
 **Runs inside the existing Next server.** No new process and no cloud store.
 `ensureIngest()` (`server/service.ts`) starts the inbox poller and the
@@ -534,6 +536,12 @@ src/lib/pmo/            Pure logic, one co-located *.test.mjs per area
   due.ts                  The reminder engine: computeDue(todos, now, prefs),
                           toastFor (privacy default), attentionSummary (the
                           badge), snooze presets, time-zone maths. Pure.
+  thread.ts               threadKeyOf (the conversation key of an intake),
+                          pickMatchingTodo, looksLikeReplyFrom. Pure, conservative.
+  updateLogic.ts          planUpdate: the model's small answer -> a reviewable
+                          before -> after change list and the merged TodoPatch.
+  updatePrompt.ts         Prompts for "what does this new message change?".
+  chaser.ts               Chaser prompts, cleanChaserText, buildMailto. Client-safe.
   desktopBridge.ts        Typing for window.aiOsDesktop (the Electron preload).
   checkpointTemplates.ts  The fixed catalog: simple, deliverable, approval, followup.
   server/                 Server only; never import from client code.
@@ -558,11 +566,15 @@ src/lib/pmo/            Pure logic, one co-located *.test.mjs per area
     aiGenerator.ts        The real model (src/lib/ai-runtime generateJson,
                           `think: false`, 240 s timeout, clamped below 280 s)
                           and the runtime summary for the status bar.
-    stubGenerator.ts      Fake model for tests / `PMO_AI_STUB=1`.
+    chaserDrafts.ts       In-memory "draft a chaser" jobs (local model, copy-only).
+    stubGenerator.ts      Fake model for tests / `PMO_AI_STUB=1`; answers all three
+                          tasks (proposal, update, chaser) deterministically.
 src/app/api/pmo/        state, ingest/scan, intake/manual (POST, the Paste
                         dialog), queue/[id] (PATCH) + approve|reject|retry,
                         raw/[intakeId], todos, todos/[id], config, due (GET),
-                        due/claim and due/ack (POST). Each route
+                        due/claim and due/ack (POST), queue/[id]/apply and
+                        /separate (update cards), todos/[id]/chaser (POST
+                        start, DELETE discard). Each route
                         checks Origin/Host first (raw message text is served),
                         touches only local files, replies HTTP 200 with
                         { ok, reason? }.
@@ -578,7 +590,7 @@ index), `state/notify.json` (reminders delivered / claimed), `logs/ingest.jsonl`
 `audit.jsonl` (approve/reject/edit/complete with the OS user).
 
 **Inbox**: `config.inboxDir`, default
-`C:\Users\alsaju\OneDrive - Deloitte\PMO-Inbox` (a Power Automate flow writes
+`C:\Users\alsaju\OneDrive - Deloitte (O365D)\PMO-Inbox` (a Power Automate flow writes
 there, OneDrive syncs it), overridden by env `AI_OS_PMO_INBOX_DIR`. **Use temp
 folders for every test**: `AI_OS_PMO_INBOX_DIR` + `AI_OS_PMO_DATA_DIR`, and
 `PMO_AI_STUB=1` to skip the model. Files younger than 3 s and larger than 1 MB
@@ -656,9 +668,11 @@ tomorrow. Limits: 50 action items and 20 checkpoints per to-do.
   less than 24 h away, so the heads-up lands on the day before.
 - `overdue`: from the start of the working day (09:00) on the due day, then once
   per working day (Saturday and Sunday skipped by default).
-- `chaser`: a to-do with *waiting on* set and no update for N working days
-  (default 2), repeating after each further N. A snooze alone does not count as an
-  update (it keeps `updatedAt`), so it does not restart that clock.
+- `chaser`: a to-do with *waiting on* set and no reply for N working days,
+  repeating after each further N. The clock starts at `waitingSince` (phase 4; a
+  to-do from before it falls back to its last update); N is the to-do's own
+  `chaserDays`, else the global default (2). Editing the to-do does not restart
+  the clock; "Mark waiting" again does. A snooze never does.
 - `digest`: optional (off), one summary per working day.
 - Quiet hours (default on): nothing is produced outside the working window
   (09:00-18:00 Mon-Fri). A held reminder is simply not yet delivered, so it
@@ -730,3 +744,94 @@ are overdue, due today or tomorrow, or waiting past the chaser days.
 
 Turning reminders on, and a manual check of the real notification path:
 `pmo-intake/HOW-TO-GET-STARTED.md`, section 10.
+
+### Phase 4: waiting, chaser drafts, thread-aware intake
+
+Still human-gated, still local: **nothing is sent anywhere**. No SMTP, no Outlook
+COM, no Graph, no agent-office. The one hand-off to the outside is a `mailto:` link
+(below).
+
+**Waiting on.** A to-do has `waitingOn`, `waitingSince` (ISO; the chaser clock) and
+an optional `chaserDays` (null = the global default). *Mark waiting* (a name, with
+quick picks from the requester and the source sender) and *Got a reply (clear
+waiting)* are one click in the detail panel (`WaitingPanel`); the list row shows
+"Waiting on X since Mon 19 Oct (7 days)", a "Time to chase" badge once the
+cadence is reached, and a *Got a reply* button. The since-date can be backdated
+and the cadence set per to-do (1-10 working days, or the default). Approve carries
+the AI proposal's `waitingOn` (trimmed) with `waitingSince` = the approval time,
+unless the draft carries its own `waitingSince`. `due.ts` has one definition
+(`waitingState`) used by the engine, the badge and the UI.
+
+**Timeline.** `todo.history` (cap 60, the first entry always kept): created, linked
+messages, waiting set/cleared, due-date and status changes, "chaser drafted"
+(never the draft text). Shown newest first in the *Timeline* tab; an entry that
+links a message has *Open message* (the immutable `raw/<intakeId>.json`, shown as
+it arrived). Retention keeps those messages while the to-do is open, like its
+source message.
+
+**Thread-aware intake** (`thread.ts`, `ingest.ts`, `updateLogic.ts`). After
+dedupe and the Deloitte-only filter, an intake whose key equals the key of an
+*open* to-do's source becomes an **update proposal** (`proposal.update`, `draft`
+stays null) instead of a duplicate proposal. The key is built only from fields the
+producer gave, and includes the source, so nothing matches across sources,
+tenants or mailboxes: Outlook `outlook|<mailbox>|<conversationId>`; Teams
+`teams|conv|<tenant>|<conversationId>`, else `teams|chat|<tenant>|<chatId>` (chat
+id from the context or the deep link), and for a channel (`@thread.tacv2`)
+`...|<root message id>` so only a post and its replies share a key; a paste never
+matches. Several matches: most recently updated wins. A to-do from before phase 4
+has no stored `source.threadKey`; it is derived from its source message when that
+is still on disk. No match: exactly the old behaviour.
+
+The worker then asks the model (`generateJson`, `think: false`, schema
+`AiUpdateSchema`: kind, summary, clearsWaiting, newDueAt, newActionItems, note,
+quote) with the to-do and the new message (delimited, untrusted, date hints
+appended). `kind: "unrelated"` (a Teams chat is one key for many topics), or a
+to-do that closed meanwhile, converts the proposal into an ordinary one
+automatically (audited `update-separate`). The model never writes the patch:
+`planUpdate` builds it by code and drops no-op changes (same due date, an action
+item the to-do has, clearing waiting on a to-do that is not waiting). The Review
+Queue shows a distinct **Update to existing to-do** card: the to-do, the model's
+sentence, each change as before -> after with a checkbox, the new message (quote
+highlighted). *Approve* (`POST /api/pmo/queue/[id]/apply { include }`, the only
+door) applies the ticked changes with the audit line `update-apply` and links the
+message into the timeline; *Reject* discards it; *Create as separate to-do
+instead* (`.../separate`) turns it into a normal proposal. The ordinary approve and
+the manual create refuse an update proposal. A failed update card offers Retry,
+Separate and Dismiss.
+
+**Reply hint.** If the to-do is waiting and the sender looks like the person
+(`looksLikeReplyFrom`: address named in "waiting on", or enough shared name tokens;
+"Priya Nair" matches "Priya", not "Priya Menon"), the card shows "Looks like a reply
+from X: clear waiting?" as the waiting change. It is ticked only when the model also
+says the message answers it; otherwise it is offered unticked. Still needs Approve.
+
+**Chaser drafts** (`chaser.ts`, `server/chaserDrafts.ts`, `ChaserDialog`).
+*Draft a chaser* on a waiting to-do starts an in-memory job (one per to-do; a second
+click shares it) and returns at once; the state document carries `chasers`, so the
+dialog shows "Drafting... (can take a minute on this PC)" and then the text. The call
+(`generateText`, `think: false`, temperature 0.4) goes through the same
+concurrency-1 runtime queue as structuring. The prompt carries the title,
+description, who it waits on, how long (calendar and working days) and the original
+message excerpt (delimited, untrusted: a hostile message cannot close its tag), and
+asks for a 2-5 sentence polite body with no invented facts. The result is plain text
+in an editable textarea (never rendered as HTML) with *Copy*, an optional To (a
+recipient of the original message that matches "waiting on", only when exactly one
+does), a subject, *Draft again* and *Discard*. A failure (runtime down, timeout,
+unusable output) is a local message with *Try again*. Jobs are forgotten on restart
+or after 12 h; only a one-line timeline note is stored.
+
+*Open as unsent mail draft* is a plain `<a href="mailto:...">` (`buildMailto`:
+recipient used only if it is a bare address, subject and body URL-encoded with CRLF,
+the whole link refused above 1800 characters, where the button is disabled and the
+dialog says to copy instead). The browser or OS hands it to the user's own mail
+program, which opens an *unsent* compose window; the person checks it and presses
+Send. No Outlook COM, no code that can send. `desktop/main.cjs`'s window-open
+handler passes only http(s) and mailto: to `shell.openExternal` now (it passed
+any scheme before).
+
+**Stub model.** `PMO_AI_STUB=1` answers all three tasks: updates by simple rules
+(delivered/attached -> reply + clears waiting, an ISO date -> due change, "could you
+also" -> new action, a bare thanks -> nothing, `[[stub-unrelated]]`), chasers from the
+facts block, the same failure markers (`[[stub-timeout]]`, `[[stub-invalid]]`) and
+the `stub-runtime-down` switch, and `[[stub-waiting:Name]]` in a message makes the
+proposal carry `waitingOn`.
