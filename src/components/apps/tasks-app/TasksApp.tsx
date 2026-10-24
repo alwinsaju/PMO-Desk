@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { ScrollArea } from "@/components/ui";
 import { AGENT_OFFICE_API_URL } from "./api";
 import { TaskCard } from "./TaskCard";
@@ -23,9 +23,14 @@ export function TasksApp({ windowId }: { windowId: string }) {
   const { tasks, canStart, connection, hasLoadedOnce, refetch } = useAgentOfficeData();
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
 
-  const selectedTask = selectedTaskId
-    ? (tasks.find((task) => task.id === selectedTaskId) ?? null)
-    : null;
+  const selectedTask = useMemo(
+    () =>
+      selectedTaskId ? (tasks.find((task) => task.id === selectedTaskId) ?? null) : null,
+    [tasks, selectedTaskId],
+  );
+  const handleDetailOpenChange = useCallback((open: boolean) => {
+    if (!open) setSelectedTaskId(null);
+  }, []);
 
   // Never blank the screen for a transient failure once we've shown real
   // data before — only the very first load (never yet succeeded) gets the
@@ -70,7 +75,7 @@ export function TasksApp({ windowId }: { windowId: string }) {
                 task={task}
                 canStart={canStart}
                 onSettled={refetch}
-                onOpenDetail={() => setSelectedTaskId(task.id)}
+                onOpenDetail={setSelectedTaskId}
               />
             ))}
           </div>
@@ -81,9 +86,7 @@ export function TasksApp({ windowId }: { windowId: string }) {
         task={selectedTask}
         canStart={canStart}
         onSettled={refetch}
-        onOpenChange={(open) => {
-          if (!open) setSelectedTaskId(null);
-        }}
+        onOpenChange={handleDetailOpenChange}
       />
     </div>
   );

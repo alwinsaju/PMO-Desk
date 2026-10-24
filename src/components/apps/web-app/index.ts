@@ -9,7 +9,8 @@
 // dock — it's a single shared window type every REAL App Store catalog
 // entry opens into (with a different `url`/`embeddable` per instance). See
 // WebAppWindow.tsx and app-store/appCatalog.ts.
-import { registerApp } from "../registry";
-import { WebAppWindow } from "./WebAppWindow";
+import { registerLazyApp } from "../registry";
 
-registerApp("web-app", WebAppWindow);
+registerLazyApp("web-app", () =>
+  import("./WebAppWindow").then((m) => ({ default: m.WebAppWindow })),
+);

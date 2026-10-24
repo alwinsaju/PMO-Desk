@@ -11,6 +11,8 @@
 // it's the piece that actually needs the registry populated before it
 // resolves any window's appId, so this is the right place for it.
 import "@/components/apps";
+import { useEffect } from "react";
+import { preloadApps } from "@/components/apps/registry";
 import { useVisibleWindowIds } from "./windowStore";
 import { Window } from "./Window";
 
@@ -42,6 +44,22 @@ import { Window } from "./Window";
  */
 export function WindowManager() {
   const ids = useVisibleWindowIds();
+
+  // Once the desktop has painted and the browser is idle, fetch the apps' code
+  // in the background (they are not in the first bundle), Tasks first.
+  useEffect(() => {
+    const start = () => preloadApps(["tasks", "files", "notes"]);
+    const w = window as Window & {
+      requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+      cancelIdleCallback?: (id: number) => void;
+    };
+    if (w.requestIdleCallback) {
+      const id = w.requestIdleCallback(start, { timeout: 3000 });
+      return () => w.cancelIdleCallback?.(id);
+    }
+    const id = setTimeout(start, 1500);
+    return () => clearTimeout(id);
+  }, []);
 
   return (
     <div className="pointer-events-none absolute inset-0 z-[var(--z-window-base)]">

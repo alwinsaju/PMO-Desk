@@ -1,5 +1,6 @@
 "use client";
 
+import { memo, useCallback } from "react";
 import { Button } from "@/components/ui";
 import { diffSummary } from "./diffView";
 import { flagsSummary } from "./flagsView";
@@ -17,7 +18,7 @@ interface TaskCardProps {
   /** Called after any action on this card settles, so the caller can
    *  refetch immediately instead of waiting for the next poll tick. */
   onSettled: () => void;
-  onOpenDetail: () => void;
+  onOpenDetail: (taskId: string) => void;
 }
 
 /**
@@ -27,7 +28,14 @@ interface TaskCardProps {
  * this project's own design tokens/UI kit. See taskPresenter.ts and
  * TaskActionBar.tsx for where the actual reference-frontend rules live.
  */
-export function TaskCard({ task, canStart, onSettled, onOpenDetail }: TaskCardProps) {
+export const TaskCard = memo(function TaskCard({
+  task,
+  canStart,
+  onSettled,
+  onOpenDetail,
+}: TaskCardProps) {
+  const taskId = task.id;
+  const openDetail = useCallback(() => onOpenDetail(taskId), [onOpenDetail, taskId]);
   // Data behind a form/flags/diff gate, when the task is waiting at one
   // (always idle for the four older tasks). Action decisions — the legacy
   // incident-review check, the Run form, gate blocks — live in TaskActions.
@@ -74,16 +82,16 @@ export function TaskCard({ task, canStart, onSettled, onOpenDetail }: TaskCardPr
           task={task}
           canStart={canStart}
           onSettled={onSettled}
-          onOpenDetail={onOpenDetail}
+          onOpenDetail={openDetail}
           gate={gate}
         />
-        <Button variant="ghost" size="sm" onClick={onOpenDetail} className="shrink-0">
+        <Button variant="ghost" size="sm" onClick={openDetail} className="shrink-0">
           Details
         </Button>
       </div>
     </div>
   );
-}
+});
 
 /** One-line "what's waiting" summary under the status sentence — only for
  *  tasks paused at a form/flags/diff gate whose data has loaded. */

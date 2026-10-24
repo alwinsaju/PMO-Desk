@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/cn";
 import {
   Button,
@@ -63,16 +63,13 @@ interface TaskDetailDialogProps {
  * animation plays) even for the one render where `task` has already gone
  * back to null.
  */
-export function TaskDetailDialog({
+export const TaskDetailDialog = memo(function TaskDetailDialog({
   task,
   canStart,
   onSettled,
   onOpenChange,
 }: TaskDetailDialogProps) {
   const [lastTask, setLastTask] = useState<Task | null>(task);
-  const [log, setLog] = useState<LogEntry[]>([]);
-  const [history, setHistory] = useState<HistoryRun[]>([]);
-  const [historyLoaded, setHistoryLoaded] = useState(false);
   const [pendingReviews, setPendingReviews] = useState(0);
   // Staged-but-unsaved Subcategory2 choices live in ReviewPanel; closing
   // the dialog would silently drop them, so a close attempt is intercepted
@@ -87,12 +84,10 @@ export function TaskDetailDialog({
   const gate = useGateData(task);
   const gateType = gate.gate;
 
-  useEffect(() => {
-    if (task) setLastTask(task);
-  }, [task]);
+  // Derived during render (not in an effect): no extra commit per poll.
+  if (task && task !== lastTask) setLastTask(task);
 
   const taskId = task?.id ?? null;
-  const taskState = task?.state ?? null;
 
   // The tab-label count belongs to one task's queue; don't let a previous
   // task's number linger until the next panel load reports its own.
@@ -129,56 +124,6 @@ export function TaskDetailDialog({
     setCloseError(false);
     onOpenChange(false);
   };
-
-  // Log: fetched on open, then refreshed on the same cadence as the rest
-  // of the app for as long as the dialog stays open.
-  useEffect(() => {
-    if (!taskId) return;
-    const id = taskId;
-    let cancelled = false;
-    setLog([]);
-
-    async function loadLog() {
-      try {
-        const entries = await fetchTaskLog(id);
-        if (!cancelled) setLog(entries);
-      } catch {
-        // A hung/failed log fetch just leaves the last-known entries on
-        // screen rather than clearing them.
-      }
-    }
-
-    loadLog();
-    const timer = setInterval(loadLog, LOG_POLL_MS);
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-    };
-  }, [taskId]);
-
-  // History only ever grows on completion/failure, so it doesn't need the
-  // log's polling cadence — refetched on open and whenever this task's own
-  // state changes (e.g. a run just finished while the dialog was open).
-  useEffect(() => {
-    if (!taskId) {
-      setHistory([]);
-      setHistoryLoaded(false);
-      return;
-    }
-    const id = taskId;
-    let cancelled = false;
-    setHistoryLoaded(false);
-    fetchTaskHistory(id)
-      .then((runs) => {
-        if (!cancelled) setHistory(runs);
-      })
-      .finally(() => {
-        if (!cancelled) setHistoryLoaded(true);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [taskId, taskState]);
 
   return (
     <Dialog open={task !== null} onOpenChange={handleOpenChange}>
@@ -327,85 +272,11 @@ export function TaskDetailDialog({
               </TabsContent>
 
               <TabsContent value="log" className="min-h-0 flex-1 outline-none">
-                <ScrollArea className="h-64">
-                  {log.length === 0 ? (
-                    <p className="text-ink-faint p-3 text-[12px]">
-                      No output yet — start a run to see step logs here.
-                    </p>
-                  ) : (
-                    <div className="flex flex-col gap-2 p-1">
-                      {log.map((entry, index) => (
-                        <div key={index}>
-                          <span className="text-ink-faint font-mono text-[10px] uppercase">
-                            {stepLabel(lastTask, entry.step)} · {entry.stream}
-                          </span>
-                          <pre className="border-border/60 text-ink mt-1 overflow-x-auto rounded-lg border bg-neutral-50 p-2 font-mono text-[11px] whitespace-pre-wrap">
-                            {entry.text}
-                          </pre>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </ScrollArea>
+                <LogTab task={lastTask} />
               </TabsContent>
 
               <TabsContent value="history" className="min-h-0 flex-1 outline-none">
-                <ScrollArea className="h-64">
-                  {!historyLoaded ? (
-                    <p className="text-ink-faint p-3 text-[12px]">Loading…</p>
-                  ) : history.length === 0 ? (
-                    <p className="text-ink-faint p-3 text-[12px]">
-                      No runs recorded yet.
-                    </p>
-                  ) : (
-                    <ul className="flex flex-col gap-2 p-1">
-                      {history.map((run) => (
-                        <li
-                          key={run.run_id}
-                          className="border-border/60 rounded-lg border p-2.5 text-[12px]"
-                        >
-                          <p className="text-ink font-medium">
-                            {run.outcome === "completed" ? "Completed" : "Failed"}
-                            {run.agent_name ? ` · ${run.agent_name}` : ""}
-                          </p>
-                          <p className="text-ink-faint">
-                            {new Date(run.started_at).toLocaleString()}
-                          </p>
-                          {run.error && (
-                            <p className="text-ink-faint mt-1 line-clamp-2 font-mono text-[11px]">
-                              {run.error}
-                            </p>
-                          )}
-                          {run.approvals && run.approvals.length > 0 && (
-                            <ul
-                              className="border-border/60 mt-1.5 flex flex-col gap-0.5 border-t pt-1.5"
-                              aria-label="Approvals"
-                            >
-                              {run.approvals.map((approval, index) => (
-                                <li
-                                  key={`${approval.step}-${approval.at}-${index}`}
-                                  className="text-ink-muted flex flex-wrap items-baseline justify-between gap-x-3 text-[11px]"
-                                >
-                                  <span>
-                                    {describeApproval(
-                                      approval,
-                                      stepLabel(lastTask, approval.step),
-                                    )}
-                                  </span>
-                                  <span className="text-ink-faint">
-                                    {approval.at
-                                      ? parseUtc(approval.at).toLocaleString()
-                                      : ""}
-                                  </span>
-                                </li>
-                              ))}
-                            </ul>
-                          )}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </ScrollArea>
+                <HistoryTab task={lastTask} />
               </TabsContent>
             </Tabs>
 
@@ -431,5 +302,138 @@ export function TaskDetailDialog({
         )}
       </DialogContent>
     </Dialog>
+  );
+});
+
+/** Live log: fetched when the tab is opened, then refreshed on the same
+ *  cadence as the rest of the app while it stays open. Mounted only while the
+ *  Log tab is selected, so a dialog on another tab does no log polling and the
+ *  dialog above it is never re-rendered by a log refresh. */
+function LogTab({ task }: { task: Task }) {
+  const [log, setLog] = useState<LogEntry[]>([]);
+  const taskId = task.id;
+
+  useEffect(() => {
+    let cancelled = false;
+    setLog([]);
+
+    async function loadLog() {
+      if (document.hidden) return;
+      try {
+        const entries = await fetchTaskLog(taskId);
+        // Same array identity when the log did not change (see api.ts).
+        if (!cancelled) setLog(entries);
+      } catch {
+        // A hung/failed log fetch just leaves the last-known entries on
+        // screen rather than clearing them.
+      }
+    }
+
+    void loadLog();
+    const timer = setInterval(loadLog, LOG_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [taskId]);
+
+  return (
+    <ScrollArea className="h-64">
+      {log.length === 0 ? (
+        <p className="text-ink-faint p-3 text-[12px]">
+          No output yet — start a run to see step logs here.
+        </p>
+      ) : (
+        <div className="flex flex-col gap-2 p-1">
+          {log.map((entry, index) => (
+            <div key={index}>
+              <span className="text-ink-faint font-mono text-[10px] uppercase">
+                {stepLabel(task, entry.step)} · {entry.stream}
+              </span>
+              <pre className="border-border/60 text-ink mt-1 overflow-x-auto rounded-lg border bg-neutral-50 p-2 font-mono text-[11px] whitespace-pre-wrap">
+                {entry.text}
+              </pre>
+            </div>
+          ))}
+        </div>
+      )}
+    </ScrollArea>
+  );
+}
+
+/** History only ever grows on completion/failure, so it is fetched when the
+ *  tab is opened and whenever this task's own state changes (e.g. a run just
+ *  finished while the dialog was open). */
+function HistoryTab({ task }: { task: Task }) {
+  const [history, setHistory] = useState<HistoryRun[]>([]);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
+  const taskId = task.id;
+  const taskState = task.state;
+
+  useEffect(() => {
+    let cancelled = false;
+    setHistoryLoaded(false);
+    fetchTaskHistory(taskId)
+      .then((runs) => {
+        if (!cancelled) setHistory(runs);
+      })
+      .finally(() => {
+        if (!cancelled) setHistoryLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [taskId, taskState]);
+
+  return (
+    <ScrollArea className="h-64">
+      {!historyLoaded ? (
+        <p className="text-ink-faint p-3 text-[12px]">Loading…</p>
+      ) : history.length === 0 ? (
+        <p className="text-ink-faint p-3 text-[12px]">No runs recorded yet.</p>
+      ) : (
+        <ul className="flex flex-col gap-2 p-1">
+          {history.map((run) => (
+            <li
+              key={run.run_id}
+              className="border-border/60 rounded-lg border p-2.5 text-[12px]"
+            >
+              <p className="text-ink font-medium">
+                {run.outcome === "completed" ? "Completed" : "Failed"}
+                {run.agent_name ? ` · ${run.agent_name}` : ""}
+              </p>
+              <p className="text-ink-faint">
+                {new Date(run.started_at).toLocaleString()}
+              </p>
+              {run.error && (
+                <p className="text-ink-faint mt-1 line-clamp-2 font-mono text-[11px]">
+                  {run.error}
+                </p>
+              )}
+              {run.approvals && run.approvals.length > 0 && (
+                <ul
+                  className="border-border/60 mt-1.5 flex flex-col gap-0.5 border-t pt-1.5"
+                  aria-label="Approvals"
+                >
+                  {run.approvals.map((approval, index) => (
+                    <li
+                      key={`${approval.step}-${approval.at}-${index}`}
+                      className="text-ink-muted flex flex-wrap items-baseline justify-between gap-x-3 text-[11px]"
+                    >
+                      <span>
+                        {describeApproval(approval, stepLabel(task, approval.step))}
+                      </span>
+                      <span className="text-ink-faint">
+                        {approval.at ? parseUtc(approval.at).toLocaleString() : ""}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </ScrollArea>
   );
 }

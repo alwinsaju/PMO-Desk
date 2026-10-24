@@ -17,7 +17,10 @@ export const DialogOverlay = React.forwardRef<
   <DialogPrimitive.Overlay
     ref={ref}
     className={cn(
-      "bg-ink/40 fixed inset-0 z-[var(--z-overlay)] backdrop-blur-[2px]",
+      // No backdrop-filter here: a full-viewport blur layer is re-evaluated on every
+      // repaint of whatever is behind it (and costs a lot on integrated GPUs) for a
+      // 2px blur nobody can see. The tint alone dims the page.
+      "bg-ink/40 fixed inset-0 z-[var(--z-overlay)]",
       overlayEnter,
       overlayExit,
       className,

@@ -41,6 +41,42 @@ async function getJson<T>(path: string): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+/**
+ * Structural sharing for the polled GETs: the raw response text of the last
+ * answer per path is kept, and when the next answer is byte-identical the
+ * PREVIOUS parsed value (same object identity) is returned instead of a new
+ * one. React then sees "no change" for every poll that found nothing new, so
+ * the whole Tasks tree (cards, open dialogs, the 50-row ask-me form) is not
+ * re-rendered every 2 seconds for nothing. Cost: one string compare. At most
+ * one entry per distinct path (a handful of tasks), never grows unbounded.
+ */
+const sharedResponses = new Map<string, { text: string; value: unknown }>();
+const MAX_SHARED_PATHS = 64;
+/** Larger bodies (a multi-MB diff) are parsed fresh rather than kept in memory twice. */
+const MAX_SHARED_TEXT = 2_000_000;
+
+async function getJsonShared<T>(path: string): Promise<T> {
+  const res = await fetch(`${AGENT_OFFICE_API_URL}${path}`, {
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
+  if (!res.ok) throw new Error(`GET ${path} failed: ${res.status}`);
+  return readShared<T>(path, res);
+}
+
+async function readShared<T>(path: string, res: Response): Promise<T> {
+  const text = await res.text();
+  const previous = sharedResponses.get(path);
+  if (previous && previous.text === text) return previous.value as T;
+  const value = JSON.parse(text) as T;
+  if (!previous && sharedResponses.size >= MAX_SHARED_PATHS) {
+    const oldest = sharedResponses.keys().next().value;
+    if (oldest !== undefined) sharedResponses.delete(oldest);
+  }
+  if (text.length <= MAX_SHARED_TEXT) sharedResponses.set(path, { text, value });
+  else sharedResponses.delete(path);
+  return value;
+}
+
 async function postAction(path: string): Promise<ActionResult> {
   const res = await fetch(`${AGENT_OFFICE_API_URL}${path}`, {
     method: "POST",
@@ -50,36 +86,41 @@ async function postAction(path: string): Promise<ActionResult> {
   return res.json() as Promise<ActionResult>;
 }
 
+const EMPTY_HISTORY: HistoryRun[] = [];
+const EMPTY_LOG: LogEntry[] = [];
+
 /** All discovered tasks with their live state. */
 export function fetchTasks(): Promise<Task[]> {
-  return getJson<Task[]>("/tasks");
+  return getJsonShared<Task[]>("/tasks");
 }
 
 /** All pool workers with their live state — used only to derive whether
  *  any worker is idle (see taskPresenter.ts's `canStartFromAgents`); never
  *  rendered as its own panel. */
 export function fetchAgents(): Promise<Agent[]> {
-  return getJson<Agent[]>("/agents");
+  return getJsonShared<Agent[]>("/agents");
 }
 
 /** This task's past runs, newest first. The endpoint replies
  *  `{ok: false, reason}` for an unknown task id instead of an HTTP error,
  *  so that case just yields an empty list here rather than throwing. */
 export async function fetchTaskHistory(taskId: string): Promise<HistoryRun[]> {
-  const result = await getJson<{ ok: boolean; runs?: HistoryRun[]; reason?: string }>(
-    `/tasks/${encodeURIComponent(taskId)}/history`,
-  );
-  return result.ok && result.runs ? result.runs : [];
+  const result = await getJsonShared<{
+    ok: boolean;
+    runs?: HistoryRun[];
+    reason?: string;
+  }>(`/tasks/${encodeURIComponent(taskId)}/history`);
+  return result.ok && result.runs ? result.runs : EMPTY_HISTORY;
 }
 
 /** This task's live/most-recent per-step output. The endpoint's response
  *  shape is polymorphic: a plain array on success, or `{ok: false, reason}`
  *  for an unknown task id — narrowed here to always resolve an array. */
 export async function fetchTaskLog(taskId: string): Promise<LogEntry[]> {
-  const result = await getJson<LogEntry[] | { ok: false; reason: string }>(
+  const result = await getJsonShared<LogEntry[] | { ok: false; reason: string }>(
     `/tasks/${encodeURIComponent(taskId)}/log`,
   );
-  return Array.isArray(result) ? result : [];
+  return Array.isArray(result) ? result : EMPTY_LOG;
 }
 
 // ---------------------------------------------------------------------------
@@ -233,6 +274,7 @@ async function callJson<T extends object>(
         res.status === 404,
       );
     }
+    if (method === "GET") return await readShared<Reply<T>>(path, res);
     return (await res.json()) as Reply<T>;
   } catch (error) {
     const timedOut = error instanceof DOMException && error.name === "TimeoutError";

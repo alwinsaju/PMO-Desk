@@ -4,7 +4,8 @@
 // `src/components/apps/index.ts` adds the one side-effect import for this
 // file; nothing here needs to be exported, since Window.tsx only ever
 // resolves app content through `getAppComponent(appId)`.
-import { registerApp } from "../registry";
-import { NotesApp } from "./NotesApp";
+import { registerLazyApp } from "../registry";
 
-registerApp("notes", NotesApp);
+registerLazyApp("notes", () =>
+  import("./NotesApp").then((m) => ({ default: m.NotesApp })),
+);

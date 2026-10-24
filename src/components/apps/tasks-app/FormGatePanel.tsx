@@ -1,7 +1,10 @@
 "use client";
 
 import {
+  memo,
+  startTransition,
   useCallback,
+  useDeferredValue,
   useEffect,
   useId,
   useMemo,
@@ -9,6 +12,7 @@ import {
   useState,
   type RefObject,
 } from "react";
+import { flushSync } from "react-dom";
 import { CheckIcon } from "@phosphor-icons/react";
 import { Badge, Button, ScrollArea } from "@/components/ui";
 import { saveForm } from "./api";
@@ -50,7 +54,11 @@ interface FormGatePanelProps {
  * lives in the action bar below the tabs and stays disabled until the
  * backend's own `pending` list is empty — Save is what empties it.
  */
-export function FormGatePanel({
+/** Rows mounted before the first paint; the rest follow in a low-priority
+ *  transition so opening a 50-question form shows up immediately. */
+const FIRST_PAINT_ROWS = 14;
+
+export const FormGatePanel = memo(function FormGatePanel({
   taskId,
   gate,
   onDirtyChange,
@@ -59,7 +67,10 @@ export function FormGatePanel({
   const form = gate.form;
   const [edits, setEdits] = useState<FormAnswers>({});
   const [query, setQuery] = useState("");
+  // Typing stays instant; the filtered list re-renders in the background.
+  const deferredQuery = useDeferredValue(query);
   const [onlyPending, setOnlyPending] = useState(false);
+  const [revealAll, setRevealAll] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -113,6 +124,44 @@ export function FormGatePanel({
     };
   }, [saveRef, save]);
 
+  const handleChange = useCallback((id: string, value: string) => {
+    setEdits((current) => ({ ...current, [id]: value }));
+  }, []);
+
+  // First paint shows the first rows only; the remainder is mounted by a
+  // transition (interruptible) right after, so the dialog opens at once.
+  const hasForm = Boolean(schema && saved);
+  useEffect(() => {
+    if (!hasForm || revealAll) return;
+    // After the first paint (rAF); the timeout covers a page that is not
+    // painting (hidden window), so the rest of the rows still arrive.
+    let done = false;
+    const reveal = () => {
+      if (done) return;
+      done = true;
+      startTransition(() => setRevealAll(true));
+    };
+    const frame = requestAnimationFrame(reveal);
+    const timer = setTimeout(reveal, 120);
+    return () => {
+      done = true;
+      cancelAnimationFrame(frame);
+      clearTimeout(timer);
+    };
+  }, [hasForm, revealAll]);
+
+  const visible = useMemo(
+    () =>
+      schema
+        ? filterFields(schema.fields, { query: deferredQuery, onlyPending }, effective)
+        : [],
+    [schema, deferredQuery, onlyPending, effective],
+  );
+  const groups = useMemo(() => {
+    const shown = revealAll ? visible : visible.slice(0, FIRST_PAINT_ROWS);
+    return groupFields(shown);
+  }, [visible, revealAll]);
+
   if (gate.status === "loading" || gate.status === "idle") {
     return <GateNote>Loading questions…</GateNote>;
   }
@@ -120,12 +169,12 @@ export function FormGatePanel({
     return <GateNote>{gate.error ?? "The questions aren't available yet."}</GateNote>;
   }
 
-  const visible = filterFields(schema.fields, { query, onlyPending }, effective);
-  const groups = groupFields(visible);
   const required = schema.fields.filter((f) => f.required).length;
   const unsavedDefaults = needsSave && !dirty;
 
   const focusNextPending = () => {
+    // The target may be in the part that has not mounted yet.
+    if (!revealAll) flushSync(() => setRevealAll(true));
     const el = listRef.current?.querySelector<HTMLSelectElement>(
       '[data-pending="true"] select, [data-pending="true"] input',
     );
@@ -210,9 +259,7 @@ export function FormGatePanel({
                       savedValue={saved[field.id]}
                       edited={isEdited(field, edits[field.id], saved[field.id])}
                       willSave={field.id in toSave}
-                      onChange={(value) =>
-                        setEdits((current) => ({ ...current, [field.id]: value }))
-                      }
+                      onChange={handleChange}
                     />
                   ))}
                 </ul>
@@ -223,9 +270,9 @@ export function FormGatePanel({
       </ScrollArea>
     </div>
   );
-}
+});
 
-function FieldRow({
+const FieldRow = memo(function FieldRow({
   field,
   domId,
   value,
@@ -241,7 +288,8 @@ function FieldRow({
   edited: boolean;
   /** Save would send this field (an unsaved edit or required default). */
   willSave: boolean;
-  onChange: (value: string) => void;
+  /** Stable across renders: receives the field id along with the new value. */
+  onChange: (id: string, value: string) => void;
 }) {
   const pending = Boolean(field.required) && !isAnswered(field, value);
   const isSaved =
@@ -254,7 +302,7 @@ function FieldRow({
   return (
     <li
       data-pending={pending}
-      className="grid grid-cols-1 items-center gap-x-4 gap-y-1.5 px-3 py-2 sm:grid-cols-[minmax(0,1fr)_minmax(9rem,15rem)]"
+      className="grid grid-cols-1 items-center gap-x-4 gap-y-1.5 px-3 py-2 [contain-intrinsic-size:auto_3.5rem] [content-visibility:auto] sm:grid-cols-[minmax(0,1fr)_minmax(9rem,15rem)]"
     >
       <div className="min-w-0">
         <label
@@ -283,7 +331,7 @@ function FieldRow({
           <NativeSelect
             id={domId}
             value={value}
-            onChange={(event) => onChange(event.target.value)}
+            onChange={(event) => onChange(field.id, event.target.value)}
             aria-invalid={pending || undefined}
           >
             {!value && <option value="">Choose…</option>}
@@ -298,7 +346,7 @@ function FieldRow({
             id={domId}
             type="text"
             value={value}
-            onChange={(event) => onChange(event.target.value)}
+            onChange={(event) => onChange(field.id, event.target.value)}
             placeholder={field.description || undefined}
             maxLength={TEXT_MAX_CHARS}
             autoComplete="off"
@@ -327,4 +375,4 @@ function FieldRow({
       </div>
     </li>
   );
-}
+});

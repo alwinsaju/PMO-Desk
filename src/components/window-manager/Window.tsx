@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { Suspense, useEffect, useRef, useState, type CSSProperties } from "react";
 import { flushSync } from "react-dom";
 import { motion } from "motion/react";
 import { animate } from "motion";
@@ -284,7 +284,9 @@ export function Window({ id }: WindowProps) {
         />
         <div className="relative min-h-0 flex-1 overflow-auto">
           {AppComponent ? (
-            <AppComponent windowId={id} />
+            <Suspense fallback={<AppLoading />}>
+              <AppComponent windowId={id} />
+            </Suspense>
           ) : (
             <UnregisteredAppNotice appId={data.appId} />
           )}
@@ -293,6 +295,15 @@ export function Window({ id }: WindowProps) {
       {!data.isMaximized && !isExiting && !transitionRect && (
         <ResizeHandles id={id} rootRef={outerRef} />
       )}
+    </div>
+  );
+}
+
+/** Shown for the instant a lazily loaded app's code is still arriving. */
+function AppLoading() {
+  return (
+    <div className="flex h-full w-full items-center justify-center p-6">
+      <p className="text-ink-faint text-sm">Loading…</p>
     </div>
   );
 }

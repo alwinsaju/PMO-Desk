@@ -38,7 +38,9 @@ export interface AgentOfficeData {
  * the whole grid — mirroring main.js's `refresh()`, which does the same
  * (`setConnected(false)` on failure, without ever clearing already-rendered
  * cards). Overlapping polls are guarded against, also matching main.js's
- * explicit "never stack overlapping polls" rule.
+ * explicit "never stack overlapping polls" rule. Polling pauses while the
+ * document is hidden, and `api.ts` returns the previous parsed value when a
+ * poll's body is unchanged, so an idle poll costs no React re-render.
  */
 export function useAgentOfficeData(): AgentOfficeData {
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -80,9 +82,20 @@ export function useAgentOfficeData(): AgentOfficeData {
         if (!cancelled) setConnection("offline");
       } finally {
         inFlight = false;
-        if (!cancelled) timerRef.current = setTimeout(poll, POLL_INTERVAL_MS);
+        // A hidden window (minimized / covered / another tab) stops polling;
+        // the visibilitychange listener below resumes it with an immediate poll.
+        if (!cancelled && !document.hidden) {
+          timerRef.current = setTimeout(poll, POLL_INTERVAL_MS);
+        }
       }
     }
+
+    function onVisibilityChange() {
+      if (cancelled || document.hidden) return;
+      if (timerRef.current) clearTimeout(timerRef.current);
+      void poll();
+    }
+    document.addEventListener("visibilitychange", onVisibilityChange);
 
     pollRef.current = () => {
       if (cancelled) return; // a stale invocation — refetch() from a live component always hits the current one
@@ -93,6 +106,7 @@ export function useAgentOfficeData(): AgentOfficeData {
 
     return () => {
       cancelled = true;
+      document.removeEventListener("visibilitychange", onVisibilityChange);
       if (timerRef.current) clearTimeout(timerRef.current);
     };
   }, []);

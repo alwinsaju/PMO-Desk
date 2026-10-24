@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import {
   ArrowRightIcon,
   CaretDownIcon,
@@ -52,7 +52,7 @@ export function DiffGatePanel({ gate }: { gate: GateData }) {
   return <DiffBody diff={gate.diff} />;
 }
 
-function DiffBody({ diff }: { diff: RosterDiff }) {
+const DiffBody = memo(function DiffBody({ diff }: { diff: RosterDiff }) {
   const blocking = blockers(diff);
   const stats = changeStats(diff.changes ?? []);
   const outside = diff.outside_changes ?? [];
@@ -170,7 +170,7 @@ function DiffBody({ diff }: { diff: RosterDiff }) {
       </Tabs>
     </div>
   );
-}
+});
 
 function Stat({
   label,
@@ -240,7 +240,7 @@ const COLUMNS: { key: ChangeSortKey; label: string }[] = [
 
 /** Searchable, sortable table of cell changes. Sorting by Before/After is
  *  offered too, but Person and Date are the two the reviewer lives in. */
-function ChangeTable({
+const ChangeTable = memo(function ChangeTable({
   changes,
   empty,
   label,
@@ -332,26 +332,7 @@ function ChangeTable({
             </thead>
             <tbody className="divide-border/60 divide-y">
               {rows.slice(0, limit).map((row, index) => (
-                <tr key={`${row.person}|${row.date}|${index}`} className="select-text">
-                  <td className="text-ink px-3 py-1.5 font-medium break-words">
-                    {row.person ?? <span className="text-ink-faint">—</span>}
-                  </td>
-                  <td className="text-ink-muted px-3 py-1.5 font-mono text-[11px] whitespace-nowrap">
-                    {row.date ?? "—"}
-                  </td>
-                  <td className="px-3 py-1.5">
-                    <span className="inline-flex flex-wrap items-center gap-1.5">
-                      <Cell value={row.before} />
-                      <ArrowRightIcon
-                        size={11}
-                        weight="bold"
-                        className="text-ink-faint"
-                        aria-label="changed to"
-                      />
-                      <Cell value={row.after} strong />
-                    </span>
-                  </td>
-                </tr>
+                <ChangeRow key={`${row.person}|${row.date}|${index}`} row={row} />
               ))}
             </tbody>
           </table>
@@ -371,7 +352,32 @@ function ChangeTable({
       </ScrollArea>
     </div>
   );
-}
+});
+
+const ChangeRow = memo(function ChangeRow({ row }: { row: CellChange }) {
+  return (
+    <tr className="select-text">
+      <td className="text-ink px-3 py-1.5 font-medium break-words">
+        {row.person ?? <span className="text-ink-faint">—</span>}
+      </td>
+      <td className="text-ink-muted px-3 py-1.5 font-mono text-[11px] whitespace-nowrap">
+        {row.date ?? "—"}
+      </td>
+      <td className="px-3 py-1.5">
+        <span className="inline-flex flex-wrap items-center gap-1.5">
+          <Cell value={row.before} />
+          <ArrowRightIcon
+            size={11}
+            weight="bold"
+            className="text-ink-faint"
+            aria-label="changed to"
+          />
+          <Cell value={row.after} strong />
+        </span>
+      </td>
+    </tr>
+  );
+});
 
 function Cell({ value, strong = false }: { value: string | null; strong?: boolean }) {
   if (value === null || value === "") {

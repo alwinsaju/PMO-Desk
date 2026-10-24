@@ -4,7 +4,8 @@
 // file; nothing here needs to be exported, since Window.tsx only ever
 // resolves app content through `getAppComponent(appId)`, never by
 // importing a specific app's component directly.
-import { registerApp } from "@/components/apps/registry";
-import { AppStoreApp } from "./AppStoreApp";
+import { registerLazyApp } from "@/components/apps/registry";
 
-registerApp("app-store", AppStoreApp);
+registerLazyApp("app-store", () =>
+  import("./AppStoreApp").then((m) => ({ default: m.AppStoreApp })),
+);

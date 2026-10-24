@@ -598,6 +598,7 @@ describe("api helpers (fake fetch, never the network)", () => {
     ok: status < 400,
     status,
     json: async () => body,
+    text: async () => JSON.stringify(body),
   });
 
   it("hits the contract routes with the contract methods and bodies", async () => {
@@ -1330,7 +1331,8 @@ describe("an optional kept file (Holiday Roster falls back to the reference file
   };
   const HOLIDAYS = {
     id: "holidays",
-    label: "Holiday Roster (optional - the reference file is used if you don't upload one)",
+    label:
+      "Holiday Roster (optional - the reference file is used if you don't upload one)",
     type: "file",
     accept: [".xlsx"],
     required: false,
@@ -1340,7 +1342,13 @@ describe("an optional kept file (Holiday Roster falls back to the reference file
     inputs: [
       ROSTER,
       HOLIDAYS,
-      { id: "cycle", label: "Cycle", type: "select", optionsKey: "cycles", required: true },
+      {
+        id: "cycle",
+        label: "Cycle",
+        type: "select",
+        optionsKey: "cycles",
+        required: true,
+      },
     ],
     prepare: { cmd: "scripts/prepare_options.py", after: ["roster"] },
   });
@@ -1355,7 +1363,10 @@ describe("an optional kept file (Holiday Roster falls back to the reference file
 
   it("only the roster gates Check inputs and Start; the missing Holiday Roster blocks nothing", () => {
     assert.deepEqual(prepareAfterIds(t), ["roster"]);
-    const statuses = [live("roster"), live("holidays", { present: false, persist: true })];
+    const statuses = [
+      live("roster"),
+      live("holidays", { present: false, persist: true }),
+    ];
     assert.equal(canPrepare(t, statuses), true);
     assert.equal(canPrepare(t, [live("roster", { present: false })]), false);
     const choices = { cycle: selectChoices(OPTIONS, "cycles") };
@@ -1367,9 +1378,15 @@ describe("an optional kept file (Holiday Roster falls back to the reference file
   it("an absent optional kept file says the reference file is used; a required one keeps the old hint", () => {
     assert.equal(isOptionalFile(HOLIDAYS), true);
     assert.equal(isOptionalFile(ROSTER), false);
-    assert.equal(OPTIONAL_PERSIST_HINT, "Not uploaded - the reference file will be used.");
+    assert.equal(
+      OPTIONAL_PERSIST_HINT,
+      "Not uploaded - the reference file will be used.",
+    );
     assert.equal(emptyFileHint(HOLIDAYS), OPTIONAL_PERSIST_HINT);
-    assert.equal(emptyFileHint(HOLIDAYS, live("holidays", { persist: true })), OPTIONAL_PERSIST_HINT);
+    assert.equal(
+      emptyFileHint(HOLIDAYS, live("holidays", { persist: true })),
+      OPTIONAL_PERSIST_HINT,
+    );
     assert.equal(emptyFileHint({ ...HOLIDAYS, required: true }), PERSIST_HINT);
     // not kept: no hint at all (the roster, the PTO import)
     assert.equal(emptyFileHint(ROSTER), null);
@@ -1382,14 +1399,22 @@ describe("an optional kept file (Holiday Roster falls back to the reference file
     assert.equal(uploadInvalidatesCheck(t, ROSTER), true);
     assert.equal(uploadInvalidatesCheck(t, HOLIDAYS), true);
     assert.equal(
-      uploadInvalidatesCheck(t, { id: "pto", label: "PTO import (optional)", type: "file", required: false }),
+      uploadInvalidatesCheck(t, {
+        id: "pto",
+        label: "PTO import (optional)",
+        type: "file",
+        required: false,
+      }),
       false,
     );
   });
 
   it("an uploaded optional file is still 'on file' and persists", () => {
     assert.equal(isOnFile(HOLIDAYS, live("holidays", { persist: true })), true);
-    assert.equal(isOnFile(HOLIDAYS, live("holidays", { present: false, persist: true })), false);
+    assert.equal(
+      isOnFile(HOLIDAYS, live("holidays", { present: false, persist: true })),
+      false,
+    );
   });
 
   it("formats the covered years", () => {
@@ -1404,18 +1429,28 @@ describe("an optional kept file (Holiday Roster falls back to the reference file
   it("the Holiday Roster line under Check comes from options.holiday_source", () => {
     assert.equal(
       holidaySourceLine({
-        holiday_source: { kind: "reference", file: "Holiday Roster 2026.xlsx", covers_years: [2026, 2027] },
+        holiday_source: {
+          kind: "reference",
+          file: "Holiday Roster 2026.xlsx",
+          covers_years: [2026, 2027],
+        },
       }),
       "Holiday Roster: reference file (covers 2026-2027)",
     );
     assert.equal(
       holidaySourceLine({
-        holiday_source: { kind: "uploaded", file: "holiday-roster.xlsx", covers_years: [2026, 2027] },
+        holiday_source: {
+          kind: "uploaded",
+          file: "holiday-roster.xlsx",
+          covers_years: [2026, 2027],
+        },
       }),
       "Holiday Roster: uploaded file",
     );
     assert.equal(
-      holidaySourceLine({ holiday_source: { kind: "reference", file: "x.xlsx", covers_years: [] } }),
+      holidaySourceLine({
+        holiday_source: { kind: "reference", file: "x.xlsx", covers_years: [] },
+      }),
       "Holiday Roster: reference file",
     );
     // other tasks / older options files / malformed values: no line
@@ -1570,6 +1605,7 @@ describe("api: persist/cleanup fields and the cleanup route", () => {
     ok: status < 400,
     status,
     json: async () => body,
+    text: async () => JSON.stringify(body),
   });
 
   it("passes persist, modified and cleanable through getInputs untouched", async () => {
@@ -1632,5 +1668,56 @@ describe("api: persist/cleanup fields and the cleanup route", () => {
       ok: false,
       reason: "The task is running.",
     });
+  });
+});
+
+describe("polled GETs share the previous parsed value when the body is unchanged", () => {
+  const realFetch = globalThis.fetch;
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+  });
+  const reply = (body) => ({
+    ok: true,
+    status: 200,
+    json: async () => JSON.parse(body),
+    text: async () => body,
+  });
+
+  it("returns the identical array object for an identical /tasks body", async () => {
+    globalThis.fetch = async () => reply('[{"id":"a","state":"resting"}]');
+    const first = await api.fetchTasks();
+    const second = await api.fetchTasks();
+    assert.equal(second, first);
+  });
+
+  it("returns a new value as soon as the body differs", async () => {
+    let body = '[{"id":"a","state":"resting"}]';
+    globalThis.fetch = async () => reply(body);
+    const first = await api.fetchTasks();
+    body = '[{"id":"a","state":"working"}]';
+    const second = await api.fetchTasks();
+    assert.notEqual(second, first);
+    assert.equal(second[0].state, "working");
+    body = '[{"id":"a","state":"resting"}]';
+    const third = await api.fetchTasks();
+    assert.equal(third[0].state, "resting");
+  });
+
+  it("keeps paths independent (tasks vs agents)", async () => {
+    globalThis.fetch = async (url) =>
+      reply(String(url).endsWith("/tasks") ? "[1]" : "[1]");
+    const tasks = await api.fetchTasks();
+    const agents = await api.fetchAgents();
+    assert.notEqual(tasks, agents);
+  });
+
+  it("shares gate GETs too, and never shares a failure", async () => {
+    globalThis.fetch = async () => reply('{"ok":true,"flags":{"counts":{},"flags":[]}}');
+    const a = await api.getFlags("t");
+    const b = await api.getFlags("t");
+    assert.equal(b, a);
+    globalThis.fetch = async () => ({ ok: false, status: 500, text: async () => "" });
+    const failed = await api.getFlags("t");
+    assert.equal(failed.ok, false);
   });
 });

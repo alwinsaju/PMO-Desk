@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import { CopyIcon } from "@phosphor-icons/react";
 import { Button, ScrollArea } from "@/components/ui";
 import {
@@ -21,7 +21,7 @@ import {
 import { OpenFileButtons } from "./OpenFileButtons";
 import { latestArtifactNotification } from "./taskPresenter";
 import type { GateData } from "./useGateData";
-import type { FlagSeverity, Task } from "./types";
+import type { Flag, FlagSeverity, Task } from "./types";
 
 /** Rows rendered before "Show more" — a few hundred is plenty to scan, and
  *  Copy always exports the whole filtered set regardless. */
@@ -157,31 +157,7 @@ export function FlagsGatePanel({ task, gate }: { task: Task; gate: GateData }) {
             ) : (
               <ul className="divide-border/60 divide-y" aria-label="Flags">
                 {visible.slice(0, limit).map((flag, index) => (
-                  <li
-                    key={`${flag.key}-${index}`}
-                    className="flex flex-col gap-1 px-3 py-2 select-text"
-                  >
-                    <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
-                      <SeverityChip severity={flag.severity} />
-                      <span className="text-ink-muted font-mono text-[11px]">
-                        {flag.kind}
-                      </span>
-                      <span className="text-ink text-[12px] font-medium">
-                        {flag.person ?? <span className="text-ink-faint">—</span>}
-                      </span>
-                      <span className="text-ink-faint font-mono text-[11px]">
-                        {flag.date ?? "—"}
-                      </span>
-                      {(flag.team || flag.shift) && (
-                        <span className="text-ink-faint text-[11px]">
-                          {[flag.team, flag.shift].filter(Boolean).join(" · ")}
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-ink-muted text-[12px] break-words">
-                      {flag.message}
-                    </p>
-                  </li>
+                  <FlagRow key={`${flag.key}-${index}`} flag={flag} />
                 ))}
                 {visible.length > limit && (
                   <li className="p-2 text-center">
@@ -203,3 +179,26 @@ export function FlagsGatePanel({ task, gate }: { task: Task; gate: GateData }) {
     </div>
   );
 }
+
+/** One flag. memo()'d and content-visibility:auto, so a re-render of the panel
+ *  (or scrolling past hundreds of rows) only pays for the rows actually shown. */
+const FlagRow = memo(function FlagRow({ flag }: { flag: Flag }) {
+  return (
+    <li className="flex flex-col gap-1 px-3 py-2 select-text [contain-intrinsic-size:auto_3.5rem] [content-visibility:auto]">
+      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+        <SeverityChip severity={flag.severity} />
+        <span className="text-ink-muted font-mono text-[11px]">{flag.kind}</span>
+        <span className="text-ink text-[12px] font-medium">
+          {flag.person ?? <span className="text-ink-faint">—</span>}
+        </span>
+        <span className="text-ink-faint font-mono text-[11px]">{flag.date ?? "—"}</span>
+        {(flag.team || flag.shift) && (
+          <span className="text-ink-faint text-[11px]">
+            {[flag.team, flag.shift].filter(Boolean).join(" · ")}
+          </span>
+        )}
+      </div>
+      <p className="text-ink-muted text-[12px] break-words">{flag.message}</p>
+    </li>
+  );
+});

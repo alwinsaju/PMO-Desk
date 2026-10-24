@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { getDiff, getFlags, getForm } from "./api";
 import { activeGate, type PanelGate } from "./taskPresenter";
 import type { FlagsFile, FormPayload, RosterDiff, Task } from "./types";
@@ -137,13 +137,23 @@ export function useGateData(task: Task | null): GateData {
 
   // Data from a previous gate must never leak into a new one for a render.
   const current = loaded.key === key ? loaded : IDLE;
-  return {
-    gate,
-    status: gate ? (current.key === key ? current.status : "loading") : "idle",
-    error: current.error,
-    form: current.form,
-    diff: current.diff,
-    flags: current.flags,
-    refetch,
-  };
+  const status: GateStatus = gate
+    ? current.key === key
+      ? current.status
+      : "loading"
+    : "idle";
+  // Memoized so memo()'d panels/rows that receive `gate` skip re-rendering
+  // when a parent re-renders (poll tick, tab switch) without the data changing.
+  return useMemo(
+    () => ({
+      gate,
+      status,
+      error: current.error,
+      form: current.form,
+      diff: current.diff,
+      flags: current.flags,
+      refetch,
+    }),
+    [gate, status, current.error, current.form, current.diff, current.flags, refetch],
+  );
 }

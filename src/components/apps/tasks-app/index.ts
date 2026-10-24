@@ -8,7 +8,8 @@
 // Registers TasksAppGate (not TasksApp itself) — the gate auto-launches
 // the agent-office backend and shows a loading/error screen before handing
 // off to the real <TasksApp>. See TasksAppGate.tsx.
-import { registerApp } from "../registry";
-import { TasksAppGate } from "./TasksAppGate";
+import { registerLazyApp } from "../registry";
 
-registerApp("tasks", TasksAppGate);
+registerLazyApp("tasks", () =>
+  import("./TasksAppGate").then((m) => ({ default: m.TasksAppGate })),
+);
