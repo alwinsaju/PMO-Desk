@@ -2,12 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { ArrowSquareOutIcon } from "@phosphor-icons/react";
-import { ScrollArea } from "@/components/ui";
 import { displayText } from "@/lib/pmo/preprocess";
 import { locateQuote } from "@/lib/pmo/quote";
 import type { Intake } from "@/lib/pmo/types";
 import { fetchRaw } from "./api";
-import { SourceBadge } from "./parts";
+import { ScrollBody, SourceBadge } from "./parts";
 
 interface OriginalMessageProps {
   intakeId: string;
@@ -54,8 +53,18 @@ export function OriginalMessage({ intakeId, quote, className }: OriginalMessageP
     };
   }, [intakeId]);
 
-  if (error) return <p className="text-ink-muted p-3 text-[13px]">{error}</p>;
-  if (!intake) return <p className="text-ink-faint p-3 text-[13px]">Loading original…</p>;
+  if (error)
+    return (
+      <p role="alert" className="text-ink-muted p-3 text-[13px]">
+        {error}
+      </p>
+    );
+  if (!intake)
+    return (
+      <p role="status" className="text-ink-faint p-3 text-[13px]">
+        Loading original…
+      </p>
+    );
 
   const text = displayText(intake);
   const at = locateQuote(text, quote);
@@ -68,7 +77,7 @@ export function OriginalMessage({ intakeId, quote, className }: OriginalMessageP
 
   return (
     <div className={className}>
-      <div className="border-border/60 flex flex-col gap-1 border-b pb-2">
+      <div className="border-border flex flex-col gap-1 border-b pb-2">
         <div className="flex items-center gap-2">
           <SourceBadge source={intake.source} />
           <p className="text-ink min-w-0 flex-1 truncate text-[13px] font-semibold">
@@ -102,20 +111,20 @@ export function OriginalMessage({ intakeId, quote, className }: OriginalMessageP
             href={intake.link}
             target="_blank"
             rel="noreferrer"
-            className="text-ink-muted hover:text-ink inline-flex items-center gap-1 self-start text-[11px] underline-offset-2 hover:underline"
+            className="text-ink-muted hover:text-ink focus-visible:ring-accent inline-flex items-center gap-1 self-start rounded text-[11px] underline-offset-2 outline-none hover:underline focus-visible:ring-2"
           >
             Open in Teams <ArrowSquareOutIcon size={12} />
           </a>
         )}
       </div>
-      <ScrollArea className="mt-2 min-h-0 flex-1">
-        <p className="text-ink pr-3 text-[13px] leading-relaxed break-words whitespace-pre-wrap">
+      <ScrollBody className="mt-2 pr-2">
+        <p className="text-ink text-[13px] leading-relaxed break-words whitespace-pre-wrap">
           {at ? (
             <>
               {text.slice(0, at.start)}
               <mark
                 data-testid="quote-highlight"
-                className="bg-accent-subtle text-accent-800 rounded px-0.5"
+                className="bg-accent-subtle text-accent-800 dark:bg-accent-900 dark:text-accent-200 rounded px-0.5"
               >
                 {text.slice(at.start, at.end)}
               </mark>
@@ -125,7 +134,7 @@ export function OriginalMessage({ intakeId, quote, className }: OriginalMessageP
             text
           )}
         </p>
-      </ScrollArea>
+      </ScrollBody>
     </div>
   );
 }

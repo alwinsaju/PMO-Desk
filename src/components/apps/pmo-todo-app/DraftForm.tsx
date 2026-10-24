@@ -40,7 +40,7 @@ export function DraftForm({ draft, onChange, dueBasis, disabled }: DraftFormProp
         />
       </Field>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Field label="Owner">
           <Input
             value={draft.owner.name ?? ""}
@@ -76,7 +76,7 @@ export function DraftForm({ draft, onChange, dueBasis, disabled }: DraftFormProp
         This is mine (I am the owner)
       </label>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Field label="Due date">
           <div className="flex items-center gap-2">
             <Input

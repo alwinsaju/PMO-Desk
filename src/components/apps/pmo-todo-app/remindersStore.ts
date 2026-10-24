@@ -62,3 +62,25 @@ export function readNotificationPermission(): NotificationPermissionState {
   if (typeof Notification === "undefined") return "unsupported";
   return Notification.permission;
 }
+
+/** Ask the browser for notification permission (it must come from a click). */
+export async function enableReminders(): Promise<void> {
+  const { setPermission } = useRemindersStore.getState();
+  try {
+    setPermission(await Notification.requestPermission());
+  } catch {
+    setPermission(readNotificationPermission());
+  }
+}
+
+/** Show a sample reminder (an in-app toast, and a browser notification when
+ *  allowed) so the user sees what one looks like. Fictional text only. */
+export function sendTestReminder(): void {
+  const toast = { title: "PMO To-Do: 1 item needs attention", body: "", todoId: null };
+  useRemindersStore.getState().showToast(toast);
+  try {
+    new Notification(toast.title, { tag: "pmo-todo-test" });
+  } catch {
+    // The in-app toast above is still shown.
+  }
+}

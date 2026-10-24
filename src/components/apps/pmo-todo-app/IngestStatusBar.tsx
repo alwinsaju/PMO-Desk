@@ -1,228 +1,314 @@
 "use client";
 
-import { useState } from "react";
-import { ArrowsClockwiseIcon, ClipboardTextIcon, GearIcon } from "@phosphor-icons/react";
-import { Button, IconButton } from "@/components/ui";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  ArrowsClockwiseIcon,
+  BellRingingIcon,
+  ClipboardTextIcon,
+  DotsThreeIcon,
+  GearIcon,
+  InfoIcon,
+  WarningCircleIcon,
+} from "@phosphor-icons/react";
+import {
+  Button,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+  IconButton,
+  Tooltip,
+} from "@/components/ui";
 import { cn } from "@/lib/cn";
 import type { PmoState } from "@/lib/pmo/types";
 import { scanNow } from "./api";
 import { relativeTime } from "./queueView";
+import { enableReminders, useRemindersStore } from "./remindersStore";
+import {
+  buildNotices,
+  modelStatus,
+  offersReminderPrompt,
+  scanSummary,
+  type ModelTone,
+  type Notice,
+} from "./toolbarView";
 
-interface IngestStatusBarProps {
+interface PmoToolbarProps {
   state: PmoState;
-  offline: boolean;
-  onShowFiltered: () => void;
+  /** The tab list, drawn at the start of the bar. */
+  tabs: ReactNode;
   onPaste: () => void;
   onSettings: () => void;
   onSettled: () => void;
 }
 
-const RUNTIME_DOT: Record<PmoState["runtime"]["state"], string> = {
+const DOT: Record<ModelTone, string> = {
   ready: "bg-accent",
-  cold: "bg-neutral-400",
-  stub: "bg-neutral-400",
-  unknown: "bg-neutral-400",
-  down: "bg-ink",
-  "model-missing": "bg-ink",
+  idle: "bg-neutral-400",
+  off: "bg-ink",
 };
 
-/** One strip with everything about the intake pipeline: is the local model
- *  up, how many items were filtered, where the inbox is, and Scan now. Banners
- *  underneath explain anything that needs the user's attention. */
-export function IngestStatusBar({
+/** How long the result of "Scan now" stays in place of the model status. */
+const SCAN_NOTE_MS = 6000;
+
+/**
+ * The single row at the top of the window: the tabs on the left, then the model
+ * status and the few things you do (Scan now, Paste, Settings). Everything that
+ * is only information (inbox path, last scan, filtered count) lives in tooltips
+ * and in Settings, and anything that needs attention is a notice underneath
+ * (`NoticeStack`). The window is a size container: labels drop to icons below
+ * ~670 px and the actions fold into one menu below ~510 px.
+ */
+export function PmoToolbar({
   state,
-  offline,
-  onShowFiltered,
+  tabs,
   onPaste,
   onSettings,
   onSettled,
-}: IngestStatusBarProps) {
+}: PmoToolbarProps) {
   const [scanning, setScanning] = useState(false);
   const [scanNote, setScanNote] = useState<string | null>(null);
-  const { ingest, runtime, structuring } = state;
-  const paused = structuring.paused;
+  const noteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const permission = useRemindersStore((s) => s.permission);
+  const desktop = useRemindersStore((s) => s.desktop);
+  const { ingest } = state;
+  const status = modelStatus(state);
+  const remindersOffered = offersReminderPrompt(permission, desktop);
+
+  useEffect(
+    () => () => {
+      if (noteTimer.current) clearTimeout(noteTimer.current);
+    },
+    [],
+  );
+
+  const showNote = (text: string) => {
+    setScanNote(text);
+    if (noteTimer.current) clearTimeout(noteTimer.current);
+    noteTimer.current = setTimeout(() => setScanNote(null), SCAN_NOTE_MS);
+  };
 
   async function scan() {
+    if (scanning) return;
     setScanning(true);
-    setScanNote(null);
     try {
       const reply = await scanNow();
-      if (reply.ok) {
-        const { report } = reply;
-        setScanNote(
-          `${report.ingested} new, ${report.duplicates} duplicate, ${report.filtered} filtered`,
-        );
-      } else {
-        setScanNote(reply.reason);
-      }
+      showNote(reply.ok ? `Scan: ${scanSummary(reply.report)}` : reply.reason);
       onSettled();
     } catch {
-      setScanNote("Could not reach the app server.");
+      showNote("Could not reach the app server.");
     } finally {
       setScanning(false);
     }
   }
 
-  const modelText =
-    paused?.code === "model-missing"
-      ? "Model missing"
-      : paused
-        ? "Local model not running"
-        : runtime.state === "ready"
-          ? "Local model ready"
-          : runtime.state === "cold"
-            ? "Local model idle"
-            : runtime.state === "stub"
-              ? "Test stub"
-              : runtime.state === "down"
-                ? "Local model not running"
-                : runtime.state === "model-missing"
-                  ? "Model missing"
-                  : "Local model unknown";
+  const scanned = ingest.lastScanAt
+    ? `Last scan ${relativeTime(ingest.lastScanAt, Date.parse(state.serverTime))}`
+    : "Not scanned yet";
+  const chipText = scanNote ?? status.progress ?? status.label;
 
   return (
-    <div className="border-border/60 flex flex-col border-b">
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 px-4 py-2.5">
+    <div className="border-border flex shrink-0 items-center gap-2 border-b px-3 py-2">
+      <div className="min-w-0 flex-1 [scrollbar-width:none] overflow-x-auto">{tabs}</div>
+
+      <span
+        role="status"
+        aria-label={`${status.detail}${scanNote ? `. ${scanNote}` : ""}`}
+        title={status.detail}
+        className="text-ink-muted flex min-w-0 shrink items-center gap-1.5 text-[12px]"
+      >
         <span
-          className="text-ink-muted flex items-center gap-1.5 text-[12px]"
-          title={runtime.model ?? undefined}
-        >
-          <span
-            className={cn(
-              "h-2 w-2 rounded-full",
-              paused ? "bg-ink" : RUNTIME_DOT[runtime.state],
-              structuring.active && "animate-pulse",
-            )}
-          />
-          {modelText}
-          {runtime.state === "cold" && !paused && runtime.message && (
-            <span className="text-ink-faint">
-              {" · "}
-              {runtime.message}
-            </span>
+          className={cn(
+            "h-2 w-2 shrink-0 rounded-full",
+            DOT[status.tone],
+            status.busy && "animate-pulse",
           )}
-          {structuring.total > 0 && !paused && (
-            <span className="text-ink-faint">
-              {" · structuring "}
-              {structuring.position} of {structuring.total}
+        />
+        <span className="hidden max-w-44 truncate @xl:inline">{chipText}</span>
+      </span>
+
+      {/* Wide: the actions as buttons. */}
+      <div className="hidden shrink-0 items-center gap-1.5 @lg:flex">
+        <Tooltip label={`Scan the inbox now. ${scanned}.`}>
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={scanning}
+            aria-label="Scan now"
+            className="px-2 @2xl:px-3"
+            onClick={() => void scan()}
+          >
+            <ArrowsClockwiseIcon
+              size={14}
+              weight="bold"
+              className={scanning ? "animate-spin" : ""}
+            />
+            <span className="hidden @2xl:inline">
+              {scanning ? "Scanning" : "Scan now"}
             </span>
-          )}
-        </span>
-
-        <button
-          type="button"
-          onClick={onShowFiltered}
-          className="text-ink-muted hover:text-ink text-[12px] underline-offset-2 hover:underline"
-        >
-          {ingest.filteredCount} filtered
-        </button>
-
-        <span
-          className="text-ink-faint min-w-0 flex-1 truncate font-mono text-[11px]"
-          title={ingest.inboxDir}
-        >
-          {ingest.inboxDir}
-        </span>
-
-        <span className="text-ink-faint text-[11px]">
-          {scanNote ??
-            (ingest.lastScanAt
-              ? `scanned ${relativeTime(ingest.lastScanAt, Date.parse(state.serverTime))}`
-              : "not scanned yet")}
-        </span>
-        <Button
-          variant="secondary"
-          size="sm"
-          disabled={scanning}
-          onClick={() => void scan()}
-        >
-          <ArrowsClockwiseIcon
-            size={13}
-            weight="bold"
-            className={scanning ? "animate-spin" : ""}
-          />
-          Scan now
-        </Button>
-        <Button variant="secondary" size="sm" onClick={onPaste}>
-          <ClipboardTextIcon size={13} weight="bold" />
-          Paste
-        </Button>
-        <IconButton
-          aria-label="PMO settings"
-          size="sm"
-          variant="ghost"
-          onClick={onSettings}
-        >
-          <GearIcon size={15} />
-        </IconButton>
+          </Button>
+        </Tooltip>
+        <Tooltip label="Paste a Teams message or an email">
+          <Button
+            variant="secondary"
+            size="sm"
+            aria-label="Paste a message"
+            className="px-2 @2xl:px-3"
+            onClick={onPaste}
+          >
+            <ClipboardTextIcon size={14} weight="bold" />
+            <span className="hidden @2xl:inline">Paste</span>
+          </Button>
+        </Tooltip>
+        {remindersOffered && (
+          <Tooltip label="Enable reminders in this browser">
+            <IconButton
+              aria-label="Enable reminders"
+              size="sm"
+              variant="ghost"
+              onClick={() => void enableReminders()}
+            >
+              <BellRingingIcon size={16} />
+            </IconButton>
+          </Tooltip>
+        )}
+        <Tooltip label="PMO settings">
+          <IconButton
+            aria-label="PMO settings"
+            size="sm"
+            variant="ghost"
+            onClick={onSettings}
+          >
+            <GearIcon size={16} />
+          </IconButton>
+        </Tooltip>
       </div>
 
-      {offline && (
-        <Banner>
-          Can&apos;t reach the AI OS server right now. Showing the last known state.
-        </Banner>
-      )}
-      {paused && (
-        <Banner strong>
-          {paused.code === "model-missing" ? (
-            <>
-              {paused.message} Messages stay in the queue as pending and are structured
-              once the model is installed.
-            </>
-          ) : (
-            <>
-              Local model not running.{" "}
-              {structuring.waiting + (structuring.active ? 1 : 0) || "Some"} item(s) are
-              waiting and stay pending; they are retried on every scan.
-            </>
-          )}
-        </Banner>
-      )}
-      {!paused && runtime.state === "down" && <Banner strong>{runtime.message}</Banner>}
-      {!paused && runtime.state === "model-missing" && (
-        <Banner strong>{runtime.message}</Banner>
-      )}
-      {runtime.state === "stub" && <Banner>{runtime.message}</Banner>}
-      {ingest.teamsFiltering && (
-        <Banner>
-          Teams items are being filtered until a tenant ID or chat is allowlisted. Add
-          your tenant ID in{" "}
-          <button
-            type="button"
-            onClick={onSettings}
-            className="underline underline-offset-2"
-          >
-            Settings
-          </button>
-          , or use “Allow this tenant” on a filtered Teams item. (Pasted text is not
-          affected.)
-        </Banner>
-      )}
-      {!ingest.inboxExists && ingest.lastScanAt && (
-        <Banner strong>
-          Inbox folder not found: <code className="font-mono">{ingest.inboxDir}</code>.
-          Nothing can arrive until it exists.
-        </Banner>
-      )}
-      {ingest.rejectedFileCount > 0 && (
-        <Banner>
-          {ingest.rejectedFileCount} producer file(s) could not be read and were parked in{" "}
-          <code className="font-mono">rejected-files</code> with a reason.
-        </Banner>
-      )}
+      {/* Narrow: the same actions in one menu. */}
+      <div className="shrink-0 @lg:hidden">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <IconButton aria-label="More actions" size="sm" variant="ghost">
+              <DotsThreeIcon size={18} weight="bold" />
+            </IconButton>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="min-w-52">
+            <DropdownMenuLabel className="max-w-64 tracking-normal whitespace-normal normal-case">
+              {scanNote ?? status.detail}
+            </DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem disabled={scanning} onSelect={() => void scan()}>
+              <ArrowsClockwiseIcon size={14} weight="bold" />
+              Scan now
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={onPaste}>
+              <ClipboardTextIcon size={14} weight="bold" />
+              Paste a message
+            </DropdownMenuItem>
+            {remindersOffered && (
+              <DropdownMenuItem onSelect={() => void enableReminders()}>
+                <BellRingingIcon size={14} />
+                Enable reminders
+              </DropdownMenuItem>
+            )}
+            <DropdownMenuItem onSelect={onSettings}>
+              <GearIcon size={14} />
+              PMO settings
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
     </div>
   );
 }
 
-function Banner({ children, strong }: { children: React.ReactNode; strong?: boolean }) {
+/** What needs attention, under the toolbar. The most urgent notice is always
+ *  visible; the rest fold into "+N more" so a stack of notices never eats a
+ *  small window. */
+export function NoticeStack({
+  state,
+  offline,
+  onSettings,
+}: {
+  state: PmoState;
+  offline: boolean;
+  onSettings: () => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const notices = buildNotices(state, offline);
+  if (notices.length === 0) return null;
+  const shown = expanded ? notices : notices.slice(0, 1);
+
+  const toggle =
+    notices.length > 1 ? (
+      <button
+        type="button"
+        aria-expanded={expanded}
+        onClick={() => setExpanded((open) => !open)}
+        className="text-ink-muted hover:text-ink focus-visible:ring-accent ml-auto shrink-0 rounded px-1 text-[12px] whitespace-nowrap underline-offset-2 outline-none hover:underline focus-visible:ring-2"
+      >
+        {expanded ? "Show fewer" : `+${notices.length - 1} more`}
+      </button>
+    ) : null;
+
+  return (
+    <section
+      aria-label="Notices"
+      className="border-border flex max-h-[45%] shrink-0 flex-col overflow-y-auto border-b bg-neutral-50"
+    >
+      {shown.map((notice, index) => (
+        <NoticeRow
+          key={notice.id}
+          notice={notice}
+          onSettings={onSettings}
+          trailing={index === 0 ? toggle : null}
+        />
+      ))}
+    </section>
+  );
+}
+
+function NoticeRow({
+  notice,
+  onSettings,
+  trailing,
+}: {
+  notice: Notice;
+  onSettings: () => void;
+  trailing?: ReactNode;
+}) {
+  const attention = notice.level === "attention";
+  const Icon = attention ? WarningCircleIcon : InfoIcon;
   return (
     <p
       className={cn(
-        "px-4 py-1.5 text-[12px]",
-        strong ? "bg-ink text-ink-inverse" : "text-ink-muted bg-neutral-50",
+        "flex items-start gap-2 px-3 py-1.5 text-[12px] leading-snug break-words",
+        attention ? "text-ink" : "text-ink-muted",
       )}
     >
-      {children}
+      <Icon
+        size={14}
+        weight={attention ? "fill" : "regular"}
+        className={cn("mt-px shrink-0", attention ? "text-ink" : "text-ink-faint")}
+      />
+      <span className="min-w-0">
+        {notice.text}
+        {notice.action === "settings" && (
+          <>
+            {" "}
+            <button
+              type="button"
+              onClick={onSettings}
+              className="text-ink focus-visible:ring-accent rounded underline underline-offset-2 outline-none focus-visible:ring-2"
+            >
+              Open settings
+            </button>
+          </>
+        )}
+      </span>
+      {trailing}
     </p>
   );
 }

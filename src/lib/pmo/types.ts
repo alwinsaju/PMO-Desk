@@ -462,6 +462,11 @@ export type Proposal = z.infer<typeof ProposalSchema>;
 // ---------------------------------------------------------------------------
 
 export const DEFAULT_INBOX_DIR = "C:\\Users\\alsaju\\OneDrive - Deloitte (O365D)\\PMO-Inbox";
+/** Earlier defaults, which first run wrote into config.json; store.loadConfig
+ *  migrates a saved value that is exactly one of these to DEFAULT_INBOX_DIR. */
+export const LEGACY_DEFAULT_INBOX_DIRS = [
+  "C:\\Users\\alsaju\\OneDrive - Deloitte\\PMO-Inbox",
+];
 
 export const DEFAULT_RETENTION_DAYS = 90;
 export const MIN_RETENTION_DAYS = 7;

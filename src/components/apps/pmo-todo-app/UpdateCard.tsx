@@ -1,15 +1,15 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ArrowRightIcon } from "@phosphor-icons/react";
-import { Badge, Button } from "@/components/ui";
+import { ArrowRightIcon, WarningIcon } from "@phosphor-icons/react";
+import { Button } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { MAX_AI_ATTEMPTS, type PmoState, type Proposal } from "@/lib/pmo/types";
 import { UPDATE_KIND_LABEL, planUpdate } from "@/lib/pmo/updateLogic";
 import { applyUpdate, rejectProposal, retryProposal, separateUpdate } from "./api";
 import { OriginalMessage } from "./OriginalMessage";
-import { ProposalStatusBadge, SourceBadge } from "./parts";
-import { relativeTime } from "./queueView";
+import { Chip, ProposalStatusBadge } from "./parts";
+import { SOURCE_LABEL, relativeTime } from "./queueView";
 
 interface UpdateCardProps {
   proposal: Proposal;
@@ -75,49 +75,62 @@ export function UpdateCard({ proposal, state, onOpenTodo, onSettled }: UpdateCar
   return (
     <div
       data-testid="update-card"
-      className="border-border/60 bg-surface-elevated flex flex-col gap-3 rounded-2xl border p-4"
+      className="border-border bg-surface-elevated flex min-w-0 flex-col gap-3 rounded-2xl border p-3.5 @md:p-4"
     >
-      <div className="flex flex-wrap items-center gap-2">
-        <Badge variant="accent">Update to existing to-do</Badge>
-        <SourceBadge source={summary.source} />
-        <span className="text-ink-muted min-w-0 flex-1 truncate text-[12px]">
-          from {sender}
-          <span className="text-ink-faint">
-            {" · "}
-            {relativeTime(summary.receivedAt, Date.parse(state.serverTime))}
-            {summary.subject ? ` · ${summary.subject}` : ""}
+      <div className="flex min-w-0 flex-col gap-1">
+        <p className="min-w-0 text-[14px] font-semibold">
+          {todo ? (
+            <button
+              type="button"
+              onClick={() => onOpenTodo(todo.id)}
+              className="text-ink focus-visible:ring-accent line-clamp-2 rounded text-left underline-offset-2 outline-none hover:underline focus-visible:ring-2"
+              title="Open this to-do"
+            >
+              {todo.title}
+            </button>
+          ) : (
+            <span className="text-ink line-clamp-2">{update.todoTitle}</span>
+          )}
+        </p>
+        <p className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[12px]">
+          {ready && plan && (
+            <Chip tone={nothing ? "neutral" : "accent"}>
+              {UPDATE_KIND_LABEL[plan.kind]}
+            </Chip>
+          )}
+          {ready && proposal.quoteVerified === false && (
+            <Chip
+              tone="outline"
+              className="border-ink text-ink gap-1"
+              title="The sentence the model quoted was not found in the message"
+            >
+              <WarningIcon size={11} weight="fill" />
+              Check original
+            </Chip>
+          )}
+          {!ready && (
+            <ProposalStatusBadge proposal={proposal} structuring={state.structuring} />
+          )}
+          <span className="text-ink-muted min-w-0 truncate">
+            Update from {sender}
+            <span className="text-ink-faint">
+              {" · "}
+              {SOURCE_LABEL[summary.source]}
+              {" · "}
+              {relativeTime(summary.receivedAt, Date.parse(state.serverTime))}
+              {summary.subject ? ` · ${summary.subject}` : ""}
+            </span>
           </span>
-        </span>
-        {ready && plan && (
-          <Badge variant="outline">{UPDATE_KIND_LABEL[plan.kind]}</Badge>
-        )}
-        {ready && proposal.quoteVerified === false && (
-          <Badge className="bg-ink text-ink-inverse">check against original</Badge>
-        )}
-        {!ready && (
-          <ProposalStatusBadge proposal={proposal} structuring={state.structuring} />
+        </p>
+        {(todo?.waitingOn?.trim() || (todo && !open) || !todo) && (
+          <p className="text-ink-faint text-[12px]">
+            {todo?.waitingOn?.trim() ? `Waiting on ${todo.waitingOn}` : ""}
+            {todo?.waitingOn?.trim() && todo && !open ? " · " : ""}
+            {todo && !open ? todo.status : ""}
+            {!todo ? "This to-do no longer exists." : ""}
+          </p>
         )}
       </div>
-
-      <p className="text-ink-muted text-[12px]">
-        To-do:{" "}
-        {todo ? (
-          <button
-            type="button"
-            onClick={() => onOpenTodo(todo.id)}
-            className="text-ink focus-visible:ring-accent rounded text-[13px] font-semibold underline-offset-2 outline-none hover:underline focus-visible:ring-2"
-          >
-            {todo.title}
-          </button>
-        ) : (
-          <span className="text-ink text-[13px] font-semibold">{update.todoTitle}</span>
-        )}
-        {todo?.waitingOn?.trim() && (
-          <span className="text-ink-faint"> · waiting on {todo.waitingOn}</span>
-        )}
-        {todo && !open && <span className="text-ink-faint"> · {todo.status}</span>}
-        {!todo && <span className="text-ink-faint"> · no longer exists</span>}
-      </p>
 
       {(status === "pending" || status === "structuring") && (
         <p className="text-ink-muted text-[12px]">
@@ -127,7 +140,7 @@ export function UpdateCard({ proposal, state, onOpenTodo, onSettled }: UpdateCar
         </p>
       )}
       {status === "failed" && (
-        <p className="border-border text-ink rounded-lg border bg-neutral-50 px-3 py-2 text-[12px]">
+        <p className="border-border text-ink rounded-lg border bg-neutral-50 px-3 py-2 text-[12px] break-words">
           The local model could not read this message
           {proposal.ai.error ? ` (${proposal.ai.error.replace(/\.$/, "")})` : ""}.
           Attempts used: {proposal.ai.attempts} of {MAX_AI_ATTEMPTS}. Retry, or create it
@@ -181,7 +194,10 @@ export function UpdateCard({ proposal, state, onOpenTodo, onSettled }: UpdateCar
                             <span className="text-ink-muted line-through decoration-1">
                               {change.before}
                             </span>
-                            <ArrowRightIcon size={11} className="text-ink-faint shrink-0" />
+                            <ArrowRightIcon
+                              size={11}
+                              className="text-ink-faint shrink-0"
+                            />
                           </>
                         )}
                         <span className="font-medium whitespace-pre-wrap">
@@ -193,7 +209,7 @@ export function UpdateCard({ proposal, state, onOpenTodo, onSettled }: UpdateCar
                           className={cn(
                             "mt-0.5 block text-[11px]",
                             change.kind === "waiting" && plan.replyFrom
-                              ? "text-accent-800 font-medium"
+                              ? "text-accent-800 dark:text-accent-300 font-medium"
                               : "text-ink-faint",
                           )}
                         >
@@ -214,12 +230,12 @@ export function UpdateCard({ proposal, state, onOpenTodo, onSettled }: UpdateCar
           type="button"
           onClick={() => setShowMessage((v) => !v)}
           aria-expanded={showMessage}
-          className="text-ink-muted hover:text-ink text-[12px] underline-offset-2 hover:underline"
+          className="text-ink-muted hover:text-ink focus-visible:ring-accent rounded text-[12px] underline-offset-2 outline-none hover:underline focus-visible:ring-2"
         >
           {showMessage ? "Hide the new message" : "Show the new message"}
         </button>
         {showMessage && (
-          <div className="border-border/60 mt-2 flex h-56 flex-col rounded-lg border p-3">
+          <div className="border-border mt-2 flex h-56 flex-col rounded-lg border p-3">
             <OriginalMessage
               intakeId={proposal.intakeId}
               quote={ready ? result?.quote : null}
@@ -239,6 +255,7 @@ export function UpdateCard({ proposal, state, onOpenTodo, onSettled }: UpdateCar
         <Button
           variant="ghost"
           size="sm"
+          className="mr-auto"
           disabled={busy || status === "structuring"}
           onClick={() => void run(() => separateUpdate(proposal.id))}
         >

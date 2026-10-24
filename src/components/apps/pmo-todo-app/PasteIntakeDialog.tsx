@@ -8,7 +8,6 @@ import {
   DialogDescription,
   DialogTitle,
   Input,
-  ScrollArea,
 } from "@/components/ui";
 import {
   MANUAL_ORIGINS,
@@ -17,7 +16,7 @@ import {
   type ManualOrigin,
 } from "@/lib/pmo/manualIntake";
 import { submitPaste } from "./api";
-import { Field, Segmented, TextArea } from "./parts";
+import { Field, ScrollBody, Segmented, TextArea } from "./parts";
 
 interface PasteIntakeDialogProps {
   open: boolean;
@@ -101,9 +100,9 @@ export function PasteIntakeDialog({
 
   return (
     <Dialog open={open} onOpenChange={close}>
-      <DialogContent className="flex max-h-[88vh] max-w-xl flex-col">
-        <DialogTitle>Paste a message</DialogTitle>
-        <DialogDescription>
+      <DialogContent className="flex max-h-full max-w-xl flex-col p-5">
+        <DialogTitle className="shrink-0">Paste a message</DialogTitle>
+        <DialogDescription className="shrink-0">
           Copy the text of a Teams message or an email and paste it here. It goes through
           the same filter and review queue as everything else.
         </DialogDescription>
@@ -139,9 +138,9 @@ export function PasteIntakeDialog({
           </div>
         ) : (
           <>
-            <ScrollArea className="mt-4 min-h-0 flex-1">
-              <div className="flex flex-col gap-3 pr-3">
-                <div className="grid grid-cols-2 gap-3">
+            <ScrollBody className="mt-4 pr-2">
+              <div className="flex flex-col gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <Field label="From (optional)">
                     <Input
                       value={from}
@@ -211,13 +210,13 @@ export function PasteIntakeDialog({
                   script then brings it in as ordinary mail, with a real sender address.
                 </p>
               </div>
-            </ScrollArea>
+            </ScrollBody>
             {serverError && (
-              <p role="alert" className="text-ink mt-2 text-[12px] font-medium">
+              <p role="alert" className="text-ink mt-2 shrink-0 text-[12px] font-medium">
                 {serverError}
               </p>
             )}
-            <div className="mt-4 flex justify-end gap-2">
+            <div className="border-border mt-3 flex shrink-0 justify-end gap-2 border-t pt-3">
               <Button variant="ghost" onClick={() => close(false)}>
                 Cancel
               </Button>

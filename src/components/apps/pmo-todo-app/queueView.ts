@@ -1,14 +1,13 @@
 // Pure list/formatting helpers for the PMO To-Do window. No React, and
 // relative imports with the .ts extension, so `pnpm test` can load this file
 // under plain Node (see queueView.test.mjs).
-import {
-  isDueSoon,
-  isSnoozed,
-  isWaiting,
-  waitingState,
-} from "../../../lib/pmo/due.ts";
+import { isDueSoon, isSnoozed, isWaiting, waitingState } from "../../../lib/pmo/due.ts";
 import { domainMatches, domainOf } from "../../../lib/pmo/filter.ts";
-import { checkpointProgress } from "../../../lib/pmo/todoLogic.ts";
+import {
+  allCheckpointsComplete,
+  checkpointProgress,
+  deriveStage,
+} from "../../../lib/pmo/todoLogic.ts";
 import type {
   HistoryKind,
   PmoConfig,
@@ -196,6 +195,58 @@ export function sortTodosBy(todos: Todo[], sort: TodoSort, today: string): Todo[
   }
 }
 
+/** What a to-do row needs to know about itself, derived once so the row can stay
+ *  a plain layout. Exactly one `headline` (or none) competes for attention:
+ *  overdue beats due soon, and a closed to-do shows how it closed. */
+export interface TodoRowView {
+  open: boolean;
+  overdue: boolean;
+  dueSoon: boolean;
+  snoozed: boolean;
+  headline: { tone: "strong" | "outline"; label: string } | null;
+  /** "Due Wed 21 Oct", "Due Today" or "No due date". */
+  dueText: string;
+  stage: string | null;
+  done: number;
+  total: number;
+  /** 0-100, for the progress bar. */
+  percent: number;
+  /** Every checkpoint is done on a still-open to-do: offer "Mark done". */
+  readyToClose: boolean;
+  /** "Internal review", "All steps done" or "Complete". Empty with no checkpoints. */
+  stageText: string;
+}
+
+export function todoRowView(todo: Todo, today: string, now: Date): TodoRowView {
+  const open = todo.status === "open";
+  const overdue = open && todo.dueAt !== null && todo.dueAt < today;
+  const dueSoon = !overdue && isDueSoon(todo, today);
+  const snoozed = open && isSnoozed(todo, now);
+  const { done, total } = checkpointProgress(todo);
+  const stage = deriveStage(todo);
+  const readyToClose = allCheckpointsComplete(todo);
+  return {
+    open,
+    overdue,
+    dueSoon,
+    snoozed,
+    headline: !open
+      ? { tone: "outline", label: todo.status === "done" ? "Done" : "Cancelled" }
+      : overdue
+        ? { tone: "strong", label: "Overdue" }
+        : dueSoon
+          ? { tone: "outline", label: "Due soon" }
+          : null,
+    dueText: todo.dueAt ? `Due ${formatDay(todo.dueAt, today)}` : "No due date",
+    stage,
+    done,
+    total,
+    percent: total ? Math.round((done / total) * 100) : 0,
+    readyToClose,
+    stageText: total === 0 ? "" : readyToClose ? "All steps done" : (stage ?? "Complete"),
+  };
+}
+
 const DAY_MS = 86_400_000;
 const utcDay = (iso: string) => Date.parse(`${iso}T00:00:00Z`);
 
@@ -264,11 +315,7 @@ export function describeWaiting(
   if (!state) return null;
   const diff = Math.round((utcDay(today) - utcDay(state.sinceDay)) / DAY_MS);
   const when =
-    diff <= 0
-      ? "today"
-      : diff === 1
-        ? "yesterday"
-        : formatDay(state.sinceDay, today);
+    diff <= 0 ? "today" : diff === 1 ? "yesterday" : formatDay(state.sinceDay, today);
   return {
     who: todo.waitingOn?.trim() ?? "",
     since: `since ${when}`,

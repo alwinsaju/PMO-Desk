@@ -466,7 +466,7 @@ instrumentation and each route into separate module graphs.
 
 `GET /api/ai/runtime` is a read-only status snapshot (`running`, `ownedByUs`,
 `modelLoaded`, `queue.waiting`/`active`, ...); it never starts or stops
-anything. The PMO status bar is the only UI indicator. `/api/ai/command` shares
+anything. The PMO toolbar's model status chip is the only UI indicator. `/api/ai/command` shares
 the config (so it also runs `gemma4:12b`, which advertises the `tools`
 capability and was checked to make correct tool calls with `think: false`) but
 still calls Ollama itself, because it needs `/api/chat` tool calling and
@@ -565,7 +565,7 @@ src/lib/pmo/            Pure logic, one co-located *.test.mjs per area
     originCheck.ts, http.ts  Origin/Host guard + { ok, reason? } envelope.
     aiGenerator.ts        The real model (src/lib/ai-runtime generateJson,
                           `think: false`, 240 s timeout, clamped below 280 s)
-                          and the runtime summary for the status bar.
+                          and the runtime summary for the toolbar's status chip.
     chaserDrafts.ts       In-memory "draft a chaser" jobs (local model, copy-only).
     stubGenerator.ts      Fake model for tests / `PMO_AI_STUB=1`; answers all three
                           tasks (proposal, update, chaser) deterministically.
@@ -597,9 +597,21 @@ folders for every test**: `AI_OS_PMO_INBOX_DIR` + `AI_OS_PMO_DATA_DIR`, and
 are skipped; the app deletes each file it has dealt with, and its only write
 into the folder is the Paste button's file (one more producer, same atomic
 hand-off). **Teams is filtered by default** until a tenant ID or chat is
-allowlisted (the tenant GUID ships empty): the status bar says so, a filtered
+allowlisted (the tenant GUID ships empty): a notice under the toolbar says so, a filtered
 Teams item has an *Allow this tenant* button, and the tenant goes in Settings
 too (see PMO-INTAKE-CONTRACT.md).
+
+**Inbox path migration** (`Store.loadConfig`, `migratedInboxDir` in `server/paths.ts`).
+First run writes the then-default `inboxDir` into `config.json`, which then overrides
+any later change of the default. So the first config load of each `Store` checks the
+saved value: if it equals a former default (`LEGACY_DEFAULT_INBOX_DIRS` in `types.ts`,
+today `C:\Users\alsaju\OneDrive - Deloitte\PMO-Inbox`, compared ignoring case, slash
+direction and trailing separators) it is rewritten to `DEFAULT_INBOX_DIR`, atomically,
+other keys untouched, with an `audit.jsonl` line (`action: "config"`, `migrated:
+"inboxDir"`). A custom path, the current default and a missing key are never touched;
+a missing or unreadable file is retried on the next load; `AI_OS_PMO_INBOX_DIR` still
+wins over whatever is saved (`resolveInboxDir`). Tests:
+`server/inboxMigration.server.test.mjs`.
 
 **Producers** (all write the same `pmo-intake/1` file): Power Automate flows
 (recipes; Teams trigger: tenant id, `LinkToMessage` and `messagePayload.id` are
@@ -614,7 +626,7 @@ the mapping and the script's control flow against fake Outlook objects under
 the blocked-domain/term rules (and a blocked domain anywhere in the pasted text
 counts) but not the Teams default-deny.
 
-**UI additions**: the status bar has *Paste* and a gear. *Paste*
+**UI additions**: the toolbar has *Paste* and a gear. *Paste*
 (`PasteIntakeDialog`) validates with the same zod schema as the server;
 *Settings* (`SettingsDialog`, form logic in `settingsForm.ts`) edits
 `config.json` through GET/PUT `/api/pmo/config`, validated by the same
@@ -643,7 +655,7 @@ retried once then `failed`, `invalid-output` is `failed` after the runtime's own
 repair, at most 3 model attempts per item, and failed items offer *Retry* and
 *Create manually from original*. `gemma4:12b` (think off) on this CPU takes
 roughly 50-100 s per message, and the first one after a cold start 1-2 minutes
-more (the status bar says so while the model is not yet warm), so structuring
+more (the model chip says so while the model is not yet warm), so structuring
 is strictly background work.
 
 ### Phase 3: editing, reminders, badge
@@ -733,9 +745,11 @@ when the PMO window is first opened.
 **Browser mode** (`usePmoReminders`, mounted by `desktop/PmoReminders.tsx` from
 `Desktop.tsx`, so it runs with the PMO window closed). Outside the shell it claims
 every 60 s, shows a web `Notification` (if permission was granted) plus an in-app
-toast, then acks. The PMO window shows an **Enable reminders** button (the
-permission request needs a click) and says plainly that web reminders only fire
-while the tab is open and that the desktop app is the reliable path. Without
+toast, then acks. The PMO toolbar shows a bell, **Enable reminders** (the permission
+request needs a click), only while the browser has not been asked yet; Settings,
+under Reminders, says plainly where things stand (on, off, blocked, unsupported),
+that web reminders only fire while the tab is open and that the desktop app is the
+reliable path, and offers *Send a test*. Without
 permission the fallbacks are the count badge on the dock tile (a small generic
 `dockBadgeStore`, display only, never touching the pinned layout) and a "(N)"
 prefix on the tab title. Inside the shell the hook never claims; it only refreshes
@@ -828,6 +842,39 @@ program, which opens an *unsent* compose window; the person checks it and presse
 Send. No Outlook COM, no code that can send. `desktop/main.cjs`'s window-open
 handler passes only http(s) and mailto: to `shell.openExternal` now (it passed
 any scheme before).
+
+**Window layout and UI rules** (the PMO window is 900x600 by default and can be
+shrunk to the shell's 360x240 minimum; dialogs are portaled to the viewport).
+- One toolbar row: tabs (*Review Queue*, *To-Do*, *Filtered*, each with a quiet
+  count) on the left, then the model chip (`toolbarView.modelStatus`), *Scan now*,
+  *Paste*, the reminders bell (only while the browser has not been asked) and the
+  gear. Information (inbox path, last scan, filtered count) is in tooltips and
+  Settings. Anything that needs attention is a notice under the row
+  (`toolbarView.buildNotices`, `NoticeStack`): the most urgent shows, the rest fold
+  into "+N more", and the stack never takes more than 45% of the window.
+- The window root is a size container (`@container`): labels shorten below ~575 px,
+  buttons lose their text below ~670 px and fold into one "More actions" menu below
+  ~510 px. Use `@md:` / `@lg:` / `@xl:` / `@2xl:` inside the app, not `sm:`/`md:`
+  (those follow the screen, and only dialogs, which live on the screen, use them).
+- Scrolling is a plain overflow container, `ScrollBody` (`parts.tsx`), never the
+  Radix `ScrollArea` here: Radix wraps its content in a `display: table` box that
+  grows to the widest child (so `truncate` and `min-w-0` do nothing and the right
+  edge is clipped) and its viewport needs a definite height (inside a dialog that
+  only has a `max-height` it never scrolled). Every tab and dialog body is
+  `ScrollBody` inside a bounded flex column; headers and footers are `shrink-0`
+  siblings, so they stay put. `memoryKey` keeps a tab's scroll position when the
+  tab is left and re-entered.
+- Hierarchy on a to-do row: title, then owner / due / priority, then what it waits
+  on or its snooze, then the progress bar with the stage, then the next action
+  items. At most one chip (`todoRowView.headline`: overdue, due soon, done or
+  cancelled) sits beside the title; `Chip` (`parts.tsx`) adds the dark-theme tint
+  that `Badge` lacks. Lists stop at `max-w-4xl` and centre in a maximised window.
+- The polled state is merged with `shareUnchanged` (`shareState.ts`), so a record
+  that did not change keeps its object identity; filter, sort, the open "Probably
+  not a task" section and the Filtered reason live in `PmoTodoApp`, so they survive
+  a tab switch as well as a poll.
+- `tokens.css` keeps `--color-accent-contrast` white in the dark theme (it used to
+  flip to black through `neutral-0`, about 2.8:1 on the accent fill).
 
 **Stub model.** `PMO_AI_STUB=1` answers all three tasks: updates by simple rules
 (delivered/attached -> reply + clears waiting, an ISO date -> due change, "could you

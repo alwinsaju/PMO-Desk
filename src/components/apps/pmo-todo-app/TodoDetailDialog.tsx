@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import {
   Button,
   Dialog,
@@ -8,7 +8,6 @@ import {
   DialogDescription,
   DialogTitle,
   Input,
-  ScrollArea,
   Tabs,
   TabsContent,
   TabsList,
@@ -21,12 +20,17 @@ import {
   deriveStage,
   type TodoPatch,
 } from "@/lib/pmo/todoLogic";
-import { PRIORITIES, type ChaserJob, type ReminderPrefs, type Todo } from "@/lib/pmo/types";
+import {
+  PRIORITIES,
+  type ChaserJob,
+  type ReminderPrefs,
+  type Todo,
+} from "@/lib/pmo/types";
 import { ChaserDialog } from "./ChaserDialog";
 import { patchTodo, startChaser } from "./api";
 import { OriginalMessage } from "./OriginalMessage";
 import { SnoozeMenu } from "./SnoozeMenu";
-import { Field, Segmented, SourceBadge, TextArea } from "./parts";
+import { Field, ScrollBody, Segmented, SourceBadge, TextArea } from "./parts";
 import { formatDay } from "./queueView";
 import { TimelineTab } from "./TimelineTab";
 import { ActionItemsEditor, CheckpointsEditor } from "./TodoEditors";
@@ -53,6 +57,16 @@ interface Fields {
   requesterName: string;
   dueAt: string;
   priority: Todo["priority"];
+}
+
+/** The strip of tabs: each keeps its width and the strip scrolls. */
+const TAB = "shrink-0 whitespace-nowrap";
+/** A tab's content: the rest of the dialog, scrolling on its own. */
+const PANEL = "mt-3 flex min-h-0 flex-1 flex-col";
+
+/** A quiet figure after a tab's name. */
+function Count({ children }: { children: ReactNode }) {
+  return <span className="text-ink-faint ml-1.5 tabular-nums">{children}</span>;
 }
 
 const fieldsOf = (todo: Todo): Fields => ({
@@ -184,13 +198,17 @@ export function TodoDetailDialog({
 
   return (
     <Dialog open={todo !== null} onOpenChange={onOpenChange}>
-      <DialogContent className="flex h-[min(86vh,760px)] max-w-3xl flex-col">
-        <div className="flex items-center gap-2 pr-8">
+      <DialogContent
+        className="flex h-[min(88vh,760px)] max-h-full max-w-3xl flex-col p-4 sm:p-5"
+        // Do not park the focus ring on the Snooze button when the dialog opens.
+        onOpenAutoFocus={(event) => event.preventDefault()}
+      >
+        <div className="flex shrink-0 items-center gap-2 pr-8">
           <SourceBadge source={shown.source.source} />
           <DialogTitle className="min-w-0 flex-1 truncate">{shown.title}</DialogTitle>
         </div>
-        <div className="flex items-center justify-between gap-3">
-          <DialogDescription className="text-[12px]">
+        <div className="flex shrink-0 items-center justify-between gap-3">
+          <DialogDescription className="min-w-0 text-[12px]">
             {open
               ? stage
                 ? `Stage: ${stage}`
@@ -217,7 +235,7 @@ export function TodoDetailDialog({
         </div>
         {progress.total > 0 && (
           <div
-            className="bg-neutral-150 mt-2 h-2 overflow-hidden rounded-full"
+            className="bg-neutral-150 mt-2 h-1.5 shrink-0 overflow-hidden rounded-full"
             role="progressbar"
             aria-valuemin={0}
             aria-valuemax={progress.total}
@@ -225,14 +243,14 @@ export function TodoDetailDialog({
             aria-label="Checkpoint progress"
           >
             <div
-              className="bg-ink ease-standard h-full rounded-full transition-[width] duration-300"
+              className="ease-standard h-full rounded-full bg-neutral-600 transition-[width] duration-300"
               style={{ width: `${percent}%` }}
             />
           </div>
         )}
 
         {offer && open && (
-          <div className="border-border mt-3 flex items-center justify-between gap-3 rounded-lg border bg-neutral-50 px-3 py-2">
+          <div className="border-border mt-3 flex shrink-0 flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-lg border bg-neutral-50 px-3 py-2">
             <p className="text-ink text-[12px]">
               Every checkpoint is complete. Mark this to-do as done?
             </p>
@@ -256,23 +274,35 @@ export function TodoDetailDialog({
         )}
 
         <Tabs defaultValue="details" className="mt-3 flex min-h-0 flex-1 flex-col">
-          <TabsList className="self-start">
-            <TabsTrigger value="details">Details</TabsTrigger>
-            <TabsTrigger value="items">
-              Action items ({shown.actionItems.length})
-            </TabsTrigger>
-            <TabsTrigger value="checkpoints">
-              Checkpoints ({progress.done}/{progress.total})
-            </TabsTrigger>
-            <TabsTrigger value="timeline">
-              Timeline ({shown.history?.length ?? 0})
-            </TabsTrigger>
-            <TabsTrigger value="original">Original message</TabsTrigger>
-          </TabsList>
+          {/* Five tabs do not fit a small dialog: the strip scrolls sideways. */}
+          <div className="max-w-full shrink-0 [scrollbar-width:none] self-start overflow-x-auto">
+            <TabsList>
+              <TabsTrigger value="details" className={TAB}>
+                Details
+              </TabsTrigger>
+              <TabsTrigger value="items" className={TAB}>
+                Action items
+                <Count>{shown.actionItems.length}</Count>
+              </TabsTrigger>
+              <TabsTrigger value="checkpoints" className={TAB}>
+                Checkpoints
+                <Count>
+                  {progress.done}/{progress.total}
+                </Count>
+              </TabsTrigger>
+              <TabsTrigger value="timeline" className={TAB}>
+                Timeline
+                <Count>{shown.history?.length ?? 0}</Count>
+              </TabsTrigger>
+              <TabsTrigger value="original" className={TAB}>
+                Original message
+              </TabsTrigger>
+            </TabsList>
+          </div>
 
-          <TabsContent value="details" className="mt-3 min-h-0 flex-1">
-            <ScrollArea className="h-full">
-              <div className="flex flex-col gap-3 pr-3">
+          <TabsContent value="details" className={PANEL}>
+            <ScrollBody className="pr-2">
+              <div className="flex flex-col gap-3">
                 <Field label="Title">
                   <Input
                     value={fields.title}
@@ -285,7 +315,7 @@ export function TodoDetailDialog({
                     onChange={(e) => edit({ description: e.target.value })}
                   />
                 </Field>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <Field label="Owner">
                     <Input
                       value={fields.ownerName}
@@ -318,7 +348,7 @@ export function TodoDetailDialog({
                   apply={apply}
                   onDraftChaser={() => void draftChaser()}
                 />
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <Field label="Due date">
                     <Input
                       type="date"
@@ -359,17 +389,17 @@ export function TodoDetailDialog({
                   by {shown.approvedBy}.
                 </p>
               </div>
-            </ScrollArea>
+            </ScrollBody>
           </TabsContent>
 
-          <TabsContent value="items" className="mt-3 min-h-0 flex-1">
-            <ScrollArea className="h-full">
+          <TabsContent value="items" className={PANEL}>
+            <ScrollBody className="pr-2">
               <ActionItemsEditor todo={shown} open={open} busy={busy} apply={apply} />
-            </ScrollArea>
+            </ScrollBody>
           </TabsContent>
 
-          <TabsContent value="checkpoints" className="mt-3 min-h-0 flex-1">
-            <ScrollArea className="h-full">
+          <TabsContent value="checkpoints" className={PANEL}>
+            <ScrollBody className="pr-2">
               <CheckpointsEditor
                 todo={shown}
                 open={open}
@@ -377,21 +407,23 @@ export function TodoDetailDialog({
                 apply={apply}
                 stage={stage}
               />
-            </ScrollArea>
+            </ScrollBody>
           </TabsContent>
 
-          <TabsContent value="timeline" className="mt-3 min-h-0 flex-1">
-            <ScrollArea className="h-full">
+          <TabsContent value="timeline" className={PANEL}>
+            <ScrollBody className="pr-2">
               <TimelineTab todo={shown} />
-            </ScrollArea>
+            </ScrollBody>
           </TabsContent>
 
-          <TabsContent value="original" className="mt-3 min-h-0 flex-1">
+          <TabsContent value="original" className={PANEL}>
             {shown.source.intakeId ? (
-              <OriginalMessage
-                intakeId={shown.source.intakeId}
-                className="flex h-full min-h-0 flex-col"
-              />
+              <div className="border-border flex min-h-0 flex-1 flex-col rounded-lg border p-3">
+                <OriginalMessage
+                  intakeId={shown.source.intakeId}
+                  className="flex min-h-0 flex-1 flex-col"
+                />
+              </div>
             ) : (
               <p className="text-ink-faint text-[13px]">
                 This to-do was created by hand, so there is no original message.
@@ -401,13 +433,13 @@ export function TodoDetailDialog({
         </Tabs>
 
         {error && (
-          <p role="alert" className="text-ink mt-2 text-[12px] font-medium">
+          <p role="alert" className="text-ink mt-2 shrink-0 text-[12px] font-medium">
             {error}
           </p>
         )}
 
-        <div className="mt-3 flex items-center justify-between gap-3">
-          <div className="flex gap-2">
+        <div className="border-border mt-3 flex shrink-0 flex-wrap items-center justify-between gap-x-3 gap-y-2 border-t pt-3">
+          <div className="flex flex-wrap gap-2">
             {open ? (
               <>
                 <Button

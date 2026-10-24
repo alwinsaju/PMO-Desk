@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { CheckIcon, HourglassMediumIcon } from "@phosphor-icons/react";
 import { Button, Input } from "@/components/ui";
+import { Chip } from "./parts";
 import { zonedInstant } from "@/lib/pmo/due";
 import type { TodoPatch } from "@/lib/pmo/todoLogic";
 import type { ChaserJob, ReminderPrefs, Todo } from "@/lib/pmo/types";
@@ -41,7 +42,9 @@ export function WaitingPanel({
 
   const suggestions = [todo.requester.name, todo.source.sender]
     .map((value) => value?.trim())
-    .filter((value, index, all): value is string => !!value && all.indexOf(value) === index)
+    .filter(
+      (value, index, all): value is string => !!value && all.indexOf(value) === index,
+    )
     .filter((value) => value !== waiting?.who);
 
   const mark = async (who: string) => {
@@ -73,11 +76,7 @@ export function WaitingPanel({
                   {waiting.age && ` (${waiting.age})`}
                 </span>
               </span>
-              {waiting.chaseDue && (
-                <span className="bg-accent-subtle text-accent-800 rounded-pill px-2 py-0.5 text-[11px] font-medium">
-                  Time to chase
-                </span>
-              )}
+              {waiting.chaseDue && <Chip tone="accent">Time to chase</Chip>}
             </p>
             <div className="flex flex-wrap gap-2">
               <Button
@@ -89,7 +88,12 @@ export function WaitingPanel({
                 <CheckIcon size={13} weight="bold" />
                 Got a reply (clear waiting)
               </Button>
-              <Button size="sm" variant="outline" disabled={busy || !open} onClick={onDraftChaser}>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={busy || !open}
+                onClick={onDraftChaser}
+              >
                 {job?.status === "drafting"
                   ? "Drafting a chaser…"
                   : job?.status === "ready"
@@ -112,7 +116,11 @@ export function WaitingPanel({
                     const day = event.target.value;
                     if (!day || day > today) return;
                     void apply({
-                      waitingSince: zonedInstant(day, "09:00", prefs.timeZone).toISOString(),
+                      waitingSince: zonedInstant(
+                        day,
+                        "09:00",
+                        prefs.timeZone,
+                      ).toISOString(),
                     });
                   }}
                 />
@@ -149,7 +157,7 @@ export function WaitingPanel({
                   setName(waiting.who);
                   setEditing(true);
                 }}
-                className="text-ink-muted hover:text-ink underline-offset-2 hover:underline"
+                className="text-ink-muted hover:text-ink focus-visible:ring-accent rounded underline-offset-2 outline-none hover:underline focus-visible:ring-2"
               >
                 Change who
               </button>
@@ -183,7 +191,12 @@ export function WaitingPanel({
               Mark waiting
             </Button>
             {editing && (
-              <Button type="button" size="sm" variant="ghost" onClick={() => setEditing(false)}>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={() => setEditing(false)}
+              >
                 Cancel
               </Button>
             )}

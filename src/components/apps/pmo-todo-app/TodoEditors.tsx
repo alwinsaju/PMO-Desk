@@ -49,7 +49,7 @@ export function ActionItemsEditor({ todo, open, busy, apply }: EditorProps) {
   };
 
   return (
-    <div className="flex flex-col gap-3 pr-3">
+    <div className="flex flex-col gap-3">
       {todo.actionItems.length === 0 && (
         <p className="text-ink-faint text-[13px]">No action items yet.</p>
       )}
@@ -66,7 +66,7 @@ export function ActionItemsEditor({ todo, open, busy, apply }: EditorProps) {
       </ul>
       {open && (
         <form
-          className="border-border/60 flex flex-wrap items-center gap-2 border-t pt-3"
+          className="border-border flex flex-wrap items-center gap-2 border-t pt-3"
           onSubmit={(event) => void add(event)}
         >
           <Input
@@ -239,7 +239,7 @@ export function CheckpointsEditor({
   };
 
   return (
-    <div className="flex flex-col gap-3 pr-3">
+    <div className="flex flex-col gap-3">
       {todo.checkpoints.length === 0 && (
         <p className="text-ink-faint text-[13px]">
           No checkpoints. Add the steps this work goes through; progress is shown from
@@ -263,7 +263,7 @@ export function CheckpointsEditor({
       </ol>
       {open && (
         <form
-          className="border-border/60 flex flex-wrap items-center gap-2 border-t pt-3"
+          className="border-border flex flex-wrap items-center gap-2 border-t pt-3"
           onSubmit={(event) => void add(event)}
         >
           <Input
@@ -333,8 +333,8 @@ function CheckpointRow({
   return (
     <li
       className={cn(
-        "border-border/60 flex flex-wrap items-center gap-2 rounded-xl border px-3 py-2",
-        current && "border-ink",
+        "border-border flex flex-wrap items-center gap-2 rounded-xl border px-3 py-2",
+        current && "border-neutral-400 bg-neutral-50",
       )}
     >
       <span

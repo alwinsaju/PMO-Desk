@@ -216,6 +216,10 @@
   --color-ink-muted: var(--color-neutral-600);
   --color-ink-faint: var(--color-neutral-500);
   --color-ink-inverse: var(--color-surface-elevated);
+  /* The accent keeps its hue in both themes, so the text on a solid accent fill
+     must stay light too. Left to inherit, `accent-contrast` resolves through the
+     flipped `neutral-0` and turns BLACK here (about 2.8:1 on `accent`). */
+  --color-accent-contrast: #ffffff;
 
   /* Shadows stay neutral/black (never color-tinted — same rule as light
      mode) but need more opacity to still read as "lifted": a light-mode-
