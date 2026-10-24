@@ -32,6 +32,8 @@ import {
   type AiRuntimeConfig,
   type OllamaClient,
 } from "./core";
+import { getAiLogState } from "./modelWatch";
+import { ownedLogPath } from "./serverLog";
 
 declare global {
   var aiOsOllamaProcess: OllamaProcessState | undefined;
@@ -51,11 +53,11 @@ export interface OllamaProcessState {
 }
 
 export type EnsureServerResult =
-  | { running: true; owned: boolean; started: boolean }
+  | { running: true; owned: boolean; started: boolean; version?: string }
   | { running: false; reason: string };
 
 /** Scratch runtime data, same place agent-office keeps its log. */
-const LOG_PATH = path.join(tmpdir(), "ai-os-ollama.log");
+const LOG_PATH = ownedLogPath(tmpdir());
 const PIDFILE_PATH = path.join(tmpdir(), "ai-os-ollama.json");
 const POLL_INTERVAL_MS = 500;
 const STOP_TIMEOUT_MS = 10_000;
@@ -87,30 +89,71 @@ export function ensureOllamaServer(
   return state.starting;
 }
 
+/** Tell the session log (once per change, see RingLog.emitServer). */
+function announceUp(
+  state: OllamaProcessState,
+  config: AiRuntimeConfig,
+  how: "started" | "reused" | "adopted",
+  version?: string,
+): void {
+  const { ring, tracker } = getAiLogState();
+  // A server we just started has nothing loaded; a reused one may have.
+  if (how === "started") tracker.reset();
+  ring.emitServer({
+    kind: "server-up",
+    how,
+    owned: state.owned,
+    baseUrl: config.baseUrl,
+    ...(version ? { version } : {}),
+    ...(state.pid ? { pid: state.pid } : {}),
+  });
+}
+
+/** Failure to get a server: logged and returned (and still never thrown). */
+function unavailable(config: AiRuntimeConfig, reason: string): EnsureServerResult {
+  getAiLogState().ring.emitServer({
+    kind: "server-down",
+    message: reason,
+    willRetry: config.autoStart && isLocalBaseUrl(config.baseUrl),
+  });
+  return { running: false, reason };
+}
+
 async function attemptEnsure(
   state: OllamaProcessState,
   config: AiRuntimeConfig,
   client: OllamaClient,
 ): Promise<EnsureServerResult> {
-  if ((await client.probe()).running) {
+  const probe = await client.probe();
+  if (probe.running) {
     if (!state.owned) adoptOrphan(state, config);
-    return { running: true, owned: state.owned, started: false };
+    announceUp(
+      state,
+      config,
+      state.owned ? (state.adopted ? "adopted" : "started") : "reused",
+      probe.version,
+    );
+    return { running: true, owned: state.owned, started: false, version: probe.version };
   }
 
   // Server is gone. If we thought we owned one, it died on us — forget it.
-  if (state.owned) clearOwnership(state);
+  if (state.owned) {
+    clearOwnership(state);
+    getAiLogState().ring.emitServer({
+      kind: "server-down",
+      message: "Ollama stopped unexpectedly; AI OS is starting it again.",
+      willRetry: true,
+    });
+  }
 
   if (!config.autoStart) {
-    return {
-      running: false,
-      reason: "Ollama is not running and AI_OS_AI_AUTOSTART is off.",
-    };
+    return unavailable(config, "Ollama is not running and AI_OS_AI_AUTOSTART is off.");
   }
   if (!isLocalBaseUrl(config.baseUrl)) {
-    return {
-      running: false,
-      reason: `Ollama is not answering at ${config.baseUrl}, and AI OS only starts a server on this machine.`,
-    };
+    return unavailable(
+      config,
+      `Ollama is not answering at ${config.baseUrl}, and AI OS only starts a server on this machine.`,
+    );
   }
 
   const exe = resolveOllamaExe({
@@ -120,10 +163,10 @@ async function attemptEnsure(
     override: config.ollamaExe,
   });
   if (!exe.path) {
-    return {
-      running: false,
-      reason: `Ollama is not running and ollama.exe was not found (looked in: ${exe.tried.join(", ") || "nowhere"}). Install Ollama or set AI_OS_OLLAMA_EXE.`,
-    };
+    return unavailable(
+      config,
+      `Ollama is not running and ollama.exe was not found (looked in: ${exe.tried.join(", ") || "nowhere"}). Install Ollama or set AI_OS_OLLAMA_EXE.`,
+    );
   }
 
   let child: ChildProcess;
@@ -145,10 +188,10 @@ async function attemptEnsure(
     closeQuiet(outFd);
     closeQuiet(errFd);
   } catch (error) {
-    return {
-      running: false,
-      reason: `Could not launch Ollama: ${error instanceof Error ? error.message : String(error)}`,
-    };
+    return unavailable(
+      config,
+      `Could not launch Ollama: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
 
   let spawnError: string | undefined;
@@ -171,17 +214,20 @@ async function attemptEnsure(
   const deadline = Date.now() + config.startTimeoutMs;
   while (Date.now() < deadline) {
     if (spawnError) break;
-    if ((await client.probe()).running) {
+    const up = await client.probe();
+    if (up.running) {
       // The child exiting while the port still answers means someone else
       // (e.g. the Ollama tray app) won the race to bind it: theirs, not ours.
       if (exited) {
         clearOwnership(state);
-        return { running: true, owned: false, started: false };
+        announceUp(state, config, "reused", up.version);
+        return { running: true, owned: false, started: false, version: up.version };
       }
       state.owned = true;
       state.adopted = false;
       console.log(`[ai-runtime] started ollama (pid ${child.pid}) at ${config.baseUrl}`);
-      return { running: true, owned: true, started: true };
+      announceUp(state, config, "started", up.version);
+      return { running: true, owned: true, started: true, version: up.version };
     }
     if (exited) break;
     await sleep(POLL_INTERVAL_MS);
@@ -195,7 +241,7 @@ async function attemptEnsure(
   // We started it and it never became usable: don't leave it running.
   if (!exited) await killProcessTree(child.pid);
   clearOwnership(state);
-  return { running: false, reason };
+  return unavailable(config, reason);
 }
 
 /**
@@ -207,12 +253,22 @@ export async function stopOwnedOllama(
   client: OllamaClient,
 ): Promise<{ stopped: boolean }> {
   const state = getProcessState();
-  if (!state.owned || !state.pid) return { stopped: false };
+  const { ring, tracker } = getAiLogState();
+  if (!state.owned || !state.pid) {
+    ring.emit({ kind: "server-stop", owned: false, stopped: false });
+    return { stopped: false };
+  }
   const { pid } = state;
 
   try {
     const loaded = await client.listLoaded(2_000);
-    await Promise.all(loaded.map((model) => client.unload(model).catch(() => undefined)));
+    await Promise.all(
+      loaded.map((model) => {
+        ring.emit({ kind: "unload-request", model, by: "shutdown", keepAlive: 0 });
+        tracker.expectUnload(model, "shutdown");
+        return client.unload(model).catch(() => undefined);
+      }),
+    );
   } catch {
     // Server already gone or unresponsive; killing it below is what matters.
   }
@@ -220,6 +276,8 @@ export async function stopOwnedOllama(
   await killProcessTree(pid);
   await waitForExit(pid);
   clearOwnership(state);
+  tracker.reset();
+  ring.emit({ kind: "server-stop", owned: true, stopped: true });
   return { stopped: true };
 }
 

@@ -3,27 +3,37 @@
 // ARCHITECTURE.md, "Local AI runtime".
 //
 //   import { generateJson } from "@/lib/ai-runtime";
-//   const todo = await generateJson({ system, prompt: message, schema: todoSchema });
+//   const todo = await generateJson({ system, prompt: message, schema: todoSchema,
+//     log: { task: "structure", label: subject } });
 //
 // Call sites never name a model or a URL; both come from config (env).
+import { closeSync, fstatSync, openSync, readSync, statSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import {
   AiRuntimeError,
   FifoQueue,
+  chatStats,
   createOllamaClient,
-  isLocalBaseUrl,
   loadAiRuntimeConfig,
+  logMessage,
   normalizeModelName,
+  pickKeepAlive,
   type AiRuntimeConfig,
   type GenerateJsonOptions,
   type GenerateTextOptions,
   type OllamaClient,
 } from "./core";
+import { createRuntimeControls, type RuntimeControls } from "./controls";
 import {
   ensureOllamaServer,
   getProcessState,
   stopOwnedOllama,
   type EnsureServerResult,
 } from "./lifecycle";
+import { cleanText, type AiLogEvent } from "./log";
+import { getAiLogState } from "./modelWatch";
+import { readServerLogTail, resolveServerLog, type ServerLogTail } from "./serverLog";
+import type { AiRuntimeLogResponse, AiRuntimeStatus } from "./types";
 import type { z } from "zod";
 
 export {
@@ -38,41 +48,16 @@ export type {
   GenerateJsonOptions,
   GenerateTextOptions,
 } from "./core";
+export type { AiCallLogOptions } from "./log";
 export type { EnsureServerResult } from "./lifecycle";
-
-export interface AiRuntimeStatus {
-  /** Does something answer on the Ollama base URL right now? */
-  running: boolean;
-  /** AI OS started this server (or adopted one a crashed run left behind)
-   *  and will stop it on quit. false = someone else's, never killed. */
-  ownedByUs: boolean;
-  /** ownedByUs, but inherited from a previous crashed AI OS run. */
-  adopted: boolean;
-  version?: string;
-  baseUrl: string;
-  defaultModel: string;
-  /** null when the server can't be asked. */
-  modelInstalled: boolean | null;
-  /** Is the default model resident in memory right now? */
-  modelLoaded: boolean;
-  /** Loaded AND a real chat has run on it since (the pre-warm or any call), so
-   *  the weights are paged in and the next call is not slow. A model that is
-   *  merely "loaded" can still make the first call take 1-2 minutes extra. */
-  modelWarm: boolean;
-  loadedModels: string[];
-  queue: { waiting: number; active: boolean };
-  /** May AI OS start Ollama on its own if it is down? */
-  canAutoStart: boolean;
-}
+export type { AiRuntimeLogResponse, AiRuntimeStatus } from "./types";
+export type { LoadResult, UnloadResult } from "./controls";
 
 /** What every module instance must share (see `shared()`): plain state only,
- *  nothing that carries a class the caller might `instanceof`-check. */
+ *  nothing that carries a class the caller might `instanceof`-check. The session
+ *  log and the load/unload flags live in modelWatch.ts's `getAiLogState()`. */
 interface SharedRuntimeState {
   queue: FifoQueue;
-  prewarmStarted: boolean;
-  /** Normalized name of a model a real chat has completed on since it was
-   *  last loaded; cleared once /api/ps no longer lists it. */
-  warmModel: string | null;
 }
 
 declare global {
@@ -86,17 +71,14 @@ declare global {
 // error classes stay per instance, so the AiRuntimeError a caller gets is
 // the one from the module it imported.
 function shared(): SharedRuntimeState {
-  globalThis.aiOsAiRuntime ??= {
-    queue: new FifoQueue(),
-    prewarmStarted: false,
-    warmModel: null,
-  };
+  globalThis.aiOsAiRuntime ??= { queue: new FifoQueue() };
   return globalThis.aiOsAiRuntime;
 }
 
 interface AiRuntime {
   config: AiRuntimeConfig;
   client: OllamaClient;
+  controls: RuntimeControls;
 }
 
 let instance: AiRuntime | undefined;
@@ -104,20 +86,42 @@ let instance: AiRuntime | undefined;
 function runtime(): AiRuntime {
   if (!instance) {
     const config = loadAiRuntimeConfig();
+    const queue = shared().queue;
+    const state = getAiLogState();
+    const keepAlive = () => pickKeepAlive(config, getProcessState().owned);
+    // eslint-disable-next-line prefer-const -- referenced lazily by the client's hooks
+    let controls: RuntimeControls;
     const client: OllamaClient = createOllamaClient({
       config,
       fetch: (input, init) => fetch(input, init),
-      queue: shared().queue,
+      queue,
       // Before every job: if the server went away (or was never started,
       // e.g. plain `next start`), bring it back or fail as runtime-down.
       ensure: async () => {
         const result = await ensureOllamaServer(config, client);
         if (!result.running) throw new AiRuntimeError("runtime-down", result.reason);
       },
-      keepAlive: () =>
-        getProcessState().owned ? config.keepAlive : config.externalKeepAlive,
+      keepAlive,
+      log: state.ring,
+      // A plain GET of /api/ps: tells the log whether this call has to wake the
+      // model, and notices a sleep that happened since the last look.
+      observe: async (model) => {
+        const loaded = await controls.observeModels();
+        return loaded === null
+          ? null
+          : loaded.some((m) => normalizeModelName(m.name) === normalizeModelName(model));
+      },
+      afterCall: () => void controls.observeModels(),
     });
-    instance = { config, client };
+    controls = createRuntimeControls({
+      config,
+      client,
+      queue,
+      state,
+      processState: getProcessState,
+      keepAlive,
+    });
+    instance = { config, client, controls };
   }
   return instance;
 }
@@ -126,39 +130,42 @@ export function getAiRuntimeConfig(): AiRuntimeConfig {
   return runtime().config;
 }
 
+/** The keep_alive every request to Ollama should carry right now (2 minutes by
+ *  default; owned vs reused already applied). The command route sends it too. */
+export function getKeepAlive(): string {
+  const { config } = runtime();
+  return pickKeepAlive(config, getProcessState().owned);
+}
+
 /**
  * Raw message -> validated object. Ollama's structured outputs (`format` =
  * JSON schema derived from `schema`), temperature 0, validated against the
  * zod schema, one repair retry. Calls are serialized FIFO, one at a time, so
  * this can take minutes under load on CPU: run it from background work, not
  * a blocking UI path. Rejects with AiRuntimeError (code: "runtime-down" |
- * "model-missing" | "timeout" | "invalid-output").
+ * "model-missing" | "timeout" | "invalid-output"). This is what loads the
+ * model when it is asleep: the first call after a sleep takes 1-2 minutes more.
+ *
+ * Pass `log: { task, label }` so the model log can say what the call was for
+ * (the label is a short human string such as a message subject; it stays in
+ * memory, is cut to 60 characters, and never includes the prompt).
  */
-export async function generateJson<S extends z.ZodType>(
+export function generateJson<S extends z.ZodType>(
   options: GenerateJsonOptions<S>,
 ): Promise<z.output<S>> {
-  const { client, config } = runtime();
-  const result = await client.generateJson(options);
-  markWarm(options.model ?? config.defaultModel);
-  return result;
+  return runtime().client.generateJson(options);
 }
 
 /** Plain text completion through the same queue. Rejects with AiRuntimeError. */
-export async function generateText(options: GenerateTextOptions): Promise<string> {
-  const { client, config } = runtime();
-  const result = await client.generateText(options);
-  markWarm(options.model ?? config.defaultModel);
-  return result;
-}
-
-function markWarm(model: string): void {
-  shared().warmModel = normalizeModelName(model);
+export function generateText(options: GenerateTextOptions): Promise<string> {
+  return runtime().client.generateText(options);
 }
 
 /**
- * Make sure the server is up (starting it if allowed and nothing answers) and,
- * once per process, begin loading the default model in the background.
- * Never throws; inspect the result. Safe to call repeatedly.
+ * Make sure the server is up (starting it if allowed and nothing answers).
+ * The MODEL is not loaded here unless AI_OS_AI_PREWARM is on (it is off by
+ * default): it loads when the first call needs it. Never throws; inspect the
+ * result. Safe to call repeatedly.
  */
 export async function ensureRuntime(
   options: { prewarm?: boolean } = {},
@@ -166,37 +173,8 @@ export async function ensureRuntime(
   const rt = runtime();
   const result = await ensureOllamaServer(rt.config, rt.client);
   if (!result.running) return result;
-
-  const state = shared();
-  const wantPrewarm = options.prewarm ?? rt.config.prewarm;
-  if (result.started) {
-    // Fresh server: nothing loaded, nothing warm.
-    state.prewarmStarted = false;
-    state.warmModel = null;
-  }
-  if (wantPrewarm && !state.prewarmStarted) {
-    state.prewarmStarted = true;
-    void prewarm(rt);
-  }
+  rt.controls.prewarmOnStart({ override: options.prewarm, fresh: result.started });
   return result;
-}
-
-async function prewarm(rt: AiRuntime): Promise<void> {
-  const { client, config } = rt;
-  try {
-    // Always a real (tiny) chat, even if /api/ps already lists the model:
-    // "loaded" does not mean the weights are paged in, and on a resident
-    // model the chat costs about a second.
-    await client.warm(config.defaultModel);
-    markWarm(config.defaultModel);
-    console.log(`[ai-runtime] model ${config.defaultModel} loaded and warm`);
-  } catch (error) {
-    // Pre-warming is an optimization; a missing model etc. surfaces on the
-    // first real call with its proper typed error.
-    console.warn(
-      `[ai-runtime] prewarm skipped: ${error instanceof Error ? error.message : String(error)}`,
-    );
-  }
 }
 
 /**
@@ -211,58 +189,171 @@ export async function stopRuntime(): Promise<{ stopped: boolean }> {
   return stopOwnedOllama(rt.client);
 }
 
-/** Read-only snapshot for /api/ai/runtime. Never starts or stops anything. */
-export async function getRuntimeStatus(): Promise<AiRuntimeStatus> {
-  const { config, client } = runtime();
-  const runtimeState = shared();
-  const { queue } = runtimeState;
-  const state = getProcessState();
-  const base = {
-    ownedByUs: state.owned,
-    adopted: state.adopted,
-    baseUrl: config.baseUrl,
-    defaultModel: config.defaultModel,
-    queue: { waiting: queue.waiting, active: queue.active },
-    canAutoStart: config.autoStart && isLocalBaseUrl(config.baseUrl),
-  };
+/** Read-only snapshot for /api/ai/runtime. Never starts, stops or loads
+ *  anything: only GET /api/version, /api/tags and /api/ps. */
+export function getRuntimeStatus(): Promise<AiRuntimeStatus> {
+  return runtime().controls.status();
+}
 
-  const probe = await client.probe();
-  if (!probe.running) {
-    return {
-      ...base,
-      running: false,
-      modelInstalled: null,
-      modelLoaded: false,
-      modelWarm: false,
-      loadedModels: [],
-    };
-  }
-
-  const wanted = normalizeModelName(config.defaultModel);
-  const [installed, loaded] = await Promise.all([
-    client.listInstalled().then(
-      (names) => names.map(normalizeModelName),
-      () => null,
-    ),
-    client.listLoaded().then(
-      (names) => names,
-      () => null,
-    ),
-  ]);
-  const modelLoaded = (loaded ?? []).map(normalizeModelName).includes(wanted);
-  // Unloaded (keep_alive expired, server restarted): whatever was warm is gone.
-  if (loaded !== null && !modelLoaded && runtimeState.warmModel === wanted) {
-    runtimeState.warmModel = null;
-  }
+/** What the runtime is doing right now, from memory only (no request to Ollama):
+ *  lets a cached status snapshot show a call that started after it was taken. */
+export function getLiveActivity(): Pick<
+  AiRuntimeStatus,
+  "activeCalls" | "loadInFlight" | "queue"
+> {
+  const { ring } = getAiLogState();
+  const { queue } = shared();
   return {
-    ...base,
-    running: true,
-    version: probe.version,
-    modelInstalled: installed === null ? null : installed.includes(wanted),
-    modelLoaded,
-    // With the pre-warm off nothing here ever marks it warm before a real
-    // call, so a loaded model is taken at its word.
-    modelWarm: modelLoaded && (runtimeState.warmModel === wanted || !config.prewarm),
-    loadedModels: loaded ?? [],
+    activeCalls: ring.activeCalls(),
+    loadInFlight: getAiLogState().loadInFlight,
+    queue: { waiting: queue.waiting, active: queue.active },
+  };
+}
+
+/** POST /api/ai/runtime/load: wake the model in the background. */
+export function loadModelNow() {
+  return runtime().controls.loadNow();
+}
+
+/** POST /api/ai/runtime/unload: free the model's memory now (default model only). */
+export function unloadModelNow() {
+  return runtime().controls.unloadNow();
+}
+
+// ---------------------------------------------------------------------------
+// The session log
+// ---------------------------------------------------------------------------
+
+/** Read-only file access for the server-log tail: open "r", read, close. */
+const serverLogFs = {
+  size(file: string): number | null {
+    try {
+      return statSync(file).size;
+    } catch {
+      return null;
+    }
+  },
+  read(file: string, start: number, length: number): string {
+    const fd = openSync(file, "r");
+    try {
+      const size = fstatSync(fd).size;
+      const len = Math.max(0, Math.min(length, size - start));
+      const buffer = Buffer.alloc(len);
+      readSync(fd, buffer, 0, len, start);
+      return buffer.toString("utf8");
+    } finally {
+      closeSync(fd);
+    }
+  },
+};
+
+export function readOllamaServerLog(ownedByUs: boolean): ServerLogTail {
+  return readServerLogTail(
+    resolveServerLog({
+      owned: ownedByUs,
+      platform: process.platform,
+      env: process.env,
+      tmpDir: tmpdir(),
+      home: homedir(),
+    }),
+    serverLogFs,
+  );
+}
+
+/**
+ * GET /api/ai/runtime/log: the session's events after `since` plus a fresh
+ * status snapshot (which also re-reads /api/ps, so a sleep is noticed while the
+ * dialog is open). `serverLog` adds the tail of Ollama's own log. Never loads
+ * the model.
+ */
+export async function getRuntimeLog(query: {
+  since?: number;
+  session?: string;
+  serverLog?: boolean;
+}): Promise<AiRuntimeLogResponse> {
+  const status = await getRuntimeStatus();
+  const { ring } = getAiLogState();
+  const sameSession = query.session === undefined || query.session === ring.session;
+  const events: AiLogEvent[] = ring.since(sameSession ? (query.since ?? 0) : 0);
+  return {
+    session: ring.session,
+    sessionStartedAt: ring.startedAt,
+    now: Date.now(),
+    reset: !sameSession,
+    latestSeq: ring.latestSeq,
+    events,
+    status,
+    ...(query.serverLog ? { serverLog: readOllamaServerLog(status.ownedByUs) } : {}),
+  };
+}
+
+/**
+ * For code that talks to Ollama itself instead of going through generateJson
+ * (the command route: it needs /api/chat tool calling and must not queue behind
+ * background work). Logs the call like the others and gives back the keep_alive
+ * to send. Call `done(payload)` with Ollama's reply or `fail(error)`.
+ */
+export async function startExternalCall(meta: {
+  task: string;
+  label?: string;
+  think?: boolean;
+}) {
+  const { config, controls } = runtime();
+  const { ring } = getAiLogState();
+  const call = ring.nextCallId();
+  const keepAlive = getKeepAlive();
+  const label = cleanText(meta.label, 60);
+  let loaded: boolean | null = null;
+  try {
+    const models = await controls.observeModels();
+    loaded =
+      models === null
+        ? null
+        : models.some(
+            (m) => normalizeModelName(m.name) === normalizeModelName(config.defaultModel),
+          );
+  } catch {
+    // A log detail only.
+  }
+  const startedAt = Date.now();
+  ring.emit({
+    kind: "call-start",
+    call,
+    task: meta.task,
+    label,
+    model: config.defaultModel,
+    keepAlive,
+    ...(meta.think === undefined ? {} : { think: meta.think }),
+    modelLoaded: loaded,
+    queueWaiting: 0,
+  });
+  const finish = (rest: Record<string, unknown>) => {
+    ring.emit({
+      kind: "call-end",
+      call,
+      task: meta.task,
+      label,
+      model: config.defaultModel,
+      durationMs: Date.now() - startedAt,
+      attempts: 1,
+      ...rest,
+    } as Extract<AiLogEvent, { kind: "call-end" }>);
+    void controls.observeModels();
+  };
+  return {
+    keepAlive,
+    /** Was the model in memory when the call started? null = could not tell. */
+    modelLoaded: loaded,
+    /** The call succeeded: `payload` is Ollama's parsed reply (only its
+     *  counters are read). */
+    done: (payload: unknown) => finish({ ok: true, ...chatStats(payload) }),
+    /** The call failed: `code` is an AiRuntimeErrorCode-style word. */
+    fail: (code: string, message: string) =>
+      finish({ ok: false, errorCode: code, message }),
+    /** Convenience for a caught error. */
+    failWith: (error: unknown) => {
+      const { code, message } = logMessage(error);
+      finish({ ok: false, errorCode: code, message });
+    },
   };
 }

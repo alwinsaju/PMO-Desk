@@ -120,7 +120,7 @@ export class SignoffDrafts {
       model: null,
     };
     this.jobs.set(todoId, job);
-    const task: Promise<void> = this.run(job, system, prompt).finally(() =>
+    const task: Promise<void> = this.run(job, system, prompt, todo.title).finally(() =>
       this.pending.delete(task),
     );
     this.pending.add(task);
@@ -132,7 +132,12 @@ export class SignoffDrafts {
     while (this.pending.size > 0) await Promise.allSettled([...this.pending]);
   }
 
-  private async run(job: ChaserJob, system: string, prompt: string): Promise<void> {
+  private async run(
+    job: ChaserJob,
+    system: string,
+    prompt: string,
+    label: string,
+  ): Promise<void> {
     const started = this.now();
     const bytes = Buffer.byteLength(system) + Buffer.byteLength(prompt);
     const finish = (patch: Partial<ChaserJob>) => {
@@ -145,7 +150,7 @@ export class SignoffDrafts {
       });
     };
     try {
-      const reply = await this.generator.draftSignoffRequest({ system, prompt });
+      const reply = await this.generator.draftSignoffRequest({ system, prompt, label });
       const cleaned = cleanSignoffText(reply);
       if (!cleaned.text) {
         const error = new Error("The model returned an empty draft.");

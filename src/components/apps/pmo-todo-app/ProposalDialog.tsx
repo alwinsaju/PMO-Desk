@@ -14,6 +14,7 @@ import { effectiveDraft } from "@/lib/pmo/todoLogic";
 import {
   MAX_AI_ATTEMPTS,
   type Proposal,
+  type RuntimeSummary,
   type StructuringInfo,
   type TodoDraft,
 } from "@/lib/pmo/types";
@@ -26,6 +27,7 @@ import {
 } from "./api";
 import { DraftForm } from "./DraftForm";
 import { OriginalMessage } from "./OriginalMessage";
+import { proposalWaitNote } from "./toolbarView";
 import {
   ErrorLine,
   MESSAGE_PANE,
@@ -40,6 +42,8 @@ interface ProposalDialogProps {
   /** null closes the dialog. */
   proposal: Proposal | null;
   structuring: StructuringInfo;
+  /** The model's state: says why the first message after a sleep is slow. */
+  runtime: RuntimeSummary;
   /** Called after any change so the list can refetch right away. */
   onSettled: () => void;
   onOpenChange: (open: boolean) => void;
@@ -53,6 +57,7 @@ interface ProposalDialogProps {
 export function ProposalDialog({
   proposal,
   structuring,
+  runtime,
   onSettled,
   onOpenChange,
 }: ProposalDialogProps) {
@@ -170,9 +175,7 @@ export function ProposalDialog({
         )}
         {(shown.status === "pending" || shown.status === "structuring") && (
           <Note className="mt-3.5 shrink-0">
-            {structuring.paused
-              ? "Waiting for the local model to come back. This will be structured automatically."
-              : "The local model has not finished with this message yet."}
+            {proposalWaitNote(runtime, structuring.paused)}
           </Note>
         )}
 

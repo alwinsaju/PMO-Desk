@@ -142,7 +142,11 @@ export class ReportDrafts {
         outcome,
       });
     try {
-      const answer = await this.generator.draftNarrative({ system, prompt });
+      const answer = await this.generator.draftNarrative({
+        system,
+        prompt,
+        label: job.key.replace("_", " to "),
+      });
       const verified = verifyNarrative(answer, vocabulary);
       await log("ok");
       finish({

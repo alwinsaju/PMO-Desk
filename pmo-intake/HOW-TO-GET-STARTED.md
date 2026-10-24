@@ -34,9 +34,13 @@ the filter, retention, the Outlook script).
 
 1. Start AI OS the way you normally do, then click the **clipboard icon** in the
    dock (PMO To-Do).
-2. The strip at the top shows: the model (**Local model ready**, or **idle** until
-   the first message), `N filtered`, the **inbox path**, **Scan now**, **Paste**
-   and a **gear**.
+2. The strip at the top shows: the model (**Model asleep** when nothing is using it,
+   which is normal and saves about 12 GB of memory; **Loading model…**,
+   **Working on a message** and **Model ready** while it is in use), **Scan now**,
+   **Paste** and a **gear**. The model loads only when a message needs it, so the
+   first message after a quiet spell takes 1-2 minutes longer; it unloads again 2
+   minutes after the last one. Click the model status to see what it is doing
+   (and to load or unload it by hand).
 3. If you see a dark banner **Inbox folder not found**, step 1 is not right yet.
 4. A grey banner **Teams items are being filtered** is expected until step 6.
 5. Quick test of the whole pipeline without any flow: click **Paste**, type

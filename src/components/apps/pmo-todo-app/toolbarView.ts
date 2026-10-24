@@ -2,26 +2,42 @@
 // notices under it and the reminders prompt. No React, relative imports with
 // the .ts extension, so `pnpm test` can load this under plain Node
 // (see toolbarView.test.mjs).
-import type { PmoState } from "../../../lib/pmo/types.ts";
+import { taskNoun, unloadCountdown } from "../../../lib/ai-runtime/logView.ts";
+import { WAKE_NOTE } from "../../../lib/pmo/runtimeSummary.ts";
+import type {
+  PmoState,
+  RuntimeSummary,
+  StructuringInfo,
+} from "../../../lib/pmo/types.ts";
 
 // --- the model status chip --------------------------------------------------------
 
-export type ModelTone = "ready" | "idle" | "off";
+/** `waking` = loading into memory for a call; `working` = a call is running. */
+export type ModelTone = "ready" | "idle" | "waking" | "working" | "off";
 
 export interface ModelStatus {
-  /** Short enough for a chip: "Model ready", "Model idle", "Model not running". */
+  /** Short enough for a chip: "Model asleep", "Loading model…", "Working on a
+   *  message", "Model ready", "Model not running". */
   label: string;
   tone: ModelTone;
   /** Everything else, for the tooltip / the overflow menu. */
   detail: string;
-  /** The model is working on something right now (the dot pulses). */
+  /** The model is working (or waking) right now: the dot pulses. */
   busy: boolean;
   /** "Structuring 1 of 3" while the queue is being worked through, else null. */
   progress: string | null;
+  /** What the chip shows: the label, plus "· 1 of 3" while the queue is worked
+   *  through, or "· 1:32" (time until it unloads) while the model is loaded and
+   *  idle. Short on purpose: the chip shares a narrow row with the actions. */
+  chip: string;
+  /** ISO time the loaded model unloads, while it is idle in memory; the toolbar
+   *  ticks the countdown itself between polls. */
+  unloadsAt: string | null;
 }
 
 export function modelStatus(
   state: Pick<PmoState, "runtime" | "structuring">,
+  nowMs: number = Date.now(),
 ): ModelStatus {
   const { runtime, structuring } = state;
   const { paused } = structuring;
@@ -37,11 +53,18 @@ export function modelStatus(
   } else if (paused || runtime.state === "down") {
     label = "Model not running";
     tone = "off";
+  } else if (runtime.state === "loading") {
+    label = "Loading model…";
+    tone = "waking";
+  } else if (runtime.state === "working") {
+    label = `Working on ${taskNoun(runtime.task)}`;
+    tone = "working";
   } else if (runtime.state === "ready") {
     label = "Model ready";
     tone = "ready";
-  } else if (runtime.state === "cold") {
-    label = "Model idle";
+  } else if (runtime.state === "asleep") {
+    // The normal idle state, not a warning: the model loads when it is needed.
+    label = "Model asleep";
     tone = "idle";
   } else if (runtime.state === "stub") {
     label = "Test stub";
@@ -51,23 +74,64 @@ export function modelStatus(
     tone = "idle";
   }
 
+  const countdown =
+    !paused && runtime.state === "ready"
+      ? unloadCountdown(runtime.unloadsAt, nowMs)
+      : null;
+  const working = !paused && (runtime.state === "loading" || runtime.state === "working");
+
   const parts: string[] = [];
-  parts.push(label.replace(/^Model /, "Local model "));
+  parts.push(
+    tone === "off" || runtime.state === "ready"
+      ? label.replace(/^Model /, "Local model ")
+      : label.replace(/…$/, ""),
+  );
   if (runtime.model) parts.push(runtime.model);
-  if (runtime.state === "cold" && !paused && runtime.message) parts.push(runtime.message);
+  if (!paused && runtime.state === "asleep") {
+    parts.push(`loads when a message needs it. ${WAKE_NOTE}`);
+  } else if (!paused && runtime.state === "loading") {
+    parts.push(WAKE_NOTE);
+  } else if (countdown) {
+    parts.push(`unloads in ${countdown} if nothing else needs it`);
+  }
   if (structuring.total > 0 && !paused) {
     parts.push(`structuring ${structuring.position} of ${structuring.total}`);
   }
+  const progress =
+    structuring.total > 0 && !paused
+      ? `Structuring ${structuring.position} of ${structuring.total}`
+      : null;
   return {
     label,
     tone,
     detail: parts.join(" · "),
-    busy: structuring.active !== null && !paused,
-    progress:
-      structuring.total > 0 && !paused
-        ? `Structuring ${structuring.position} of ${structuring.total}`
-        : null,
+    busy: working,
+    progress,
+    chip:
+      working && structuring.total > 1
+        ? `${label} · ${structuring.position} of ${structuring.total}`
+        : countdown
+          ? `${label} · ${countdown}`
+          : label,
+    unloadsAt: !paused && runtime.state === "ready" ? (runtime.unloadsAt ?? null) : null,
   };
+}
+
+/** The line in the proposal dialog while a message waits for the model. */
+export function proposalWaitNote(
+  runtime: Pick<RuntimeSummary, "state">,
+  paused: StructuringInfo["paused"],
+): string {
+  if (paused) {
+    return "Waiting for the local model to come back. This will be structured automatically.";
+  }
+  if (runtime.state === "loading") {
+    return `The local model is waking up to read this message. ${WAKE_NOTE}`;
+  }
+  if (runtime.state === "asleep") {
+    return `The local model is asleep and will wake up to read this message. ${WAKE_NOTE}`;
+  }
+  return "The local model has not finished with this message yet.";
 }
 
 // --- notices -------------------------------------------------------------------------
@@ -120,9 +184,14 @@ export function buildNotices(
     runtime.message
   ) {
     out.push({ id: "runtime", level: "attention", text: runtime.message });
-  } else if (runtime.state === "cold" && structuring.total > 0 && runtime.message) {
-    // A cold model only matters while something is waiting for it.
-    out.push({ id: "cold", level: "info", text: runtime.message });
+  } else if (
+    (runtime.state === "loading" || runtime.state === "asleep") &&
+    structuring.total > 0 &&
+    runtime.message
+  ) {
+    // Asleep is the normal idle state; it only deserves a word while a message is
+    // waiting for the model to wake (the first one takes 1-2 minutes longer).
+    out.push({ id: "waking", level: "info", text: runtime.message });
   }
   if (!ingest.inboxExists && ingest.lastScanAt) {
     out.push({

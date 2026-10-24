@@ -7,6 +7,7 @@
 // lifecycle.ts; the wired-up singleton lives in index.ts.
 import path from "node:path";
 import { z } from "zod";
+import type { AiCallLogOptions, AiLogSink } from "./log.ts";
 
 // ---------------------------------------------------------------------------
 // Config
@@ -19,7 +20,9 @@ export interface AiRuntimeConfig {
   defaultModel: string;
   /** Explicit path to ollama.exe; wins over PATH and the default install. */
   ollamaExe?: string;
-  /** How long the model stays loaded after a call when AI OS owns the server. */
+  /** How long the model stays loaded after the LAST call when AI OS owns the
+   *  server. Sent as `keep_alive` with every request, so it overrides the
+   *  server's own default and any OLLAMA_KEEP_ALIVE. */
   keepAlive: string;
   /** Same, when attached to someone else's Ollama (so we don't hog its RAM). */
   externalKeepAlive: string;
@@ -32,7 +35,9 @@ export interface AiRuntimeConfig {
   maxOutputTokens: number;
   /** May AI OS spawn `ollama serve` when nothing answers? */
   autoStart: boolean;
-  /** Load the default model right after the server is up. */
+  /** Load the default model right after the server is up. OFF by default: the
+   *  model (~12 GB for gemma4:12b) loads only when a call needs it, and an
+   *  unloaded model is the normal idle state. */
   prewarm: boolean;
   /** How long to wait for a freshly spawned server to answer. */
   startTimeoutMs: number;
@@ -57,8 +62,10 @@ export const DEFAULT_AI_RUNTIME_CONFIG: AiRuntimeConfig = {
   // `think: false`; reasoning makes calls several times slower. Fallback:
   // qwen3.5:9b (also think off). Both support /api/chat tool calling.
   defaultModel: "gemma4:12b",
-  keepAlive: "30m",
-  externalKeepAlive: "5m",
+  // Short on purpose: the model is 12 GB and the laptop has 31. Two minutes is
+  // enough for a burst of messages to share one load; then the memory is freed.
+  keepAlive: "2m",
+  externalKeepAlive: "2m",
   // CPU-only inference: a cold load is ~20s and a long extraction can take
   // minutes. Generous on purpose; callers are expected to run in background.
   // Per-call values are capped at MAX_REQUEST_TIMEOUT_MS.
@@ -66,13 +73,29 @@ export const DEFAULT_AI_RUNTIME_CONFIG: AiRuntimeConfig = {
   numCtx: 8192,
   maxOutputTokens: 2048,
   autoStart: true,
-  prewarm: true,
+  prewarm: false,
   startTimeoutMs: 30_000,
 };
 
 function positiveInt(raw: string | undefined, fallback: number): number {
   const n = Number(raw);
   return Number.isInteger(n) && n > 0 ? n : fallback;
+}
+
+/** A keep_alive Ollama accepts: a Go duration ("2m", "30s", "1h30m"), or a
+ *  number of seconds (-1 = forever, 0 = unload now). Anything else would make
+ *  every call fail with HTTP 400, so it falls back to the default instead. */
+export function normalizeKeepAlive(raw: string | undefined, fallback: string): string {
+  const value = raw?.trim();
+  if (!value) return fallback;
+  if (/^-?\d+$/.test(value)) return value;
+  return /^(\d+(\.\d+)?(ns|us|µs|ms|s|m|h))+$/.test(value) ? value : fallback;
+}
+
+/** The keep_alive to send: the owned-server value for a server AI OS started,
+ *  the external one for somebody else's. */
+export function pickKeepAlive(config: AiRuntimeConfig, owned: boolean): string {
+  return owned ? config.keepAlive : config.externalKeepAlive;
 }
 
 function flag(raw: string | undefined, fallback: boolean): boolean {
@@ -84,7 +107,8 @@ function flag(raw: string | undefined, fallback: boolean): boolean {
  * Env vars (all optional). OLLAMA_BASE_URL / OLLAMA_MODEL are the names
  * /api/ai/command already used, kept so existing setups keep working.
  *   OLLAMA_BASE_URL, OLLAMA_MODEL, AI_OS_OLLAMA_EXE, AI_OS_AI_AUTOSTART,
- *   AI_OS_AI_PREWARM, AI_OS_AI_KEEP_ALIVE, AI_OS_AI_TIMEOUT_MS,
+ *   AI_OS_AI_PREWARM (default off), AI_OS_AI_KEEP_ALIVE (default 2m, both
+ *   owned and reused Ollama), AI_OS_AI_TIMEOUT_MS,
  *   AI_OS_AI_NUM_CTX, AI_OS_AI_MAX_OUTPUT_TOKENS
  */
 export function loadAiRuntimeConfig(
@@ -96,9 +120,13 @@ export function loadAiRuntimeConfig(
     baseUrl,
     defaultModel: env.OLLAMA_MODEL?.trim() || d.defaultModel,
     ollamaExe: env.AI_OS_OLLAMA_EXE?.trim() || undefined,
-    keepAlive: env.AI_OS_AI_KEEP_ALIVE?.trim() || d.keepAlive,
-    externalKeepAlive: d.externalKeepAlive,
-    requestTimeoutMs: clampTimeoutMs(positiveInt(env.AI_OS_AI_TIMEOUT_MS, d.requestTimeoutMs)),
+    // One explicit override covers both: a user who sets it wants that value
+    // whether Ollama is ours or not.
+    keepAlive: normalizeKeepAlive(env.AI_OS_AI_KEEP_ALIVE, d.keepAlive),
+    externalKeepAlive: normalizeKeepAlive(env.AI_OS_AI_KEEP_ALIVE, d.externalKeepAlive),
+    requestTimeoutMs: clampTimeoutMs(
+      positiveInt(env.AI_OS_AI_TIMEOUT_MS, d.requestTimeoutMs),
+    ),
     numCtx: positiveInt(env.AI_OS_AI_NUM_CTX, d.numCtx),
     maxOutputTokens: positiveInt(env.AI_OS_AI_MAX_OUTPUT_TOKENS, d.maxOutputTokens),
     autoStart: flag(env.AI_OS_AI_AUTOSTART, d.autoStart),
@@ -428,7 +456,8 @@ export function isFetchSilenceTimeout(error: unknown): boolean {
   let current: unknown = error;
   for (let depth = 0; depth < 4 && current instanceof Error; depth++) {
     const code = (current as { code?: unknown }).code;
-    if (code === "UND_ERR_HEADERS_TIMEOUT" || code === "UND_ERR_BODY_TIMEOUT") return true;
+    if (code === "UND_ERR_HEADERS_TIMEOUT" || code === "UND_ERR_BODY_TIMEOUT")
+      return true;
     current = current.cause;
   }
   return false;
@@ -450,6 +479,114 @@ export interface ChatMessage {
 const WARM_PROMPT = "Reply with the single word: ready";
 const WARM_NUM_PREDICT = 8;
 
+/** A model in memory, from GET /api/ps. */
+export interface LoadedModel {
+  name: string;
+  /** Total bytes it holds (RAM + VRAM): roughly what unloading frees. */
+  sizeBytes: number;
+  sizeVramBytes: number;
+  /** When keep_alive runs out (ISO), null if unknown. */
+  expiresAt: string | null;
+}
+
+export function parseLoadedModels(payload: unknown): LoadedModel[] {
+  const models = (payload as { models?: unknown } | null)?.models;
+  if (!Array.isArray(models)) return [];
+  const out: LoadedModel[] = [];
+  for (const raw of models as Array<Record<string, unknown>>) {
+    const name = typeof raw?.name === "string" ? raw.name : raw?.model;
+    if (typeof name !== "string" || !name) continue;
+    out.push({
+      name,
+      sizeBytes: typeof raw.size === "number" ? raw.size : 0,
+      sizeVramBytes: typeof raw.size_vram === "number" ? raw.size_vram : 0,
+      expiresAt: typeof raw.expires_at === "string" ? raw.expires_at : null,
+    });
+  }
+  return out;
+}
+
+/** The counters Ollama puts on a finished /api/chat reply. Numbers only. */
+export interface ChatStats {
+  promptTokens?: number;
+  evalTokens?: number;
+  /** Generated tokens per second (eval_count / eval_duration). */
+  tokensPerSecond?: number;
+  /** Time spent loading the model for this call (load_duration). */
+  loadMs?: number;
+}
+
+interface RawStats {
+  promptTokens: number;
+  evalTokens: number;
+  evalNs: number;
+  loadNs: number;
+}
+
+function rawStats(payload: unknown): RawStats {
+  const p = (payload ?? {}) as Record<string, unknown>;
+  const n = (v: unknown) =>
+    typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : 0;
+  return {
+    promptTokens: n(p.prompt_eval_count),
+    evalTokens: n(p.eval_count),
+    evalNs: n(p.eval_duration),
+    loadNs: n(p.load_duration),
+  };
+}
+
+function statsFrom(raw: RawStats): ChatStats {
+  const out: ChatStats = {};
+  if (raw.promptTokens > 0) out.promptTokens = raw.promptTokens;
+  if (raw.evalTokens > 0) out.evalTokens = raw.evalTokens;
+  if (raw.evalTokens > 0 && raw.evalNs > 0) {
+    out.tokensPerSecond = Math.round((raw.evalTokens / (raw.evalNs / 1e9)) * 10) / 10;
+  }
+  if (raw.loadNs > 0) out.loadMs = Math.round(raw.loadNs / 1e6);
+  return out;
+}
+
+/** Stats of one Ollama reply, for callers that talk to Ollama themselves
+ *  (the command route). */
+export function chatStats(payload: unknown): ChatStats {
+  return statsFrom(rawStats(payload));
+}
+
+/** What a call costs in time and tokens, summed over its attempts. */
+interface CallTrace {
+  id: string | undefined;
+  attempts: number;
+  total: RawStats;
+}
+
+function newTrace(id: string | undefined): CallTrace {
+  return {
+    id,
+    attempts: 0,
+    total: { promptTokens: 0, evalTokens: 0, evalNs: 0, loadNs: 0 },
+  };
+}
+
+/** The part of an error worth putting in the log: our own wording, never the
+ *  model's text (an invalid-output error keeps the model's reply in `raw`, and
+ *  its issues can quote field names from it). */
+export function logMessage(error: unknown): { code: string; message: string } {
+  if (isAiRuntimeError(error)) {
+    if (error.code === "invalid-output") {
+      const n = error.issues?.length ?? 0;
+      return {
+        code: error.code,
+        message: `The model's answer did not pass validation (${n} ${n === 1 ? "problem" : "problems"}).`,
+      };
+    }
+    return { code: error.code, message: error.message };
+  }
+  return {
+    code: "error",
+    message: error instanceof Error ? error.message : "Unknown error.",
+  };
+}
+
 export interface OllamaClientDeps {
   config: AiRuntimeConfig;
   fetch: typeof fetch;
@@ -459,6 +596,14 @@ export interface OllamaClientDeps {
   ensure?: () => Promise<void>;
   /** Overrides config.keepAlive (index.ts picks owned vs external). */
   keepAlive?: () => string;
+  /** The session log (log.ts). Without it nothing is logged. */
+  log?: AiLogSink;
+  /** Looks at /api/ps (a plain GET that never loads anything) just before a
+   *  call and says whether `model` is in memory; null = could not tell. */
+  observe?: (model: string) => Promise<boolean | null>;
+  /** Runs after every call, successful or not (index.ts re-checks /api/ps). */
+  afterCall?: () => void;
+  now?: () => number;
 }
 
 export interface GenerateJsonOptions<S extends z.ZodType> {
@@ -475,6 +620,8 @@ export interface GenerateJsonOptions<S extends z.ZodType> {
    *  minutes. Do not pass `true` for a model without thinking support:
    *  Ollama answers HTTP 400. */
   think?: boolean;
+  /** What this call is, for the model log (task kind + short label). */
+  log?: AiCallLogOptions<z.output<S>>;
 }
 
 export interface GenerateTextOptions {
@@ -485,6 +632,8 @@ export interface GenerateTextOptions {
   temperature?: number;
   /** See GenerateJsonOptions.think. */
   think?: boolean;
+  /** See GenerateJsonOptions.log. */
+  log?: AiCallLogOptions<string>;
 }
 
 interface ChatRequest {
@@ -506,6 +655,7 @@ interface ChatReply {
 export function createOllamaClient(deps: OllamaClientDeps) {
   const { config, queue } = deps;
   const doFetch = deps.fetch;
+  const now = deps.now ?? Date.now;
 
   function keepAlive(): string {
     return deps.keepAlive ? deps.keepAlive() : config.keepAlive;
@@ -527,7 +677,11 @@ export function createOllamaClient(deps: OllamaClientDeps) {
       });
     } catch (error) {
       const name = error instanceof Error ? error.name : "";
-      if (name === "TimeoutError" || name === "AbortError" || isFetchSilenceTimeout(error)) {
+      if (
+        name === "TimeoutError" ||
+        name === "AbortError" ||
+        isFetchSilenceTimeout(error)
+      ) {
         throw new AiRuntimeError(
           "timeout",
           `The local AI model did not answer within ${Math.round(timeoutMs / 1000)}s.`,
@@ -577,7 +731,7 @@ export function createOllamaClient(deps: OllamaClientDeps) {
     }
   }
 
-  async function chat(req: ChatRequest): Promise<ChatReply> {
+  async function chat(req: ChatRequest, trace: CallTrace): Promise<ChatReply> {
     const payload = (await request("/api/chat", {
       model: req.model,
       timeoutMs: req.timeoutMs,
@@ -596,6 +750,13 @@ export function createOllamaClient(deps: OllamaClientDeps) {
       },
     })) as { message?: { content?: unknown }; done_reason?: unknown } | null;
 
+    trace.attempts++;
+    const stats = rawStats(payload);
+    trace.total.promptTokens += stats.promptTokens;
+    trace.total.evalTokens += stats.evalTokens;
+    trace.total.evalNs += stats.evalNs;
+    trace.total.loadNs += stats.loadNs;
+
     const content = payload?.message?.content;
     if (typeof content !== "string") {
       throw new AiRuntimeError(
@@ -610,11 +771,107 @@ export function createOllamaClient(deps: OllamaClientDeps) {
     };
   }
 
-  /** Every generate call goes through the one queue slot. */
-  function enqueue<T>(task: () => Promise<T>): Promise<T> {
+  /**
+   * Every generate call goes through the one queue slot, and every one is
+   * logged here: queued (when something is ahead), start, and end with its
+   * duration, attempts and token counts. Only task kind, the short caller
+   * label, durations and counts are logged, never `prompt` or a reply.
+   */
+  function enqueue<R>(
+    meta: { model: string; think?: boolean; log: AiCallLogOptions<R> },
+    run: (trace: CallTrace) => Promise<R>,
+  ): Promise<R> {
+    const { log } = deps;
+    const id = log?.nextCallId();
+    const { task, label } = meta.log;
+    if (log) {
+      const ahead = queue.waiting + (queue.active ? 1 : 0);
+      if (ahead > 0) {
+        log.emit({
+          kind: "call-queued",
+          call: id as string,
+          task,
+          label,
+          position: ahead,
+          waiting: queue.waiting + 1,
+        });
+      }
+    }
+
     return queue.enqueue(async () => {
-      await deps.ensure?.();
-      return task();
+      const trace = newTrace(id);
+      let startedAt = now();
+      let started = false;
+      const start = (modelLoaded: boolean | null) => {
+        started = true;
+        startedAt = now();
+        log?.emit({
+          kind: "call-start",
+          call: id as string,
+          task,
+          label,
+          model: meta.model,
+          keepAlive: keepAlive(),
+          ...(meta.think === undefined ? {} : { think: meta.think }),
+          modelLoaded,
+          queueWaiting: queue.waiting,
+        });
+      };
+      try {
+        await deps.ensure?.();
+        let loaded: boolean | null = null;
+        try {
+          loaded = (await deps.observe?.(meta.model)) ?? null;
+        } catch {
+          // Only a log detail: never let it fail a call.
+        }
+        start(loaded);
+        const result = await run(trace);
+        let note: string | undefined;
+        try {
+          note = meta.log.note?.(result) ?? undefined;
+        } catch {
+          // A summarizer must never fail the call it describes.
+        }
+        log?.emit({
+          kind: "call-end",
+          call: id as string,
+          task,
+          label,
+          model: meta.model,
+          ok: true,
+          durationMs: now() - startedAt,
+          attempts: trace.attempts,
+          ...statsFrom(trace.total),
+          ...(note ? { note } : {}),
+        });
+        return result;
+      } catch (error) {
+        if (log) {
+          if (!started) start(null);
+          const { code, message } = logMessage(error);
+          log.emit({
+            kind: "call-end",
+            call: id as string,
+            task,
+            label,
+            model: meta.model,
+            ok: false,
+            durationMs: now() - startedAt,
+            attempts: trace.attempts,
+            ...statsFrom(trace.total),
+            errorCode: code,
+            message,
+          });
+        }
+        throw error;
+      } finally {
+        try {
+          deps.afterCall?.();
+        } catch {
+          // Best effort.
+        }
+      }
     });
   }
 
@@ -639,50 +896,68 @@ export function createOllamaClient(deps: OllamaClientDeps) {
       .filter(Boolean)
       .join("\n\n");
 
-    return enqueue(async () => {
-      const messages: ChatMessage[] = [
-        { role: "system", content: system },
-        { role: "user", content: options.prompt },
-      ];
-      let lastRaw = "";
-      let lastIssues: string[] = [];
+    return enqueue(
+      { model, think: options.think, log: options.log ?? { task: "json" } },
+      async (trace) => {
+        const messages: ChatMessage[] = [
+          { role: "system", content: system },
+          { role: "user", content: options.prompt },
+        ];
+        let lastRaw = "";
+        let lastIssues: string[] = [];
+        let lastReason: "invalid-json" | "invalid-schema" | "cut-off" = "invalid-json";
 
-      for (let attempt = 0; attempt < 2; attempt++) {
-        const reply = await chat({
-          model,
-          messages,
-          format,
-          temperature: 0,
-          timeoutMs,
-          think: options.think,
-        });
-        lastRaw = reply.content;
+        for (let attempt = 0; attempt < 2; attempt++) {
+          const reply = await chat(
+            {
+              model,
+              messages,
+              format,
+              temperature: 0,
+              timeoutMs,
+              think: options.think,
+            },
+            trace,
+          );
+          lastRaw = reply.content;
 
-        const parsed = parseModelJson(reply.content);
-        if (parsed.ok) {
-          const validated = validateWithSchema(options.schema, parsed.value);
-          if (validated.ok) return validated.data;
-          lastIssues = validated.issues;
-        } else {
-          lastIssues = [
-            reply.doneReason === "length"
-              ? "output was cut off before the JSON was complete"
-              : `not valid JSON (${parsed.error})`,
-          ];
+          const parsed = parseModelJson(reply.content);
+          if (parsed.ok) {
+            const validated = validateWithSchema(options.schema, parsed.value);
+            if (validated.ok) return validated.data;
+            lastIssues = validated.issues;
+            lastReason = "invalid-schema";
+          } else {
+            const cutOff = reply.doneReason === "length";
+            lastIssues = [
+              cutOff
+                ? "output was cut off before the JSON was complete"
+                : `not valid JSON (${parsed.error})`,
+            ];
+            lastReason = cutOff ? "cut-off" : "invalid-json";
+          }
+
+          if (attempt === 0 && deps.log && trace.id) {
+            deps.log.emit({
+              kind: "call-retry",
+              call: trace.id,
+              attempt: 2,
+              reason: lastReason,
+            });
+          }
+          messages.push(
+            { role: "assistant", content: reply.content },
+            { role: "user", content: buildRepairPrompt(lastIssues) },
+          );
         }
 
-        messages.push(
-          { role: "assistant", content: reply.content },
-          { role: "user", content: buildRepairPrompt(lastIssues) },
+        throw new AiRuntimeError(
+          "invalid-output",
+          `The local AI model did not return valid output after a repair attempt: ${lastIssues.join("; ")}`,
+          { raw: truncate(lastRaw), issues: lastIssues },
         );
-      }
-
-      throw new AiRuntimeError(
-        "invalid-output",
-        `The local AI model did not return valid output after a repair attempt: ${lastIssues.join("; ")}`,
-        { raw: truncate(lastRaw), issues: lastIssues },
-      );
-    });
+      },
+    );
   }
 
   function generateText(options: GenerateTextOptions): Promise<string> {
@@ -694,32 +969,44 @@ export function createOllamaClient(deps: OllamaClientDeps) {
         : []),
       { role: "user", content: options.prompt },
     ];
-    return enqueue(async () => {
-      const reply = await chat({
-        model,
-        messages,
-        temperature: options.temperature ?? 0,
-        timeoutMs,
-        think: options.think,
-      });
-      return reply.content.trim();
-    });
+    return enqueue(
+      { model, think: options.think, log: options.log ?? { task: "text" } },
+      async (trace) => {
+        const reply = await chat(
+          {
+            model,
+            messages,
+            temperature: options.temperature ?? 0,
+            timeoutMs,
+            think: options.think,
+          },
+          trace,
+        );
+        return reply.content.trim();
+      },
+    );
   }
 
   /** Make a model resident with the standard keep_alive and num_ctx, through
    *  the queue so it never races a real call. An empty /api/generate only
    *  allocates the model: the first real call then still spent 60-90 s paging
    *  the weights in. A tiny real chat touches them, so this is one. */
-  function warm(model: string = config.defaultModel): Promise<void> {
-    return enqueue(async () => {
-      await chat({
-        model,
-        messages: [{ role: "user", content: WARM_PROMPT }],
-        temperature: 0,
-        timeoutMs: config.requestTimeoutMs,
-        think: false,
-        numPredict: WARM_NUM_PREDICT,
-      });
+  function warm(
+    model: string = config.defaultModel,
+    log: AiCallLogOptions<void> = { task: "load" },
+  ): Promise<void> {
+    return enqueue({ model, think: false, log }, async (trace) => {
+      await chat(
+        {
+          model,
+          messages: [{ role: "user", content: WARM_PROMPT }],
+          temperature: 0,
+          timeoutMs: config.requestTimeoutMs,
+          think: false,
+          numPredict: WARM_NUM_PREDICT,
+        },
+        trace,
+      );
     });
   }
 
@@ -763,8 +1050,20 @@ export function createOllamaClient(deps: OllamaClientDeps) {
   const listInstalled = (timeoutMs = 3_000) => modelNames("/api/tags", timeoutMs);
   /** Models currently loaded in memory (GET /api/ps). */
   const listLoaded = (timeoutMs = 3_000) => modelNames("/api/ps", timeoutMs);
+  /** Same with size and expiry. A GET: it can never load a model. */
+  const listLoadedDetailed = async (timeoutMs = 3_000): Promise<LoadedModel[]> =>
+    parseLoadedModels(await request("/api/ps", { method: "GET", timeoutMs }));
 
-  return { generateJson, generateText, warm, unload, probe, listInstalled, listLoaded };
+  return {
+    generateJson,
+    generateText,
+    warm,
+    unload,
+    probe,
+    listInstalled,
+    listLoaded,
+    listLoadedDetailed,
+  };
 }
 
 export type OllamaClient = ReturnType<typeof createOllamaClient>;

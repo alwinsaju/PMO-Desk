@@ -788,9 +788,24 @@ export interface IngestStatus {
 }
 
 export interface RuntimeSummary {
-  state: "ready" | "cold" | "down" | "model-missing" | "stub" | "unknown";
+  /** `asleep` (not in memory, loads on demand) is the normal idle state; `loading`
+   *  is the model waking up for a call; `working` is a call running; `ready` is
+   *  loaded and idle until `unloadsAt`. */
+  state:
+    | "asleep"
+    | "loading"
+    | "working"
+    | "ready"
+    | "down"
+    | "model-missing"
+    | "stub"
+    | "unknown";
   model: string | null;
   message: string | null;
+  /** Task kind the model is working on (`structure`, `chaser`, ...), while it is. */
+  task?: string | null;
+  /** When the loaded model is unloaded if nothing else asks (ISO). */
+  unloadsAt?: string | null;
 }
 
 export interface StructuringInfo {

@@ -171,6 +171,7 @@ export function PmoTodoApp({ windowId }: { windowId: string }) {
       <ProposalDialog
         proposal={proposal}
         structuring={state.structuring}
+        runtime={state.runtime}
         onSettled={refetch}
         onOpenChange={(open) => {
           if (!open) setProposalId(null);

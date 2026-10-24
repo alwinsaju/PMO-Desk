@@ -6,6 +6,7 @@ import {
   buildNotices,
   modelStatus,
   offersReminderPrompt,
+  proposalWaitNote,
   reminderStatus,
   scanSummary,
 } from "./toolbarView.ts";
@@ -29,36 +30,50 @@ const state = (patch = {}) => ({
 
 describe("modelStatus", () => {
   it("gives a short label and tone per runtime state", () => {
+    const of = (runtime) =>
+      modelStatus(state({ runtime: { model: "m", message: "x", ...runtime } }));
     assert.deepEqual(
       [
         modelStatus(state()).label,
-        modelStatus(
-          state({ runtime: { state: "cold", model: "m", message: "Loading." } }),
-        ).label,
-        modelStatus(state({ runtime: { state: "stub", model: "stub", message: "x" } }))
-          .label,
-        modelStatus(state({ runtime: { state: "down", model: "m", message: "x" } }))
-          .label,
-        modelStatus(
-          state({ runtime: { state: "model-missing", model: "m", message: "x" } }),
-        ).label,
-        modelStatus(state({ runtime: { state: "unknown", model: null, message: "x" } }))
-          .label,
+        of({ state: "asleep" }).label,
+        of({ state: "loading" }).label,
+        of({ state: "working", task: "structure" }).label,
+        of({ state: "stub", model: "stub" }).label,
+        of({ state: "down" }).label,
+        of({ state: "model-missing" }).label,
+        of({ state: "unknown", model: null }).label,
       ],
       [
         "Model ready",
-        "Model idle",
+        "Model asleep",
+        "Loading model…",
+        "Working on a message",
         "Test stub",
         "Model not running",
         "Model missing",
         "Model status unknown",
       ],
     );
-    assert.equal(modelStatus(state()).tone, "ready");
-    assert.equal(
-      modelStatus(state({ runtime: { ...ready, state: "down" } })).tone,
-      "off",
+    assert.deepEqual(
+      ["ready", "asleep", "loading", "working", "down"].map((s) => of({ state: s }).tone),
+      ["ready", "idle", "waking", "working", "off"],
     );
+    // Asleep is the normal idle state: grey, not red, and the dot does not pulse.
+    assert.equal(of({ state: "asleep" }).busy, false);
+    assert.equal(of({ state: "loading" }).busy, true);
+    assert.equal(of({ state: "working" }).busy, true);
+  });
+
+  it("names what the model is working on", () => {
+    const working = (task) =>
+      modelStatus(
+        state({ runtime: { state: "working", model: "m", message: null, task } }),
+      ).label;
+    assert.equal(working("update"), "Working on a reply");
+    assert.equal(working("chaser"), "Working on a chaser");
+    assert.equal(working("report"), "Working on the report");
+    assert.equal(working("command"), "Working on a command");
+    assert.equal(working(undefined), "Working on a request");
   });
 
   it("a paused queue overrides a healthy-looking runtime", () => {
@@ -72,20 +87,71 @@ describe("modelStatus", () => {
     assert.equal(missing.label, "Model missing");
   });
 
-  it("puts the progress and the cold-start hint in the detail, not the label", () => {
+  it("puts the progress and the wake-up hint in the detail", () => {
     const status = modelStatus(
       state({
-        runtime: { state: "cold", model: "qwen", message: "Not loaded yet." },
+        runtime: { state: "loading", model: "qwen", message: "Waking." },
         structuring: { ...idle, active: "pr_1", position: 1, total: 3 },
       }),
     );
-    assert.equal(status.label, "Model idle");
+    assert.equal(status.label, "Loading model…");
     assert.match(status.detail, /qwen/);
-    assert.match(status.detail, /Not loaded yet\./);
+    assert.match(status.detail, /first message takes 1-2 minutes longer/);
     assert.match(status.detail, /structuring 1 of 3/);
     assert.equal(status.busy, true);
     assert.equal(status.progress, "Structuring 1 of 3");
+    assert.equal(status.chip, "Loading model… · 1 of 3");
+    // One message in the queue: no "1 of 1".
+    assert.equal(
+      modelStatus(
+        state({
+          runtime: { state: "working", model: "m", message: null, task: "structure" },
+          structuring: { ...idle, active: "pr_1", position: 1, total: 1 },
+        }),
+      ).chip,
+      "Working on a message",
+    );
     assert.equal(modelStatus(state()).progress, null);
+  });
+
+  it("an asleep model says it loads on demand, with no warning wording", () => {
+    const status = modelStatus(
+      state({ runtime: { state: "asleep", model: "gemma4:12b", message: "Asleep." } }),
+    );
+    assert.equal(status.label, "Model asleep");
+    assert.equal(status.chip, "Model asleep");
+    assert.match(status.detail, /loads when a message needs it/);
+    assert.match(status.detail, /first message takes 1-2 minutes longer/);
+    assert.doesNotMatch(status.detail + status.label, /cold|not loaded|warning/i);
+  });
+
+  it("counts down to the unload while the model sits ready", () => {
+    const now = Date.parse("2026-10-24T10:00:00Z");
+    const ready = (unloadsAt) =>
+      modelStatus(
+        state({ runtime: { state: "ready", model: "m", message: null, unloadsAt } }),
+        now,
+      );
+    const status = ready("2026-10-24T10:01:32Z");
+    assert.equal(status.chip, "Model ready · 1:32");
+    assert.equal(status.unloadsAt, "2026-10-24T10:01:32Z");
+    assert.match(status.detail, /unloads in 1:32/);
+    // No deadline, or one that has passed: just the label.
+    assert.equal(ready(null).chip, "Model ready");
+    assert.equal(ready("2026-10-24T09:59:00Z").chip, "Model ready");
+    // Only a ready model counts down.
+    const working = modelStatus(
+      state({
+        runtime: {
+          state: "working",
+          model: "m",
+          message: null,
+          unloadsAt: "2026-10-24T10:01:32Z",
+        },
+      }),
+      now,
+    );
+    assert.equal(working.unloadsAt, null);
   });
 });
 
@@ -166,19 +232,57 @@ describe("buildNotices", () => {
     }
   });
 
-  it("mentions a cold model only while something is waiting for it", () => {
-    const cold = { state: "cold", model: "m", message: "Not loaded yet." };
-    assert.deepEqual(buildNotices(state({ runtime: cold }), false), []);
-    const waiting = buildNotices(
-      state({
-        runtime: cold,
-        structuring: { ...idle, total: 2, position: 1, waiting: 1 },
-      }),
-      false,
-    );
+  it("mentions a sleeping or waking model only while something waits for it", () => {
+    for (const runtimeState of ["asleep", "loading"]) {
+      const runtime = {
+        state: runtimeState,
+        model: "m",
+        message: "First message is slower.",
+      };
+      assert.deepEqual(buildNotices(state({ runtime }), false), []);
+      const waiting = buildNotices(
+        state({
+          runtime,
+          structuring: { ...idle, total: 2, position: 1, waiting: 1 },
+        }),
+        false,
+      );
+      assert.deepEqual(
+        waiting.map((n) => [n.id, n.level, n.text]),
+        [["waking", "info", "First message is slower."]],
+      );
+    }
+    // A loaded model needs no notice at all.
     assert.deepEqual(
-      waiting.map((n) => n.id),
-      ["cold"],
+      buildNotices(
+        state({ structuring: { ...idle, total: 2, position: 1, waiting: 1 } }),
+        false,
+      ),
+      [],
+    );
+  });
+});
+
+describe("proposalWaitNote", () => {
+  it("explains the wake-up while a message waits, and the outage when paused", () => {
+    assert.match(
+      proposalWaitNote({ state: "loading" }, null),
+      /waking up.*1-2 minutes longer/,
+    );
+    assert.match(
+      proposalWaitNote({ state: "asleep" }, null),
+      /asleep.*1-2 minutes longer/,
+    );
+    assert.equal(
+      proposalWaitNote({ state: "ready" }, null),
+      "The local model has not finished with this message yet.",
+    );
+    assert.match(
+      proposalWaitNote(
+        { state: "asleep" },
+        { code: "runtime-down", message: "m", since: "x" },
+      ),
+      /Waiting for the local model to come back/,
     );
   });
 });

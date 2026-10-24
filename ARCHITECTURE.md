@@ -543,8 +543,8 @@ repair round-trip (the validation problems are fed back) before giving up.
 Failures reject with `AiRuntimeError` whose `code` is `"runtime-down"`,
 `"model-missing"`, `"timeout"` or `"invalid-output"` (use `isAiRuntimeError`).
 All calls go through one FIFO queue with concurrency 1. Inference is CPU-only
-here (a cold load is ~15-20s, a warm short extraction ~3-5s, long inputs
-minutes), so call it from background work, not a blocking UI path. The default
+here (a model load is ~20 s to a couple of minutes, a warm short extraction
+~3-5s, long inputs minutes), so call it from background work, not a blocking UI path. The default
 timeout is 280 s per attempt and does not count time spent waiting in the
 queue. It is also the ceiling: every per-call `timeoutMs` (and
 `AI_OS_AI_TIMEOUT_MS`) is clamped to `MAX_REQUEST_TIMEOUT_MS` (280 s), because
@@ -560,12 +560,30 @@ every PMO call (and on the warm-up and `/api/ai/command`). Reasoning models
 or time out; do not enable it. `think` is left unset when a caller does not
 pass it, and `false` is accepted by non-thinking models too.
 
+**Memory: the model loads on demand and sleeps after 2 minutes.** `gemma4:12b`
+holds about 8-12 GB, and the laptop has 31. So nothing loads it at launch: only a
+real call does (a structuring / update / chaser / report / sign-off call or the
+command bar), and `getRuntimeStatus()` / the status poll / the model log only
+ever read (`GET /api/version`, `/api/tags`, `/api/ps`), which cannot load
+anything. An unloaded ("asleep") model is the normal idle state, not a warning;
+the first call after a sleep takes 1-2 minutes longer while it wakes, and the UI
+says so. After the last call Ollama keeps the model for `keep_alive`, **2
+minutes by default for both a server AI OS started and a reused one** (it is sent
+with every request, so it overrides the server's own default and any
+`OLLAMA_KEEP_ALIVE`; `/api/ai/command` sends the same value through
+`getKeepAlive()`). `AI_OS_AI_KEEP_ALIVE` overrides both (a Go duration such as
+`20s`, `5m`, `1h30m`, or seconds; anything else falls back to `2m`).
+`AI_OS_AI_PREWARM=1` brings back the old load-at-launch behaviour (the model is
+then loaded with a tiny real chat right after the server is up); the default is
+off.
+
 Config (all optional env vars; defaults in `core.ts`): `OLLAMA_MODEL`
 (default `gemma4:12b`; fallback `qwen3.5:9b`, also think off. Both model
 choices come from a local bake-off on fictional messages: qwen2.5:7b obeyed
 prompt injection and got weekday dates wrong), `OLLAMA_BASE_URL` (default
 `http://127.0.0.1:11434`), `AI_OS_OLLAMA_EXE`, `AI_OS_AI_AUTOSTART=0` (never
-spawn Ollama), `AI_OS_AI_PREWARM=0`, `AI_OS_AI_KEEP_ALIVE`,
+spawn Ollama), `AI_OS_AI_PREWARM` (default off, see above), `AI_OS_AI_KEEP_ALIVE`
+(default `2m`),
 `AI_OS_AI_TIMEOUT_MS`, `AI_OS_AI_NUM_CTX` (default 8192, sent on every call:
 a changing `num_ctx` makes Ollama reload the model, so `/api/ai/command` sends
 the same value).
@@ -579,13 +597,11 @@ loopback URL, AI OS spawns `ollama serve` (resolved from `AI_OS_OLLAMA_EXE`,
 then PATH, then `%LOCALAPPDATA%\Programs\Ollama`; fixed args, `shell: false`,
 `windowsHide`, log in the OS temp dir) and owns it. `generateJson` also
 re-runs this check before every call, so an Ollama that died is restarted
-transparently. The default model is pre-warmed in the background (through the
-queue) with a tiny real chat (one short message, a few tokens, `think: false`),
-not an empty `/api/generate`: that only allocates the model and the first real
-call still paid 60-90 s to page the weights in. `AI_OS_AI_PREWARM=0` turns it
-off. `getRuntimeStatus().modelWarm` is true only when the model is loaded and a
-real chat has run on it since (`modelLoaded` alone can still mean a slow first
-call). On quit, an owned server has its models unloaded (`keep_alive: 0`) and
+transparently. Only the **server** is started at launch (cheap); the model is
+loaded lazily by the first call, or by "Load now" in the model log, which runs
+a tiny real chat (one short message, a few tokens, `think: false`) through the
+queue, not an empty `/api/generate` (that only allocates the model and the first
+real call still paid 60-90 s to page the weights in). On quit, an owned server has its models unloaded (`keep_alive: 0`) and
 its process tree killed (`taskkill /T`): `desktop/main.cjs` calls
 `POST /api/ai/runtime/stop` (desktop mode only) next to the Agent Office stop,
 and a `process.on("exit")` hook covers dev-server exits. The Ollama child is
@@ -597,15 +613,87 @@ Lifecycle state, and the queue, live on `globalThis` because Next compiles
 instrumentation and each route into separate module graphs.
 
 `GET /api/ai/runtime` is a read-only status snapshot (`running`, `ownedByUs`,
-`modelLoaded`, `queue.waiting`/`active`, ...); it never starts or stops
-anything. The PMO toolbar's model status chip is the only UI indicator. `/api/ai/command` shares
+`modelLoaded`, `loaded` with the memory each model holds and when it expires,
+`queue.waiting`/`active`, `activeCalls`, `keepAlive`, ...); it never starts,
+stops or loads anything. `/api/ai/command` shares
 the config (so it also runs `gemma4:12b`, which advertises the `tools`
 capability and was checked to make correct tool calls with `think: false`) but
 still calls Ollama itself, because it needs `/api/chat` tool calling and
-should not queue behind long background jobs. It sends `think: false` too. Tests (`core.test.mjs`) cover
+should not queue behind long background jobs. It sends `think: false` and the
+shared `keep_alive` too, and logs through `startExternalCall()` like the other
+calls. Tests (`core.test.mjs`, `controls.test.mjs`, ...) cover
 the queue, JSON repair/validation, exe resolution and the client against a
-fake `fetch`; none need a real Ollama. Pure logic lives in `core.ts` with no
-extensionless sibling imports, which is what lets plain Node import it.
+fake `fetch`; none need a real Ollama. Pure logic lives in `core.ts` (and the
+other files below) with no extensionless sibling imports and no TypeScript
+parameter properties, which is what lets plain Node import it.
+
+### Model log (what the model is doing this session)
+
+Files: `log.ts` (event types, the ring buffer), `modelWatch.ts` (load/unload
+detector, the shared state), `controls.ts` (status, Load now, Unload now,
+start-up pre-warm decision), `logView.ts` (the Plain English and Raw views, pure),
+`serverLog.ts` (read-only tail of Ollama's own log), `routeLogic.ts` (the routes'
+decisions); UI in `src/components/ai-runtime/` (`ModelLogDialog`, reusable:
+`<ModelLogDialog open onOpenChange />`); the PMO toolbar's model chip opens it.
+
+- **The log.** An in-memory ring buffer (1000 events) on `globalThis`, written at
+  the real choke points: server up (started / reused / adopted) and down, stop,
+  pre-warm skipped, every generate call (queued, start with task + label +
+  `keep_alive` + `think` + whether the model was in memory, repair retry, end with
+  duration, attempts, prompt / eval tokens, tokens per second and `load_duration`
+  from Ollama's reply, or the error code), "Load now", unload requests, and the
+  model going into or out of memory. A "session" is one Next-server run
+  (`session` id + start time); the buffer is gone when it restarts. **Privacy:**
+  events hold kinds, counts, durations and a SHORT caller label (a message subject
+  or to-do title, cut to 60 characters, flattened to one line) and nothing else:
+  never a prompt, a reply or a message body, and an `invalid-output` error is
+  logged as "N validation problems", not its text. Nothing is written to disk
+  (`logPrivacy.test.mjs` scans the source for both rules). Callers pass
+  `log: { task, label, note? }` to `generateJson` / `generateText` (`note` is an
+  optional counts-only phrase about the result, e.g. "3 action items found");
+  the command route uses `startExternalCall`.
+- **Sleep detection.** Ollama does not announce an unload, so the runtime compares
+  `GET /api/ps` with its last look (`ModelTracker`): right after every call, with
+  every status poll and log poll, and on a 15 s timer that exists **only while a
+  model is loaded** (asleep = no timer). It classifies a disappearance as `idle`
+  (the keep-alive deadline from `expires_at` passed), `manual`, `shutdown` or
+  `other`.
+- **`GET /api/ai/runtime/log?since=<seq>&session=<id>&serverLog=1`** returns
+  `{ ok, session, sessionStartedAt, now, reset, latestSeq, events, status,
+  serverLog? }`: only events after `since` (a different `session` returns all and
+  `reset: true`), a fresh status snapshot, and optionally the tail of Ollama's server
+  log. The dialog polls it every ~2 s **only while open and the tab is visible**.
+  `POST /api/ai/runtime/load` ("Load now": starts the tiny warm-up in the
+  background and answers at once) and `POST /api/ai/runtime/unload` ("Unload now":
+  `keep_alive: 0` for the AI OS default model only, never another model in a
+  shared Ollama, and refused while any call is running).
+- **Guards.** All three use the same origin check as `/api/pmo` (loopback Host, no
+  cross-site `Origin` / `Sec-Fetch-Site`), **not** the desktop-only header that
+  `/api/ai/runtime/stop` needs: stop kills a process and is only called by the
+  Electron shell, but load/unload are reversible, touch only the default model,
+  and are clicked inside the app window, whose ordinary same-origin `fetch` carries
+  no such header (it also lets the page work in a plain browser tab). A page on
+  another site, or a DNS-rebinding page, is still refused with 403.
+- **Server log tail.** Read-only, last ~200 lines from at most the last 256 KB, each
+  line capped at 2000 characters, fixed paths only: `%TEMP%\ai-os-ollama.log` when
+  AI OS started Ollama; `%LOCALAPPDATA%\Ollama\server.log` for a reused Ollama
+  (macOS `~/.ollama/logs/server.log`; nothing on Linux). Nothing from a request
+  chooses the file. The UI says which source it is. Caveat: Ollama itself can write
+  prompts into its server log if `OLLAMA_DEBUG` is set, and for a reused Ollama the
+  file is the default install's whichever port the reused server listens on.
+- **The dialog.** A header card (model, state, memory held as `/api/ps` reports it, which is
+  the model's size: on this machine about 6.7 GB while the process itself used
+  9-10 GB, so the system's free memory moved by more than the card says; live
+  countdown to the unload, queue, owned vs reused Ollama and version, keep-alive,
+  Load / Unload buttons), then **Plain English** (default: a timeline such as
+  "Waking the model (loading gemma4:12b into memory)... ready in 19 s", "Reading a
+  message ... done in 52 s (3 action items found)", "Retrying: the model's answer
+  was not valid JSON", "Model went to sleep after 2 min idle, memory freed (about
+  8 GB)", "Could not reach Ollama, will retry"; one line per call that finishes in
+  place) or **Raw** (`timestamp level #seq kind key=value ...` with a level and a
+  text filter, plus a sub-tab with the Ollama server log), each with Copy and
+  Download .txt, and a **Follow** switch (scrolling up turns it off). Both views are
+  built from the same events by `logView.ts`.
 
 ## PMO To-Do (`src/lib/pmo/`, `src/components/apps/pmo-todo-app/`, `pmo-intake/`)
 
@@ -864,9 +952,11 @@ and leave items `pending` (banner in the UI; every scan retries), a timeout is
 retried once then `failed`, `invalid-output` is `failed` after the runtime's own
 repair, at most 3 model attempts per item, and failed items offer _Retry_ and
 _Create manually from original_. `gemma4:12b` (think off) on this CPU takes
-roughly 50-100 s per message, and the first one after a cold start 1-2 minutes
-more (the model chip says so while the model is not yet warm), so structuring
-is strictly background work.
+roughly 50-100 s per message, and the first one after the model has gone to sleep
+1-2 minutes more (the model chip and a notice say "the first message takes 1-2
+minutes longer because the model is waking up"), so structuring is strictly
+background work. The model is not loaded at launch and sleeps 2 minutes after the
+last call, so the idle state is **Model asleep**, which is normal.
 
 ### Phase 3: editing, reminders, badge
 
@@ -1057,7 +1147,13 @@ any scheme before).
 shrunk to the shell's 360x240 minimum; dialogs are portaled to the viewport).
 - One toolbar row: tabs (*Review Queue*, *To-Do*, *Filtered*, each with a quiet
   count, and *Reports*, which has none; it keeps its own scroll body and a sticky
-  footer, see Phase 5) on the left, then the model chip (`toolbarView.modelStatus`), *Scan now*,
+  footer, see Phase 5) on the left, then the model chip (`toolbarView.modelStatus`: **Model asleep** (grey, the normal
+  idle state; loads on demand), **Loading model…** (amber, waking for a call),
+  **Working on a message** (accent, with "· 2 of 3" while the queue is worked
+  through), **Model ready · 1:32** (green, loaded and idle with the countdown to the
+  unload), plus *Model not running* / *Model missing*; it is a button with a
+  tooltip "Click to see what the model is doing" that opens the model log, see
+  "Model log" above), *Scan now*,
   *Paste*, the reminders bell (only while the browser has not been asked) and the
   gear. Information (inbox path, last scan, filtered count) is in tooltips and
   Settings. Anything that needs attention is a notice under the row

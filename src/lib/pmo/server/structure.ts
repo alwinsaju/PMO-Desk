@@ -23,6 +23,9 @@ import type { Store } from "./store.ts";
 export interface ModelRequest {
   system: string;
   prompt: string;
+  /** SHORT human label for the local model log (a message subject, a to-do
+   *  title). Shown in memory only; never persisted by the logging feature. */
+  label?: string;
 }
 
 /** An update request; `signoff` asks for the sign-off classification too (the
@@ -253,7 +256,13 @@ export class StructuringWorker {
         bytes: Buffer.byteLength(system) + Buffer.byteLength(prompt),
         promptVersion: UPDATE_PROMPT_VERSION,
         task: signoff ? "update-signoff" : "update",
-        call: () => this.generator.generateUpdate({ system, prompt, signoff }),
+        call: () =>
+          this.generator.generateUpdate({
+            system,
+            prompt,
+            signoff,
+            label: intake.subject,
+          }),
         onOk: async (output, durationMs, attempts) => {
           if (output.kind === "unrelated") {
             await this.toNormalProposal(id, "the model says it is about something else");
@@ -299,7 +308,7 @@ export class StructuringWorker {
       bytes: Buffer.byteLength(system) + Buffer.byteLength(prompt),
       promptVersion: PROMPT_VERSION,
       task: "structure",
-      call: () => this.generator.generate({ system, prompt }),
+      call: () => this.generator.generate({ system, prompt, label: intake.subject }),
       onOk: async (output, durationMs, attempts) => {
         // Keep only the part of the quote that is really in the message.
         const grounded = groundQuote(displayText(intake), output.quote);

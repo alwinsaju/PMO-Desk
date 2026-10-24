@@ -36,10 +36,11 @@ import {
 import type { AgentTaskStatus } from "./types";
 
 /** Client-side safety net on top of the route's own internal timeout (see
- *  route.ts's REQUEST_TIMEOUT_MS) — deliberately a little longer, so the
- *  route's own timeout is always what actually fires first; this only
- *  guards against the request somehow hanging past that. */
-const CLIENT_TIMEOUT_MS = 65_000;
+ *  route.ts's REQUEST_TIMEOUT_MS / WAKE_TIMEOUT_MS: 180 s when the command has
+ *  to wake the sleeping model) — deliberately a little longer, so the route's
+ *  own timeout is always what actually fires first; this only guards against
+ *  the request somehow hanging past that. */
+const CLIENT_TIMEOUT_MS = 185_000;
 
 type ApplyResult =
   { ok: true; summary: string; targetWindowId?: string } | { ok: false; reason: string };

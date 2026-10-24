@@ -135,9 +135,13 @@ export class ChaserDrafts {
       model: null,
     };
     this.jobs.set(todoId, job);
-    const task: Promise<void> = this.run(job, system, prompt, waitingOn).finally(() =>
-      this.pending.delete(task),
-    );
+    const task: Promise<void> = this.run(
+      job,
+      system,
+      prompt,
+      waitingOn,
+      todo.title,
+    ).finally(() => this.pending.delete(task));
     this.pending.add(task);
     return { ok: true, job };
   }
@@ -152,6 +156,7 @@ export class ChaserDrafts {
     system: string,
     prompt: string,
     waitingOn: string,
+    label: string,
   ): Promise<void> {
     const started = this.now();
     const bytes = Buffer.byteLength(system) + Buffer.byteLength(prompt);
@@ -165,7 +170,7 @@ export class ChaserDrafts {
       });
     };
     try {
-      const reply = await this.generator.draftChaser({ system, prompt });
+      const reply = await this.generator.draftChaser({ system, prompt, label });
       const cleaned = cleanChaserText(reply);
       if (!cleaned.text) {
         const error = new Error("The model returned an empty draft.");

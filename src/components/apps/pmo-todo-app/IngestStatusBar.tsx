@@ -8,6 +8,7 @@ import {
   DotsThreeIcon,
   GearIcon,
   InfoIcon,
+  RobotIcon,
   WarningCircleIcon,
 } from "@phosphor-icons/react";
 import {
@@ -21,6 +22,7 @@ import {
   IconButton,
   Tooltip,
 } from "@/components/ui";
+import { ModelLogDialog } from "@/components/ai-runtime";
 import { cn } from "@/lib/cn";
 import type { PmoState } from "@/lib/pmo/types";
 import { scanNow } from "./api";
@@ -45,14 +47,30 @@ interface PmoToolbarProps {
   onSettled: () => void;
 }
 
-/** The model dot: green with a soft halo when ready, grey when idle, red when
- *  the model is not there. */
+/** The model dot: green with a soft halo when loaded and idle, grey when asleep
+ *  (the normal idle state), amber while it wakes up, the accent while it works,
+ *  red when the model is not there. */
 const DOT: Record<ModelTone, string> = {
   ready:
     "bg-success-dot shadow-[0_0_0_4px_color-mix(in_srgb,var(--color-success-dot)_22%,transparent)]",
   idle: "bg-ink-faint",
+  waking:
+    "bg-amber shadow-[0_0_0_4px_color-mix(in_srgb,var(--color-amber)_20%,transparent)]",
+  working:
+    "bg-accent shadow-[0_0_0_4px_color-mix(in_srgb,var(--color-accent)_22%,transparent)]",
   off: "bg-red shadow-[0_0_0_4px_color-mix(in_srgb,var(--color-red)_18%,transparent)]",
 };
+
+/** Re-renders every second while `active`, for the unload countdown in the chip. */
+function useNow(active: boolean): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!active) return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [active]);
+  return now;
+}
 
 /** How long the result of "Scan now" stays in place of the model status. */
 const SCAN_NOTE_MS = 6000;
@@ -64,7 +82,8 @@ const SCAN_NOTE_MS = 6000;
  * is only information (inbox path, last scan, filtered count) lives in tooltips
  * and in Settings, and anything that needs attention is a notice underneath
  * (`NoticeStack`). The window is a size container: labels drop to icons below
- * ~670 px and the actions fold into one menu below ~510 px.
+ * ~670 px and the actions fold into one menu below ~510 px. The model status is
+ * a button: it opens the model log (what the model is doing this session).
  */
 export function PmoToolbar({
   state,
@@ -79,7 +98,9 @@ export function PmoToolbar({
   const permission = useRemindersStore((s) => s.permission);
   const desktop = useRemindersStore((s) => s.desktop);
   const { ingest } = state;
-  const status = modelStatus(state);
+  const [logOpen, setLogOpen] = useState(false);
+  const counting = state.runtime.state === "ready" && Boolean(state.runtime.unloadsAt);
+  const status = modelStatus(state, useNow(counting));
   const remindersOffered = offersReminderPrompt(permission, desktop);
 
   useEffect(
@@ -112,7 +133,7 @@ export function PmoToolbar({
   const scanned = ingest.lastScanAt
     ? `Last scan ${relativeTime(ingest.lastScanAt, Date.parse(state.serverTime))}`
     : "Not scanned yet";
-  const chipText = scanNote ?? status.progress ?? status.label;
+  const chipText = scanNote ?? status.chip;
 
   return (
     <div className={cn("flex shrink-0 items-center gap-3 pt-2 pb-3", GUTTER_X)}>
@@ -124,23 +145,42 @@ export function PmoToolbar({
         data-scanning={scanning || status.busy}
         className="rounded-card border-line bg-card relative flex h-12 min-w-0 flex-1 items-center gap-3 overflow-hidden border pr-1.5 pl-4"
       >
-        <span
-          role="status"
-          aria-label={`${status.detail}${scanNote ? `. ${scanNote}` : ""}`}
-          title={status.detail}
-          className="text-ink-soft flex min-w-0 flex-1 items-center gap-2.5 text-[13px] font-semibold"
+        <Tooltip
+          className="max-w-72"
+          label={
+            <span className="flex flex-col gap-0.5">
+              <span>{status.detail}</span>
+              <span className="opacity-75">Click to see what the model is doing</span>
+            </span>
+          }
         >
-          <span
-            className={cn(
-              "h-2 w-2 shrink-0 rounded-full",
-              DOT[status.tone],
-              status.busy && "motion-safe:animate-blink",
+          <button
+            type="button"
+            onClick={() => setLogOpen(true)}
+            aria-label={`${status.detail}${scanNote ? `. ${scanNote}` : ""}. Click to see what the model is doing.`}
+            aria-haspopup="dialog"
+            className="text-ink-soft hover:text-ink rounded-chip focus-visible:ring-focus -ml-1 flex h-9 min-w-0 flex-1 cursor-pointer items-center gap-2.5 pl-1 text-left text-[13px] font-semibold outline-none focus-visible:ring-2"
+          >
+            <span
+              className={cn(
+                "h-2 w-2 shrink-0 rounded-full",
+                DOT[status.tone],
+                status.busy && "motion-safe:animate-blink",
+              )}
+            />
+            <span className="hidden min-w-0 truncate @xl:inline">{chipText}</span>
+            {/* While the model is waking or working the chip needs the room. */}
+            {!status.busy && (
+              <span className="text-ink-muted hidden shrink-0 text-[12px] font-medium @6xl:inline">
+                {scanned}
+              </span>
             )}
-          />
-          <span className="hidden min-w-0 truncate @xl:inline">{chipText}</span>
-          <span className="text-ink-muted hidden shrink-0 text-[12px] font-medium @3xl:inline">
-            {scanned}
-          </span>
+          </button>
+        </Tooltip>
+        {/* Announces changes of state to screen readers (the button's own name is
+            the full description). */}
+        <span role="status" className="sr-only">
+          {chipText}
         </span>
 
         {/* Wide: the actions as buttons. */}
@@ -204,6 +244,10 @@ export function PmoToolbar({
               <DropdownMenuLabel className="max-w-64 tracking-normal whitespace-normal normal-case">
                 {scanNote ?? status.detail}
               </DropdownMenuLabel>
+              <DropdownMenuItem onSelect={() => setLogOpen(true)}>
+                <RobotIcon size={14} />
+                What the model is doing
+              </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem disabled={scanning} onSelect={() => void scan()}>
                 <ArrowsClockwiseIcon size={14} weight="bold" />
@@ -229,6 +273,7 @@ export function PmoToolbar({
 
         <i aria-hidden className="scan-bar" />
       </div>
+      <ModelLogDialog open={logOpen} onOpenChange={setLogOpen} />
     </div>
   );
 }

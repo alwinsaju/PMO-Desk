@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getAiRuntimeConfig } from "@/lib/ai-runtime";
+import { getAiRuntimeConfig, startExternalCall } from "@/lib/ai-runtime";
 import type {
   AiCommandAppId,
   AiCommandRequest,
@@ -40,14 +40,19 @@ const {
 } = getAiRuntimeConfig();
 
 /**
- * Real local inference latency varies a LOT on this hardware — a cold
- * model load alone took ~12-18s during manual verification, on top of
- * whatever the actual generation takes. Generous on purpose so a
- * slow-but-alive request doesn't get killed early, while still bounded so
- * a genuinely hung request fails within a predictable window instead of
- * hanging the command bar forever (see CommandBar.tsx's "thinking" state).
+ * Real local inference latency varies a LOT on this hardware. The model
+ * sleeps when idle (it is not pre-loaded and is freed 2 minutes after the
+ * last call), and waking it took ~20-40 s here and can take minutes with a
+ * cold disk cache, on top of whatever the actual generation takes. So a
+ * command that has to wake the model gets WAKE_TIMEOUT_MS and one on a loaded
+ * model REQUEST_TIMEOUT_MS. Generous on purpose so a slow-but-alive request
+ * doesn't get killed early, while still bounded so a genuinely hung request
+ * fails within a predictable window instead of hanging the command bar
+ * forever (see CommandBar.tsx's "thinking" state, whose own timeout is a
+ * little longer than WAKE_TIMEOUT_MS).
  */
 const REQUEST_TIMEOUT_MS = 60_000;
+const WAKE_TIMEOUT_MS = 180_000;
 
 /**
  * Fixed allowlist this route validates every tool-call decision against
@@ -274,12 +279,24 @@ export async function POST(request: Request) {
   const notesEnabled = body.focusedApp.id === "notes";
   const existingNotes = notesEnabled ? (body.notes ?? []) : [];
 
+  // Logged in the model log like every other call, and the source of the
+  // keep_alive: the same short one the runtime sends (2 minutes by default), so
+  // a command does not leave the 12 GB model resident for Ollama's own default.
+  const call = await startExternalCall({
+    task: "command",
+    label: body.focusedApp.title,
+    think: false,
+  });
+
+  const timeoutMs = call.modelLoaded === true ? REQUEST_TIMEOUT_MS : WAKE_TIMEOUT_MS;
+
   const ollamaRequest = {
     model: OLLAMA_MODEL,
     stream: false,
+    keep_alive: call.keepAlive,
     // The shared default (gemma4:12b) is a reasoning model that thinks unless
     // told not to. A short command only adds a few hundred characters of
-    // thinking, but it is unbounded and REQUEST_TIMEOUT_MS leaves no slack on
+    // thinking, but it is unbounded and the timeout leaves no slack on
     // this CPU. Tool calling works with it off (checked against gemma4:12b).
     think: false,
     // Favor consistent tool-use/argument formatting over creative
@@ -311,20 +328,27 @@ export async function POST(request: Request) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(ollamaRequest),
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs),
     });
   } catch (err) {
     const isTimeout = err instanceof Error && err.name === "TimeoutError";
+    call.fail(
+      isTimeout ? "timeout" : "runtime-down",
+      isTimeout
+        ? `No answer within ${timeoutMs / 1000}s.`
+        : `Could not reach Ollama at ${OLLAMA_BASE_URL}.`,
+    );
     return NextResponse.json({
       type: "error",
       kind: isTimeout ? "timeout" : "unreachable",
       message: isTimeout
-        ? `The local AI model didn't respond within ${REQUEST_TIMEOUT_MS / 1000}s. It may be busy — try again.`
+        ? `The local AI model didn't respond within ${timeoutMs / 1000}s. It may be busy — try again.`
         : `Couldn't reach the local AI model at ${OLLAMA_BASE_URL}. Make sure Ollama is running and that ${OLLAMA_MODEL} is pulled.`,
     } satisfies AiCommandResult);
   }
 
   if (!response.ok) {
+    call.fail("runtime-down", `Ollama answered HTTP ${response.status}.`);
     return NextResponse.json({
       type: "error",
       kind: "unreachable",
@@ -336,12 +360,14 @@ export async function POST(request: Request) {
   try {
     payload = await response.json();
   } catch {
+    call.fail("invalid-output", "The reply was not valid JSON.");
     return NextResponse.json({
       type: "error",
       kind: "malformed",
       message: "The local AI model returned a response that wasn't valid JSON.",
     } satisfies AiCommandResult);
   }
+  call.done(payload);
 
   return NextResponse.json(interpretOllamaResponse(payload, existingNotes, body.windows));
 }
