@@ -252,7 +252,9 @@ Scripts print counts only (no names) in their log lines, so the Log tab is safe 
 
 You should not need to reinstall AI OS when a bug is fixed:
 
-* **Screen/layout fixes** (the Tasks app, dialogs, menus) show up on their own: the installed app runs the UI from
+* **Screen/layout fixes** (the Tasks app, dialogs, menus): an installed build runs its bundled copy by default, so
+  these need a reinstall unless you opt into a live mode. Set the user environment variable `AI_OS_MODE=live-dev`
+  (the persistent way; the installer deletes `live-config.json` on every reinstall) and the app runs the UI from
   the project folder (`C:\Projects\AI OS`) and reloads when the code changes. The window title shows
   `AI OS (live-dev: ...)` when this is active; `Help > About AI OS` explains it if it fell back to the bundled copy.
   If a page looks stale, use `View > Reload`, or `Developer > Restart UI server` (this also restarts the backend).

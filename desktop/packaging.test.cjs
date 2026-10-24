@@ -26,6 +26,10 @@ describe("desktop packaging", () => {
     assert.match(main, /app\.setAppUserModelId\(APP_USER_MODEL_ID\)/);
   });
 
+  it("tells the launch resolver whether this is a packaged build", () => {
+    assert.match(main, /packaged: app\.isPackaged/);
+  });
+
   it("loads the preload while keeping the sandbox and context isolation on", () => {
     assert.match(main, /preload: path\.join\(__dirname, "preload\.cjs"\)/);
     assert.match(main, /contextIsolation: true/);

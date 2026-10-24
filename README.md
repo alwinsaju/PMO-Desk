@@ -67,21 +67,26 @@ not need HTTPS, a browser tab, or a terminal.
 
 ### Getting fixes without reinstalling
 
-The installed app does not run its own bundled UI by default. On launch it
-looks for the project folder (`C:\Projects\AI OS`, or `AI_OS_PROJECT_DIR`) and,
-if it has `package.json` and `node_modules`, runs the UI from there:
+An installed (packaged) build defaults to `bundled`, the production server
+shipped with the app. A live mode that runs the UI from the project folder
+(`C:\Projects\AI OS`, or `AI_OS_PROJECT_DIR`; it needs `package.json` and
+`node_modules`) is opt-in. A run from source (`pnpm desktop`, i.e. `electron .`)
+instead defaults to `live-dev` when the project folder is usable.
 
 | Mode | What runs | When to use |
 | --- | --- | --- |
-| `live-dev` (default when the project folder is usable) | `next dev` (Turbopack, as `pnpm dev`) from the project folder, on the first free port from 3100 | Normal use: edits to `src/**` hot-reload in the open window |
+| `live-dev` (default for `pnpm desktop` from source; opt-in for an installed build) | `next dev` (Turbopack, as `pnpm dev`) from the project folder, on the first free port from 3100 | Development: edits to `src/**` hot-reload in the open window |
 | `live-build` | `next start` from the project folder's own `.next` | Run `pnpm build`, then View > Reload (or Developer > Restart UI server) |
-| `bundled` | `next start` from the copy installed with the app | Fallback, and the mode on a machine without the project |
+| `bundled` (default for an installed build) | `next start` from the copy installed with the app | Normal installed use, and the fallback when a live mode is unusable |
 
 Choose the mode and folder with, in order of priority: the environment
 variables `AI_OS_MODE` (`live-dev`, `live-build`, `bundled`) and
 `AI_OS_PROJECT_DIR`; a `live-config.json` next to `AI OS.exe` or in the app's
 `desktop` folder (`{ "projectDir": "C:\\Projects\\AI OS", "mode": "live-dev" }`, both keys
-optional; see `desktop/launch-config.cjs`); then the default. If a live mode
+optional; see `desktop/launch-config.cjs`); then the default. The installer
+removes `live-config.json` on every reinstall, so to keep an installed build in
+a live mode set `AI_OS_MODE` (for example as a persistent user environment
+variable); `live-config.json` only lasts until the next reinstall. If a live mode
 cannot be used (folder missing, no `node_modules/next`, no build for
 `live-build`) or the server does not answer within 90 seconds, AI OS logs the
 reason in `%APPDATA%\ai-os\desktop.log` and starts the bundled app instead

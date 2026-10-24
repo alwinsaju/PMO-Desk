@@ -12,7 +12,18 @@
 // Resolution order, for both the mode and the project directory:
 //   environment (AI_OS_MODE / AI_OS_PROJECT_DIR)
 //   > live-config.json ({ "projectDir": "...", "mode": "..." })
-//   > default (live-dev from DEFAULT_PROJECT_DIR when it is usable, else bundled)
+//   > default
+//
+// The default depends on `packaged` (main.cjs passes app.isPackaged):
+//   - installed/packaged build: `bundled` (production). Running a dev server
+//     from an installed app is slow, so a live mode is strictly opt-in.
+//   - unpackaged run (`pnpm desktop` = `electron .` from source): `live-dev`
+//     from DEFAULT_PROJECT_DIR when it is usable, else bundled.
+//
+// Opting a packaged build into a live mode: the NSIS installer removes
+// live-config.json on every reinstall, so a file next to the exe does not
+// last. AI_OS_MODE (e.g. as a persistent user environment variable) is the
+// durable way; live-config.json works until the next reinstall.
 
 const nodeFs = require("node:fs");
 const nodePath = require("node:path");
@@ -101,7 +112,8 @@ function checkProjectDir(projectDir, mode, { fs = nodeFs, path = nodePath } = {}
  * Decide how to launch the UI server.
  *
  * Returns { mode, requestedMode, projectDir, notes[], fallbackReason }:
- *   - `requestedMode` is what the user/config/default asked for,
+ *   - `requestedMode` is what the user/config/default asked for (the default is
+ *     bundled when `packaged`, else live-dev),
  *   - `mode` is what can actually run (bundled when the request is unusable),
  *   - `fallbackReason` is set when mode differs from requestedMode,
  *   - `notes` are human-readable log lines about how it was resolved.
@@ -113,6 +125,7 @@ function resolveLaunchConfig({
   exeDir,
   desktopDir,
   defaultProjectDir = DEFAULT_PROJECT_DIR,
+  packaged = false,
 } = {}) {
   const notes = [];
   const file = readLiveConfig(configFileCandidates({ exeDir, desktopDir, path }), fs);
@@ -140,7 +153,16 @@ function resolveLaunchConfig({
   }
 
   const explicit = requestedMode !== undefined;
-  if (!requestedMode) requestedMode = "live-dev";
+  if (!requestedMode) {
+    if (packaged) {
+      requestedMode = "bundled";
+      notes.push(
+        "Packaged build: defaulting to bundled (set AI_OS_MODE or live-config.json to opt into a live mode).",
+      );
+    } else {
+      requestedMode = "live-dev";
+    }
+  }
 
   if (requestedMode === "bundled") {
     return { mode: "bundled", requestedMode, projectDir, notes, fallbackReason: null };

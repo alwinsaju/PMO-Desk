@@ -120,6 +120,70 @@ describe("resolveLaunchConfig", () => {
   });
 });
 
+describe("resolveLaunchConfig: packaged builds", () => {
+  const packaged = { packaged: true };
+  const cfgFile = (obj) => ({
+    "C:\\Apps\\AI OS\\live-config.json": JSON.stringify(obj),
+  });
+
+  it("defaults to bundled with a note, whether or not the project is usable", () => {
+    for (const files of [{}, goodProject]) {
+      const r = resolve(files, {}, packaged);
+      assert.equal(r.mode, "bundled");
+      assert.equal(r.requestedMode, "bundled");
+      assert.equal(r.fallbackReason, null);
+      assert.ok(
+        r.notes.includes(
+          "Packaged build: defaulting to bundled (set AI_OS_MODE or live-config.json to opt into a live mode).",
+        ),
+      );
+    }
+  });
+
+  it("honours live-config.json mode live-dev", () => {
+    const r = resolve({ ...goodProject, ...cfgFile({ mode: "live-dev" }) }, {}, packaged);
+    assert.equal(r.mode, "live-dev");
+    assert.equal(r.fallbackReason, null);
+    assert.ok(!r.notes.some((n) => /Packaged build/.test(n)));
+  });
+
+  it("honours AI_OS_MODE=live-build", () => {
+    const r = resolve(withBuild, { AI_OS_MODE: "live-build" }, packaged);
+    assert.equal(r.mode, "live-build");
+  });
+
+  it("an explicit live request that cannot run still falls back to bundled", () => {
+    const r = resolve({}, { AI_OS_MODE: "live-dev" }, packaged);
+    assert.equal(r.mode, "bundled");
+    assert.equal(r.requestedMode, "live-dev");
+    assert.match(r.fallbackReason, /^Requested live-dev unavailable/);
+  });
+
+  it("an invalid mode in the file means the bundled default", () => {
+    const r = resolve({ ...goodProject, ...cfgFile({ mode: "turbo" }) }, {}, packaged);
+    assert.equal(r.mode, "bundled");
+    assert.ok(r.notes.some((n) => /Ignoring launch config mode/.test(n)));
+  });
+
+  it("env beats the file in both directions", () => {
+    const live = { ...withBuild, ...cfgFile({ mode: "live-dev" }) };
+    assert.equal(resolve(live, { AI_OS_MODE: "bundled" }, packaged).mode, "bundled");
+    const bundled = { ...withBuild, ...cfgFile({ mode: "bundled" }) };
+    assert.equal(resolve(bundled, { AI_OS_MODE: "live-build" }, packaged).mode, "live-build");
+    // Same precedence when unpackaged.
+    assert.equal(resolve(live, { AI_OS_MODE: "bundled" }).mode, "bundled");
+    assert.equal(resolve(bundled, { AI_OS_MODE: "live-build" }).mode, "live-build");
+  });
+
+  it("unpackaged keeps the live-dev default (explicit packaged: false too)", () => {
+    assert.equal(resolve(goodProject, {}, { packaged: false }).mode, "live-dev");
+    const missing = resolve({}, {}, { packaged: false });
+    assert.equal(missing.mode, "bundled");
+    assert.equal(missing.requestedMode, "live-dev");
+    assert.ok(!missing.notes.some((n) => /Packaged build/.test(n)));
+  });
+});
+
 describe("devServerArgs / nextServerArgs", () => {
   it("reads the dev script's flags", () => {
     assert.deepEqual(cfg.devServerArgs({ dev: "next dev --turbopack" }), ["--turbopack"]);

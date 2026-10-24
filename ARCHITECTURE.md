@@ -517,8 +517,10 @@ shapes the three parts share (manifest keys, endpoints, JSON files) are fixed in
 time: [`agent-apps/FIRST-RUN-GUIDE.md`](./agent-apps/FIRST-RUN-GUIDE.md).
 
 **Updates without reinstalling:** the Electron shell (`desktop/main.cjs`, mode logic in `desktop/launch-config.cjs`)
-runs the UI as `next dev` from the project folder (`live-dev`; `live-build` and `bundled` are the alternatives, with
-fallback to bundled), so `src/**` edits hot-reload; the backend and the task manifests already load from disk, and
+picks the UI mode: an installed (packaged) build defaults to `bundled`, while an unpackaged run (`pnpm desktop`)
+defaults to `live-dev` (`next dev` from the project folder, falling back to bundled). A packaged build opts into
+`live-dev`/`live-build` via `AI_OS_MODE` (the persistent way, e.g. a user environment variable) or `live-config.json`
+(removed by the installer on every reinstall). In a live mode `src/**` edits hot-reload; the backend and the task manifests already load from disk, and
 the settings gear's "Restart backend" row (`src/lib/backendRestart.ts`, via the `/api/agent-office/{stop,start}`
 routes only) reloads them. Reinstall is needed only for `desktop/` or `package.json` build-config changes.
 

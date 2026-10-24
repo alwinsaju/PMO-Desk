@@ -97,6 +97,7 @@ async function startDesktopApp() {
   launch = launchConfig.resolveLaunchConfig({
     exeDir: path.dirname(process.execPath),
     desktopDir: __dirname,
+    packaged: app.isPackaged,
   });
   desktopLog(`Starting AI OS from ${app.getAppPath()}.`);
   for (const note of launch.notes) {
