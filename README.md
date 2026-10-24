@@ -59,7 +59,7 @@ Create the Windows launcher:
 pnpm desktop:package
 ```
 
-The Version 1 installer is written to `release/AI OS Setup 1.0.0.exe`. Run it
+The Version 2 installer is written to `release/AI OS Setup 2.0.0.exe`. Run it
 once to install AI OS under `%LOCALAPPDATA%\Programs\AI OS` (or select a
 different folder in the installer). The installer creates Start-menu and
 desktop shortcuts; pin either to the Windows taskbar. The installed app does
