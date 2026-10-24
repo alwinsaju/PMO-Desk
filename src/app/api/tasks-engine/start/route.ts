@@ -124,6 +124,8 @@ async function attemptStart(): Promise<StartResult> {
       detached: !DESKTOP_MODE,
       stdio: ["ignore", outFd, errFd],
       windowsHide: true,
+      // Nothing from a user-level Python install may leak into the engine's imports.
+      env: { ...process.env, PYTHONNOUSERSITE: "1" },
     });
     // The child gets its own duplicated handles at spawn time; drop our
     // copies right away so a long-lived dev server doesn't accumulate open

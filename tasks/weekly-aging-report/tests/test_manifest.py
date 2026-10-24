@@ -83,7 +83,7 @@ def test_engine_reads_the_manifest_and_accepts_the_dest():
         "d = t.to_dict();"
         "p = engine._resolve_in_task(t, t.inputs[0]['dest'], roots=('input',));"
         "print(json.dumps({'id': d['id'], 'inputs': [(i['id'], i['required']) for i in d['inputs']],"
-        " 'prepare': d['prepare'], 'schedule': d['schedule'],"
+        " 'prepare': d['prepare'],"
         " 'steps': [(s['id'], s['type']) for s in d['steps']],"
         " 'dest': str(p.relative_to(Path(sys.argv[3]).resolve())).replace(chr(92), '/')}))"
     )
@@ -95,6 +95,6 @@ def test_engine_reads_the_manifest_and_accepts_the_dest():
     assert done.returncode == 0, done.stderr[-800:]
     info = json.loads(done.stdout.strip().splitlines()[-1])
     assert info["id"] == 'weekly-aging-report' and info["inputs"] == [[INPUT_ID, True]]
-    assert info["prepare"] is False and info["schedule"] is None
+    assert info["prepare"] is False
     assert info["steps"] == [[s["id"], s["type"]] for s in PREVIOUS_STEPS]
     assert info["dest"] == DEST

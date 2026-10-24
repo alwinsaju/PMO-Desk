@@ -9,16 +9,17 @@ business logic of its own. The manifest keys and endpoint shapes are in
 
 ## Running it from the repo
 
-Set up a Python venv once (Python 3.11+; the task scripts also need `tasks/requirements.txt`):
+Set up a Python venv once, from the same hash-locked packages the installer ships (Python 3.11+):
 
 ```powershell
 python -m venv tasks-engine\.venv
-tasks-engine\.venv\Scripts\python.exe -m pip install -r tasks-engine\requirements-dev.txt -r tasks\requirements.txt
+tasks-engine\.venv\Scripts\python.exe -m pip install --require-hashes -r scripts\python-runtime\requirements.lock.txt
+tasks-engine\.venv\Scripts\python.exe -m pip install -r tasks-engine\requirements-dev.txt
 ```
 
 `pnpm dev` and `pnpm desktop` start the engine for you (the Tasks app calls
 `POST /api/tasks-engine/start`). Python is picked in this order: `AI_OS_TASKS_PYTHON`
-(path to any interpreter with the two requirements files installed), `tasks-engine/.venv`,
+(path to any interpreter with the packages above installed), `tasks-engine/.venv`,
 then `pythonw`/`python` on PATH.
 
 The engine listens on **127.0.0.1 only**, on the port it is given: `python main.py --port N`.
@@ -35,9 +36,21 @@ instead of starting its own.
 | Variable | Meaning |
 | --- | --- |
 | `AI_OS_TASKS_DIR` | Folder holding the task folders and `shared/`. Default: `../tasks`. |
-| `AI_OS_TASKS_DATA_DIR` | Where run history is kept. Default: `tasks-engine/.data` (gitignored). |
-| `AI_OS_TASKS_PYTHON` | Python used to launch the engine (and so every task step). |
+| `AI_OS_TASKS_DATA_DIR` | Switches on the working copy (see below): tasks run from `<dir>/tasks`, history is `<dir>/history.jsonl`. Unset (the default from the repo): tasks run in place and history is `tasks-engine/.data/history.jsonl` (gitignored). The installed app sets it to a `tasks-engine` folder inside its app-data folder. |
+| `AI_OS_TASKS_PYTHON` | Python used to launch the engine (and so every task step). The installed app points it at the Python it bundles. |
 | `AI_OS_TASKS_ENGINE_URL` | Set on the UI server to use an engine you started by hand. |
+
+## Data and the installed app
+
+The installed task folders are read-only. With `AI_OS_TASKS_DATA_DIR` set, `workcopy.py` keeps a
+working copy under that folder and the engine runs tasks from it: task definitions (`task.json`,
+`scripts/`, `templates/`, `shared/`) are refreshed from the install on every start, while `input/`,
+`output/`, `reference/` and `config/` (seeded once from the shipped defaults) are never overwritten.
+A reinstall therefore keeps everyone's work. See `../tasks/TASK-PLATFORM-CONTRACT.md`.
+
+The Python the installed app runs the engine and every task step with is built by
+`../scripts/build-python-runtime.py` (a pinned embeddable CPython plus the hash-locked wheels in
+`../scripts/python-runtime/requirements.lock.txt`).
 
 ## Tests
 

@@ -22,21 +22,34 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 
+import workcopy
+
 log = logging.getLogger("tasks-engine")
 
 ENGINE_DIR = Path(__file__).resolve().parent
 ROOT_DIR = ENGINE_DIR.parent
 SKIP_DIRS = {"shared"}
 
-# Task folders live in the tasks/ folder beside this engine (in the repo and in
-# the installed app's resources); each task resolves its sibling shared/
-# relative to that folder. Override with AI_OS_TASKS_DIR to look elsewhere.
-TASKS_ROOT = Path(os.environ.get("AI_OS_TASKS_DIR") or ROOT_DIR / "tasks").resolve()
+# Task definitions live in the tasks/ folder beside this engine (in the repo and
+# in the installed app); each task resolves its sibling shared/ relative to its
+# own folder. Override with AI_OS_TASKS_DIR to look elsewhere.
+DEFINITIONS_ROOT = Path(os.environ.get("AI_OS_TASKS_DIR") or ROOT_DIR / "tasks").resolve()
 
-# Append-only audit log of finished/failed runs. Local-only runtime data (the
-# file's own header line says so) kept under DATA_DIR, which is gitignored: it
-# must never be committed.
-DATA_DIR = Path(os.environ.get("AI_OS_TASKS_DATA_DIR") or ENGINE_DIR / ".data").resolve()
+# Where tasks run, and where their inputs, outputs and the run history live:
+# * AI_OS_TASKS_DATA_DIR set (the installed app: the app-data folder): tasks run
+#   from a working copy in <data>/tasks that workcopy.sync() refreshes from the
+#   definitions at start, so the install folder stays read-only and the user's
+#   data survives a reinstall;
+# * unset (running from the repo): tasks run in place, history goes to the
+#   gitignored tasks-engine/.data.
+_data_dir_env = os.environ.get("AI_OS_TASKS_DATA_DIR")
+DATA_DIR = Path(_data_dir_env or ENGINE_DIR / ".data").resolve()
+TASKS_ROOT = DATA_DIR / "tasks" if _data_dir_env else DEFINITIONS_ROOT
+if _data_dir_env:
+    workcopy.sync(DEFINITIONS_ROOT, TASKS_ROOT)
+
+# Append-only audit log of finished/failed runs: local-only runtime data (the
+# file's own header line says so), never committed.
 HISTORY_FILE = DATA_DIR / "history.jsonl"
 HISTORY_HEADER = {
     "_comment": "Tasks engine run history. Local-only runtime data - never commit this file.",
@@ -152,6 +165,26 @@ class Task:
 
 
 tasks: dict[str, Task] = {}
+
+def _step_python() -> str:
+    """The interpreter task steps run with: the engine's own, using the console
+    build (python.exe) when the engine itself runs windowless as pythonw.exe,
+    since a step's stdout and stderr are piped back to the engine."""
+    exe = Path(sys.executable)
+    if exe.name.lower() == "pythonw.exe" and (exe.parent / "python.exe").is_file():
+        return str(exe.parent / "python.exe")
+    return sys.executable
+
+
+STEP_PYTHON = _step_python()
+
+
+def _step_env() -> dict:
+    """Steps (and scripts they start, e.g. a PowerShell step calling Python) find
+    the engine's interpreter in AI_OS_TASKS_PYTHON instead of guessing a venv path.
+    PYTHONNOUSERSITE keeps a user-level Python install out of their imports."""
+    return {**os.environ, "AI_OS_TASKS_PYTHON": STEP_PYTHON, "PYTHONNOUSERSITE": "1"}
+
 
 # Task scripts include console-subsystem Python and PowerShell executables.
 # Suppress the transient console window on Windows while leaving POSIX process
@@ -310,7 +343,7 @@ def run_step(step: dict, cwd: Path, entry_id: str | None, task: "Task | None" = 
     if kind == "python":
         # -u: unbuffered stdout so a long-running step's progress lines stream
         # out as they're printed instead of being held until process exit.
-        cmd = [sys.executable, "-u", step["cmd"], *args]
+        cmd = [STEP_PYTHON, "-u", step["cmd"], *args]
     elif kind == "powershell":
         cmd = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", step["cmd"], *args]
     else:
@@ -323,7 +356,7 @@ def run_step(step: dict, cwd: Path, entry_id: str | None, task: "Task | None" = 
     # stderr is still captured whole (it's short, and only read on failure).
     proc = subprocess.Popen(
         cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        text=True, stdin=subprocess.DEVNULL,
+        text=True, stdin=subprocess.DEVNULL, env=_step_env(),
         **STEP_POPEN_EXTRA_KWARGS,
     )
     out_lines: list[str] = []
@@ -1635,8 +1668,8 @@ _register_upload_route(app, _multipart_installed())
 def _run_prepare(task: Task, cmd_path: Path) -> subprocess.CompletedProcess:
     # No shell, stdin closed, the task's own folder as cwd, the engine's python.
     return subprocess.run(
-        [sys.executable, "-u", str(cmd_path)],
-        cwd=task.folder, stdin=subprocess.DEVNULL, capture_output=True,
+        [STEP_PYTHON, "-u", str(cmd_path)],
+        cwd=task.folder, stdin=subprocess.DEVNULL, capture_output=True, env=_step_env(),
         text=True, encoding="utf-8", errors="replace",
         timeout=PREPARE_TIMEOUT_SECONDS, shell=False,
         **STEP_POPEN_EXTRA_KWARGS,

@@ -185,6 +185,7 @@ async function startUiServer(mode) {
       AI_OS_PMO_DATA_DIR: path.join(app.getPath("userData"), "pmo"),
       // The server mirrors the tray setting here for this shell to read.
       AI_OS_DESKTOP_PREFS_FILE: desktopPrefsFile(),
+      ...tasksEngineEnv(),
       ELECTRON_RUN_AS_NODE: "1",
       NODE_ENV: mode === "live-dev" ? "development" : "production",
     },
@@ -226,6 +227,28 @@ async function startUiServer(mode) {
     mode === "live-dev" ? 15_000 : 1_000,
   );
   ui.ready = true;
+}
+
+/**
+ * What the UI server needs to start the Tasks engine from an installed app: the
+ * Python bundled in resources/python, and a data folder under userData so the
+ * install folder stays read-only and task inputs, outputs and run history
+ * survive a reinstall (tasks-engine/workcopy.py). Unpackaged runs (`pnpm
+ * desktop`) use the repo's own Python and run tasks in place. Either can be
+ * overridden from the environment.
+ */
+function tasksEngineEnv() {
+  if (!app.isPackaged) {
+    return {};
+  }
+  return {
+    AI_OS_TASKS_PYTHON:
+      process.env.AI_OS_TASKS_PYTHON ||
+      path.join(process.resourcesPath, "python", "pythonw.exe"),
+    AI_OS_TASKS_DATA_DIR:
+      process.env.AI_OS_TASKS_DATA_DIR ||
+      path.join(app.getPath("userData"), "tasks-engine"),
+  };
 }
 
 /** Stop the spawned UI server and everything it started (dev mode forks a

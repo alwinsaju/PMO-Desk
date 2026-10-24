@@ -59,7 +59,10 @@ Create the Windows launcher:
 pnpm desktop:package
 ```
 
-The Version 2 installer is written to `release/AI OS Setup 2.0.0.exe`. Run it
+The command first builds the private Python the installer carries (`pnpm runtime:python`; it needs any
+Python 3.9+ with pip on this machine and network access the first time, and reuses its download cache after).
+See `scripts/build-python-runtime.py` for how it is pinned. The Version 2 installer is written to
+`release/AI OS Setup 2.0.0.exe`. Run it
 once to install AI OS under `%LOCALAPPDATA%\Programs\AI OS` (or select a
 different folder in the installer). The installer creates Start-menu and
 desktop shortcuts; pin either to the Windows taskbar. The installed app does

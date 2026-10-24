@@ -528,6 +528,20 @@ defaults to `live-dev` (`next dev` from the project folder, falling back to bund
 the settings gear's "Restart Tasks engine" row (`src/lib/engineRestart.ts`, via the `/api/tasks-engine/{stop,start}`
 routes only) reloads them. Reinstall is needed only for `desktop/` or `package.json` build-config changes.
 
+**Packaging and where task data lives.** The installer is self-contained: `scripts/build-python-runtime.py`
+builds a private Python (the pinned python.org Windows embeddable CPython plus the hash-locked wheels in
+`scripts/python-runtime/requirements.lock.txt`; nothing is compiled) into `build/python-runtime/python`, and
+electron-builder copies it to `resources/python` (`extraResources`). `tasks/` and `tasks-engine/` ship in the
+app folder (`files`), without tests, caches, venvs, `input/`, `output/`, task-level `reference/` or config
+backups. `pnpm desktop:package` builds the runtime first. The install folder stays read-only: in a packaged
+build `desktop/main.cjs` gives the UI server `AI_OS_TASKS_PYTHON` (the bundled `pythonw.exe`) and
+`AI_OS_TASKS_DATA_DIR` (`<userData>\tasks-engine`), and the engine (`tasks-engine/workcopy.py`) runs every task
+from a working copy there: definitions are mirrored from the install at each start, while `input/`, `output/`,
+`reference/` and `config/` (seeded once) and the run history (`history.jsonl`) belong to the user and survive a
+reinstall. Run from the repo, tasks run in place. The UI server (not the Electron main process) still starts
+the engine, in every mode, so dev and desktop share one launcher; main only supplies the settings above and
+stops the engine tree on quit.
+
 ## Local AI runtime (`src/lib/ai-runtime/`)
 
 The firm does not allow internal messages to go to a cloud model, so AI

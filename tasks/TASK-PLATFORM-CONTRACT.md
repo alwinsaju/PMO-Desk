@@ -11,6 +11,18 @@ scripts are headless (stdin closed, never prompt), pass data via files in the ta
 `input/` and `output/`, and use plain args without spaces. `input/`, `output/`, `config/`
 are gitignored (real employee data).
 
+**Where the files live.** In the repo a task runs in place (`tasks/<task>/`). In the installed
+app the task folders are read-only, so the engine runs every task from a working copy at
+`<app data>\tasks-engine\tasks\<task>\` (`tasks-engine/workcopy.py`, switched on by
+`AI_OS_TASKS_DATA_DIR`). At every engine start the definition files (`task.json`, `scripts/`,
+`templates/`, docs, everything in `shared/`) are mirrored from the install, and the task's data is
+left alone: `input/`, `output/`, `reference/` and `config/` are never overwritten or deleted
+(`config/` and `reference/` are seeded once from the shipped defaults), so a reinstall keeps the
+user's work, the persisted inputs and the audit logs. The run history is
+`<app data>\tasks-engine\history.jsonl` and starts empty on a new machine. Every path in a manifest
+or a task script (`dest: input/...`, `optionsFile: output/...`, `../shared`, `../shift-roster/config`)
+is relative to the task folder as the engine sees it, so none of this changes a manifest or a script.
+
 ## 1. Manifest additions (task.json)
 
 All optional; tasks without them behave as today.

@@ -1,4 +1,6 @@
-"""Read-only diff between the agent-generated August workbook and the user's fixed copy.
+"""Read-only diff between a generated workbook and the user's fixed copy.
+
+Usage: python diff_workbooks.py ORIGINAL.xlsx FIXED.xlsx OUT.txt
 
 Compares:
   - Trend analysis: every cell, plus month-block layout (row 1 headers, row 3 totals)
@@ -14,10 +16,7 @@ from collections import Counter, defaultdict
 
 import openpyxl
 
-ORIG = r"C:\Projects\AI OS\tasks\monthly-report-deck\output\Monthly Incidents Trend Analysis - August 2026.xlsx"
-FIXED = r"C:\Users\alsaju\Downloads\Monthly Incidents Trend Analysis - August 2026.xlsx"
-
-OUT = r"C:\Projects\AI OS\tasks\monthly-report-deck\output\workbook-diff.txt"
+ORIG, FIXED, OUT = "", "", ""  # set from the command line in main()
 
 
 def norm(v):
@@ -39,6 +38,10 @@ def load(path):
 
 
 def main():
+    global ORIG, FIXED, OUT
+    if len(sys.argv) != 4:
+        sys.exit(__doc__)
+    ORIG, FIXED, OUT = sys.argv[1:]
     orig = load(ORIG)
     fixed = load(FIXED)
     lines = []

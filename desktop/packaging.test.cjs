@@ -1,8 +1,12 @@
 // Run with `pnpm test`. Guards the packaging facts the reminder feature relies
 // on: the preload and notifier ship in the installer, the Windows toast id
 // matches the installer's appId, and the window keeps its security settings.
+// It also guards what the Tasks engine needs from the installer: the task and
+// engine folders (without anyone's data), the bundled Python and its pins, and
+// the settings main.cjs hands the UI server so tasks never write into the
+// install folder.
 const assert = require("node:assert/strict");
-const { readFileSync } = require("node:fs");
+const { existsSync, readFileSync } = require("node:fs");
 const path = require("node:path");
 const { describe, it } = require("node:test");
 
@@ -63,5 +67,110 @@ describe("desktop packaging", () => {
     assert.match(main, /shouldDisableHardwareAcceleration\(launchedDisplay\)/);
     assert.match(main, /app\.relaunch\(\)/);
     assert.match(main, /app\.releaseSingleInstanceLock\(\)/);
+  });
+
+  describe("Tasks engine contents", () => {
+    const files = pkg.build.files;
+
+    it("ships the task and engine folders", () => {
+      assert.ok(files.includes("tasks/**/*"));
+      assert.ok(files.includes("tasks-engine/**/*"));
+    });
+
+    it("never ships tests, caches, venvs, run history or anyone's inputs and outputs", () => {
+      for (const pattern of [
+        "!tasks-engine/.venv/**",
+        "!tasks-engine/.data/**",
+        "!tasks-engine/tests/**",
+        "!tasks/.venv/**",
+        "!tasks/**/tests/**",
+        "!tasks/**/input/**",
+        "!tasks/**/output/**",
+        "!tasks/*/reference/**",
+        "!tasks/**/config/backups/**",
+        "!**/__pycache__/**",
+      ]) {
+        assert.ok(files.includes(pattern), `${pattern} is excluded`);
+      }
+      // exclusions come after the globs they trim
+      assert.ok(files.indexOf("tasks/**/*") < files.indexOf("!tasks/**/input/**"));
+    });
+
+    it("copies the bundled Python runtime to resources/python", () => {
+      assert.deepEqual(pkg.build.extraResources, [
+        { from: "build/python-runtime/python", to: "python" },
+      ]);
+    });
+
+    it("builds the runtime before packaging", () => {
+      assert.equal(pkg.scripts["runtime:python"], "python scripts/build-python-runtime.py build");
+      assert.match(pkg.scripts["desktop:package"], /^pnpm runtime:python && pnpm build && electron-builder/);
+    });
+
+    it("keeps the asar off so Python can read the task folders", () => {
+      assert.equal(pkg.build.asar, false);
+    });
+
+    it("points the UI server at the bundled Python and a userData data folder, packaged builds only", () => {
+      assert.match(main, /function tasksEngineEnv\(\)/);
+      assert.match(main, /if \(!app\.isPackaged\) \{\s*return \{\};/);
+      assert.match(main, /path\.join\(process\.resourcesPath, "python", "pythonw\.exe"\)/);
+      assert.match(main, /path\.join\(app\.getPath\("userData"\), "tasks-engine"\)/);
+      assert.match(main, /\.\.\.tasksEngineEnv\(\),/);
+    });
+
+    describe("python runtime pins", () => {
+      const pinDir = path.join(root, "scripts", "python-runtime");
+      const pin = JSON.parse(readFileSync(path.join(pinDir, "runtime.json"), "utf8"));
+      const lock = readFileSync(path.join(pinDir, "requirements.lock.txt"), "utf8")
+        .split(/\r?\n/)
+        .filter((line) => line && !line.startsWith("#"));
+      const locked = new Map(
+        lock.map((line) => {
+          const [spec] = line.split(" ");
+          const [name, version] = spec.split("==");
+          return [name, { version, line }];
+        }),
+      );
+
+      it("pins the embeddable interpreter by version, URL and SHA-256", () => {
+        assert.match(pin.python, /^3\.\d+\.\d+$/);
+        assert.equal(pin.url, `https://www.python.org/ftp/python/${pin.python}/python-${pin.python}-embed-amd64.zip`);
+        assert.equal(pin.file, `python-${pin.python}-embed-amd64.zip`);
+        assert.match(pin.sha256, /^[0-9a-f]{64}$/);
+      });
+
+      it("pins every package with a version and a hash", () => {
+        assert.ok(lock.length > 10);
+        for (const [name, { line }] of locked) {
+          assert.match(line, /^[a-z0-9-]+==[\w.]+ --hash=sha256:[0-9a-f]{64}$/, name);
+        }
+      });
+
+      it("covers the engine and task requirements and ships no test tools", () => {
+        const direct = ["tasks-engine/requirements.txt", "tasks/requirements.txt"].flatMap((file) =>
+          readFileSync(path.join(root, file), "utf8")
+            .split(/\r?\n/)
+            .map((line) => /^([A-Za-z0-9_.-]+)==([\w.]+)$/.exec(line.trim()))
+            .filter(Boolean),
+        );
+        assert.ok(direct.length >= 9);
+        for (const [, rawName, version] of direct) {
+          const name = rawName.toLowerCase().replace(/_/g, "-");
+          if (["pytest", "pytest-cov", "coverage", "httpx"].includes(name)) {
+            assert.ok(!locked.has(name), `${name} is a test tool and is not shipped`);
+          } else {
+            assert.equal(locked.get(name)?.version, version, `${name} is locked at ${version}`);
+          }
+        }
+        for (const name of ["pytest", "pytest-cov", "httpx", "coverage"]) {
+          assert.ok(!locked.has(name), name);
+        }
+      });
+
+      it("has the build script next to the pins", () => {
+        assert.ok(existsSync(path.join(root, "scripts", "build-python-runtime.py")));
+      });
+    });
   });
 });

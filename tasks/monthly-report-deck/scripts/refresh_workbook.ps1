@@ -13,7 +13,9 @@ $workbookDirectory = Split-Path -Parent $workbookPath
 New-Item -ItemType Directory -Path $workbookDirectory -Force | Out-Null
 Copy-Item -Path $templatePath -Destination $workbookPath -Force
 
-$pythonPath = (Resolve-Path (Join-Path $PSScriptRoot "..\..\.venv\Scripts\python.exe")).Path
+# The engine hands over the Python it runs with; the shared venv is only the
+# fallback for running this script by hand.
+$pythonPath = if ($env:AI_OS_TASKS_PYTHON) { $env:AI_OS_TASKS_PYTHON } else { (Resolve-Path (Join-Path $PSScriptRoot "..\..\.venv\Scripts\python.exe")).Path }
 $patcherPath = Join-Path $PSScriptRoot "patch_pivot_sources.py"
 $expectedLastRow = [int]$sidecar.incident_count + 1
 & $pythonPath $patcherPath --workbook $workbookPath --last-row $expectedLastRow

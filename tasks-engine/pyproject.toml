@@ -10,4 +10,4 @@ addopts = "-p pytest_cov --cov=. --cov-report=term-missing --cov-fail-under=80"
 [tool.coverage.run]
 # Test modules and pytest fixtures are excluded from the gate; everything else
 # in this folder is measured.
-omit = ["tests/*", "*/tests/*", "conftest.py", "*/conftest.py"]
+omit = ["tests/*", "*/tests/*", ".venv/*", "conftest.py", "*/conftest.py"]

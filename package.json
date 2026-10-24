@@ -9,7 +9,8 @@
     "build": "next build --turbopack",
     "start": "next start",
     "desktop": "electron .",
-    "desktop:package": "pnpm build && electron-builder --win nsis",
+    "runtime:python": "python scripts/build-python-runtime.py build",
+    "desktop:package": "pnpm runtime:python && pnpm build && electron-builder --win nsis",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "node --no-warnings --test \"src/**/*.test.mjs\" \"desktop/*.test.cjs\"",
@@ -75,7 +76,26 @@
       "!.next/trace*",
       "!node_modules/.cache/**",
       "!desktop/*.test.cjs",
-      "!desktop/live-config.json"
+      "!desktop/live-config.json",
+      "tasks-engine/**/*",
+      "tasks/**/*",
+      "!tasks-engine/.venv/**",
+      "!tasks-engine/.data/**",
+      "!tasks-engine/tests/**",
+      "!tasks/.venv/**",
+      "!tasks/**/tests/**",
+      "!tasks/**/input/**",
+      "!tasks/**/output/**",
+      "!tasks/*/reference/**",
+      "!tasks/**/config/backups/**",
+      "!**/__pycache__/**",
+      "!**/.pytest_cache/**"
+    ],
+    "extraResources": [
+      {
+        "from": "build/python-runtime/python",
+        "to": "python"
+      }
     ],
     "win": {
       "target": "nsis"
