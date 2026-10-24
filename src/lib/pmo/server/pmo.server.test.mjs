@@ -27,6 +27,8 @@ import {
   updateConfig,
 } from "./actions.ts";
 import { MAX_PARSE_FAILURES } from "./ingest.ts";
+import { submitManualIntake } from "./manual.ts";
+import { purgeExpired } from "./retention.ts";
 import { Mutex, writeJsonAtomic } from "./fsx.ts";
 import { createPmo } from "./create.ts";
 import { createStubGenerator } from "./stubGenerator.ts";
@@ -763,9 +765,10 @@ describe("config", () => {
     await updateConfig(pmo, {
       blockedDomains: ["Takeda.com", "other.example", "takeda.com"],
     });
-    const next = (await updateConfig(pmo, { allowedTenantIds: ["AAAA"] })).config;
+    const tenant = "0A1B2C3D-0000-4000-8000-123456789ABC";
+    const next = (await updateConfig(pmo, { allowedTenantIds: [tenant] })).config;
     assert.deepEqual(next.blockedDomains, ["takeda.com", "other.example"]);
-    assert.deepEqual(next.allowedTenantIds, ["aaaa"]);
+    assert.deepEqual(next.allowedTenantIds, [tenant.toLowerCase()]);
     assert.deepEqual(next.allowedSenderDomains, ["deloitte.com"]);
     assert.equal(
       (await updateConfig(pmo, { inboxDir: "C:\\elsewhere" })).config.inboxDir,
@@ -779,6 +782,374 @@ describe("config", () => {
     await writeFile(path.join(dataDir, "config.json"), "{ broken");
     const config = await pmo.store.loadConfig();
     assert.deepEqual(config.blockedDomains, ["takeda.com"]);
+  });
+});
+
+describe("paste intake (POST /api/pmo/intake/manual)", () => {
+  const paste = (patch = {}) => ({
+    subject: "PMO weekly sync",
+    from: "Jordan Sample <jordan.sample@deloitte.com>",
+    body: "Please update the resourcing tracker before our call tomorrow.",
+    origin: "teams",
+    ...patch,
+  });
+  const files = () => readdir(inboxDir);
+
+  it("drops one source:manual file into the same inbox, atomically, named like the other producers", async () => {
+    clock = new Date("2026-10-24T10:11:12.000Z");
+    const result = await submitManualIntake(pmo, paste());
+    assert.equal(result.ok, true);
+    assert.equal(result.duplicate, false);
+    assert.equal(result.wouldFilter, null);
+    assert.match(result.fileName, /^manual-20261024T101112Z-[0-9a-f]{8}\.json$/);
+    assert.deepEqual(await files(), [result.fileName], "no .tmp file is left behind");
+
+    const doc = JSON.parse(await readFile(path.join(inboxDir, result.fileName), "utf8"));
+    assert.equal(doc.schema, "pmo-intake/1");
+    assert.equal(doc.source, "manual");
+    assert.equal(doc.producer, "manual-paste");
+    assert.match(doc.sourceId, /^manual-[0-9a-f]{32}$/);
+    assert.equal(doc.receivedAt, "2026-10-24T10:11:12.000Z");
+    assert.deepEqual(doc.sender, {
+      name: "Jordan Sample",
+      address: "jordan.sample@deloitte.com",
+    });
+    assert.deepEqual(doc.context, { origin: "teams" });
+    assert.equal(doc.body.text, paste().body);
+  });
+
+  it("flows through the ordinary ingest: queued, with an immutable snapshot, and Teams default-deny does not apply", async () => {
+    // Teams is default-deny with an empty allowlist...
+    assert.deepEqual((await pmo.store.loadConfig()).allowedTenantIds, []);
+    const result = await submitManualIntake(pmo, paste());
+    // ...yet the paste passes: the user vouches for it.
+    const old = new Date(clock.getTime() - 60_000);
+    await utimes(path.join(inboxDir, result.fileName), old, old);
+    const report = await scanAndStructure();
+    assert.equal(report.ingested, 1);
+    assert.equal(report.filtered, 0);
+    const [proposal] = await proposals();
+    assert.equal(proposal.summary.source, "manual");
+    assert.equal(proposal.status, "ready");
+    const raw = await pmo.store.readRaw(proposal.intakeId);
+    assert.equal(raw.intake.context.origin, "teams");
+    assert.deepEqual(await files(), []);
+  });
+
+  it("still applies the blocked domains and terms, and says so up front", async () => {
+    const age = async (name) => {
+      const old = new Date(clock.getTime() - 60_000);
+      await utimes(path.join(inboxDir, name), old, old);
+    };
+    await updateConfig(pmo, { blockedTerms: ["project falcon"] });
+
+    const sender = await submitManualIntake(
+      pmo,
+      paste({ from: "Casey <casey@takeda.com>" }),
+    );
+    assert.match(sender.wouldFilter, /blocked domain \(takeda\.com\)/);
+    const term = await submitManualIntake(pmo, paste({ body: "About Project Falcon." }));
+    assert.match(term.wouldFilter, /blocked term/);
+    const inText = await submitManualIntake(
+      pmo,
+      paste({ body: "From: Casey <casey@takeda.com>\nPlease send the plan." }),
+    );
+    assert.match(
+      inText.wouldFilter,
+      /Pasted text mentions an address on a blocked domain/,
+    );
+    for (const name of await files()) await age(name);
+
+    const report = await pmo.ingestor.scan();
+    assert.equal(report.filtered, 3);
+    assert.equal(report.ingested, 0);
+    assert.deepEqual((await pmo.store.listQuarantine()).map((q) => q.code).sort(), [
+      "blocked-domain",
+      "blocked-domain",
+      "blocked-term",
+    ]);
+    assert.equal((await proposals()).length, 0);
+  });
+
+  it("recognises the same text again (whatever its case or spacing) as one item", async () => {
+    const first = await submitManualIntake(pmo, paste());
+    const old = new Date(clock.getTime() - 60_000);
+    await utimes(path.join(inboxDir, first.fileName), old, old);
+    await scanAndStructure();
+    assert.equal((await proposals()).length, 1);
+
+    const again = await submitManualIntake(
+      pmo,
+      paste({
+        body: "  PLEASE update the   resourcing tracker before our call tomorrow.",
+      }),
+    );
+    assert.equal(again.ok, true);
+    assert.equal(again.duplicate, true);
+    assert.equal(again.fileName, null);
+    assert.deepEqual(await files(), [], "nothing was written for a duplicate");
+    assert.equal((await proposals()).length, 1);
+
+    const other = await submitManualIntake(pmo, paste({ body: "A different message." }));
+    assert.equal(other.duplicate, false);
+  });
+
+  it("validates, caps the text, and never invents the inbox folder", async () => {
+    for (const bad of [
+      {},
+      { body: "   " },
+      { body: "x".repeat(100_001) },
+      { body: "ok", subject: "s".repeat(301) },
+      { body: "ok", link: "javascript:alert(1)" },
+      { body: "ok", origin: "slack" },
+      "not an object",
+    ]) {
+      const result = await submitManualIntake(pmo, bad);
+      assert.equal(result.ok, false, JSON.stringify(bad).slice(0, 60));
+      assert.ok(result.reason);
+    }
+    assert.deepEqual(await files(), []);
+
+    await rm(inboxDir, { recursive: true, force: true });
+    const missing = await submitManualIntake(pmo, paste());
+    assert.equal(missing.ok, false);
+    assert.match(missing.reason, /inbox folder was not found/);
+    assert.equal(existsSync(inboxDir), false, "the folder was not created");
+    await mkdir(inboxDir); // so afterEach can clean up
+  });
+});
+
+describe("retention", () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  const setClock = (days) => {
+    clock = new Date(t0.getTime() + days * DAY);
+  };
+  let t0;
+  const intakeWith = async (id) => ({
+    ...(await example("outlook-task.json")),
+    sourceId: id,
+  });
+  /** Ingest + structure one message; returns its proposal. */
+  async function ready(id) {
+    await drop(`${id}.json`, await intakeWith(id));
+    await scanAndStructure();
+    for (const proposal of await proposals()) {
+      const raw = await pmo.store.readRaw(proposal.intakeId);
+      if (raw?.intake.sourceId === id) return proposal;
+    }
+    throw new Error(`no proposal for ${id}`);
+  }
+  const rawIds = async () => (await readdir(path.join(dataDir, "raw"))).sort();
+  const lines = async (file) =>
+    (await readFile(path.join(dataDir, "logs", file), "utf8"))
+      .split("\n")
+      .filter((l) => l.startsWith("{"))
+      .map((l) => JSON.parse(l));
+
+  beforeEach(() => {
+    t0 = new Date("2026-06-01T10:00:00.000Z");
+    clock = t0;
+  });
+
+  async function fourDecisions() {
+    const open = await ready("open-1");
+    const done = await ready("done-1");
+    const rejected = await ready("rejected-1");
+    const undecided = await ready("undecided-1");
+    const toDraft = (p) => effectiveDraft(p);
+    const o = await approveProposal(pmo, open.id, { draft: toDraft(open) });
+    const d = await approveProposal(pmo, done.id, { draft: toDraft(done) });
+    await patchTodo(pmo, d.todo.id, { status: "done" });
+    await rejectProposal(pmo, rejected.id);
+    return { open, done, rejected, undecided, openTodo: o.todo, doneTodo: d.todo };
+  }
+
+  it("deletes only the text of closed to-dos and rejected items, only after retentionDays, never an open to-do's", async () => {
+    const { open, done, rejected, undecided } = await fourDecisions();
+    assert.equal((await rawIds()).length, 4);
+
+    // 80 days later: nothing is old enough yet.
+    setClock(80);
+    let report = await purgeExpired(pmo.store, { now: clock, retentionDays: 90 });
+    assert.equal(report.rawDeleted, 0);
+    assert.equal((await rawIds()).length, 4);
+
+    // 100 days later: the closed to-do's and the rejected item's text go.
+    setClock(100);
+    report = await purgeExpired(pmo.store, { now: clock, retentionDays: 90 });
+    assert.equal(report.rawDeleted, 2);
+    assert.deepEqual(report.rawKept, { openTodo: 1, undecided: 1, unknown: 0 });
+    assert.deepEqual(
+      await rawIds(),
+      [`${open.intakeId}.json`, `${undecided.intakeId}.json`].sort(),
+    );
+    assert.equal(await pmo.store.readRaw(done.intakeId), null);
+    assert.equal(await pmo.store.readRaw(rejected.intakeId), null);
+
+    // The records themselves stay (only the text is removed), and a year on the
+    // open to-do's message is still there.
+    assert.equal((await pmo.store.listTodos()).length, 2);
+    assert.equal((await proposals()).length, 4);
+    setClock(400);
+    report = await purgeExpired(pmo.store, { now: clock, retentionDays: 90 });
+    assert.equal(report.rawDeleted, 0);
+    assert.equal((await rawIds()).length, 2);
+    assert.ok(await pmo.store.readRaw(open.intakeId));
+    assert.ok(await pmo.store.readRaw(undecided.intakeId));
+  });
+
+  it("keeps the text when a to-do is reopened, and counts retention from when it was closed", async () => {
+    const { doneTodo, done } = await fourDecisions();
+    setClock(60);
+    await patchTodo(pmo, doneTodo.id, { status: "open" });
+    setClock(100);
+    let report = await purgeExpired(pmo.store, { now: clock, retentionDays: 90 });
+    assert.ok(await pmo.store.readRaw(done.intakeId), "open again, so kept");
+    assert.equal(report.rawDeleted, 1, "only the rejected one");
+
+    await patchTodo(pmo, doneTodo.id, { status: "cancelled" });
+    setClock(180); // 80 days after it was cancelled
+    report = await purgeExpired(pmo.store, { now: clock, retentionDays: 90 });
+    assert.ok(await pmo.store.readRaw(done.intakeId));
+    setClock(200); // 100 days after
+    report = await purgeExpired(pmo.store, { now: clock, retentionDays: 90 });
+    assert.equal(await pmo.store.readRaw(done.intakeId), null);
+    assert.equal(report.rawDeleted, 1);
+  });
+
+  it("drops log lines older than retentionDays and keeps the newer ones", async () => {
+    await mkdir(path.join(dataDir, "logs"), { recursive: true });
+    const at = (days) => new Date(t0.getTime() + days * DAY).toISOString();
+    const row = (days, extra = {}) => JSON.stringify({ ts: at(days), ...extra });
+    await writeFile(
+      path.join(dataDir, "logs", "ingest.jsonl"),
+      [
+        row(-100, { n: 1 }),
+        row(-95, { n: 2 }),
+        row(-10, { n: 3 }),
+        "not json at all",
+        row(-1, { n: 4 }),
+      ].join("\n") + "\n",
+    );
+    await writeFile(
+      path.join(dataDir, "logs", "ai-calls.jsonl"),
+      [row(-91, { n: 1 }), row(-5, { n: 2 })].join("\n") + "\n",
+    );
+    const report = await purgeExpired(pmo.store, { now: clock, retentionDays: 90 });
+    assert.equal(report.logLinesDropped, 3);
+    assert.deepEqual(
+      (await lines("ingest.jsonl")).filter((l) => l.n).map((l) => l.n),
+      [3, 4],
+    );
+    assert.equal(
+      (await readFile(path.join(dataDir, "logs", "ingest.jsonl"), "utf8")).includes(
+        "not json at all",
+      ),
+      true,
+      "a line it cannot read is kept, not guessed at",
+    );
+    assert.deepEqual(
+      (await lines("ai-calls.jsonl")).map((l) => l.n),
+      [2],
+    );
+    // No temp files left in logs/.
+    assert.deepEqual((await readdir(path.join(dataDir, "logs"))).sort(), [
+      "ai-calls.jsonl",
+      "ingest.jsonl",
+    ]);
+  });
+
+  it("clears rejected files and quarantine records after 30 days, whatever retentionDays is larger", async () => {
+    const stamp = (days) =>
+      new Date(t0.getTime() + days * DAY).toISOString().replace(/[:.]/g, "-");
+    const dir = path.join(dataDir, "rejected-files");
+    for (const [days, name] of [
+      [-40, "old"],
+      [-10, "recent"],
+    ]) {
+      const base = `${stamp(days)}_${name}.json`;
+      await writeFile(path.join(dir, base), "{ broken");
+      await writeFile(path.join(dir, `${base}.reason.txt`), "not json\n");
+    }
+    const q = (id, days) => ({
+      id,
+      at: new Date(t0.getTime() + days * DAY).toISOString(),
+      code: "blocked-domain",
+      reason: "x",
+      summary: {
+        source: "outlook",
+        subject: id,
+        senderName: null,
+        senderAddress: null,
+        receivedAt: t0.toISOString(),
+        link: null,
+      },
+      tenantId: null,
+      chatId: null,
+    });
+    await pmo.store.writeQuarantine(q("in_0000000000000000aaaa", -40));
+    await pmo.store.writeQuarantine(q("in_0000000000000000bbbb", -10));
+
+    const report = await purgeExpired(pmo.store, { now: clock, retentionDays: 90 });
+    assert.equal(report.rejectedFilesDeleted, 1);
+    assert.equal(report.quarantineDeleted, 1);
+    assert.deepEqual(
+      (await readdir(dir)).sort(),
+      [`${stamp(-10)}_recent.json`, `${stamp(-10)}_recent.json.reason.txt`].sort(),
+      "the reason file goes with its file",
+    );
+    assert.deepEqual(
+      (await pmo.store.listQuarantine()).map((r) => r.id),
+      ["in_0000000000000000bbbb"],
+    );
+
+    // A short retention tightens the 30 days.
+    const tight = await purgeExpired(pmo.store, { now: clock, retentionDays: 7 });
+    assert.equal(tight.rejectedFilesDeleted, 1);
+    assert.equal(tight.quarantineDeleted, 1);
+    assert.deepEqual(await readdir(dir), []);
+  });
+
+  it("is idempotent, and never touches the audit trail, the dedupe index or the config", async () => {
+    await fourDecisions();
+    setClock(200);
+    const auditBefore = await readFile(path.join(dataDir, "audit.jsonl"), "utf8");
+    const seenBefore = await readFile(path.join(dataDir, "state", "seen.json"), "utf8");
+    const configBefore = await readFile(path.join(dataDir, "config.json"), "utf8");
+
+    const first = await purgeExpired(pmo.store, { now: clock, retentionDays: 90 });
+    assert.ok(first.rawDeleted > 0 || first.logLinesDropped > 0);
+    const second = await purgeExpired(pmo.store, { now: clock, retentionDays: 90 });
+    assert.equal(second.rawDeleted, 0);
+    assert.equal(second.logLinesDropped, 0);
+    assert.equal(second.rejectedFilesDeleted, 0);
+    assert.equal(second.quarantineDeleted, 0);
+    assert.deepEqual(second.errors, []);
+
+    assert.equal(await readFile(path.join(dataDir, "audit.jsonl"), "utf8"), auditBefore);
+    assert.equal(
+      await readFile(path.join(dataDir, "state", "seen.json"), "utf8"),
+      seenBefore,
+    );
+    assert.equal(await readFile(path.join(dataDir, "config.json"), "utf8"), configBefore);
+    // A message whose text was purged is still a duplicate if it arrives again.
+    await drop("again.json", await intakeWith("rejected-1"));
+    assert.equal((await pmo.ingestor.scan()).duplicates, 1);
+  });
+
+  it("uses 90 days when the setting is missing, and is exposed through the config", async () => {
+    assert.equal((await pmo.store.loadConfig()).retentionDays, 90);
+    const result = await updateConfig(pmo, { retentionDays: 30 });
+    assert.equal(result.config.retentionDays, 30);
+    assert.equal((await pmo.store.loadConfig()).retentionDays, 30);
+    assert.equal((await updateConfig(pmo, { retentionDays: 2 })).ok, false);
+    assert.equal((await pmo.store.loadConfig()).retentionDays, 30);
+    const report = await purgeExpired(pmo.store, { now: clock });
+    assert.equal(
+      report.retentionDays,
+      90,
+      "an unspecified value falls back to the default",
+    );
   });
 });
 

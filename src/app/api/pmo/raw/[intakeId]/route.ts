@@ -13,6 +13,10 @@ export async function GET(
     const record = await pmo.store.readRaw(intakeId);
     return record
       ? { ok: true, record }
-      : { ok: false, reason: "Original message not found." };
+      : {
+          ok: false,
+          reason:
+            "Original message not found. The text of a closed to-do or a rejected item is removed after the retention period.",
+        };
   });
 }

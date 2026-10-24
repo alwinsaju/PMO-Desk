@@ -23,6 +23,8 @@ export interface Pmo {
   ingestor: Ingestor;
   worker: StructuringWorker;
   now: () => Date;
+  /** The inbox folder for a config (env override applied). */
+  inboxDir: (config: PmoConfig) => string;
 }
 
 export type ActionResult<T extends object = object> =
@@ -309,7 +311,10 @@ export function updateConfig(
       me: patch.me
         ? { names: cleanList(patch.me.names, false), emails: cleanList(patch.me.emails) }
         : current.me,
+      retentionDays: patch.retentionDays ?? current.retentionDays,
     };
+    if (next.me.names.length === 0)
+      return fail("Invalid config: me.names: Add at least one name.");
     await pmo.store.saveConfig(next);
     await pmo.store.audit("config", { changed: Object.keys(patch) });
     return { ok: true as const, config: next };

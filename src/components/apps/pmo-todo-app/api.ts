@@ -9,6 +9,7 @@ import type {
   Todo,
   TodoDraft,
 } from "@/lib/pmo/types";
+import type { ManualPasteInput } from "@/lib/pmo/manualIntake";
 import type { TodoPatch } from "@/lib/pmo/todoLogic";
 
 const BASE = "/api/pmo";
@@ -68,3 +69,10 @@ export const patchTodo = (id: string, patch: TodoPatch) =>
 
 export const updateConfig = (patch: PmoConfigPatch) =>
   call<{ config: PmoConfig }>("/config", "PUT", patch);
+
+export const submitPaste = (paste: ManualPasteInput) =>
+  call<{ duplicate: boolean; fileName: string | null; wouldFilter: string | null }>(
+    "/intake/manual",
+    "POST",
+    paste,
+  );

@@ -5,6 +5,7 @@ import type { Pmo } from "./actions.ts";
 import { Ingestor } from "./ingest.ts";
 import { resolveInboxDir } from "./paths.ts";
 import { Store } from "./store.ts";
+import type { PmoConfig } from "../types.ts";
 import { StructuringWorker, type Generator } from "./structure.ts";
 
 export async function createPmo(options: {
@@ -17,9 +18,11 @@ export async function createPmo(options: {
   const store = new Store(options.dataDir);
   await store.init();
   const now = options.now ?? (() => new Date());
+  const inboxDir = (config: PmoConfig) =>
+    options.inboxDir ?? resolveInboxDir(config.inboxDir);
   const ingestor = new Ingestor({
     store,
-    inboxDir: (config) => options.inboxDir ?? resolveInboxDir(config.inboxDir),
+    inboxDir,
     now: () => now().getTime(),
   });
   const worker = new StructuringWorker({
@@ -27,5 +30,5 @@ export async function createPmo(options: {
     generator: options.generator,
     now: () => now().getTime(),
   });
-  return { store, ingestor, worker, now };
+  return { store, ingestor, worker, now, inboxDir };
 }

@@ -65,6 +65,19 @@ export function writeJsonAtomic(file: string, value: unknown): Promise<void> {
   return next;
 }
 
+/** Replace a text file in one step (temp file, then rename). Used to rewrite a
+ *  log without a reader or a crash ever seeing half of it. */
+export async function writeTextAtomic(file: string, text: string): Promise<void> {
+  const temp = `${file}.${process.pid}.${randomBytes(4).toString("hex")}.tmp`;
+  try {
+    await writeFile(temp, text, "utf8");
+    await renameWithRetry(temp, file);
+  } catch (error) {
+    await unlink(temp).catch(() => undefined);
+    throw error;
+  }
+}
+
 /** null when the file doesn't exist; throws on unreadable/corrupt JSON. */
 export async function readJson<T = unknown>(file: string): Promise<T | null> {
   let text: string;

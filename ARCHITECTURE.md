@@ -481,11 +481,13 @@ A built-in app (`"pmo-todo"`, the sixth dock entry) for the PMO lead. Raw
 Teams messages and Outlook emails arrive as JSON files in an inbox folder; the
 **local** model (through `src/lib/ai-runtime`, never a cloud API) turns each
 into a to-do *proposal*; proposals wait in a **Review Queue**, and only a human
-**Approve** creates a to-do. **Phase 1 sends nothing anywhere** (no email, no
+**Approve** creates a to-do. **The app sends nothing anywhere** (no email, no
 Teams post, no notification) and never calls agent-office: no code under
 `src/lib/pmo`, `src/app/api/pmo` or the app imports
-`src/app/api/agent-office/*`. Phase 2 (Outlook COM producer) and the
-notification phase are not built.
+`src/app/api/agent-office/*`. Phase 1 was the inbox, filter, model and review
+queue; phase 2 added the read-only Outlook COM producer, the Paste dialog, the
+Settings dialog, the Filtered-tab guidance and the retention purge (below). The
+notification phase is not built.
 
 **Runs inside the existing Next server.** No new process and no cloud store.
 `ensureIngest()` (`server/service.ts`) starts the inbox poller and the
@@ -496,7 +498,12 @@ structuring worker lazily on the first `/api/pmo/*` call and keeps them on
 pmo-intake/             The producer contract: PMO-INTAKE-CONTRACT.md,
                         intake.v1.schema.json, examples/, PA-FLOW-RECIPES.md
                         (click-by-click Power Automate flows, standard
-                        connectors only), scripts/New-SampleIntake.ps1.
+                        connectors only), HOW-TO-GET-STARTED.md (the whole
+                        set-up in order), scripts/New-SampleIntake.ps1, and
+                        the Outlook producer: scripts/Export-OutlookToInbox.ps1
+                        (READ-ONLY classic-Outlook COM export) with
+                        scripts/OutlookMapping.ps1 (the mapping, on plain
+                        objects) and scripts/tests/ (fake-Outlook harnesses).
 src/lib/pmo/            Pure logic, one co-located *.test.mjs per area
                         (`pnpm test` imports the .ts directly, so imports
                         between these files carry the .ts extension, enabled by
@@ -529,12 +536,21 @@ src/lib/pmo/            Pure logic, one co-located *.test.mjs per area
     structure.ts          FIFO queue, concurrency 1, injectable `Generator`.
     actions.ts            The ONLY code that creates/changes to-dos: approve,
                           reject, retry, manual create, patch, config.
+    manual.ts             POST /api/pmo/intake/manual: validates a paste and
+                          writes a source:"manual" pmo-intake/1 file into the
+                          inbox (temp, then rename; sourceId = content hash;
+                          a duplicate writes nothing). manualIntake.ts (client-
+                          safe, one level up) holds the zod schema and builder.
+    retention.ts          The purge (see Retention below), run from service.ts
+                          once at start and every 24 h; injectable clock.
+    bodyCap.ts            Size-capped request body reader (512 KB for a paste).
     originCheck.ts, http.ts  Origin/Host guard + { ok, reason? } envelope.
     aiGenerator.ts        The real model (src/lib/ai-runtime generateJson,
                           `think: false`, 240 s timeout, clamped below 280 s)
                           and the runtime summary for the status bar.
     stubGenerator.ts      Fake model for tests / `PMO_AI_STUB=1`.
-src/app/api/pmo/        state, ingest/scan, queue/[id] (PATCH) + approve|reject|retry,
+src/app/api/pmo/        state, ingest/scan, intake/manual (POST, the Paste
+                        dialog), queue/[id] (PATCH) + approve|reject|retry,
                         raw/[intakeId], todos, todos/[id], config. Each route
                         checks Origin/Host first (raw message text is served),
                         touches only local files, replies HTTP 200 with
@@ -555,11 +571,45 @@ index), `logs/ingest.jsonl`, `logs/ai-calls.jsonl` (no message text),
 there, OneDrive syncs it), overridden by env `AI_OS_PMO_INBOX_DIR`. **Use temp
 folders for every test**: `AI_OS_PMO_INBOX_DIR` + `AI_OS_PMO_DATA_DIR`, and
 `PMO_AI_STUB=1` to skip the model. Files younger than 3 s and larger than 1 MB
-are skipped; the app deletes each file it has dealt with and never writes into
-the folder. **Teams is filtered by default** until a tenant ID or chat is
+are skipped; the app deletes each file it has dealt with, and its only write
+into the folder is the Paste button's file (one more producer, same atomic
+hand-off). **Teams is filtered by default** until a tenant ID or chat is
 allowlisted (the tenant GUID ships empty): the status bar says so, a filtered
-Teams item has an *Allow this tenant* button, and `config.json` can be edited
-by hand (see PMO-INTAKE-CONTRACT.md).
+Teams item has an *Allow this tenant* button, and the tenant goes in Settings
+too (see PMO-INTAKE-CONTRACT.md).
+
+**Producers** (all write the same `pmo-intake/1` file): Power Automate flows
+(recipes; Teams trigger: tenant id, `LinkToMessage` and `messagePayload.id` are
+confirmed, body/sender-name paths inside `messagePayload` are not), the Outlook
+script, and Paste. The Outlook script (`Export-OutlookToInbox.ps1`) is a
+read-only COM export from classic Outlook; "new Outlook" has no COM. It keeps
+its own seen-file keyed by Message-ID, resolves Exchange X500 addresses to SMTP,
+skips non-mail items, and is guarded by a test that fails if its text contains
+any member that could change a mail (`outlookExport.test.mjs`, which also runs
+the mapping and the script's control flow against fake Outlook objects under
+`powershell.exe`, never real Outlook). **Paste** is user-vouched: it still gets
+the blocked-domain/term rules (and a blocked domain anywhere in the pasted text
+counts) but not the Teams default-deny.
+
+**UI additions**: the status bar has *Paste* and a gear. *Paste*
+(`PasteIntakeDialog`) validates with the same zod schema as the server;
+*Settings* (`SettingsDialog`, form logic in `settingsForm.ts`) edits
+`config.json` through GET/PUT `/api/pmo/config`, validated by the same
+`PmoConfigPatchSchema` (GUID tenant ids, domains, emails, retention bounds) with
+inline per-line errors, and shows the inbox and data paths read-only. The
+Filtered tab filters by reason and, per item, offers the one-click rule change
+(*Allow this tenant* / *Allow \<domain\>*) and the steps to resend. It cannot
+"move to review": the text of a filtered message is discarded at filter time on
+purpose, and the tab says so.
+
+**Retention** (`server/retention.ts`; `retentionDays` in `config.json`, default
+90): logs older than that are dropped line by line; the saved text
+(`raw/<id>.json`) of a closed to-do (done/cancelled) or a rejected proposal goes
+once that decision is older than that; `quarantine/` and `rejected-files/` go
+after 30 days. Never touched: raw text of an open to-do or an undecided
+proposal, the proposal/to-do records, `audit.jsonl`, `state/seen.json`, config.
+Idempotent, unit-tested with a fake clock. It starts with the service, i.e. on
+the first `/api/pmo/*` call after the server starts.
 
 **Review gate**: nothing but `POST /api/pmo/queue/[id]/approve` (or a manual
 create, where the human is the reviewer) writes `todos/`. A proposal keeps the

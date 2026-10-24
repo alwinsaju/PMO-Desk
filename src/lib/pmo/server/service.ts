@@ -8,6 +8,7 @@ import type { Pmo } from "./actions.ts";
 import { createPmo } from "./create.ts";
 import type { Ingestor } from "./ingest.ts";
 import { resolveDataDir } from "./paths.ts";
+import { PURGE_INTERVAL_MS, purgeExpired } from "./retention.ts";
 import { SCAN_INTERVAL_MS } from "./state.ts";
 import { createStubGenerator } from "./stubGenerator.ts";
 import type { RuntimeSummary } from "../types.ts";
@@ -51,6 +52,20 @@ async function startService(): Promise<PmoService> {
   }, scanIntervalMs);
   timer.unref();
   void scanNow().catch((error) => console.error("[pmo] first scan failed:", error));
+
+  // Retention (retention.ts): once at start, then daily. Idempotent, and a
+  // failure only means the next pass tries again.
+  const purge = async () => {
+    const config = await pmo.store.loadConfig();
+    await purgeExpired(pmo.store, {
+      now: pmo.now(),
+      retentionDays: config.retentionDays,
+    });
+  };
+  void purge().catch((error) => console.error("[pmo] purge failed:", error));
+  setInterval(() => {
+    purge().catch((error) => console.error("[pmo] purge failed:", error));
+  }, PURGE_INTERVAL_MS).unref();
 
   return {
     ...pmo,

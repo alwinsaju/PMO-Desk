@@ -42,7 +42,18 @@ import {
   isOverdue,
   allCheckpointsComplete,
 } from "./todoLogic.ts";
-import { AiStructuredSchema, IntakeSchema, PmoConfigSchema } from "./types.ts";
+import {
+  AiStructuredSchema,
+  IntakeSchema,
+  PmoConfigPatchSchema,
+  PmoConfigSchema,
+} from "./types.ts";
+import {
+  MAX_PASTE_CHARS,
+  ManualPasteSchema,
+  buildManualIntake,
+  parseSender,
+} from "./manualIntake.ts";
 import { checkOrigin } from "./server/originCheck.ts";
 import { resolveDataDir, resolveInboxDir, isSafeId } from "./server/paths.ts";
 import { toOllamaFormat } from "../ai-runtime/core.ts";
@@ -237,6 +248,52 @@ describe("Deloitte-only filter", () => {
       sender: { name: "x", address: "x@takeda.com" },
     });
     assert.equal(filterIntake(blockedManual, config).pass, false);
+  });
+
+  it("lets a paste through the Teams rule (the user vouches for it) but not past the block list", () => {
+    const paste = (patch = {}) =>
+      IntakeSchema.parse({
+        ...example("manual-paste.json"),
+        subject: "Chat",
+        context: { origin: "teams" },
+        ...patch,
+      });
+    // Teams is default-deny, and a paste that says it came from Teams is still a paste.
+    assert.equal(teamsIsFiltering(config), true);
+    assert.equal(filterIntake(paste(), config).pass, true);
+    const withLink = paste({
+      link: "https://teams.microsoft.com/l/message/19:abc@thread.v2/1?tenantId=11111111-1111-1111-1111-111111111111",
+    });
+    assert.equal(filterIntake(withLink, config).pass, true);
+    // ...but a blocked sender domain, a blocked term and an address inside the text all count.
+    assert.equal(
+      filterIntake(paste({ sender: { address: "c@Takeda.com" } }), config).code,
+      "blocked-domain",
+    );
+    const termed = { ...config, blockedTerms: ["project falcon"] };
+    assert.equal(
+      filterIntake(paste({ body: { text: "About Project Falcon" } }), termed).code,
+      "blocked-term",
+    );
+    const quoted = filterIntake(
+      paste({ body: { text: "From: Casey <casey@eu.takeda.com>\nSent: today" } }),
+      config,
+    );
+    assert.equal(quoted.code, "blocked-domain");
+    assert.match(
+      quoted.reason,
+      /Pasted text mentions an address on a blocked domain \(takeda\.com\)/,
+    );
+    // The same address inside an email is NOT scanned for (only sender and recipients are).
+    assert.equal(
+      filterIntake(
+        intakeOf("outlook-task.json", {
+          body: { text: "see casey@takeda.com", format: "text" },
+        }),
+        config,
+      ).pass,
+      true,
+    );
   });
 
   it("parses addresses and domains", () => {
@@ -465,7 +522,10 @@ describe("prompts", () => {
     const system = buildSystemPrompt(config.me);
     assert.match(system, /EVERY concrete step.*other named people/);
     assert.match(system, /owner it names.*or null/);
-    assert.match(system, /"high" only when the message itself states urgency.*today or tomorrow/);
+    assert.match(
+      system,
+      /"high" only when the message itself states urgency.*today or tomorrow/,
+    );
     assert.match(system, /Everything else is "normal"/);
     assert.match(system, /confidence: a rough estimate from 0\.0 to 1\.0/);
     assert.match(system, /Date hints/);
@@ -743,6 +803,131 @@ describe("paths", () => {
       path.resolve("C:\\override"),
     );
     assert.equal(resolveInboxDir("C:\\configured", {}), path.resolve("C:\\configured"));
+  });
+});
+
+describe("paste intake (manualIntake.ts)", () => {
+  it("parses the From box into a name and an address", () => {
+    assert.deepEqual(parseSender(""), {});
+    assert.deepEqual(parseSender("Pat Sample"), { name: "Pat Sample" });
+    assert.deepEqual(parseSender("pat@deloitte.com"), { address: "pat@deloitte.com" });
+    assert.deepEqual(parseSender('"Sample, Pat" <pat@deloitte.com>'), {
+      name: "Sample, Pat",
+      address: "pat@deloitte.com",
+    });
+    assert.deepEqual(parseSender("<pat@deloitte.com>"), { address: "pat@deloitte.com" });
+  });
+
+  it("validates the dialog's fields, with a message per field", () => {
+    const ok = ManualPasteSchema.parse({ body: "  hello  " });
+    assert.equal(ok.origin, "manual");
+    assert.equal(ok.subject, "");
+    assert.equal(ok.body, "  hello  ", "the text itself is not trimmed");
+    const issues = (input) =>
+      Object.fromEntries(
+        ManualPasteSchema.safeParse(input).error.issues.map((i) => [
+          i.path[0],
+          i.message,
+        ]),
+      );
+    assert.match(issues({ body: "   " }).body, /Paste the message text/);
+    assert.match(issues({}).body, /Paste the message text/);
+    assert.match(issues({ body: "x".repeat(MAX_PASTE_CHARS + 1) }).body, /At most/);
+    assert.match(issues({ body: "x", subject: "s".repeat(301) }).subject, /At most 300/);
+    assert.match(
+      issues({ body: "x", link: "javascript:alert(1)" }).link,
+      /must start with https/,
+    );
+    assert.ok(issues({ body: "x", origin: "slack" }).origin);
+    assert.equal(
+      ManualPasteSchema.safeParse({ body: "x", link: "outlook:ABC" }).success,
+      true,
+    );
+    assert.equal(
+      ManualPasteSchema.safeParse({
+        body: "x",
+        link: "https://teams.microsoft.com/l/message/1/2",
+      }).success,
+      true,
+    );
+  });
+
+  it("builds a valid source:manual pmo-intake/1 document", () => {
+    const paste = ManualPasteSchema.parse({
+      subject: "PMO sync",
+      from: "Jordan Sample <jordan.sample@deloitte.com>",
+      body: "Please update the tracker.",
+      origin: "teams",
+      link: "https://teams.microsoft.com/l/message/19:x@thread.v2/1",
+    });
+    const doc = buildManualIntake(paste, "manual-abc", "2026-10-24T10:00:00.000Z");
+    const intake = IntakeSchema.parse(doc);
+    assert.equal(intake.source, "manual");
+    assert.equal(intake.producer, "manual-paste");
+    assert.equal(intake.sourceId, "manual-abc");
+    assert.equal(intake.sender.address, "jordan.sample@deloitte.com");
+    assert.equal(intake.context.origin, "teams");
+    assert.equal(intake.link, paste.link);
+    assert.equal(intake.body.format, "text");
+    const noLink = buildManualIntake({ ...paste, link: "" }, "m", "2026-10-24T10:00:00Z");
+    assert.equal("link" in noLink, false);
+  });
+});
+
+describe("config patch validation (Settings)", () => {
+  const errorOf = (patch) => {
+    const result = PmoConfigPatchSchema.safeParse(patch);
+    return result.success ? null : result.error.issues[0];
+  };
+
+  it("accepts good values", () => {
+    const ok = PmoConfigPatchSchema.safeParse({
+      allowedTenantIds: ["0A1B2C3D-0000-4000-8000-123456789ABC", ""],
+      allowedSenderDomains: ["deloitte.com", "@us.deloitte.com"],
+      blockedDomains: ["takeda.com"],
+      blockedTerms: ["Project Falcon"],
+      me: { names: ["Alwin Saju", "Alwin"], emails: ["alsaju@deloitte.com"] },
+      retentionDays: 90,
+    });
+    assert.equal(ok.success, true);
+  });
+
+  it("names the field and the entry that is wrong", () => {
+    const tenant = errorOf({
+      allowedTenantIds: ["00000000-0000-0000-0000-000000000000", "AAAA"],
+    });
+    assert.deepEqual(tenant.path, ["allowedTenantIds", 1]);
+    assert.match(tenant.message, /Not a tenant ID/);
+    assert.deepEqual(errorOf({ blockedDomains: ["not a domain"] }).path, [
+      "blockedDomains",
+      0,
+    ]);
+    assert.deepEqual(errorOf({ allowedSenderDomains: ["localhost"] }).path, [
+      "allowedSenderDomains",
+      0,
+    ]);
+    assert.deepEqual(errorOf({ me: { names: ["A"], emails: ["nope"] } }).path, [
+      "me",
+      "emails",
+      0,
+    ]);
+    assert.match(
+      errorOf({ me: { names: [], emails: [] } }).message,
+      /at least one name/i,
+    );
+    assert.match(errorOf({ blockedTerms: ["x".repeat(201)] }).message, /At most 200/);
+    assert.match(
+      errorOf({ allowedTenantIds: Array(201).fill("") }).message,
+      /At most 200 entries/,
+    );
+  });
+
+  it("bounds the retention", () => {
+    assert.match(errorOf({ retentionDays: 3 }).message, /At least 7/);
+    assert.match(errorOf({ retentionDays: 99999 }).message, /At most 3650/);
+    assert.match(errorOf({ retentionDays: 30.5 }).message, /Whole days/);
+    assert.match(errorOf({ retentionDays: Number.NaN }).message, /number of days/);
+    assert.equal(PmoConfigSchema.parse({}).retentionDays, 90);
   });
 });
 

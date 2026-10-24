@@ -60,6 +60,8 @@ export function teamsIdsOf(intake: Pick<Intake, "context" | "link">): {
   return { tenantId: tenantId || undefined, chatId: chatId || undefined };
 }
 
+const PASTED_ADDRESS = /[A-Z0-9._%+-]+@((?:[A-Z0-9-]+\.)+[A-Z]{2,})/gi;
+
 function sameId(a: string | undefined, b: string): boolean {
   return a !== undefined && a.trim().toLowerCase() === b.trim().toLowerCase();
 }
@@ -79,6 +81,24 @@ export function filterIntake(intake: Intake, config: FilterConfig): FilterResult
         code: "blocked-domain",
         reason: `Involves a blocked domain (${hit}): ${address}`,
       };
+    }
+  }
+
+  if (intake.source === "manual") {
+    // A paste has no reliable From/To, and a pasted mail often carries the
+    // whole header block, so addresses inside the text count as well.
+    for (const found of `${intake.subject}\n${intake.body.text}`.matchAll(
+      PASTED_ADDRESS,
+    )) {
+      const domain = found[1].toLowerCase();
+      const hit = config.blockedDomains.find((b) => domainMatches(domain, b));
+      if (hit) {
+        return {
+          pass: false,
+          code: "blocked-domain",
+          reason: `Pasted text mentions an address on a blocked domain (${hit}): ${found[0]}`,
+        };
+      }
     }
   }
 
@@ -133,8 +153,10 @@ export function filterIntake(intake: Intake, config: FilterConfig): FilterResult
       };
     }
   }
-  // source "manual": typed or pasted by the user themselves, so only the
-  // blocked-domain / blocked-term rules above apply.
+  // source "manual": typed or pasted by the user themselves, so the user has
+  // vouched for it: only the blocked-domain / blocked-term rules above apply.
+  // In particular the Teams default-deny does NOT apply to a paste, even one
+  // whose context.origin says "teams".
 
   return { pass: true };
 }

@@ -27,6 +27,8 @@ const IntakeRecipient = z.object({
 
 const IntakeThread = z.object({ conversationId: optText, parentId: optText });
 const IntakeContext = z.object({
+  /** Manual paste only: where the pasted text came from (teams, outlook, manual). */
+  origin: optText,
   tenantId: optText,
   chatId: optText,
   chatType: optText,
@@ -364,6 +366,10 @@ export type Proposal = z.infer<typeof ProposalSchema>;
 
 export const DEFAULT_INBOX_DIR = "C:\\Users\\alsaju\\OneDrive - Deloitte\\PMO-Inbox";
 
+export const DEFAULT_RETENTION_DAYS = 90;
+export const MIN_RETENTION_DAYS = 7;
+export const MAX_RETENTION_DAYS = 3650;
+
 const stringList = (fallback: string[]) => z.array(z.string()).default(fallback);
 
 export const PmoConfigSchema = z.object({
@@ -383,19 +389,56 @@ export const PmoConfigSchema = z.object({
       names: ["Alwin Saju", "Saju", "Alwin"],
       emails: ["alsaju@deloitte.com"],
     }),
+  /** Logs, and the raw text of closed to-dos and rejected proposals, are
+   *  deleted after this many days (server/retention.ts). Open to-dos keep theirs. */
+  retentionDays: z.number().int().default(DEFAULT_RETENTION_DAYS),
 });
 export type PmoConfig = z.output<typeof PmoConfigSchema>;
 
+// Strict checks for what a person types in Settings. They apply to a PUT only:
+// reading config.json stays lenient (a hand-edited file must never stop ingest).
+const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const DOMAIN = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i;
+const EMAIL = /^[^\s@<>"']+@(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i;
+const MAX_LIST = 200;
+
+const listOf = (item: z.ZodType<string>) =>
+  z.array(item).max(MAX_LIST, "At most 200 entries.");
+const trimmed = (max: number) => z.string().trim().max(max, `At most ${max} characters.`);
+const tenantId = trimmed(64).refine((v) => v === "" || GUID.test(v), {
+  message: "Not a tenant ID (a GUID such as 00000000-0000-0000-0000-000000000000).",
+});
+const domainEntry = trimmed(253).refine(
+  (v) => v === "" || DOMAIN.test(v.replace(/^@/, "")),
+  { message: "Not a domain name (for example example.com)." },
+);
+const emailEntry = trimmed(254).refine((v) => v === "" || EMAIL.test(v), {
+  message: "Not an email address.",
+});
+
 /** What PUT /api/pmo/config may change (the inbox path stays file/env only).
  *  Spelled out rather than `.partial()` of the schema above: a defaulted
- *  field would silently reset to its default whenever a patch omits it. */
+ *  field would silently reset to its default whenever a patch omits it. The
+ *  Settings dialog runs the same schema, so errors appear inline before
+ *  anything is sent. Blank entries are allowed here and dropped on save. */
 export const PmoConfigPatchSchema = z.object({
-  allowedTenantIds: z.array(z.string()).optional(),
-  teamsChatAllowlist: z.array(z.string()).optional(),
-  allowedSenderDomains: z.array(z.string()).optional(),
-  blockedDomains: z.array(z.string()).optional(),
-  blockedTerms: z.array(z.string()).optional(),
-  me: z.object({ names: z.array(z.string()), emails: z.array(z.string()) }).optional(),
+  allowedTenantIds: listOf(tenantId).optional(),
+  teamsChatAllowlist: listOf(trimmed(300)).optional(),
+  allowedSenderDomains: listOf(domainEntry).optional(),
+  blockedDomains: listOf(domainEntry).optional(),
+  blockedTerms: listOf(trimmed(200)).optional(),
+  me: z
+    .object({
+      names: listOf(trimmed(120)).min(1, "Add at least one name."),
+      emails: listOf(emailEntry),
+    })
+    .optional(),
+  retentionDays: z
+    .number("Enter a number of days.")
+    .int("Whole days only.")
+    .min(MIN_RETENTION_DAYS, `At least ${MIN_RETENTION_DAYS} days.`)
+    .max(MAX_RETENTION_DAYS, `At most ${MAX_RETENTION_DAYS} days.`)
+    .optional(),
 });
 export type PmoConfigPatch = z.infer<typeof PmoConfigPatchSchema>;
 

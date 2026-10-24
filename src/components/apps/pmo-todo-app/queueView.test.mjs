@@ -3,10 +3,14 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  WHY_NO_BODY,
+  filterByReason,
   formatDay,
   groupQueue,
   ownerLabel,
+  reasonCounts,
   relativeTime,
+  resendGuidance,
   sortTodos,
   statusLabel,
 } from "./queueView.ts";
@@ -135,5 +139,83 @@ describe("formatting", () => {
     assert.equal(ownerLabel({ name: "Pat", email: null, isMe: false }), "Pat");
     assert.equal(ownerLabel({ name: null, email: "a@b.c", isMe: null }), "a@b.c");
     assert.equal(ownerLabel({ name: null, email: null, isMe: null }), "Unassigned");
+  });
+});
+
+describe("Filtered tab helpers", () => {
+  const record = (code, extra = {}) => ({
+    id: `in_${code}`,
+    code,
+    reason: "r",
+    tenantId: null,
+    chatId: null,
+    summary: {
+      source: "outlook",
+      subject: "s",
+      senderName: null,
+      senderAddress: null,
+      receivedAt: "2026-10-22T09:00:00Z",
+      link: null,
+    },
+    ...extra,
+  });
+  const config = { allowedTenantIds: [], allowedSenderDomains: ["deloitte.com"] };
+
+  it("counts items per reason, known reasons first, and filters by one", () => {
+    const records = [
+      record("sender-domain-not-allowed"),
+      record("blocked-domain"),
+      record("sender-domain-not-allowed"),
+      record("something-new"),
+    ];
+    assert.deepEqual(reasonCounts(records), [
+      { code: "blocked-domain", label: "Blocked domain", count: 1 },
+      { code: "sender-domain-not-allowed", label: "Sender domain not allowed", count: 2 },
+      { code: "something-new", label: "something-new", count: 1 },
+    ]);
+    assert.equal(filterByReason(records, null).length, 4);
+    assert.equal(filterByReason(records, "sender-domain-not-allowed").length, 2);
+    assert.equal(filterByReason(records, "teams-not-allowlisted").length, 0);
+  });
+
+  it("offers a one-click allow where one exists, and never a way to get the text back", () => {
+    const tenant = resendGuidance(
+      record("tenant-not-allowed", {
+        tenantId: "ABCD0000-0000-4000-8000-000000000000",
+        summary: { ...record("x").summary, source: "teams" },
+      }),
+      config,
+    );
+    assert.equal(tenant.allowTenantId, "abcd0000-0000-4000-8000-000000000000");
+    assert.match(tenant.steps, /run the Teams flow on the message again/);
+    const allowed = resendGuidance(
+      record("tenant-not-allowed", { tenantId: "abcd0000-0000-4000-8000-000000000000" }),
+      { ...config, allowedTenantIds: ["abcd0000-0000-4000-8000-000000000000"] },
+    );
+    assert.equal(allowed.allowTenantId, null);
+    assert.match(allowed.steps, /allowed now/);
+
+    const domain = resendGuidance(
+      record("sender-domain-not-allowed", {
+        summary: {
+          ...record("x").summary,
+          senderAddress: "Pat <pat@partner.example.com>",
+        },
+      }),
+      config,
+    );
+    assert.equal(domain.allowDomain, "partner.example.com");
+    assert.match(domain.steps, /-IgnoreSeen/);
+    const noAddress = resendGuidance(record("sender-domain-not-allowed"), config);
+    assert.equal(noAddress.allowDomain, null);
+    assert.match(noAddress.steps, /No sender address/);
+
+    assert.equal(resendGuidance(record("blocked-domain"), config).allowDomain, null);
+    assert.match(resendGuidance(record("blocked-term"), config).steps, /block list/);
+    assert.match(
+      resendGuidance(record("teams-not-allowlisted"), config).steps,
+      /tenant ID/,
+    );
+    assert.match(WHY_NO_BODY, /thrown away when it is filtered/);
   });
 });

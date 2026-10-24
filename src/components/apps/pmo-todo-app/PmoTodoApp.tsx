@@ -5,8 +5,10 @@ import { ScrollArea, Tabs, TabsContent, TabsList, TabsTrigger } from "@/componen
 import { FilteredList } from "./FilteredList";
 import { IngestStatusBar } from "./IngestStatusBar";
 import { NewTodoDialog } from "./NewTodoDialog";
+import { PasteIntakeDialog } from "./PasteIntakeDialog";
 import { ProposalDialog } from "./ProposalDialog";
 import { ReviewQueue } from "./ReviewQueue";
+import { SettingsDialog } from "./SettingsDialog";
 import { TodoDetailDialog } from "./TodoDetailDialog";
 import { TodoList } from "./TodoList";
 import { usePmoData } from "./usePmoData";
@@ -24,6 +26,8 @@ export function PmoTodoApp({ windowId }: { windowId: string }) {
   const [proposalId, setProposalId] = useState<string | null>(null);
   const [todoId, setTodoId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [pasting, setPasting] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   if (!state) {
     return (
@@ -55,6 +59,8 @@ export function PmoTodoApp({ windowId }: { windowId: string }) {
         state={state}
         offline={connection === "offline"}
         onShowFiltered={() => setTab("filtered")}
+        onPaste={() => setPasting(true)}
+        onSettings={() => setSettingsOpen(true)}
         onSettled={refetch}
       />
 
@@ -88,7 +94,11 @@ export function PmoTodoApp({ windowId }: { windowId: string }) {
         </TabsContent>
         <TabsContent value="filtered" className="min-h-0 flex-1">
           <ScrollArea className="h-full">
-            <FilteredList state={state} onSettled={refetch} />
+            <FilteredList
+              state={state}
+              onSettled={refetch}
+              onOpenSettings={() => setSettingsOpen(true)}
+            />
           </ScrollArea>
         </TabsContent>
       </Tabs>
@@ -110,6 +120,13 @@ export function PmoTodoApp({ windowId }: { windowId: string }) {
         }}
       />
       <NewTodoDialog open={creating} onSettled={refetch} onOpenChange={setCreating} />
+      <PasteIntakeDialog open={pasting} onSettled={refetch} onOpenChange={setPasting} />
+      <SettingsDialog
+        state={state}
+        open={settingsOpen}
+        onSettled={refetch}
+        onOpenChange={setSettingsOpen}
+      />
     </div>
   );
 }

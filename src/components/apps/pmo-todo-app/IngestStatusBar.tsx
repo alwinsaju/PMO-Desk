@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowsClockwiseIcon } from "@phosphor-icons/react";
-import { Button } from "@/components/ui";
+import { ArrowsClockwiseIcon, ClipboardTextIcon, GearIcon } from "@phosphor-icons/react";
+import { Button, IconButton } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import type { PmoState } from "@/lib/pmo/types";
 import { scanNow } from "./api";
@@ -12,6 +12,8 @@ interface IngestStatusBarProps {
   state: PmoState;
   offline: boolean;
   onShowFiltered: () => void;
+  onPaste: () => void;
+  onSettings: () => void;
   onSettled: () => void;
 }
 
@@ -31,6 +33,8 @@ export function IngestStatusBar({
   state,
   offline,
   onShowFiltered,
+  onPaste,
+  onSettings,
   onSettled,
 }: IngestStatusBarProps) {
   const [scanning, setScanning] = useState(false);
@@ -139,6 +143,18 @@ export function IngestStatusBar({
           />
           Scan now
         </Button>
+        <Button variant="secondary" size="sm" onClick={onPaste}>
+          <ClipboardTextIcon size={13} weight="bold" />
+          Paste
+        </Button>
+        <IconButton
+          aria-label="PMO settings"
+          size="sm"
+          variant="ghost"
+          onClick={onSettings}
+        >
+          <GearIcon size={15} />
+        </IconButton>
       </div>
 
       {offline && (
@@ -169,10 +185,17 @@ export function IngestStatusBar({
       {runtime.state === "stub" && <Banner>{runtime.message}</Banner>}
       {ingest.teamsFiltering && (
         <Banner>
-          Teams items are being filtered until a tenant ID or chat is allowlisted. Add the
-          tenant ID to <code className="font-mono">allowedTenantIds</code> in{" "}
-          <code className="font-mono">{state.dataDir}\config.json</code>, or use “Allow
-          this tenant” on a filtered Teams item.
+          Teams items are being filtered until a tenant ID or chat is allowlisted. Add
+          your tenant ID in{" "}
+          <button
+            type="button"
+            onClick={onSettings}
+            className="underline underline-offset-2"
+          >
+            Settings
+          </button>
+          , or use “Allow this tenant” on a filtered Teams item. (Pasted text is not
+          affected.)
         </Banner>
       )}
       {!ingest.inboxExists && ingest.lastScanAt && (

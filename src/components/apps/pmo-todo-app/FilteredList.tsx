@@ -2,19 +2,37 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui";
+import { cn } from "@/lib/cn";
 import type { PmoState, QuarantineRecord } from "@/lib/pmo/types";
 import { updateConfig } from "./api";
 import { SourceBadge } from "./parts";
-import { relativeTime } from "./queueView";
+import {
+  WHY_NO_BODY,
+  filterByReason,
+  reasonCounts,
+  reasonLabel,
+  relativeTime,
+  resendGuidance,
+} from "./queueView";
 
 interface FilteredListProps {
   state: PmoState;
   onSettled: () => void;
+  onOpenSettings: () => void;
 }
 
 /** Everything the Deloitte-only filter held back: metadata and the reason,
- *  never the message text, so nothing vanishes silently. */
-export function FilteredList({ state, onSettled }: FilteredListProps) {
+ *  never the message text, so nothing vanishes silently. A filtered message
+ *  cannot be moved into the review queue (its text is gone by design); what a
+ *  row offers instead is the one-click rule change and the steps to send it
+ *  again. */
+export function FilteredList({ state, onSettled, onOpenSettings }: FilteredListProps) {
+  const [reason, setReason] = useState<string | null>(null);
+  const counts = reasonCounts(state.filtered);
+  // A reason that no longer occurs (its items were cleared) falls back to All.
+  const active = reason !== null && counts.some((c) => c.code === reason) ? reason : null;
+  const shown = filterByReason(state.filtered, active);
+
   if (state.filtered.length === 0) {
     return (
       <div className="flex h-full min-h-48 items-center justify-center p-6 text-center">
@@ -27,19 +45,69 @@ export function FilteredList({ state, onSettled }: FilteredListProps) {
   }
   return (
     <div className="flex flex-col gap-3 p-4">
-      <p className="text-ink-muted text-[12px]">
-        {state.ingest.filteredCount} message{state.ingest.filteredCount === 1 ? "" : "s"}{" "}
-        kept out of the review queue. Their text was not stored.
-      </p>
-      {state.filtered.map((record) => (
+      <div className="flex flex-col gap-1">
+        <p className="text-ink-muted text-[12px]">
+          {state.ingest.filteredCount} message
+          {state.ingest.filteredCount === 1 ? "" : "s"} kept out of the review queue.
+        </p>
+        <p className="text-ink-faint text-[11px] leading-relaxed">{WHY_NO_BODY}</p>
+      </div>
+
+      <div
+        className="flex flex-wrap gap-1.5"
+        role="tablist"
+        aria-label="Filter by reason"
+      >
+        <ReasonPill active={active === null} onClick={() => setReason(null)}>
+          All ({state.filtered.length})
+        </ReasonPill>
+        {counts.map((entry) => (
+          <ReasonPill
+            key={entry.code}
+            active={active === entry.code}
+            onClick={() => setReason(entry.code)}
+          >
+            {entry.label} ({entry.count})
+          </ReasonPill>
+        ))}
+      </div>
+
+      {shown.map((record) => (
         <FilteredRow
           key={record.id}
           record={record}
           state={state}
           onSettled={onSettled}
+          onOpenSettings={onOpenSettings}
         />
       ))}
     </div>
+  );
+}
+
+function ReasonPill({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      className={cn(
+        "rounded-pill ease-standard px-3 py-1 text-[12px] font-medium transition-colors duration-150",
+        "focus-visible:ring-accent focus-visible:ring-2 focus-visible:outline-none",
+        active ? "bg-neutral-150 text-ink" : "text-ink-muted hover:bg-neutral-100",
+      )}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -47,31 +115,26 @@ function FilteredRow({
   record,
   state,
   onSettled,
+  onOpenSettings,
 }: {
   record: QuarantineRecord;
   state: PmoState;
   onSettled: () => void;
+  onOpenSettings: () => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const { summary } = record;
-  const canAllowTenant =
-    summary.source === "teams" &&
-    record.tenantId !== null &&
-    !state.config.allowedTenantIds.includes(record.tenantId.toLowerCase());
+  const guidance = resendGuidance(record, state.config);
 
-  async function allowTenant() {
-    if (!record.tenantId) return;
+  async function allow(
+    patch: { allowedTenantIds: string[] } | { allowedSenderDomains: string[] },
+    done: string,
+  ) {
     setBusy(true);
     try {
-      const reply = await updateConfig({
-        allowedTenantIds: [...state.config.allowedTenantIds, record.tenantId],
-      });
-      setNote(
-        reply.ok
-          ? "Tenant allowed. Send this message from Teams again and it will be picked up on the next scan."
-          : reply.reason,
-      );
+      const reply = await updateConfig(patch);
+      setNote(reply.ok ? done : reply.reason);
       onSettled();
     } catch {
       setNote("Could not reach the app server.");
@@ -95,22 +158,63 @@ function FilteredRow({
         {summary.senderName ?? "Unknown sender"}
         {summary.senderAddress ? ` <${summary.senderAddress}>` : ""}
       </p>
-      <p className="text-ink text-[12px]">{record.reason}</p>
-      {canAllowTenant && (
-        <div className="flex items-center gap-3">
+      <p className="text-ink text-[12px]">
+        <span className="text-ink-faint">{reasonLabel(record.code)}: </span>
+        {record.reason}
+      </p>
+      <p className="text-ink-muted text-[12px] leading-relaxed">{guidance.steps}</p>
+      <div className="flex flex-wrap items-center gap-2">
+        {guidance.allowTenantId && (
+          <>
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={busy}
+              onClick={() =>
+                void allow(
+                  {
+                    allowedTenantIds: [
+                      ...state.config.allowedTenantIds,
+                      guidance.allowTenantId as string,
+                    ],
+                  },
+                  "Tenant allowed. Run the Teams flow on this message again and it will be picked up on the next scan.",
+                )
+              }
+            >
+              Allow this tenant
+            </Button>
+            <span className="text-ink-faint truncate font-mono text-[11px]">
+              {guidance.allowTenantId}
+            </span>
+          </>
+        )}
+        {guidance.allowDomain && (
           <Button
             variant="secondary"
             size="sm"
             disabled={busy}
-            onClick={() => void allowTenant()}
+            onClick={() =>
+              void allow(
+                {
+                  allowedSenderDomains: [
+                    ...state.config.allowedSenderDomains,
+                    guidance.allowDomain as string,
+                  ],
+                },
+                `${guidance.allowDomain} allowed. Send the email again (flag it again, or run the Outlook export with -IgnoreSeen).`,
+              )
+            }
           >
-            Allow this tenant
+            Allow {guidance.allowDomain}
           </Button>
-          <span className="text-ink-faint truncate font-mono text-[11px]">
-            {record.tenantId}
-          </span>
-        </div>
-      )}
+        )}
+        {!guidance.allowTenantId && !guidance.allowDomain && (
+          <Button variant="ghost" size="sm" onClick={onOpenSettings}>
+            Open settings
+          </Button>
+        )}
+      </div>
       {note && <p className="text-ink-muted text-[12px]">{note}</p>}
     </div>
   );

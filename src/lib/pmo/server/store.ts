@@ -42,6 +42,7 @@ export type AuditAction =
   | "reopen"
   | "create-manual"
   | "retry"
+  | "paste"
   | "config";
 
 export class Store {
@@ -131,6 +132,15 @@ export class Store {
 
   readRaw(intakeId: string): Promise<RawRecord | null> {
     return this.readOne(this.paths.raw, intakeId, (v) => RawRecordSchema.safeParse(v));
+  }
+
+  async listRaw(): Promise<RawRecord[]> {
+    return this.readAll(this.paths.raw, (v) => RawRecordSchema.safeParse(v));
+  }
+
+  async removeRaw(intakeId: string): Promise<void> {
+    if (!isSafeId(intakeId)) return;
+    await unlink(path.join(this.paths.raw, `${intakeId}.json`)).catch(() => undefined);
   }
 
   // --- quarantine -------------------------------------------------------------

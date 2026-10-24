@@ -1,9 +1,12 @@
 // Pure list/formatting helpers for the PMO To-Do window. No React, and
 // relative imports with the .ts extension, so `pnpm test` can load this file
 // under plain Node (see queueView.test.mjs).
+import { domainMatches, domainOf } from "../../../lib/pmo/filter.ts";
 import type {
+  PmoConfig,
   Priority,
   Proposal,
+  QuarantineRecord,
   StructuringInfo,
   Todo,
 } from "../../../lib/pmo/types.ts";
@@ -132,3 +135,116 @@ export const SOURCE_LABEL = {
   teams: "Teams",
   manual: "Manual",
 } as const;
+
+// --- the Filtered tab ---------------------------------------------------------
+
+export const FILTER_REASON_LABEL: Record<string, string> = {
+  "blocked-domain": "Blocked domain",
+  "blocked-term": "Blocked term",
+  "teams-not-allowlisted": "Teams, no tenant ID",
+  "tenant-not-allowed": "Teams tenant not allowed",
+  "sender-domain-not-allowed": "Sender domain not allowed",
+};
+
+export const reasonLabel = (code: string): string => FILTER_REASON_LABEL[code] ?? code;
+
+/** One entry per reason that occurs, known reasons first in a fixed order,
+ *  then any other code, each with how many items carry it. */
+export function reasonCounts(
+  records: Pick<QuarantineRecord, "code">[],
+): { code: string; label: string; count: number }[] {
+  const counts = new Map<string, number>();
+  for (const record of records)
+    counts.set(record.code, (counts.get(record.code) ?? 0) + 1);
+  const known = Object.keys(FILTER_REASON_LABEL).filter((code) => counts.has(code));
+  const other = [...counts.keys()]
+    .filter((code) => !(code in FILTER_REASON_LABEL))
+    .sort();
+  return [...known, ...other].map((code) => ({
+    code,
+    label: reasonLabel(code),
+    count: counts.get(code) ?? 0,
+  }));
+}
+
+export function filterByReason<T extends Pick<QuarantineRecord, "code">>(
+  records: T[],
+  code: string | null,
+): T[] {
+  return code === null ? records : records.filter((record) => record.code === code);
+}
+
+/** Why a filtered item cannot simply be moved into the review queue. */
+export const WHY_NO_BODY =
+  "The text of a filtered message is thrown away when it is filtered, on purpose, so it cannot be moved into the review queue afterwards. Fix the rule, then send the message again.";
+
+export interface ResendGuidance {
+  /** One click that makes the rule let the message through next time. */
+  allowTenantId: string | null;
+  allowDomain: string | null;
+  /** What to do after that, in words. */
+  steps: string;
+}
+
+/** What a person can do about one filtered item (never a way to get the body back). */
+export function resendGuidance(
+  record: QuarantineRecord,
+  config: Pick<PmoConfig, "allowedTenantIds" | "allowedSenderDomains">,
+): ResendGuidance {
+  const { summary } = record;
+  const tenant = record.tenantId?.trim().toLowerCase() ?? null;
+  const domain = domainOf(summary.senderAddress);
+  switch (record.code) {
+    case "tenant-not-allowed": {
+      const already = tenant !== null && config.allowedTenantIds.includes(tenant);
+      return {
+        allowTenantId: tenant && !already ? tenant : null,
+        allowDomain: null,
+        steps: already
+          ? "This tenant is allowed now. Run the Teams flow on the message again."
+          : "Allow this tenant, then run the Teams flow on the message again (select it, ... , More actions, your flow).",
+      };
+    }
+    case "teams-not-allowlisted":
+      return {
+        allowTenantId: null,
+        allowDomain: null,
+        steps:
+          "The message carried no tenant ID. Open Settings, add your tenant ID under Teams (the How-to there says where to find it), then run the Teams flow on the message again.",
+      };
+    case "sender-domain-not-allowed": {
+      if (!domain) {
+        return {
+          allowTenantId: null,
+          allowDomain: null,
+          steps:
+            "No sender address could be read from this email, so there is nothing to allow. Re-export it; for the Outlook script, check its warnings for the sender.",
+        };
+      }
+      const already = config.allowedSenderDomains.some((listed) =>
+        domainMatches(domain, listed),
+      );
+      return {
+        allowTenantId: null,
+        allowDomain: already ? null : domain,
+        steps: already
+          ? `${domain} is allowed now. Send the email again: flag it again, or run the Outlook export with -IgnoreSeen.`
+          : `Allow ${domain}, then send the email again: flag it again, or run the Outlook export with -IgnoreSeen.`,
+      };
+    }
+    case "blocked-domain":
+    case "blocked-term":
+      return {
+        allowTenantId: null,
+        allowDomain: null,
+        steps:
+          "This matched your block list. If that was a mistake, remove the entry in Settings, then send the message again.",
+      };
+    default:
+      return {
+        allowTenantId: null,
+        allowDomain: null,
+        steps: "Send the message again once the rule is fixed.",
+      };
+  }
+}

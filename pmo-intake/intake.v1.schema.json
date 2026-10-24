@@ -65,6 +65,11 @@
     "context": {
       "type": ["object", "null"],
       "properties": {
+        "origin": {
+          "description": "Manual paste only: where the pasted text came from (teams, outlook or manual). Informational; it does not change how the item is filtered.",
+          "type": ["string", "null"],
+          "examples": ["teams", "outlook", "manual"]
+        },
         "tenantId": {
           "description": "Microsoft Entra tenant of the Teams message. The Deloitte-only filter checks it against config.allowedTenantIds. If absent it is read from the Teams deep link in `link`.",
           "type": ["string", "null"]
