@@ -10,7 +10,8 @@
 //       retentionDays. Never for an open to-do, and never for a proposal that
 //       is still undecided.
 //
-// Not touched: audit.jsonl (the accountability trail), config, open to-dos,
+// Not touched: reports/ (saved weekly reports: a person deletes those),
+// audit.jsonl (the accountability trail), config, open to-dos,
 // the proposal and to-do records themselves, and state/seen.json (hashes only;
 // it is what keeps a deleted message from being re-imported as new).
 //

@@ -11,11 +11,14 @@ import { getDesktopBridge } from "@/lib/pmo/desktopBridge";
 import { PanelMessage, ScrollBody } from "./parts";
 import { ProposalDialog } from "./ProposalDialog";
 import { useRemindersStore } from "./remindersStore";
+import { ReportsTab } from "./ReportsTab";
 import { ReviewQueue } from "./ReviewQueue";
 import { SettingsDialog } from "./SettingsDialog";
 import { TodoDetailDialog } from "./TodoDetailDialog";
 import { TodoList } from "./TodoList";
 import { reviewCount as countReview, type TodoFilter, type TodoSort } from "./queueView";
+import { initialReportView, type ReportViewState } from "./reportView";
+import { istDate } from "@/lib/pmo/time";
 import { usePmoData } from "./usePmoData";
 
 /**
@@ -45,6 +48,11 @@ export function PmoTodoApp({ windowId }: { windowId: string }) {
     sort: "due",
   });
   const [filteredReason, setFilteredReason] = useState<string | null>(null);
+  // The weekly report's period choice and draft live here too: the tab's
+  // content unmounts on a tab switch, and the person's edits must not.
+  const [reportView, setReportView] = useState<ReportViewState>(() =>
+    initialReportView(istDate(new Date())),
+  );
   const [notTaskOpen, setNotTaskOpen] = useState(false);
 
   // A clicked reminder (desktop notification, web notification or the in-app
@@ -110,6 +118,7 @@ export function PmoTodoApp({ windowId }: { windowId: string }) {
                 full="Filtered"
                 count={state.ingest.filteredCount}
               />
+              <TabButton value="reports" short="Report" full="Reports" />
             </TabsList>
           }
           onPaste={() => setPasting(true)}
@@ -154,6 +163,9 @@ export function PmoTodoApp({ windowId }: { windowId: string }) {
             onOpenSettings={() => setSettingsOpen(true)}
           />
         </Panel>
+        <TabsContent value="reports" className="flex min-h-0 flex-1 flex-col">
+          <ReportsTab state={state} view={reportView} onViewChange={setReportView} />
+        </TabsContent>
       </Tabs>
 
       <ProposalDialog
@@ -198,13 +210,16 @@ function TabButton({
   value: string;
   short: string;
   full: string;
-  count: number;
+  /** A quiet figure after the name; none for a tab that is not a list. */
+  count?: number;
 }) {
   return (
     <TabsTrigger value={value} className="shrink-0 px-2.5 whitespace-nowrap @md:px-3.5">
       <span className="@xl:hidden">{short}</span>
       <span className="hidden @xl:inline">{full}</span>
-      <span className="text-ink-faint ml-1.5 tabular-nums">{count}</span>
+      {count !== undefined && (
+        <span className="text-ink-faint ml-1.5 tabular-nums">{count}</span>
+      )}
     </TabsTrigger>
   );
 }

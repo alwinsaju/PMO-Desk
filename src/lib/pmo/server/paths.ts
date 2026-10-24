@@ -52,6 +52,8 @@ export interface PmoPaths {
   rejectedFiles: string;
   queue: string;
   todos: string;
+  /** Saved weekly reports: `<date>-<id>.md` revisions and a `.json` sidecar each. */
+  reports: string;
   seen: string;
   /** Which reminders were delivered, and who has claimed one (server/notify.ts). */
   notify: string;
@@ -69,6 +71,7 @@ export function pmoPaths(root: string): PmoPaths {
     rejectedFiles: path.join(root, "rejected-files"),
     queue: path.join(root, "queue"),
     todos: path.join(root, "todos"),
+    reports: path.join(root, "reports"),
     seen: path.join(root, "state", "seen.json"),
     notify: path.join(root, "state", "notify.json"),
     ingestLog: path.join(root, "logs", "ingest.jsonl"),

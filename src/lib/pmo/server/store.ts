@@ -49,6 +49,9 @@ export type AuditAction =
   | "update-apply"
   | "update-separate"
   | "chaser-draft"
+  | "report-generate"
+  | "report-narrative"
+  | "report-save"
   | "config";
 
 /** state/notify.json: reminders already delivered (by key) and the claims that
@@ -104,9 +107,15 @@ export class Store {
   async init(): Promise<void> {
     const p = this.paths;
     await Promise.all(
-      [p.raw, p.quarantine, p.rejectedFiles, p.queue, p.todos, path.dirname(p.seen)].map(
-        (dir) => mkdir(dir, { recursive: true }),
-      ),
+      [
+        p.raw,
+        p.quarantine,
+        p.rejectedFiles,
+        p.queue,
+        p.todos,
+        p.reports,
+        path.dirname(p.seen),
+      ].map((dir) => mkdir(dir, { recursive: true })),
     );
     // Write the defaults out once so the file is there to edit by hand.
     if ((await readJson(p.config)) === null) {

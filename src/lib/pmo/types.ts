@@ -135,11 +135,9 @@ export const PRIORITIES = ["low", "normal", "high"] as const;
 export type Priority = (typeof PRIORITIES)[number];
 
 const isoDay = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
-const isoInstant = z
-  .string()
-  .refine((value) => !Number.isNaN(Date.parse(value)), {
-    message: "Not an ISO 8601 date-time",
-  });
+const isoInstant = z.string().refine((value) => !Number.isNaN(Date.parse(value)), {
+  message: "Not an ISO 8601 date-time",
+});
 
 export const DEFAULT_CHASER_DAYS = 2;
 export const MAX_CHASER_DAYS = 30;
@@ -461,7 +459,8 @@ export type Proposal = z.infer<typeof ProposalSchema>;
 // Config
 // ---------------------------------------------------------------------------
 
-export const DEFAULT_INBOX_DIR = "C:\\Users\\alsaju\\OneDrive - Deloitte (O365D)\\PMO-Inbox";
+export const DEFAULT_INBOX_DIR =
+  "C:\\Users\\alsaju\\OneDrive - Deloitte (O365D)\\PMO-Inbox";
 /** Earlier defaults, which first run wrote into config.json; store.loadConfig
  *  migrates a saved value that is exactly one of these to DEFAULT_INBOX_DIR. */
 export const LEGACY_DEFAULT_INBOX_DIRS = [
@@ -504,6 +503,21 @@ export type ReminderPrefs = z.output<typeof ReminderPrefsSchema>;
 
 export const defaultReminderPrefs = (): ReminderPrefs => ReminderPrefsSchema.parse({});
 
+// --- weekly report (src/lib/pmo/report.ts reads these) ------------------------------
+
+export const DEFAULT_REPORT_TITLE = "Weekly status";
+export const MAX_REPORT_TITLE_CHARS = 80;
+
+export const ReportPrefsSchema = z.object({
+  /** The report's heading. */
+  title: z.string().default(DEFAULT_REPORT_TITLE),
+  /** Shown before the title ("Project Atlas: Weekly status"); blank = none. */
+  projectName: z.string().default(""),
+});
+export type ReportPrefs = z.output<typeof ReportPrefsSchema>;
+
+export const defaultReportPrefs = (): ReportPrefs => ReportPrefsSchema.parse({});
+
 export const PmoConfigSchema = z.object({
   inboxDir: z.string().default(DEFAULT_INBOX_DIR),
   /** Teams is default-deny: an item passes only if its tenant or chat is listed. */
@@ -528,6 +542,10 @@ export const PmoConfigSchema = z.object({
    *  for this block only, never for the whole config. */
   reminders: ReminderPrefsSchema.catch(() => defaultReminderPrefs()).default(() =>
     defaultReminderPrefs(),
+  ),
+  /** Weekly report heading; the same fall-back-per-block rule as `reminders`. */
+  report: ReportPrefsSchema.catch(() => defaultReportPrefs()).default(() =>
+    defaultReportPrefs(),
   ),
 });
 export type PmoConfig = z.output<typeof PmoConfigSchema>;
@@ -582,6 +600,14 @@ export const ReminderPrefsEditSchema = z
     message: "Working hours must end after they start.",
   });
 
+/** The Settings form always sends the whole report block. */
+export const ReportPrefsEditSchema = z.object({
+  title: trimmed(MAX_REPORT_TITLE_CHARS).refine((v) => v !== "", {
+    message: "Enter a title for the report.",
+  }),
+  projectName: trimmed(MAX_REPORT_TITLE_CHARS),
+});
+
 /** What PUT /api/pmo/config may change (the inbox path stays file/env only).
  *  Spelled out rather than `.partial()` of the schema above: a defaulted
  *  field would silently reset to its default whenever a patch omits it. The
@@ -606,6 +632,7 @@ export const PmoConfigPatchSchema = z.object({
     .max(MAX_RETENTION_DAYS, `At most ${MAX_RETENTION_DAYS} days.`)
     .optional(),
   reminders: ReminderPrefsEditSchema.optional(),
+  report: ReportPrefsEditSchema.optional(),
 });
 export type PmoConfigPatch = z.infer<typeof PmoConfigPatchSchema>;
 
@@ -669,6 +696,28 @@ export interface ChaserJob {
   to: string | null;
   error: string | null;
   model: string | null;
+}
+
+/** A "write highlights with AI" request for the weekly report (server/reportDrafts.ts).
+ *  In memory only; the lines are text to review and add to the report, never sent. */
+export interface ReportNarrativeJob {
+  id: string;
+  /** `<startDay>_<endDay>` of the period it was drafted for. */
+  key: string;
+  status: "drafting" | "ready" | "failed";
+  startedAt: string;
+  finishedAt: string | null;
+  /** Verified lines per part (names, titles and dates all exist in the report's data). */
+  narrative: {
+    highlights: string[];
+    risks: string[];
+    nextWeek: string[];
+  } | null;
+  /** Model lines dropped because they named something that is not in the data. */
+  removed: { part: string; line: string; reason: string }[];
+  error: string | null;
+  model: string | null;
+  promptVersion: number;
 }
 
 export interface PmoState {

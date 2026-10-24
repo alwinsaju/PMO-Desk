@@ -4,6 +4,7 @@
 // in service.ts. Failures here are local state only: nothing is sent anywhere.
 import { prepareForModel, displayText } from "../preprocess.ts";
 import { groundQuote } from "../quote.ts";
+import type { AiNarrative } from "../reportNarrative.ts";
 import { PROMPT_VERSION, buildSystemPrompt, buildUserPrompt } from "../structurePrompt.ts";
 import {
   UPDATE_PROMPT_VERSION,
@@ -32,6 +33,9 @@ export interface Generator {
   generateUpdate(request: ModelRequest): Promise<AiUpdate>;
   /** A follow-up message to review and copy. Plain text, untrusted. */
   draftChaser(request: ModelRequest): Promise<string>;
+  /** The weekly report's highlights, risks and next-week focus, from the report's
+   *  own data only. Untrusted: the caller verifies it before anyone sees it. */
+  draftNarrative(request: ModelRequest): Promise<AiNarrative>;
 }
 
 /** Why the queue stopped; shown as a banner until the next scan retries. */

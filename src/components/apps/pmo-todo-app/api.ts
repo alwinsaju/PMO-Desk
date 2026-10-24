@@ -8,12 +8,15 @@ import type {
   PmoConfigPatch,
   PmoState,
   RawRecord,
+  ReportNarrativeJob,
   Todo,
   TodoDraft,
 } from "@/lib/pmo/types";
+import type { PeriodRequest, SavedReportSummary } from "@/lib/pmo/report";
 import type { ManualPasteInput } from "@/lib/pmo/manualIntake";
 import type { Attention, DueNotification, Toast } from "@/lib/pmo/due";
 import type { TodoPatch } from "@/lib/pmo/todoLogic";
+import type { GeneratedReport, OpenedReport, saveBody } from "./reportView";
 
 const BASE = "/api/pmo";
 const TIMEOUT_MS = 15_000;
@@ -79,7 +82,26 @@ export const patchTodo = (id: string, patch: TodoPatch) =>
 
 export const startChaser = (todoId: string) =>
   call<{ job: ChaserJob }>(`/todos/${todoId}/chaser`, "POST");
-export const discardChaser = (todoId: string) => call(`/todos/${todoId}/chaser`, "DELETE");
+export const discardChaser = (todoId: string) =>
+  call(`/todos/${todoId}/chaser`, "DELETE");
+
+// --- weekly report: built by code, local text, never sent ------------------------------
+
+/** Instant, deterministic; nothing is saved until `saveReport`. */
+export const generateReport = (period: PeriodRequest) =>
+  call<GeneratedReport>("/reports", "POST", { period });
+/** Ask the LOCAL model for highlights (a background job; poll `fetchReportNarrative`). */
+export const startReportNarrative = (period: PeriodRequest) =>
+  call<{ job: ReportNarrativeJob }>("/reports/narrative", "POST", { period });
+export const fetchReportNarrative = (key: string) =>
+  call<{ job: ReportNarrativeJob | null }>(
+    `/reports/narrative?key=${encodeURIComponent(key)}`,
+  );
+export const listReports = () => call<{ reports: SavedReportSummary[] }>("/reports");
+export const fetchReport = (id: string) => call<OpenedReport>(`/reports/${id}`);
+/** Saves the text as a NEW revision file in the data folder. */
+export const saveReport = (id: string, body: ReturnType<typeof saveBody>) =>
+  call<{ id: string; revision: number; savedAt: string }>(`/reports/${id}`, "POST", body);
 
 export const updateConfig = (patch: PmoConfigPatch) =>
   call<{ config: PmoConfig }>("/config", "PUT", patch);

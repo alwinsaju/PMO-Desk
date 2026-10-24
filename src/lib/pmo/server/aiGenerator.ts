@@ -7,6 +7,7 @@ import {
   getAiRuntimeConfig,
   getRuntimeStatus,
 } from "@/lib/ai-runtime";
+import { AiNarrativeSchema } from "../reportNarrative.ts";
 import { AiStructuredSchema, AiUpdateSchema, type RuntimeSummary } from "../types.ts";
 import type { Generator } from "./structure.ts";
 
@@ -46,6 +47,16 @@ export function createRuntimeGenerator(): Generator {
         prompt,
         timeoutMs: TIMEOUT_MS,
         temperature: 0.4,
+        think: false,
+      }),
+    // The weekly report's three short parts as bounded JSON (so constrained
+    // decoding cannot run on), temperature 0, same queue and think: false.
+    draftNarrative: ({ system, prompt }) =>
+      generateJson({
+        system,
+        prompt,
+        schema: AiNarrativeSchema,
+        timeoutMs: TIMEOUT_MS,
         think: false,
       }),
   };

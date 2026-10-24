@@ -35,6 +35,9 @@ export interface RemindersForm {
 export type FormText = Record<ListField, string> & {
   retentionDays: string;
   reminders: RemindersForm;
+  /** The weekly report's heading. */
+  reportTitle: string;
+  reportProject: string;
 };
 
 export function formFromConfig(config: PmoConfig): FormText {
@@ -48,6 +51,8 @@ export function formFromConfig(config: PmoConfig): FormText {
     blockedDomains: join(config.blockedDomains),
     blockedTerms: join(config.blockedTerms),
     retentionDays: String(config.retentionDays),
+    reportTitle: config.report.title,
+    reportProject: config.report.projectName,
     reminders: {
       ...config.reminders,
       chaserDays: String(config.reminders.chaserDays),
@@ -86,6 +91,7 @@ export function buildPatch(
     blockedDomains: lists.blockedDomains.map((entry) => entry.value),
     blockedTerms: lists.blockedTerms.map((entry) => entry.value),
     retentionDays: retention,
+    report: { title: form.reportTitle.trim(), projectName: form.reportProject.trim() },
     reminders: {
       ...form.reminders,
       timeZone: form.reminders.timeZone.trim(),
@@ -102,8 +108,8 @@ export function buildPatch(
   const errors: Record<string, string> = {};
   for (const issue of parsed.error.issues) {
     const [head, second, third] = issue.path;
-    if (head === "reminders") {
-      errors[`reminders.${String(second)}`] ??= issue.message;
+    if (head === "reminders" || head === "report") {
+      errors[`${head}.${String(second)}`] ??= issue.message;
       continue;
     }
     const field: string =

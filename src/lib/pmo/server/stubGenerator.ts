@@ -8,13 +8,15 @@
 // and a file named `stub-runtime-down` in the data directory makes every call
 // fail as "runtime-down" until it is deleted (the "stop the model" switch).
 //
-// All three tasks answer deterministically from the prompt text:
+// All four tasks answer deterministically from the prompt text:
 //   generate        message -> to-do proposal
 //   generateUpdate  new message + existing to-do -> what changed (reply / new
 //                   date / new action / new info / nothing)
 //   draftChaser     a short polite follow-up built from the facts block
+//   draftNarrative  weekly-report highlights / risks / next week, from the facts
 import { existsSync } from "node:fs";
 import path from "node:path";
+import { AiNarrativeSchema } from "../reportNarrative.ts";
 import { AiStructuredSchema, AiUpdateSchema } from "../types.ts";
 import type { Generator } from "./structure.ts";
 
@@ -26,10 +28,12 @@ function runtimeError(code: string, message: string): Error {
 }
 
 const FYI = /\b(fyi|for your information|no action|newsletter|unsubscribe)\b/i;
-const THANKS_ONLY = /^\s*(thanks|thank you|ok|okay|noted|cheers|great)\b[^.?!]{0,40}[.!]?\s*$/i;
+const THANKS_ONLY =
+  /^\s*(thanks|thank you|ok|okay|noted|cheers|great)\b[^.?!]{0,40}[.!]?\s*$/i;
 const DELIVERED =
   /\b(attached|here (is|are)|done|completed|sent (it|them|over)|i have sent|confirmed|approved|signed off)\b/i;
-const NEW_ASK = /\b(could you (also )?|can you (also )?|please (also )?|also,? please)\b/i;
+const NEW_ASK =
+  /\b(could you (also )?|can you (also )?|please (also )?|also,? please)\b/i;
 
 const sentences = (text: string) =>
   text
@@ -45,12 +49,16 @@ export function createStubGenerator(
 ): Generator {
   /** The delay, the "model is down" switch and the failure markers. */
   async function gate(prompt: string, text: string): Promise<void> {
-    if (options.delayMs) await new Promise((resolve) => setTimeout(resolve, options.delayMs));
+    if (options.delayMs)
+      await new Promise((resolve) => setTimeout(resolve, options.delayMs));
     if (options.dataDir && existsSync(path.join(options.dataDir, "stub-runtime-down"))) {
       throw runtimeError("runtime-down", "Could not reach the local AI runtime (stub).");
     }
     if (text.includes("[[stub-timeout]]") || prompt.includes("[[stub-timeout]]")) {
-      throw runtimeError("timeout", "The local AI model did not answer within 1s (stub).");
+      throw runtimeError(
+        "timeout",
+        "The local AI model did not answer within 1s (stub).",
+      );
     }
     if (text.includes("[[stub-invalid]]") || prompt.includes("[[stub-invalid]]")) {
       throw runtimeError(
@@ -112,9 +120,12 @@ export function createStubGenerator(
       const delivered = DELIVERED.test(body);
       const unrelated = body.includes("[[stub-unrelated]]");
       const nothing = !unrelated && (THANKS_ONLY.test(body) || FYI.test(body));
-      const ask = NEW_ASK.test(body) ? lines.find((line) => NEW_ASK.test(line)) : undefined;
+      const ask = NEW_ASK.test(body)
+        ? lines.find((line) => NEW_ASK.test(line))
+        : undefined;
 
-      let kind: "unrelated" | "reply" | "new-info" | "new-action" | "due-change" | "nothing" =
+      let kind:
+        "unrelated" | "reply" | "new-info" | "new-action" | "due-change" | "nothing" =
         "new-info";
       if (unrelated) kind = "unrelated";
       else if (nothing) kind = "nothing";
@@ -160,6 +171,78 @@ export function createStubGenerator(
         "Thanks,",
         "Alwin",
       ].join("\n");
+    },
+
+    // The weekly report's narrative, written from the facts block the prompt
+    // carries (reportNarrative.ts): a plain sentence per part, quoting titles
+    // exactly. `[[stub-invent]]` in a title makes it also name a person and a
+    // project that are not in the data, to exercise the verifier.
+    async draftNarrative({ prompt }) {
+      await gate(prompt, prompt);
+      const facts = /<facts>\n([\s\S]*?)\n<\/facts>/.exec(prompt)?.[1] ?? prompt;
+      const part = (
+        heading: string,
+      ): { title: string; fields: Record<string, string> }[] => {
+        const found = new RegExp(`^${heading} \\((\\d+)\\)\\n((?:- .*\\n?)*)`, "m").exec(
+          `${facts}\n`,
+        );
+        return (found?.[2] ?? "")
+          .split("\n")
+          .filter((line) => line.startsWith("- "))
+          .map((line) => {
+            const [first, ...rest] = line.slice(2).split(" | ");
+            return {
+              title: first.replace(/^"|"$/g, ""),
+              fields: Object.fromEntries(
+                rest.map((piece) => {
+                  const at = piece.indexOf(": ");
+                  return at < 0 ? [piece, ""] : [piece.slice(0, at), piece.slice(at + 2)];
+                }),
+              ),
+            };
+          });
+      };
+      const count = (heading: string) =>
+        Number(new RegExp(`^${heading} \\((\\d+)\\)`, "m").exec(facts)?.[1] ?? 0);
+
+      const completed = part("COMPLETED THIS PERIOD");
+      const overdue = part("OVERDUE");
+      const waiting = part("WAITING ON OTHERS");
+      const decisions = part("NEEDS A DECISION");
+      const due = part("DUE IN THE NEXT 7 DAYS");
+
+      const highlights = completed.length
+        ? [
+            `Closed ${count("COMPLETED THIS PERIOD")} ${count("COMPLETED THIS PERIOD") === 1 ? "item" : "items"}, including "${completed[0].title}".`,
+          ]
+        : ["Nothing to report."];
+      const risks = [
+        ...(overdue.length
+          ? [
+              `${count("OVERDUE")} overdue, the longest being "${overdue[0].title}" (${overdue[0].fields.days_overdue} days).`,
+            ]
+          : []),
+        ...(waiting.length
+          ? [
+              `Waiting on ${waiting[0].fields.waiting_on} for "${waiting[0].title}" since ${waiting[0].fields.since}.`,
+            ]
+          : []),
+        ...(decisions.length
+          ? [`A decision is pending on "${decisions[0].title}".`]
+          : []),
+      ];
+      const nextWeek = due.length
+        ? [`Focus on "${due[0].title}", due ${due[0].fields.due}.`]
+        : ["Nothing to report."];
+      if (facts.includes("[[stub-invent]]")) {
+        highlights.push("Rahul Verma closed the vendor contract ahead of plan.");
+        nextWeek.push('Start "Project Phoenix" on 2026-12-31.');
+      }
+      return AiNarrativeSchema.parse({
+        highlights,
+        risks: risks.length ? risks : ["Nothing to report."],
+        nextWeek,
+      });
     },
   };
 }

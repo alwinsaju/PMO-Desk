@@ -490,8 +490,8 @@ queue; phase 2 added the read-only Outlook COM producer, the Paste dialog, the
 Settings dialog, the Filtered-tab guidance and the retention purge (below).
 Phase 3 added full to-do editing, the reminder engine, the desktop and browser
 notification paths and the dock badge ("Phase 3"). Phase 4 added waiting-on
-tracking, local chaser drafts and thread-aware intake ("Phase 4" at the end of
-this section).
+tracking, local chaser drafts and thread-aware intake ("Phase 4"). Phase 5 added
+the weekly status report ("Phase 5" at the end of this section).
 
 **Runs inside the existing Next server.** No new process and no cloud store.
 `ensureIngest()` (`server/service.ts`) starts the inbox poller and the
@@ -542,6 +542,10 @@ src/lib/pmo/            Pure logic, one co-located *.test.mjs per area
                           before -> after change list and the merged TodoPatch.
   updatePrompt.ts         Prompts for "what does this new message change?".
   chaser.ts               Chaser prompts, cleanChaserText, buildMailto. Client-safe.
+  report.ts               The weekly report (phase 5): periods, buildReport, Markdown
+                          and plain-text rendering. Pure, client-safe.
+  reportNarrative.ts      The optional highlights: model schema, prompts, facts,
+                          the verifier. Pure, client-safe.
   desktopBridge.ts        Typing for window.aiOsDesktop (the Electron preload).
   checkpointTemplates.ts  The fixed catalog: simple, deliverable, approval, followup.
   server/                 Server only; never import from client code.
@@ -567,14 +571,19 @@ src/lib/pmo/            Pure logic, one co-located *.test.mjs per area
                           `think: false`, 240 s timeout, clamped below 280 s)
                           and the runtime summary for the toolbar's status chip.
     chaserDrafts.ts       In-memory "draft a chaser" jobs (local model, copy-only).
-    stubGenerator.ts      Fake model for tests / `PMO_AI_STUB=1`; answers all three
-                          tasks (proposal, update, chaser) deterministically.
+    reportDrafts.ts       In-memory "write highlights" jobs for the weekly report.
+    reports.ts            Saved reports under <data dir>\reports (revisions, sidecar).
+    stubGenerator.ts      Fake model for tests / `PMO_AI_STUB=1`; answers all four
+                          tasks (proposal, update, chaser, report highlights)
+                          deterministically.
 src/app/api/pmo/        state, ingest/scan, intake/manual (POST, the Paste
                         dialog), queue/[id] (PATCH) + approve|reject|retry,
                         raw/[intakeId], todos, todos/[id], config, due (GET),
                         due/claim and due/ack (POST), queue/[id]/apply and
                         /separate (update cards), todos/[id]/chaser (POST
-                        start, DELETE discard). Each route
+                        start, DELETE discard), reports (GET list, POST generate),
+                        reports/narrative (POST start, GET ?key= poll) and
+                        reports/[id] (GET, POST save a revision). Each route
                         checks Origin/Host first (raw message text is served),
                         touches only local files, replies HTTP 200 with
                         { ok, reason? }.
@@ -587,7 +596,8 @@ original text), `quarantine/` (filtered items: metadata and reason, body
 dropped), `rejected-files/` (unparsable producer files + `.reason.txt`),
 `queue/<proposalId>.json`, `todos/<todoId>.json`, `state/seen.json` (dedupe
 index), `state/notify.json` (reminders delivered / claimed), `logs/ingest.jsonl`, `logs/ai-calls.jsonl` (no message text),
-`audit.jsonl` (approve/reject/edit/complete with the OS user).
+`audit.jsonl` (approve/reject/edit/complete with the OS user), `reports/` (saved
+weekly reports, phase 5).
 
 **Inbox**: `config.inboxDir`, default
 `C:\Users\alsaju\OneDrive - Deloitte (O365D)\PMO-Inbox` (a Power Automate flow writes
@@ -642,7 +652,8 @@ purpose, and the tab says so.
 (`raw/<id>.json`) of a closed to-do (done/cancelled) or a rejected proposal goes
 once that decision is older than that; `quarantine/` and `rejected-files/` go
 after 30 days. Never touched: raw text of an open to-do or an undecided
-proposal, the proposal/to-do records, `audit.jsonl`, `state/seen.json`, config.
+proposal, the proposal/to-do records, `audit.jsonl`, `state/seen.json`, config,
+and `reports/` (saved weekly reports are kept until a person deletes them).
 Idempotent, unit-tested with a fake clock. It starts with the service, i.e. on
 the first `/api/pmo/*` call after the server starts.
 
@@ -846,7 +857,8 @@ any scheme before).
 **Window layout and UI rules** (the PMO window is 900x600 by default and can be
 shrunk to the shell's 360x240 minimum; dialogs are portaled to the viewport).
 - One toolbar row: tabs (*Review Queue*, *To-Do*, *Filtered*, each with a quiet
-  count) on the left, then the model chip (`toolbarView.modelStatus`), *Scan now*,
+  count, and *Reports*, which has none; it keeps its own scroll body and a sticky
+  footer, see Phase 5) on the left, then the model chip (`toolbarView.modelStatus`), *Scan now*,
   *Paste*, the reminders bell (only while the browser has not been asked) and the
   gear. Information (inbox path, last scan, filtered count) is in tooltips and
   Settings. Anything that needs attention is a notice under the row
@@ -882,3 +894,105 @@ also" -> new action, a bare thanks -> nothing, `[[stub-unrelated]]`), chasers fr
 facts block, the same failure markers (`[[stub-timeout]]`, `[[stub-invalid]]`) and
 the `stub-runtime-down` switch, and `[[stub-waiting:Name]]` in a message makes the
 proposal carry `waitingOn`.
+
+### Phase 5: weekly status report
+
+A **Reports** tab (the fourth tab, "Report" when narrow) drafts the PMO lead's weekly
+status from the app's own to-dos, to review, edit, copy and save locally. **Nothing is
+sent**: no mail, no Teams post, no Outlook COM, no agent-office; the one hand-off is an
+optional `mailto:` link, as for chasers. **Scope: PMO To-Do items only.** Nothing is
+pulled from Excel, ServiceNow, SharePoint or any other tracker.
+
+**Built by code, narrated by the model.** `report.ts` (`buildReport(todos, now, period,
+config)`, pure, fake-clock tested) computes every number, list, date and owner. The
+local model only writes an optional three-part narrative on top, so the report is
+complete and instant without it (a 12B model on this CPU takes a minute or two).
+
+- **Periods** (`resolvePeriod`, in `reminders.timeZone`, IST by default): *this week so
+  far* (Monday to today), *last week* (the previous Monday to Sunday), *last 7 days*
+  (today and six before) or a custom range (real dates, start not after end, not in the
+  future, at most 92 days, at most a year back). A period is the half-open range from
+  the start of its first day to the start of the day after its last, so a to-do closed
+  exactly at Monday 00:00 IST is in the new week and one a millisecond earlier is in the
+  old one.
+- **Sections.** Summary counts; Needs a decision (a to-do whose current stage, the first
+  pending checkpoint, is an approval step; omitted when none); Completed (`done` closed
+  in the period, by `completedAt`, else the timeline's "Marked done.", else `updatedAt`;
+  newest first); In progress (steps done/total and the current stage); Overdue (days
+  late); Waiting on others (who, since, calendar days); Due in the next 7 days (today
+  and the six after, whatever the period); New (created in the period). Completed and
+  New are about the period. **Everything else is a snapshot as of the moment the report
+  is built**, because the app keeps no history of past states ("Status as of ..." says
+  so). Overdue lists every open to-do due before today and Waiting every one with
+  "waiting on" set, so an item can be in both; In progress is the open to-dos in
+  neither. Snoozed to-dos are open work and stay in (marked "snoozed until"; snoozing
+  only silences reminders). Cancelled to-dos appear nowhere but one count.
+- **Text.** `renderMarkdown` writes headings and bullets only (no tables, no HTML), with
+  every piece of user text through `esc` (control and bidi characters removed, newlines
+  flattened, Markdown characters backslash-escaped, so a hostile title cannot add a
+  heading, a link or a tag). Each section shows its first 10 items and "+N more"
+  (`maxPerSection`); the saved sidecar keeps the full data and a long report also gets
+  a `.full.md`. `markdownToPlainText` (bullets become a bullet character, escapes are
+  undone, links become "text (url)") makes the Outlook/Teams version from whatever is in
+  the editor, so edits flow to both copies. The heading is `config.report` (`title`,
+  default "Weekly status", and an optional `projectName`), validated in
+  `PmoConfigPatchSchema` and edited in Settings.
+- **Highlights** (`reportNarrative.ts`, `server/reportDrafts.ts`). `POST
+  /api/pmo/reports/narrative { period }` starts (or joins) one in-memory job per period
+  and returns at once; the Reports tab polls `GET ...?key=<start>_<end>` every 2 s while
+  it runs ("Drafting... (can take a minute on this PC)"; a failure is a plain, retryable
+  message). The call is `generateJson` (`think: false`, temperature 0, schema
+  `AiNarrativeSchema`: `highlights`, `risks`, `nextWeek`, each at most 3 lines, bounded
+  in the JSON Schema), through the same concurrency-1 runtime queue as everything else.
+  The prompt carries only a `<facts>` block (counts, titles, owners, dates; descriptions
+  and ids are never sent). Titles are untrusted data written by other people: they are
+  flattened to one line, double quotes become `'` and `<`/`>` become brackets, so a title
+  cannot close the block or inject a line, and the instructions say to ignore anything in
+  it. The prompt version is `REPORT_PROMPT_VERSION`.
+- **Verifier** (`verifyNarrative`, pure, tested). The answer is untrusted. A line is
+  dropped (and listed with its reason) when it quotes a title that is not in the data
+  (compared ignoring case and spacing; a shortened title passes when most of it is
+  there), contains a date that is not in the data (ISO, "30 Oct", "Oct 30"), or contains
+  a capitalised word that is neither a common English word nor in the report's own
+  vocabulary (titles, owners, who is waited on, stages): an invented person or project.
+  A sentence-initial verb or adverb ("Escalated ...") is not mistaken for a name. A part
+  the model left empty says "Nothing to report."; a part whose every line was dropped
+  stays empty rather than claiming there is nothing. **Limits**: it checks what is
+  named, not what is claimed; a true name in a false sentence passes, so a person reads
+  the lines. The card shows the lines, a note about how many were left out (the reasons
+  are in its tooltip) and **Add to the report** (`insertNarrative`: replaces earlier
+  highlights after the Summary and keeps the person's edits).
+- **Saving** (`server/reports.ts`). `POST /api/pmo/reports` builds the report and
+  writes nothing but an `audit.jsonl` line (`report-generate`). `POST
+  /api/pmo/reports/[id] { markdown, edited, baseRevision?, period?, generatedAt?,
+  narrative? }` saves under `<data dir>\reports\`: `<yyyy-mm-dd>-<id>.md` is revision 1,
+  each later save a new `.r2.md`, `.r3.md`, ... (nothing is overwritten; a save on top
+  of a revision that is no longer the latest is refused), plus the `.json` sidecar
+  (period, generatedAt, `narrative: { model, promptVersion }`, the revision list with an
+  `edited` flag, the report's full data). The first save rebuilds the data for the
+  resolved days; ids are `rp_<hex>` and checked before touching a path (`isSafeId`), and
+  only file names this module writes are ever read. Atomic temp-then-rename writes,
+  under the store lock; audit lines `report-save` and `report-narrative`; the AI-call
+  log gets `task: "report-narrative"` with sizes, never the text. **Retention keeps
+  reports** (`retention.ts` never touches `reports/`; only a person deletes them).
+  `GET /api/pmo/reports` lists them and `GET /api/pmo/reports/[id]?rev=N` reopens one.
+- **UI** (`ReportsTab.tsx`, view-model `reportView.ts`). The period and the draft live in
+  `PmoTodoApp` (the tab unmounts on a switch; the person's edits must not). A period
+  menu and *Generate*; the highlights card; the editor (a `<textarea>`: report text is
+  never rendered as HTML); previous reports with *Open*; and a sticky footer of *Copy as
+  text*, *Copy as Markdown*, *Save* and the status line ("Not saved yet", "Unsaved
+  changes (saved: revision 1)", "Saved as revision 2"). Replacing edits that are not
+  saved (Generate again, Open another report) needs a second click. The footer is one
+  row at every size (labels shorten below ~512 px; the status line moves into the page
+  below ~448 px). *Open as unsent mail draft* (`buildMailto`, the same 1800-character
+  guard) is offered only while the whole text fits in a link, which a real report
+  almost never does; otherwise only Copy is offered.
+- **Stub model.** `draftNarrative` writes one line per part from the facts block, quoting
+  titles exactly (so it passes the verifier), honours `[[stub-timeout]]`,
+  `[[stub-invalid]]` and `stub-runtime-down`, and `[[stub-invent]]` in a title makes it
+  also name a person and a project that do not exist, to exercise the verifier.
+- Tests: `report.test.mjs` (periods, boundaries, sections, escaping, plain text),
+  `reportNarrative.test.mjs` (facts, prompt injection, verifier, insertion),
+  `server/reports.server.test.mjs` (generate, revisions, list, validation, origin check,
+  narrative success/failure/timeouts, stub, source scans) and
+  `components/apps/pmo-todo-app/reportView.test.mjs`.

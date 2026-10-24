@@ -261,3 +261,33 @@ approve.
 - Matching needs the producer to fill `thread.conversationId` (the Outlook script
   and the Outlook flow do; a Teams message is matched by its chat). A paste never
   matches an existing to-do.
+
+## 12. Weekly status report (phase 5)
+
+The **Reports** tab writes your weekly status from the to-dos in this app. It
+covers PMO To-Do items only: nothing is read from Excel, ServiceNow, SharePoint
+or any tracker, and nothing is sent anywhere. It is text for you to review, edit,
+copy and save.
+
+1. Open **Reports**, pick a period (*This week so far*, *Last week*, *Last 7 days*
+   or a custom range; weeks run Monday to Sunday, in India time) and press
+   **Generate**. The report appears at once. It lists what was completed and what
+   is new in the period and, as of now, what is in progress, overdue, waiting on
+   others, due in the next 7 days and needs a decision. Long lists show the first
+   10 and "+N more".
+2. Optional: **Write highlights with AI**. The local model drafts a short
+   Highlights, Risks / blockers and Next week focus from the titles, owners and
+   dates in the report (it can take a minute on this PC; the report is complete
+   without it). Lines that name a title, person or date that is not in your data
+   are left out and the card says how many. Press **Add to the report** to put the
+   lines into the text. Read them: the check cannot tell whether a sentence says
+   something sensible.
+3. Edit the text. **Copy as text** gives plain text for Outlook or Teams;
+   **Copy as Markdown** gives the Markdown. **Open as unsent mail draft** appears
+   only when the text is short enough for a mail link (most reports are not: use
+   Copy). **Save** keeps it on this computer as a new revision.
+4. Saved reports are in the data folder under `reports\` as `<date>-<id>.md`
+   (revision 1), `<date>-<id>.r2.md`, ... and a `.json` file with the period and
+   the full data; a report with a long list also has a `.full.md` with every item.
+   They are never deleted automatically. The title (and an optional project name)
+   are in Settings, *Weekly report*.

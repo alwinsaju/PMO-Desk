@@ -850,6 +850,16 @@ describe("nothing is ever sent", () => {
       "src/app/api/pmo/queue/[id]/separate/route.ts",
       "src/components/apps/pmo-todo-app/ChaserDialog.tsx",
       "src/components/apps/pmo-todo-app/UpdateCard.tsx",
+      // Phase 5 (weekly report); reports.server.test.mjs checks these more strictly.
+      "src/lib/pmo/report.ts",
+      "src/lib/pmo/reportNarrative.ts",
+      "src/lib/pmo/server/reports.ts",
+      "src/lib/pmo/server/reportDrafts.ts",
+      "src/app/api/pmo/reports/route.ts",
+      "src/app/api/pmo/reports/narrative/route.ts",
+      "src/app/api/pmo/reports/[id]/route.ts",
+      "src/components/apps/pmo-todo-app/ReportsTab.tsx",
+      "src/components/apps/pmo-todo-app/reportView.ts",
     ];
     for (const file of files) {
       const text = await readFile(path.join(root, file), "utf8");

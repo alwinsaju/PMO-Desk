@@ -12,8 +12,10 @@ import {
 } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import {
+  DEFAULT_REPORT_TITLE,
   DEFAULT_RETENTION_DAYS,
   MAX_CHASER_DAYS,
+  MAX_REPORT_TITLE_CHARS,
   MAX_RETENTION_DAYS,
   MIN_RETENTION_DAYS,
   type PmoState,
@@ -220,6 +222,41 @@ export function SettingsDialog({
                 </span>
                 <FieldError message={errors.retentionDays} />
               </Field>
+            </Section>
+
+            <Section title="Weekly report">
+              <p className="text-ink-faint text-[11px] leading-relaxed">
+                The heading of the Reports tab&apos;s weekly status. The report covers the
+                to-dos in this app only, and nothing in it is sent anywhere.
+              </p>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <Field label="Report title">
+                  <Input
+                    value={form.reportTitle}
+                    disabled={busy}
+                    maxLength={MAX_REPORT_TITLE_CHARS}
+                    placeholder={DEFAULT_REPORT_TITLE}
+                    aria-invalid={errors["report.title"] ? true : undefined}
+                    onChange={(event) => set({ reportTitle: event.target.value })}
+                  />
+                  <FieldError message={errors["report.title"]} />
+                </Field>
+                <Field label="Project name (optional)">
+                  <Input
+                    value={form.reportProject}
+                    disabled={busy}
+                    maxLength={MAX_REPORT_TITLE_CHARS}
+                    placeholder="Shown before the title"
+                    aria-invalid={errors["report.projectName"] ? true : undefined}
+                    onChange={(event) => set({ reportProject: event.target.value })}
+                  />
+                  <FieldError message={errors["report.projectName"]} />
+                </Field>
+              </div>
+              <span className="text-ink-faint text-[11px] leading-relaxed">
+                Saved reports are kept on this computer until you delete them; they are
+                never purged by the retention setting above.
+              </span>
             </Section>
 
             <Section title="Reminders">
