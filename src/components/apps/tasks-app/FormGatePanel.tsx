@@ -52,7 +52,7 @@ interface FormGatePanelProps {
  * hint), a search box and a "Needs answer" filter so ~20 fields stay
  * manageable, and Save. Approve
  * lives in the action bar below the tabs and stays disabled until the
- * backend's own `pending` list is empty — Save is what empties it.
+ * engine's own `pending` list is empty — Save is what empties it.
  */
 /** Rows mounted before the first paint; the rest follow in a low-priority
  *  transition so opening a 50-question form shows up immediately. */
@@ -107,7 +107,7 @@ export const FormGatePanel = memo(function FormGatePanel({
     const reply = await saveForm(taskId, toSave);
     setSaving(false);
     if (!reply.ok) {
-      setSaveError(reply.reason ?? "the backend rejected the save");
+      setSaveError(reply.reason ?? "the engine rejected the save");
       return false;
     }
     setEdits({});

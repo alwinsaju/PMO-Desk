@@ -18,9 +18,9 @@ export const dynamic = "force-dynamic";
  * This route is the ONLY thing that ever talks to Ollama. Client JS never
  * calls Ollama directly and never even learns its URL — CommandBar.tsx
  * only ever calls this same-origin route. That's the same architectural
- * boundary agent-office/* already keeps (its FastAPI backend's URL is only
+ * boundary tasks-engine/* already keeps (its FastAPI engine's URL is only
  * ever read from server code that proxies/launches it — see
- * agent-office/shared.ts), applied here even though, same as there, there's
+ * tasks-engine/shared.ts), applied here even though, same as there, there's
  * no API key to protect: it's the right shape regardless, and it's what
  * lets OLLAMA_BASE_URL change (a different machine, a tunnel, whatever)
  * without touching a single client bundle.
@@ -256,7 +256,7 @@ const openAppArgsSchema = z.object({ appId: z.enum(AI_APP_IDS) });
  * a plain conversational reply, or a typed error. Never throws to the
  * client as a bare 500 for an expected failure (Ollama down, a timeout, a
  * response that didn't parse) — those all come back as a normal 200 with
- * `{ type: "error", ... }`, mirroring agent-office/start/route.ts's own
+ * `{ type: "error", ... }`, mirroring tasks-engine/start/route.ts's own
  * `{ok: false, reason}` convention. A 400 is reserved for a genuinely
  * malformed REQUEST (a bug in this route's own client, not an Ollama/model
  * problem).

@@ -503,25 +503,25 @@ it, so treat it as worth discussing rather than changing silently.
 The next planned step for this repo is a final visual QA pass across
 everything above, not new feature work.
 
-## Agent apps: Shift Roster and December Disconnect (outside the desktop shell)
+## Tasks: Shift Roster and December Disconnect (outside the desktop shell)
 
-`agent-apps/` is not part of the Next.js app. It holds task folders (`agent.json` manifest, `scripts/`, tests)
+`tasks/` is not part of the Next.js app. It holds task folders (`task.json` manifest, `scripts/`, tests)
 and shared Python libraries (`shared/roster_lib`, `shared/winter_lib`). The Tasks app
-(`src/components/apps/tasks-app/`) is a client of the separate agent-office FastAPI backend
-(`C:\Projects\Agents-workspace\agent-office`, port 8000), which discovers the task folders, runs each step as a
+(`src/components/apps/tasks-app/`) is a client of the separate Tasks engine
+(`tasks-engine/` in this repo, a FastAPI service on 127.0.0.1), which discovers the task folders, runs each step as a
 subprocess and serves the platform endpoints (uploads, prepare, options, params, questions form, diff, flags,
-approver stamp). The next dev server starts that backend through `src/app/api/agent-office/start/route.ts`. The
+approver stamp). The next dev server starts that engine through `src/app/api/tasks-engine/start/route.ts`. The
 shapes the three parts share (manifest keys, endpoints, JSON files) are fixed in
-[`agent-apps/TASK-PLATFORM-CONTRACT.md`](./agent-apps/TASK-PLATFORM-CONTRACT.md). Task decisions and assumptions:
-[`agent-apps/DECISIONS-AND-ASSUMPTIONS.md`](./agent-apps/DECISIONS-AND-ASSUMPTIONS.md); how to run them the first
-time: [`agent-apps/FIRST-RUN-GUIDE.md`](./agent-apps/FIRST-RUN-GUIDE.md).
+[`tasks/TASK-PLATFORM-CONTRACT.md`](./tasks/TASK-PLATFORM-CONTRACT.md). Task decisions and assumptions:
+[`tasks/DECISIONS-AND-ASSUMPTIONS.md`](./tasks/DECISIONS-AND-ASSUMPTIONS.md); how to run them the first
+time: [`tasks/FIRST-RUN-GUIDE.md`](./tasks/FIRST-RUN-GUIDE.md).
 
 **Updates without reinstalling:** the Electron shell (`desktop/main.cjs`, mode logic in `desktop/launch-config.cjs`)
 picks the UI mode: an installed (packaged) build defaults to `bundled`, while an unpackaged run (`pnpm desktop`)
 defaults to `live-dev` (`next dev` from the project folder, falling back to bundled). A packaged build opts into
 `live-dev`/`live-build` via `AI_OS_MODE` (the persistent way, e.g. a user environment variable) or `live-config.json`
-(removed by the installer on every reinstall). In a live mode `src/**` edits hot-reload; the backend and the task manifests already load from disk, and
-the settings gear's "Restart backend" row (`src/lib/backendRestart.ts`, via the `/api/agent-office/{stop,start}`
+(removed by the installer on every reinstall). In a live mode `src/**` edits hot-reload; the engine and the task manifests already load from disk, and
+the settings gear's "Restart Tasks engine" row (`src/lib/engineRestart.ts`, via the `/api/tasks-engine/{stop,start}`
 routes only) reloads them. Reinstall is needed only for `desktop/` or `package.json` build-config changes.
 
 ## Local AI runtime (`src/lib/ai-runtime/`)
@@ -590,8 +590,8 @@ spawn Ollama), `AI_OS_AI_PREWARM` (default off, see above), `AI_OS_AI_KEEP_ALIVE
 a changing `num_ctx` makes Ollama reload the model, so `/api/ai/command` sends
 the same value).
 
-**Lifecycle and ownership** (`lifecycle.ts`, mirroring the agent-office
-backend's owned lifecycle): `src/instrumentation.ts` calls `ensureRuntime()`
+**Lifecycle and ownership** (`lifecycle.ts`, mirroring the Tasks engine's
+owned lifecycle): `src/instrumentation.ts` calls `ensureRuntime()`
 when the Next server starts (`pnpm dev`, `next start`, and the server the
 Electron shell spawns). If something already answers on the base URL it is
 reused and is never killed (`ownedByUs: false`). Otherwise, and only for a
@@ -605,7 +605,7 @@ a tiny real chat (one short message, a few tokens, `think: false`) through the
 queue, not an empty `/api/generate` (that only allocates the model and the first
 real call still paid 60-90 s to page the weights in). On quit, an owned server has its models unloaded (`keep_alive: 0`) and
 its process tree killed (`taskkill /T`): `desktop/main.cjs` calls
-`POST /api/ai/runtime/stop` (desktop mode only) next to the Agent Office stop,
+`POST /api/ai/runtime/stop` (desktop mode only) next to the Tasks engine stop,
 and a `process.on("exit")` hook covers dev-server exits. The Ollama child is
 deliberately non-detached, so a hard kill of the Next process also takes it
 down (Windows job object). As a last net, a pidfile in the OS temp dir lets
@@ -727,10 +727,10 @@ The whole app in one place (the sections below are the detail, phase by phase).
 **Safety invariants (all phases)**
 
 - **Nothing is ever sent.** No email, Teams post, SMTP, Outlook COM send, Graph call or
-  agent-office call exists in this app. The only hand-offs are text to copy and a `mailto:`
+  tasks-engine call exists in this app. The only hand-offs are text to copy and a `mailto:`
   link that opens an *unsent* compose window in the person's own mail program. The only
   notifications are local reminders on this computer. Source scans in the tests fail if a
-  new module gains mail, network or agent-office code, or injects HTML.
+  new module gains mail, network or tasks-engine code, or injects HTML.
 - **A human gate on everything that changes a to-do.** Approve creates a to-do; an update
   card applies only the changes a person ticked; a sign-off suggestion is recorded only when
   the card is approved and is pre-ticked only under strict conditions; the model never writes
@@ -753,7 +753,7 @@ The whole app in one place (the sections below are the detail, phase by phase).
 **What it does not do.** It does not send, reply to, post, forward or schedule anything; it
 does not read Outlook or Teams itself (the Outlook script is a separate, read-only export);
 it does not pull from Excel, ServiceNow, SharePoint or any tracker; it does not call a cloud
-model or agent-office; and it does not decide anything on its own: it drafts, suggests and
+model or tasks-engine; and it does not decide anything on its own: it drafts, suggests and
 reminds, and a person approves.
 
 A built-in app (`"pmo-todo"`, the sixth dock entry) for the PMO lead. Raw
@@ -762,9 +762,9 @@ Teams messages and Outlook emails arrive as JSON files in an inbox folder; the
 into a to-do _proposal_; proposals wait in a **Review Queue**, and only a human
 **Approve** creates a to-do. **The app sends nothing anywhere** (no email, no
 Teams post; the only notifications are local reminders on this computer, see
-"Phase 3" below) and never calls agent-office: no code under
+"Phase 3" below) and never calls tasks-engine: no code under
 `src/lib/pmo`, `src/app/api/pmo` or the app imports
-`src/app/api/agent-office/*`. Phase 1 was the inbox, filter, model and review
+`src/app/api/tasks-engine/*`. Phase 1 was the inbox, filter, model and review
 queue; phase 2 added the read-only Outlook COM producer, the Paste dialog, the
 Settings dialog, the Filtered-tab guidance and the retention purge (below).
 Phase 3 added full to-do editing, the reminder engine, the desktop and browser
@@ -1038,9 +1038,9 @@ including stopping the Ollama this app started. When off, closing quits as befor
 (`window-all-closed`). The main process reads the setting from
 `<userData>\desktop-prefs.json`, which the Next server writes when the setting is
 saved and at start (`AI_OS_DESKTOP_PREFS_FILE`, set by main.cjs); a missing or
-unreadable file means off. `AI_OS_SKIP_AGENT_OFFICE=1` makes the shell skip its
-Agent Office start/stop calls (for testing the shell without touching the real
-backend). Because reminders need the data layer, the first claim also starts the
+unreadable file means off. `AI_OS_SKIP_TASKS_ENGINE=1` makes the shell skip its
+Tasks engine start/stop calls (for testing the shell without touching the real
+engine). Because reminders need the data layer, the first claim also starts the
 PMO service (inbox poller, structuring worker) shortly after launch instead of
 when the PMO window is first opened.
 
@@ -1064,7 +1064,7 @@ Turning reminders on, and a manual check of the real notification path:
 ### Phase 4: waiting, chaser drafts, thread-aware intake
 
 Still human-gated, still local: **nothing is sent anywhere**. No SMTP, no Outlook
-COM, no Graph, no agent-office. The one hand-off to the outside is a `mailto:` link
+COM, no Graph, no tasks-engine. The one hand-off to the outside is a `mailto:` link
 (below).
 
 **Waiting on.** A to-do has `waitingOn`, `waitingSince` (ISO; the chaser clock) and
@@ -1196,7 +1196,7 @@ proposal carry `waitingOn`.
 
 A **Reports** tab (the fourth tab, "Report" when narrow) drafts the PMO lead's weekly
 status from the app's own to-dos, to review, edit, copy and save locally. **Nothing is
-sent**: no mail, no Teams post, no Outlook COM, no agent-office; the one hand-off is an
+sent**: no mail, no Teams post, no Outlook COM, no tasks-engine; the one hand-off is an
 optional `mailto:` link, as for chasers. **Scope: PMO To-Do items only.** Nothing is
 pulled from Excel, ServiceNow, SharePoint or any other tracker.
 
@@ -1345,7 +1345,7 @@ zod schema, runs the transition under the store lock and writes an audit line
 `signoff-draft`; refused attempts are logged as `signoff-refused`).
 
 - **Identity and time come from the server, never the client.** This mirrors the task
-  platform's approver stamp (`agent-apps/TASK-PLATFORM-CONTRACT.md`: the OS user plus a UTC
+  platform's approver stamp (`tasks/TASK-PLATFORM-CONTRACT.md`: the OS user plus a UTC
   timestamp, "never trust a client-supplied name"): `recordedBy` and `requestedBy` are
   `osUser()` (the same source as `approvedBy` and the audit `user`), `recordedAt` is the
   server clock. A body that carries any server-owned field (`recordedBy`, `recordedAt`,
@@ -1453,5 +1453,5 @@ that exists only in the quoted mail and an unrelated reply, applying the card, r
 AI request job, the stub, and the source scans), and
 `components/apps/pmo-todo-app/signoffUi.test.mjs` (the view-models and the components'
 key rules). The "nothing is ever sent" scans in `updates.server.test.mjs` and
-`signoff.server.test.mjs` cover the new modules: no mail, Outlook, network, agent-office or
+`signoff.server.test.mjs` cover the new modules: no mail, Outlook, network, tasks-engine or
 HTML-injection code, the only hand-off being the `mailto:` link.

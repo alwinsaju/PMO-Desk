@@ -44,15 +44,19 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# agent-apps: real client/employee data and generated artifacts (never commit)
-agent-apps/**/input/
-agent-apps/**/output/
-agent-apps/**/config/
-agent-apps/**/reference/
-agent-apps/**/templates/
-agent-apps/.venv/
-agent-apps/shared/roster-reference/*
-!agent-apps/shared/roster-reference/README.md
+# tasks: real client/employee data and generated artifacts (never commit)
+tasks/**/input/
+tasks/**/output/
+tasks/**/config/
+tasks/**/reference/
+tasks/**/templates/
+tasks/.venv/
+tasks/shared/roster-reference/*
+!tasks/shared/roster-reference/README.md
+
+# tasks engine: local venv and runtime data (run history)
+/tasks-engine/.venv/
+/tasks-engine/.data/
 
 # python
 __pycache__/
@@ -63,8 +67,8 @@ __pycache__/
 # Office lock files
 ~$*
 
-# agent-apps: real employee roster (names/emails) - never commit
-agent-apps/shared/roster/Names.xlsx
+# tasks: real employee roster (names/emails) - never commit
+tasks/shared/roster/Names.xlsx
 
 # local live-mode override for the Electron shell (see README)
 /desktop/live-config.json

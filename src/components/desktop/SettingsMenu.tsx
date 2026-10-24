@@ -27,7 +27,7 @@ import {
 import { cn } from "@/lib/cn";
 import { useBrand } from "@/lib/useBrand";
 import { useTheme } from "@/lib/useTheme";
-import { useBackendRestart, type BackendRestartStatus } from "./useBackendRestart";
+import { useEngineRestart, type EngineRestartStatus } from "./useEngineRestart";
 import { useHardwareAcceleration } from "./useHardwareAcceleration";
 
 /**
@@ -200,14 +200,14 @@ function HardwareAccelerationRow() {
   );
 }
 
-const RESTART_HINT = "Loads backend and task changes";
+const RESTART_HINT = "Loads engine and task changes";
 
-function restartHint(status: BackendRestartStatus): string {
+function restartHint(status: EngineRestartStatus): string {
   switch (status.kind) {
     case "checking":
       return "Checking for running tasks...";
     case "working":
-      return status.phase === "stopping" ? "Stopping backend..." : "Starting backend...";
+      return status.phase === "stopping" ? "Stopping engine..." : "Starting engine...";
     case "done":
     case "error":
       return status.message;
@@ -216,12 +216,12 @@ function restartHint(status: BackendRestartStatus): string {
   }
 }
 
-/** "Restart backend" - restarts the Agent Office backend this app launched,
- *  so backend code and task manifest changes load without quitting AI OS.
+/** "Restart Tasks engine" - restarts the Tasks engine this app launched,
+ *  so engine code and task manifest changes load without quitting AI OS.
  *  Warns first if a task is mid-run. Only uses the app's own launcher routes
- *  (see src/lib/backendRestart.ts); never a backend action endpoint. */
-function RestartBackendRow() {
-  const { status, requestRestart, confirmRestart, cancelRestart } = useBackendRestart();
+ *  (see src/lib/engineRestart.ts); never a engine action endpoint. */
+function RestartEngineRow() {
+  const { status, requestRestart, confirmRestart, cancelRestart } = useEngineRestart();
   const cancelRef = useRef<HTMLDivElement>(null);
   const confirming = status.kind === "confirm";
 
@@ -244,7 +244,7 @@ function RestartBackendRow() {
             ))}
           </ul>
           <p className="text-ink-muted mt-1 max-w-[17rem]">
-            Restarting the backend stops these runs. Files already written stay on disk.
+            Restarting the engine stops these runs. Files already written stay on disk.
           </p>
         </div>
         <DropdownMenuItem
@@ -288,7 +288,7 @@ function RestartBackendRow() {
             className={cn(inProgress && "animate-spin")}
           />
         }
-        title="Restart backend"
+        title="Restart Tasks engine"
         hint={restartHint(status)}
         hintProps={{
           role: "status",
@@ -304,7 +304,7 @@ const settingsRows: { id: string; Row: ComponentType }[] = [
   { id: "dark-mode", Row: DarkModeRow },
   { id: "deloitte-mode", Row: DeloitteModeRow },
   { id: "hardware-acceleration", Row: HardwareAccelerationRow },
-  { id: "restart-backend", Row: RestartBackendRow },
+  { id: "restart-engine", Row: RestartEngineRow },
 ];
 
 export function SettingsMenu() {

@@ -4,7 +4,7 @@
  * the grouping/filtering that keeps a ~20 field form usable. Type-only
  * imports so taskPlatform.test.mjs runs it under plain Node.
  *
- * The backend's `pending` counts REQUIRED fields with no non-empty SAVED
+ * The engine's `pending` counts REQUIRED fields with no non-empty SAVED
  * answer (a text answer is trimmed first, so whitespace is not an answer),
  * so a preselected required default is still pending until it is saved.
  * Save therefore sends every shown required value that differs from what is
@@ -13,12 +13,12 @@
  * an untouched optional default (e.g. an availability row left at "No
  * exception") is NOT sent, because the task script applies the schema
  * default itself; an optional field the user changed IS sent, and a text
- * field the user emptied is sent as `null` (the backend then drops the
+ * field the user emptied is sent as `null` (the engine then drops the
  * saved answer).
  */
 import type { FormAnswerPatch, FormAnswers, FormField, FormSchema } from "./types";
 
-/** The backend's cap on a text answer (after trimming). */
+/** The engine's cap on a text answer (after trimming). */
 export const TEXT_MAX_CHARS = 500;
 
 /** Free-text fields: anything that is not a select (the panel renders an
@@ -27,7 +27,7 @@ export function isTextField(field: FormField): boolean {
   return field.type !== "select";
 }
 
-/** What the backend would store and count for this field's value. */
+/** What the engine would store and count for this field's value. */
 function normalized(field: FormField, value: string | undefined | null): string {
   const text = value ?? "";
   return isTextField(field) ? text.trim() : text;
@@ -78,7 +78,7 @@ export function localPending(schema: FormSchema, effective: FormAnswers): string
     .map((field) => field.id);
 }
 
-/** The answers Save must POST (the backend merges per key, so nothing else
+/** The answers Save must POST (the engine merges per key, so nothing else
  *  is sent): every non-empty shown value that differs from the saved one,
  *  and `null` for a text field the user emptied that has a saved answer.
  *  With `edits` given, an optional field the user never touched and that
@@ -226,7 +226,7 @@ export function filterFields(
   });
 }
 
-/** Card-level one-liner from the backend's own pending list. */
+/** Card-level one-liner from the engine's own pending list. */
 export function formSummary(schema: FormSchema, pending: string[]): string {
   const required = schema.fields.filter((field) => field.required).length;
   if (pending.length === 0) {

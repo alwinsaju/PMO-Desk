@@ -188,7 +188,7 @@ export function TaskActionBar({
                 : "Confirming…"
               : confirmLabel}
           </Button>
-          {/* A blocked confirm cannot be repaired in place and the backend has no
+          {/* A blocked confirm cannot be repaired in place and the engine has no
               reject at this gate: Reset (start over) is the way out. */}
           {sendBlocked && (
             <Button variant="outline" disabled={isBusy} onClick={onReset}>

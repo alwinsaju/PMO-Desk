@@ -50,7 +50,7 @@ default in this pass.
 ## Running AI OS as a desktop app
 
 AI OS includes an Electron launcher for a desktop-only installation. It starts
-the local AI OS and Agent Office services, opens a standalone application
+the local AI OS and Tasks engine services, opens a standalone application
 window, and stops both owned services when the final AI OS window closes.
 
 Create the Windows launcher:
@@ -94,7 +94,7 @@ reason in `%APPDATA%\ai-os\desktop.log` and starts the bundled app instead
 for example `AI OS (live-dev: C:\Projects\AI OS)`.
 
 The **Developer** menu has *Restart UI server* (stops and respawns the server
-and the backend it owns, then reloads; it warns first if a task is running),
+and the Tasks engine it owns, then reloads; it warns first if a task is running),
 *Open project folder* and *Open logs folder*. If the UI server crashes, AI OS
 offers to restart it. Do not run `pnpm dev` or `pnpm build` against the same
 folder while a live mode is running (they share `.next`); live mode replaces
@@ -103,10 +103,10 @@ the dev server.
 How updates reach the app now:
 
 - **UI changes** (`src/**`): live-reload in `live-dev`; nothing to do.
-- **Backend and task changes** (agent-office `main.py`, `agent-apps/**`
-  scripts and manifests): gear menu (top right) > **Restart backend**. It checks
+- **Engine and task changes** (tasks-engine `main.py`, `tasks/**`
+  scripts and manifests): gear menu (top right) > **Restart Tasks engine**. It checks
   for running tasks first and asks for confirmation if any are not idle. It only
-  restarts a backend that this AI OS started; one started from a terminal is
+  restarts an engine that this AI OS started; one started from a terminal is
   reported and left alone.
 - **Reinstall** only when `desktop/` (the Electron shell) or the `build`
   config in `package.json` changes, or to refresh the bundled fallback.
@@ -114,7 +114,7 @@ How updates reach the app now:
 For development without installing, `pnpm desktop` opens the Electron shell
 from the project folder (same modes). The PWA manifest remains available for
 browser-based use on `localhost`, but the Electron launcher is the supported
-option when the application and Agent Office backend must stop together on close.
+option when the application and Tasks engine must stop together on close.
 
 Other scripts:
 
@@ -144,21 +144,21 @@ See `ARCHITECTURE.md` for what each of these owns, the contracts other code
 should go through, and how the next four workstreams (Desktop Shell & Chrome,
 AI Agent Layer, App Store, Demo Apps) fit in.
 
-## Agent apps: Shift Roster and December Disconnect
+## Tasks: Shift Roster and December Disconnect
 
-Two deterministic (no LLM judgment) tasks live in `agent-apps/` and run from the Tasks app through the
-agent-office backend: **Shift Roster** (builds the roster for one two-month cycle) and **December Disconnect**
+Two deterministic (no LLM judgment) tasks live in `tasks/` and run from the Tasks app through the
+Tasks engine: **Shift Roster** (builds the roster for one two-month cycle) and **December Disconnect**
 (the winter holiday coverage: main plan and Analytics plan). Both write Excel drafts you review, then a confirmed
 final; the master roster is never modified. Real data is gitignored (`input/`, `output/`, `config/`).
 
-- First run (restart the backend, click path, what to check in Excel, bug reporting, rollback):
-  [`agent-apps/FIRST-RUN-GUIDE.md`](./agent-apps/FIRST-RUN-GUIDE.md)
+- First run (restart the Tasks engine, click path, what to check in Excel, bug reporting, rollback):
+  [`tasks/FIRST-RUN-GUIDE.md`](./tasks/FIRST-RUN-GUIDE.md)
 - What was decided, what is assumed, open items to confirm:
-  [`agent-apps/DECISIONS-AND-ASSUMPTIONS.md`](./agent-apps/DECISIONS-AND-ASSUMPTIONS.md)
-- Acceptance criteria against test evidence: [`agent-apps/ACCEPTANCE.md`](./agent-apps/ACCEPTANCE.md)
-- Task docs: [`agent-apps/shift-roster/README.md`](./agent-apps/shift-roster/README.md),
-  [`agent-apps/december-disconnect/README.md`](./agent-apps/december-disconnect/README.md)
+  [`tasks/DECISIONS-AND-ASSUMPTIONS.md`](./tasks/DECISIONS-AND-ASSUMPTIONS.md)
+- Acceptance criteria against test evidence: [`tasks/ACCEPTANCE.md`](./tasks/ACCEPTANCE.md)
+- Task docs: [`tasks/shift-roster/README.md`](./tasks/shift-roster/README.md),
+  [`tasks/december-disconnect/README.md`](./tasks/december-disconnect/README.md)
 - Task platform contract (manifest keys, endpoints, JSON files):
-  [`agent-apps/TASK-PLATFORM-CONTRACT.md`](./agent-apps/TASK-PLATFORM-CONTRACT.md)
-- Libraries: [`agent-apps/shared/roster_lib/README.md`](./agent-apps/shared/roster_lib/README.md),
-  [`agent-apps/shared/winter_lib/README.md`](./agent-apps/shared/winter_lib/README.md)
+  [`tasks/TASK-PLATFORM-CONTRACT.md`](./tasks/TASK-PLATFORM-CONTRACT.md)
+- Libraries: [`tasks/shared/roster_lib/README.md`](./tasks/shared/roster_lib/README.md),
+  [`tasks/shared/winter_lib/README.md`](./tasks/shared/winter_lib/README.md)

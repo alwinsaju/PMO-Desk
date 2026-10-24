@@ -1,9 +1,7 @@
 /**
- * Shapes returned by the agent-office FastAPI backend (see
- * `C:\Projects\Agents-workspace\agent-office\backend\main.py`, read-only
- * reference — this app never modifies that codebase). Kept intentionally
+ * Shapes returned by the Tasks engine (see `tasks-engine/main.py`). Kept intentionally
  * narrow: only the fields this app actually renders are declared, and
- * anything the backend treats as an open-ended per-task manifest (step
+ * anything the engine treats as an open-ended per-task manifest (step
  * ids/types) stays typed as plain strings rather than a guessed-at union.
  */
 
@@ -22,7 +20,7 @@ export type TaskState =
 export type GateType = "form" | "flags" | "diff" | "none";
 
 /** A step's `gate` block: the type plus the task-relative file names the
- *  backend reads for it (this app only ever uses the type — the file
+ *  engine reads for it (this app only ever uses the type — the file
  *  contents arrive through the dedicated endpoints). */
 export interface StepGate {
   type: GateType | (string & {});
@@ -34,7 +32,7 @@ export interface StepGate {
 export interface TaskStep {
   id: string;
   /** "python" | "powershell" | "review" | "confirm" in every task seen so
-   *  far, but the backend never validates this against a closed set until
+   *  far, but the engine never validates this against a closed set until
    *  a step actually runs — treated here as an opaque per-task manifest
    *  value. Only "review" and "confirm" are ever treated specially (as a
    *  human-attention gate); everything else renders as a normal step. */
@@ -59,7 +57,7 @@ export interface TaskInputDef {
   optionsKey?: string;
   /** A file kept on disk across runs (e.g. the yearly Holiday Roster): once
    *  it is present the user need not upload it again. Absent on an older
-   *  backend (= false). */
+   *  engine (= false). */
   persist?: boolean;
 }
 
@@ -84,7 +82,7 @@ export interface TaskNotification {
   outputPath: string | null;
   /** Every file this notification offers an Open button for (report-data's
    *  `workbook_path` first, then its `extra_paths`); the paths are absolute
-   *  and the only ones the backend will open. Absent on an older backend. */
+   *  and the only ones the engine will open. Absent on an older engine. */
   outputPaths?: OutputFile[];
   createdAt: string;
 }
@@ -142,8 +140,8 @@ export interface HistoryRun {
   current_step_at_end: string | null;
   error: string | null;
   steps_completed: string[];
-  /** Who approved/confirmed what, stamped by the backend (OS user + UTC
-   *  time, never client-supplied). Absent on records from an older backend. */
+  /** Who approved/confirmed what, stamped by the engine (OS user + UTC
+   *  time, never client-supplied). Absent on records from an older engine. */
   approvals?: Approval[];
 }
 
@@ -209,7 +207,7 @@ export interface ReviewQueue {
 }
 
 // ---------------------------------------------------------------------------
-// Task platform contract (agent-apps/TASK-PLATFORM-CONTRACT.md): inputs,
+// Task platform contract (tasks/TASK-PLATFORM-CONTRACT.md): inputs,
 // options, forms, flags, diffs. Every endpoint replies HTTP 200 with
 // `{ok, reason?}`; the helpers in api.ts collapse HTTP/network failures into
 // the same `{ok: false, reason}` shape so callers handle one failure path.
@@ -220,9 +218,9 @@ export interface ReviewQueue {
 export type Reply<T extends object = object> = {
   ok: boolean;
   reason?: string;
-  /** Set by api.ts when the route doesn't exist (HTTP 404: an older backend
+  /** Set by api.ts when the route doesn't exist (HTTP 404: an older engine
    *  still running), so a caller can hide a feature instead of showing a
-   *  failure. Never sent by the backend itself. */
+   *  failure. Never sent by the engine itself. */
   notFound?: boolean;
 } & Partial<T>;
 
@@ -252,7 +250,7 @@ export interface InputsPayload {
   inputs: InputStatus[];
   /** Previously saved select values, `{inputId: value}`. */
   params: Record<string, string>;
-  /** Input files on disk that a cleanup would remove. Absent on a backend
+  /** Input files on disk that a cleanup would remove. Absent on a engine
    *  without the cleanup feature. */
   cleanable?: Cleanable;
 }

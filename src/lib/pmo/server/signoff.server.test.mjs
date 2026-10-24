@@ -1177,14 +1177,14 @@ describe("nothing is ever sent", () => {
     "src/components/apps/pmo-todo-app/signoffUi.ts",
   ];
 
-  it("the sign-off modules import no mail, Outlook, network or agent-office code and inject no HTML", async () => {
+  it("the sign-off modules import no mail, Outlook, network or tasks-engine code and inject no HTML", async () => {
     for (const file of files) {
       const text = (await readFile(path.join(root, file), "utf8")).replace(
         /\/\/.*$/gm,
         "",
       );
       assert.ok(
-        !/agent-office|nodemailer|smtp|sendmail|ActiveX|Outlook\.Application|child_process|XMLHttpRequest|WebSocket|sendBeacon/i.test(
+        !/tasks-engine|nodemailer|smtp|sendmail|ActiveX|Outlook\.Application|child_process|XMLHttpRequest|WebSocket|sendBeacon/i.test(
           text,
         ),
         file,

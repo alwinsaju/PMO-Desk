@@ -5,7 +5,7 @@
 // Identity and time come from here, never from the client: `recordedBy` is the OS
 // user of the machine running the server (the same source as `approvedBy` and
 // every audit line, mirroring how the task platform stamps approvals, see
-// agent-apps/TASK-PLATFORM-CONTRACT.md), and `recordedAt` is the server's clock. A
+// tasks/TASK-PLATFORM-CONTRACT.md), and `recordedAt` is the server's clock. A
 // body that tries to send either (or any other server-owned field) is REFUSED,
 // and the attempt is audit-logged. Nothing here sends anything: "request" records
 // that the person says they sent it.

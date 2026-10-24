@@ -1,13 +1,7 @@
 /**
- * The presentation *rules* for a task, ported from the reference agent-office
- * frontend's `agentPresenter.js`
- * (`C:\Projects\Agents-workspace\agent-office\frontend\src\agentPresenter.js`,
- * read-only reference) and reimplemented here as plain, typed, idiomatic
- * TS/React functions — not a line of that file's own vanilla-DOM code is
- * reused, but the rules themselves (state -> label vocabulary, the one-line
- * status sentence per state, how the step tracker derives its per-step
- * status) are intentionally kept identical so this app matches "how it
- * worked before."
+ * The presentation *rules* for a task: the state -> label vocabulary, the
+ * one-line status sentence per state, and how the step tracker derives its
+ * per-step status. Plain, typed functions, no React.
  */
 import type {
   ActionResult,
@@ -82,7 +76,7 @@ export type StepStatus = "done" | "active" | "gate" | "failed" | "pending";
  * per task (a manifest can have as few as 3 steps and no review/send gate
  * at all), so this never assumes a fixed pipeline shape, and a
  * `currentStep` that no longer matches any step id (e.g. mid-rescan on the
- * real backend) degrades to "no active step" rather than throwing.
+ * real engine) degrades to "no active step" rather than throwing.
  */
 export function computeStepStatuses(task: Task): StepStatus[] {
   const activeIndex = task.currentStep
@@ -105,7 +99,7 @@ export function canStartFromAgents(agents: Pick<Agent, "currentTaskId">[]): bool
 }
 
 // ---------------------------------------------------------------------------
-// Human gates of the task platform (agent-apps/TASK-PLATFORM-CONTRACT.md).
+// Human gates of the task platform (tasks/TASK-PLATFORM-CONTRACT.md).
 // The four older tasks declare no `label`/`gate` on their steps, so every
 // function below falls through to "no platform gate" for them and the legacy
 // UI (bare Approve/Reject, the review_incidents queue) is untouched. Kept in
@@ -145,7 +139,7 @@ export function hasStartForm(task: Task): boolean {
   return (task.inputs?.length ?? 0) > 0;
 }
 
-/** The newest `task.review_ready` notification, whose body the backend
+/** The newest `task.review_ready` notification, whose body the engine
  *  fills from the step's `reviewMessage`. */
 export function latestReviewNotification(task: Task): TaskNotification | null {
   for (let i = task.notifications.length - 1; i >= 0; i--) {
@@ -155,7 +149,7 @@ export function latestReviewNotification(task: Task): TaskNotification | null {
 }
 
 /** The newest notification that carries an output artifact (for the draft
- *  workbook "Open" button — the backend sets it from report-data.json's
+ *  workbook "Open" button — the engine sets it from report-data.json's
  *  workbook_path). */
 export function latestArtifactNotification(task: Task): TaskNotification | null {
   for (let i = task.notifications.length - 1; i >= 0; i--) {
@@ -165,7 +159,7 @@ export function latestArtifactNotification(task: Task): TaskNotification | null 
 }
 
 /** Every file a notification offers an Open button for: its `outputPaths`
- *  (duplicates dropped), else the single `outputPath` of an older backend. */
+ *  (duplicates dropped), else the single `outputPath` of an older engine. */
 export function notificationFiles(notification: TaskNotification): OutputFile[] {
   const listed = Array.isArray(notification.outputPaths) ? notification.outputPaths : [];
   const files: OutputFile[] = [];
@@ -201,7 +195,7 @@ export function openButtonLabel(
 }
 
 /** Review-ready text for the status line: the notification body exactly as
- *  the backend wrote it, but only for steps that opted into the platform
+ *  the engine wrote it, but only for steps that opted into the platform
  *  (a `label` or `gate`). The older tasks keep their fixed sentences. */
 export function reviewReadyText(task: Task): string | null {
   const step = pausedStep(task);
@@ -238,7 +232,7 @@ export function describeApproval(
 /** How many ids/messages a refusal line names before "+N more". */
 const REFUSAL_PREVIEW = 3;
 
-/** One-line text for an `ok:false` action reply. The backend's `reason` is
+/** One-line text for an `ok:false` action reply. The engine's `reason` is
  *  used as given; a form-gate refusal also names the first few unanswered
  *  field ids, and a diff-gate refusal the first few blockers. */
 export function refusalText(result: ActionResult): string {
@@ -252,7 +246,7 @@ export function refusalText(result: ActionResult): string {
   return `${base} (${shown}${extra > 0 ? ` +${extra} more` : ""})`;
 }
 
-/** Parses a backend timestamp. The backend stamps UTC, but a naive ISO
+/** Parses a engine timestamp. The engine stamps UTC, but a naive ISO
  *  string (no `Z`/offset) would be read by `Date` as LOCAL time, so it is
  *  pinned to UTC first. */
 export function parseUtc(value: string): Date {

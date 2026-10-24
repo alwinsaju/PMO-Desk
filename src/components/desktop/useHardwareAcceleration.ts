@@ -16,7 +16,7 @@ import { useFx } from "@/lib/useFx";
  * desktop app the same choice is also saved by the shell, which decides at the
  * NEXT start whether Chromium may use the GPU, hence the restart prompt. The
  * shell's report lives in a small module-level store so it survives the menu
- * closing (the rows unmount with it), like the backend-restart row's.
+ * closing (the rows unmount with it), like the engine-restart row's.
  */
 interface Snapshot {
   state: DesktopDisplayState | null;

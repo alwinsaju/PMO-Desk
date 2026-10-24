@@ -17,7 +17,7 @@ export interface PmoData {
 }
 
 /**
- * Polls GET /api/pmo/state every 3s. Like useAgentOfficeData, a failed poll
+ * Polls GET /api/pmo/state every 3s. Like useTasksData, a failed poll
  * never blanks the screen: the last good state stays and only `connection`
  * flips to "offline". `cancelled`/`inFlight` are effect-local (not refs) for
  * the same StrictMode reason documented there. Each answer is merged into the

@@ -1,5 +1,5 @@
 // Regression: the REAL GET /tasks shape (captured read-only from the live
-// backend) must make Run open the start form for tasks that declare inputs.
+// engine) must make Run open the start form for tasks that declare inputs.
 // Runs against a FAKE fetch only.
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
@@ -482,7 +482,7 @@ describe("synthetic manifests: the four older tasks gain a file-only inputs bloc
     assert.match(cleanupNote(t), /except the ones kept on file/);
   });
 
-  it("older backend: no persist/cleanup/cleanable fields still behaves as before", async () => {
+  it("older engine: no persist/cleanup/cleanable fields still behaves as before", async () => {
     const plain = LIVE_TASKS.find((t) => t.id === "shift-roster");
     assert.equal(cleanupNote(plain), null);
     assert.equal(canClearInputs(plain, undefined), false);

@@ -70,7 +70,7 @@ export function changeStats(changes: CellChange[]): ChangeStats {
   };
 }
 
-/** Blockers that stop the confirm (the backend refuses it too). */
+/** Blockers that stop the confirm (the engine refuses it too). */
 export function blockers(diff: RosterDiff | null | undefined): DiffBlocker[] {
   return diff?.blocking ?? [];
 }

@@ -1,0 +1,13 @@
+# Run pytest from this directory (tasks-engine/). The coverage gate enforces the
+# org-wide >=80% policy on application code only.
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+# -p pytest_cov: this shell sets PYTEST_DISABLE_PLUGIN_AUTOLOAD=1, so the
+# plugin must be loaded explicitly or the --cov options are rejected.
+addopts = "-p pytest_cov --cov=. --cov-report=term-missing --cov-fail-under=80"
+
+[tool.coverage.run]
+# Test modules and pytest fixtures are excluded from the gate; everything else
+# in this folder is measured.
+omit = ["tests/*", "*/tests/*", "conftest.py", "*/conftest.py"]

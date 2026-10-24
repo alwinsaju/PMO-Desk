@@ -1,6 +1,6 @@
 // Owns (or declines to own) the Ollama server process. Mirrors the "owned
-// backend lifecycle" of the agent-office backend (see
-// src/app/api/agent-office/shared.ts + desktop/main.cjs): state lives on
+// engine lifecycle" of the Tasks engine (see
+// src/app/api/tasks-engine/shared.ts + desktop/main.cjs): state lives on
 // globalThis because Next compiles instrumentation and each route into
 // separate module graphs, and all of them must see the same child process.
 //
@@ -56,7 +56,7 @@ export type EnsureServerResult =
   | { running: true; owned: boolean; started: boolean; version?: string }
   | { running: false; reason: string };
 
-/** Scratch runtime data, same place agent-office keeps its log. */
+/** Scratch runtime data, same place tasks-engine keeps its log. */
 const LOG_PATH = ownedLogPath(tmpdir());
 const PIDFILE_PATH = path.join(tmpdir(), "ai-os-ollama.json");
 const POLL_INTERVAL_MS = 500;

@@ -65,7 +65,7 @@ export function TaskActions({
   if (gate.gate === "diff" && gate.diff?.blocking && gate.diff.blocking.length > 0) {
     sendBlocked = `Blocked: ${blockingSummary(gate.diff.blocking)}`;
   }
-  // The backend also refuses a confirm when the diff file is missing or
+  // The engine also refuses a confirm when the diff file is missing or
   // malformed, so don't offer it without a readable diff.
   if (gate.gate === "diff" && gate.status !== "loading" && !gate.diff) {
     sendBlocked = "The comparison isn’t available yet, so there is nothing to confirm.";

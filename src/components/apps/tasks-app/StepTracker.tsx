@@ -16,7 +16,7 @@ const STATUS_WORD: Record<StepStatus, string> = {
 };
 
 /** `.progress[data-state]` (globals.css) per task state: the fill's color and
- *  whether it shimmers. There is no "ok" here: the backend has no "done"
+ *  whether it shimmers. There is no "ok" here: the engine has no "done"
  *  state (a finished run just returns the task to "resting"), so a
  *  completed task reads as idle again rather than as a green full bar. */
 const PROGRESS_STATE: Record<TaskState, "idle" | "run" | "gate" | "err"> = {

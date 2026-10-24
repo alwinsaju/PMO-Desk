@@ -1,0 +1,7 @@
+{
+  "id": "adam",
+  "displayName": "Adam",
+  "avatar": "adam.png",
+  "capabilities": ["excel_pivot_tables", "servicenow_data_matching", "outlook_composition"],
+  "traits": "methodical, detail-focused, validation-oriented"
+}

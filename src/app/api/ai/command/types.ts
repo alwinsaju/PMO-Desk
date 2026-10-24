@@ -1,6 +1,6 @@
 // Wire contract for POST /api/ai/command (route.ts). A plain, side-effect-
 // free types module — not a route itself (Next's App Router only treats an
-// exact `route.ts` filename as an endpoint, see agent-office/shared.ts for
+// exact `route.ts` filename as an endpoint, see tasks-engine/shared.ts for
 // the same pattern) — imported by both route.ts (the server side) and
 // CommandBar.tsx (the one client caller), the same way tasks-app/types.ts
 // is shared between that app's api.ts and its UI.

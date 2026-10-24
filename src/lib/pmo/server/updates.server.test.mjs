@@ -836,7 +836,7 @@ describe("chaser drafts (local, copy-only)", () => {
 });
 
 describe("nothing is ever sent", () => {
-  it("the new modules and routes import no mail, Outlook or agent-office code and make no network calls", async () => {
+  it("the new modules and routes import no mail, Outlook or tasks-engine code and make no network calls", async () => {
     const root = path.resolve(here, "..", "..", "..", "..");
     const files = [
       "src/lib/pmo/chaser.ts",
@@ -877,7 +877,7 @@ describe("nothing is ever sent", () => {
     ];
     for (const file of files) {
       const text = await readFile(path.join(root, file), "utf8");
-      assert.ok(!/agent-office|nodemailer|smtp|sendmail|ActiveX|Outlook\.Application/i.test(text), file);
+      assert.ok(!/tasks-engine|nodemailer|smtp|sendmail|ActiveX|Outlook\.Application/i.test(text), file);
       assert.ok(!/\bfetch\(|XMLHttpRequest|child_process|WebSocket/.test(text.replace(/\/\/.*$/gm, "")) || file.endsWith("ChaserDialog.tsx") === false, file);
     }
     // The only external hand-off is the mailto: link, which opens an unsent compose window.

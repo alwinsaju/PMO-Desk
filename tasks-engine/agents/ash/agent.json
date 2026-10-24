@@ -1,0 +1,7 @@
+{
+  "id": "ash",
+  "displayName": "Ash",
+  "avatar": "ash.png",
+  "capabilities": ["outlook_composition", "html_formatting", "co_branded_templates"],
+  "traits": "pragmatic, fast, presentation-focused"
+}
