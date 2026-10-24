@@ -47,17 +47,23 @@ import {
   clearConfirmText,
   cleansOnComplete,
   defaultChoice,
+  emptyFileHint,
   formatBytes,
   formatUploaded,
+  formatYears,
+  holidaySourceLine,
   isChoosable,
   isOnFile,
+  isOptionalFile,
   isPersistInput,
   keepsSomeInputs,
   missingRequired,
+  OPTIONAL_PERSIST_HINT,
   PERSIST_HINT,
   prepareAfterIds,
   selectChoices,
   startDescription,
+  uploadInvalidatesCheck,
   validateFile,
 } from "./startForm.ts";
 import {
@@ -1311,6 +1317,114 @@ describe("files kept across runs (persist)", () => {
       prepare: { cmd: "p.py", after: ["holidays"] },
     });
     assert.deepEqual(prepareAfterIds(explicit), ["holidays"]);
+  });
+});
+
+describe("an optional kept file (Holiday Roster falls back to the reference file)", () => {
+  const ROSTER = {
+    id: "roster",
+    label: "Roster workbook",
+    type: "file",
+    accept: [".xlsx"],
+    required: true,
+  };
+  const HOLIDAYS = {
+    id: "holidays",
+    label: "Holiday Roster (optional - the reference file is used if you don't upload one)",
+    type: "file",
+    accept: [".xlsx"],
+    required: false,
+    persist: true,
+  };
+  const t = task({
+    inputs: [
+      ROSTER,
+      HOLIDAYS,
+      { id: "cycle", label: "Cycle", type: "select", optionsKey: "cycles", required: true },
+    ],
+    prepare: { cmd: "scripts/prepare_options.py", after: ["roster"] },
+  });
+  const live = (id, over = {}) => ({
+    id,
+    label: id,
+    type: "file",
+    required: true,
+    present: true,
+    ...over,
+  });
+
+  it("only the roster gates Check inputs and Start; the missing Holiday Roster blocks nothing", () => {
+    assert.deepEqual(prepareAfterIds(t), ["roster"]);
+    const statuses = [live("roster"), live("holidays", { present: false, persist: true })];
+    assert.equal(canPrepare(t, statuses), true);
+    assert.equal(canPrepare(t, [live("roster", { present: false })]), false);
+    const choices = { cycle: selectChoices(OPTIONS, "cycles") };
+    assert.deepEqual(missingRequired(t, statuses, { cycle: "2026-12" }, choices), []);
+    // with a bool `prepare` (GET /tasks) the fallback also leaves the optional file out
+    assert.deepEqual(prepareAfterIds({ ...t, prepare: true }), ["roster"]);
+  });
+
+  it("an absent optional kept file says the reference file is used; a required one keeps the old hint", () => {
+    assert.equal(isOptionalFile(HOLIDAYS), true);
+    assert.equal(isOptionalFile(ROSTER), false);
+    assert.equal(OPTIONAL_PERSIST_HINT, "Not uploaded - the reference file will be used.");
+    assert.equal(emptyFileHint(HOLIDAYS), OPTIONAL_PERSIST_HINT);
+    assert.equal(emptyFileHint(HOLIDAYS, live("holidays", { persist: true })), OPTIONAL_PERSIST_HINT);
+    assert.equal(emptyFileHint({ ...HOLIDAYS, required: true }), PERSIST_HINT);
+    // not kept: no hint at all (the roster, the PTO import)
+    assert.equal(emptyFileHint(ROSTER), null);
+    assert.equal(emptyFileHint({ id: "pto", required: false }), null);
+    // the live status can switch the kept behaviour off
+    assert.equal(emptyFileHint(HOLIDAYS, live("holidays", { persist: false })), null);
+  });
+
+  it("uploading the roster or the optional kept file makes an earlier check stale; the PTO import does not", () => {
+    assert.equal(uploadInvalidatesCheck(t, ROSTER), true);
+    assert.equal(uploadInvalidatesCheck(t, HOLIDAYS), true);
+    assert.equal(
+      uploadInvalidatesCheck(t, { id: "pto", label: "PTO import (optional)", type: "file", required: false }),
+      false,
+    );
+  });
+
+  it("an uploaded optional file is still 'on file' and persists", () => {
+    assert.equal(isOnFile(HOLIDAYS, live("holidays", { persist: true })), true);
+    assert.equal(isOnFile(HOLIDAYS, live("holidays", { present: false, persist: true })), false);
+  });
+
+  it("formats the covered years", () => {
+    assert.equal(formatYears([2026, 2027]), "2026-2027");
+    assert.equal(formatYears([2027, 2026, 2026]), "2026-2027");
+    assert.equal(formatYears([2026, 2027, 2028]), "2026-2028");
+    assert.equal(formatYears([2026]), "2026");
+    assert.equal(formatYears([2026, 2028]), "2026, 2028");
+    assert.equal(formatYears([]), "");
+  });
+
+  it("the Holiday Roster line under Check comes from options.holiday_source", () => {
+    assert.equal(
+      holidaySourceLine({
+        holiday_source: { kind: "reference", file: "Holiday Roster 2026.xlsx", covers_years: [2026, 2027] },
+      }),
+      "Holiday Roster: reference file (covers 2026-2027)",
+    );
+    assert.equal(
+      holidaySourceLine({
+        holiday_source: { kind: "uploaded", file: "holiday-roster.xlsx", covers_years: [2026, 2027] },
+      }),
+      "Holiday Roster: uploaded file",
+    );
+    assert.equal(
+      holidaySourceLine({ holiday_source: { kind: "reference", file: "x.xlsx", covers_years: [] } }),
+      "Holiday Roster: reference file",
+    );
+    // other tasks / older options files / malformed values: no line
+    assert.equal(holidaySourceLine(null), null);
+    assert.equal(holidaySourceLine(undefined), null);
+    assert.equal(holidaySourceLine({}), null);
+    assert.equal(holidaySourceLine({ holiday_source: null }), null);
+    assert.equal(holidaySourceLine({ holiday_source: "reference" }), null);
+    assert.equal(holidaySourceLine({ holiday_source: { kind: "other" } }), null);
   });
 });
 

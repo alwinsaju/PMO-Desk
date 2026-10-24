@@ -44,9 +44,9 @@ from _common import (
     flag_counts,
     load_config_file,
     load_master,
-    load_matrix_file,
     load_plan,
     read_json,
+    resolve_holiday_source,
     run_script,
     save_config_with_backup,
     write_json,
@@ -111,12 +111,15 @@ def _main(paths: Paths) -> None:
 
     roster = load_master(paths)
     config = load_config_file(paths)  # must still be valid before it is replaced
-    matrix, errors = load_matrix_file(paths, config)
-    if matrix is None:
+    # the same Holiday Roster the draft was built with (checked above: it did not change)
+    source, errors, _notes = resolve_holiday_source(
+        paths, config, pinned=(analysis.get("inputs") or {}).get("holidays"))
+    if source is None:
         raise TaskError("the Holiday Roster cannot be used: " + "; ".join(errors[:4]))
+    matrix = source.matrix
 
     diff = compute_diff(paths, cid, plan, roster, matrix)
-    fresh = diff_payload(diff, cid, carried=carried_flag_count(plan))
+    fresh = diff_payload(diff, cid, carried=carried_flag_count(plan), holiday_source=source)
     if fresh["blocking"]:
         raise TaskError("the draft has blocking issues: "
                         + "; ".join(f"{b['kind']}: {b['message']}" for b in fresh["blocking"]))
@@ -128,10 +131,11 @@ def _main(paths: Paths) -> None:
     answers_record = file_record(paths.answers) if paths.answers.exists() else None
     result = build_final(
         paths.roster, saved, diff, paths.output, approver=None, confirmed=True,
-        matrix_path=paths.holidays, pto_path=paths.pto if paths.pto.exists() else None,
+        matrix_path=source.path, pto_path=paths.pto if paths.pto.exists() else None,
         config_path=paths.config,
         extra={"task": "shift-roster", "cycle_id": cid, "answers": answers_record,
-               "plan_cells": len(plan.edits), "remainder_cells": len(plan.remainder_edits)})
+               "plan_cells": len(plan.edits), "remainder_cells": len(plan.remainder_edits),
+               "holiday_source": source.to_dict()})
     final_path = place(Path(result.final_path), paths.final_dir)
 
     next_year_path: Path | None = None
@@ -177,6 +181,7 @@ def _main(paths: Paths) -> None:
         "backup": paths.rel(result.backup_path),
         "config_backup": paths.rel(config_backup) if config_backup else None,
         "master_sha256": master_sha,
+        "holiday_source": source.to_dict(),
     }
     report: dict[str, Any] = {"workbook_path": paths.rel(final_path), "stage": "final"}
     if next_year_path:  # the Tasks app adds an Open button per extra file

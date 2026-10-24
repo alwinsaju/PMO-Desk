@@ -42,7 +42,7 @@ def test_inputs_and_prepare():
         i = inputs[key]
         assert i["type"] == "file" and i["accept"] == [".xlsx"] and i["dest"].startswith("input/")
     assert (inputs["roster"]["required"], inputs["holidays"]["required"],
-            inputs["pto"]["required"], inputs["cycle"]["required"]) == (True, True, False, True)
+            inputs["pto"]["required"], inputs["cycle"]["required"]) == (True, False, False, True)
     # the destinations are the files the scripts read
     assert TASK / inputs["roster"]["dest"] == PATHS.roster
     assert TASK / inputs["holidays"]["dest"] == PATHS.holidays
@@ -52,7 +52,8 @@ def test_inputs_and_prepare():
     assert TASK / cycle["optionsFile"] == PATHS.options
     prepare = MANIFEST["prepare"]
     assert (TASK / prepare["cmd"]).is_file() and prepare["cmd"] == "scripts/prepare_options.py"
-    assert set(prepare["after"]) <= {k for k, v in inputs.items() if v["type"] == "file"}
+    # the optional Holiday Roster must not gate Check inputs or Start
+    assert prepare["after"] == ["roster"]
 
 
 def test_gates_point_at_the_files_the_scripts_write():
@@ -92,9 +93,13 @@ def test_tracked_text_files_hold_no_personal_data_markers():
         assert not re.search(r"[\w.]+@[\w-]+\.\w+", path.read_text(encoding="utf-8")), path.name
 
 
-def test_holiday_roster_is_a_persisted_yearly_input_and_the_run_is_cleaned():
+def test_holiday_roster_is_optional_persisted_and_the_run_is_cleaned():
     inputs = {i["id"]: i for i in MANIFEST["inputs"]}
-    assert inputs["holidays"]["persist"] is True and "once a year" in inputs["holidays"]["label"]
+    holidays = inputs["holidays"]
+    assert holidays["required"] is False and holidays["persist"] is True
+    assert holidays["label"] == ("Holiday Roster (optional - the reference file is used if you "
+                                 "don't upload one)")
+    assert "once a year" not in holidays["label"]
     # the per-run uploads are not persisted (the backend cleans them after a completed run)
     assert not any(inputs[k].get("persist") for k in ("roster", "pto", "cycle"))
     assert MANIFEST["cleanup"] == {"onComplete": True}

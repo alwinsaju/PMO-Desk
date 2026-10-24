@@ -43,8 +43,14 @@ def test_real_files_prepare_analyze_build_draft_and_diff(tmp_path):
     for d in (paths.input_dir, paths.config_dir, paths.output):
         d.mkdir(parents=True)
     shutil.copyfile(ROSTER, paths.roster)
-    shutil.copyfile(HOLIDAYS, paths.holidays)
     shutil.copyfile(CONFIG, paths.config)
+    # NO uploaded Holiday Roster: the task finds the reference copy next to it, exactly as in the
+    # repository (`<task>/../shared/roster-reference`); here a copy of the real file is placed there
+    ref_dir = tmp_path / "shared" / "roster-reference"
+    ref_dir.mkdir(parents=True)
+    shutil.copyfile(HOLIDAYS, ref_dir / HOLIDAYS.name)
+    assert paths.reference_dir == ref_dir and not paths.holidays.exists()
+    assert Paths().reference_dir == REF  # the default location of the real task
 
     class Real(Pipeline):  # the scripted steps without building the synthetic world
         def __init__(self, paths):
@@ -61,6 +67,9 @@ def test_real_files_prepare_analyze_build_draft_and_diff(tmp_path):
         "2025-12", "2026-02", "2026-04", "2026-06", "2026-08", "2026-10", "2026-12", "2027-02"]
     assert [c["id"] for c in opts["cycles"] if c["enabled"]] == ["2026-10", "2026-12"]
     assert opts["default"] == "2026-12" and opts["problems"] == []
+    source = opts["holiday_source"]
+    assert source["kind"] == "reference" and source["file"] == HOLIDAYS.name
+    assert {2026, 2027} <= set(source["covers_years"])
     assert all(c["reason"] for c in opts["cycles"])
 
     # analyze: the form (structure and counts only)
@@ -76,6 +85,8 @@ def test_real_files_prepare_analyze_build_draft_and_diff(tmp_path):
     analysis = load(paths.analysis)
     assert analysis["analysis"]["active_people"] == 47 and analysis["blocked"] is False
     assert analysis["analysis"]["year_boundary"]["crosses"] is True
+    assert analysis["holiday_source"]["kind"] == "reference"
+    assert analysis["inputs"]["holidays"]["sha256"] == before[HOLIDAYS]
 
     # build_draft with every question answered by its default
     paths.answers.write_text(json.dumps(answer_defaults(form)), encoding="utf-8")
@@ -91,6 +102,7 @@ def test_real_files_prepare_analyze_build_draft_and_diff(tmp_path):
     assert sum(flags["counts"].values()) == len(flags["flags"]) == len(plan.flags) > 0
     report = load(paths.report)
     assert report["stage"] == "draft" and report["summary"]["cells"] == len(plan.edits)
+    assert report["summary"]["holiday_source"]["sha256"] == before[HOLIDAYS]
     draft = paths.draft("2026-12")
     with zipfile.ZipFile(draft) as z:
         states = {s.name: s.state for s in list_sheets(z)}
@@ -103,6 +115,8 @@ def test_real_files_prepare_analyze_build_draft_and_diff(tmp_path):
     diff = load(paths.diff)
     assert diff["changes"] == [] and diff["outside_changes"] == [] and diff["blocking"] == []
     assert diff["counts"]["snapshot_cells"] == len(plan.edits)
+    assert diff["holiday_source"]["kind"] == "reference"
+    assert not paths.holidays.exists()
 
     # the reference files and the real config were never touched
     assert {q: sha256_file(q) for q in (ROSTER, HOLIDAYS, CONFIG)} == before

@@ -26,21 +26,23 @@ import {
   canPrepare,
   cleanupNote,
   defaultChoice,
+  emptyFileHint,
   fileInputs,
   formatBytes,
   formatUploaded,
   hasPrepare,
+  holidaySourceLine,
   isChoosable,
   isOnFile,
-  isPersistInput,
+  isOptionalFile,
   isPresent,
   missingRequired,
   prepareAfterIds,
   selectChoices,
   selectInputs,
   startDescription,
+  uploadInvalidatesCheck,
   validateFile,
-  PERSIST_HINT,
   type SelectChoice,
 } from "./startForm";
 import { refusalText } from "./taskPresenter";
@@ -197,7 +199,7 @@ export function StartTaskDialog({
     statusesRef.current = next;
     setStatuses(next);
     // Changing a file `prepare` reads invalidates what it produced.
-    if (afterIds.includes(input.id)) {
+    if (uploadInvalidatesCheck(task, input)) {
       checkSeq.current += 1;
       setOptions(null);
       setCheck("idle");
@@ -240,6 +242,7 @@ export function StartTaskDialog({
   };
 
   const problems = options?.problems ?? [];
+  const sourceLine = holidaySourceLine(options);
   const canStart =
     loadState === "ready" && missing.length === 0 && !uploading && !starting;
 
@@ -310,6 +313,9 @@ export function StartTaskDialog({
                   <pre className="border-border text-ink-muted rounded-lg border bg-neutral-50 p-2 font-mono text-[11px] whitespace-pre-wrap">
                     {checkError}
                   </pre>
+                )}
+                {sourceLine && (
+                  <p className="text-ink-faint text-[11px]">{sourceLine}</p>
                 )}
                 {problems.length > 0 && (
                   <ul className="flex flex-col gap-1.5" aria-label="Problems found">
@@ -400,6 +406,7 @@ function FileInput({
   const kept = isOnFile(input, status);
   const uploaded = formatUploaded(status?.modified);
   const accept = (input.accept ?? []).join(" / ");
+  const emptyHint = emptyFileHint(input, status);
 
   const take = (list: FileList | null | undefined) => {
     const file = list?.[0];
@@ -447,9 +454,14 @@ function FileInput({
           <p className="text-ink text-[13px] font-medium">
             {input.label}
             <span className="text-ink-faint ml-1.5 text-[11px] font-normal">
-              {input.required ? "Required" : "Optional"}
-              {accept ? ` · ${accept}` : ""}
+              {input.required ? "Required" : null}
+              {accept ? `${input.required ? " · " : ""}${accept}` : ""}
             </span>
+            {isOptionalFile(input) && (
+              <span className="border-border text-ink-muted rounded-pill ml-2 border px-1.5 py-px align-[1px] text-[10px] font-medium">
+                Optional
+              </span>
+            )}
             {kept && (
               <span className="border-border text-ink-muted rounded-pill ml-2 border px-1.5 py-px align-[1px] text-[10px] font-medium">
                 On file
@@ -476,9 +488,7 @@ function FileInput({
               <p className="text-ink-faint text-[12px]">
                 Drop the file here, or choose it.
               </p>
-              {isPersistInput(input, status) && (
-                <p className="text-ink-faint text-[11px]">{PERSIST_HINT}</p>
-              )}
+              {emptyHint && <p className="text-ink-faint text-[11px]">{emptyHint}</p>}
             </>
           )}
         </div>

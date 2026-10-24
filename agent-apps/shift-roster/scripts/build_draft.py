@@ -12,6 +12,7 @@ the analysis, converts the answers to the library's structured answers
     output/Roster DRAFT <cycle id>.xlsx.snapshot.json   the snapshot sidecar
     output/flags.json                      `{"counts": {error, warning, info}, "flags": [...]}`
     output/report-data.json                `stage: draft`, `workbook_path`, summary
+                                           (incl. `holiday_source`: kind, file, sha256, covers_years)
 
 The master (`input/roster.xlsx`) is only read. The holiday tie-break seed comes from the config
 (printed). The same inputs and answers give the same cell content, plan.json and flags.json.
@@ -42,10 +43,10 @@ from _common import (
     flags_payload,
     load_config_file,
     load_master,
-    load_matrix_file,
     parse_cycle_id,
     read_json,
     read_pto_file,
+    resolve_holiday_source,
     run_script,
     sha256_of_text,
     write_json,
@@ -109,9 +110,12 @@ def _main(paths: Paths) -> None:
 
     roster = load_master(paths)
     config = load_config_file(paths)
-    matrix, matrix_errors = load_matrix_file(paths, config)
-    if matrix is None:
+    # the very Holiday Roster the analysis used (uploaded or reference), pinned by the analysis
+    source, matrix_errors, _notes = resolve_holiday_source(
+        paths, config, pinned=(analysis.get("inputs") or {}).get("holidays"))
+    if source is None:
         raise TaskError("the Holiday Roster cannot be used: " + "; ".join(matrix_errors[:4]))
+    matrix = source.matrix
     entries = read_pto_file(paths)
     if entries is not None and converted.skipped_pto:
         skip = set(converted.skipped_pto)
@@ -134,9 +138,10 @@ def _main(paths: Paths) -> None:
     plan_text = plan.to_json()
     draft = paths.draft(cid)
     result = build_draft_workbook(
-        paths.roster, draft, plan, matrix_path=paths.holidays,
+        paths.roster, draft, plan, matrix_path=source.path,
         pto_path=paths.pto if paths.pto.exists() else None, config_path=paths.config,
-        extra_run_log={"Task": "shift-roster", "Answers": f"{converted.answered} answered field(s)",
+        extra_run_log={"Task": "shift-roster",
+                       "Holiday Roster source": f"{source.kind} ({source.file})", "Answers": f"{converted.answered} answered field(s)",
                        "Answers digest": sha256_of_text(
                            "\n".join(f"{k}={flat[k]}" for k in sorted(flat)))[:16]},
         sheet_name=SHEET_NAME, roster=roster)
@@ -157,6 +162,7 @@ def _main(paths: Paths) -> None:
         "crosses_year_end": bool(plan.remainder_edits),
         "seed": plan.run_info["seed_used"],
         "seed_source": plan.run_info["seed_source"],
+        "holiday_source": source.to_dict(),
     }
     write_json(paths.report, {"workbook_path": paths.rel(draft), "stage": "draft",
                               "summary": summary})
@@ -165,6 +171,7 @@ def _main(paths: Paths) -> None:
           f"{len(plan.shift_changes)} shift change(s); flags error={counts['error']} "
           f"warning={counts['warning']} info={counts['info']}; "
           f"seed {plan.run_info['seed_used']} ({plan.run_info['seed_source']})")
+    print(f"holiday roster: {source.kind} file (sha256 {source.sha256[:12]})")
     print(f"draft file: {paths.rel(draft)}")
 
 

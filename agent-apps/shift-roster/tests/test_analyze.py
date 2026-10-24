@@ -174,7 +174,7 @@ def test_failure_modes_give_one_readable_line(tmp_path, capsys):
     p.paths.holidays.write_bytes(b"junk")
     assert p.analyze() == 1
     err = capsys.readouterr().err
-    assert "cannot be built" in err and "holiday matrix is missing" in err
+    assert "cannot be built" in err and "uploaded Holiday Roster cannot be used" in err
     p.paths.holidays.write_bytes(saved)
 
     p.paths.pto.write_bytes(b"junk")

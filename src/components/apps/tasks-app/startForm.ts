@@ -182,8 +182,69 @@ export function isOnFile(
   return Boolean(status?.present) && isPersistInput(input, status);
 }
 
-/** Helper line under an empty persist drop zone. */
+/** Helper line under an empty REQUIRED persist drop zone. */
 export const PERSIST_HINT = "Upload once; it stays on file for future runs.";
+
+/** Helper line under an empty OPTIONAL persist drop zone (a file the task can
+ *  do without, e.g. the Holiday Roster, which falls back to a reference copy). */
+export const OPTIONAL_PERSIST_HINT = "Not uploaded - the reference file will be used.";
+
+/** True for a file input the task can run without. */
+export function isOptionalFile(input: Pick<TaskInputDef, "required">): boolean {
+  return !input.required;
+}
+
+/** The small hint under an empty drop zone, or null when there is none:
+ *  a kept (persist) file says how it behaves; an optional one says what
+ *  happens when it is left out. */
+export function emptyFileHint(
+  input: Pick<TaskInputDef, "persist" | "required">,
+  status?: Pick<InputStatus, "persist">,
+): string | null {
+  if (!isPersistInput(input, status)) return null;
+  return isOptionalFile(input) ? OPTIONAL_PERSIST_HINT : PERSIST_HINT;
+}
+
+/** True when uploading `input` makes an earlier Check stale: a file `prepare`
+ *  waits for (`after`), or an optional kept file the check also reads (the
+ *  Holiday Roster: the check says which Holiday Roster the run will use). */
+export function uploadInvalidatesCheck(
+  task: Task,
+  input: Pick<TaskInputDef, "id" | "persist" | "required">,
+): boolean {
+  return (
+    prepareAfterIds(task).includes(input.id) ||
+    (isOptionalFile(input) && Boolean(input.persist))
+  );
+}
+
+/** "2026-2027" for consecutive years, "2026" for one, "2026, 2028" otherwise. */
+export function formatYears(years: number[]): string {
+  const sorted = [...new Set(years)].sort((a, b) => a - b);
+  if (sorted.length === 0) return "";
+  if (sorted.length === 1) return String(sorted[0]);
+  const consecutive = sorted.every((y, i) => i === 0 || y === sorted[i - 1] + 1);
+  return consecutive
+    ? `${sorted[0]}-${sorted[sorted.length - 1]}`
+    : sorted.join(", ");
+}
+
+/** The quiet line under the Check area about which Holiday Roster the run
+ *  will use, read from options.json's `holiday_source`; null when the task's
+ *  options don't carry one (or it is malformed). */
+export function holidaySourceLine(options: OptionsFile | null | undefined): string | null {
+  const raw = options?.holiday_source;
+  if (!raw || typeof raw !== "object") return null;
+  const { kind, covers_years: years } = raw as { kind?: unknown; covers_years?: unknown };
+  if (kind === "uploaded") return "Holiday Roster: uploaded file";
+  if (kind !== "reference") return null;
+  const covered = Array.isArray(years)
+    ? years.filter((y): y is number => typeof y === "number" && Number.isFinite(y))
+    : [];
+  return covered.length > 0
+    ? `Holiday Roster: reference file (covers ${formatYears(covered)})`
+    : "Holiday Roster: reference file";
+}
 
 function parseIsoUtc(value: string): Date {
   // A naive ISO string (no Z / offset) would be read as LOCAL time.

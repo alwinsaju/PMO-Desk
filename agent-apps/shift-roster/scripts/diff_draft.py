@@ -35,10 +35,10 @@ from _common import (
     diff_payload,
     load_config_file,
     load_master,
-    load_matrix_file,
     load_plan,
     read_json,
     remove_quietly,
+    resolve_holiday_source,
     run_script,
     write_json,
     TaskError,
@@ -59,14 +59,15 @@ def _main(paths: Paths) -> None:
     cid = analysis["cycle"]["id"]
     roster = load_master(paths)
     config = load_config_file(paths)  # validates that the config is still readable
-    matrix, errors = load_matrix_file(paths, config)
-    if matrix is None:
+    source, errors, _notes = resolve_holiday_source(
+        paths, config, pinned=(analysis.get("inputs") or {}).get("holidays"))
+    if source is None:
         raise TaskError("the Holiday Roster cannot be used: " + "; ".join(errors[:4]))
 
-    diff = compute_diff(paths, cid, plan, roster, matrix)
+    diff = compute_diff(paths, cid, plan, roster, source.matrix)
     master_changed = any(i.code == "MASTER_CHANGED" for i in diff.issues)
     payload = diff_payload(diff, cid, input_blockers(paths, analysis, master_changed),
-                           carried_flag_count(plan))
+                           carried_flag_count(plan), source)
     write_json(paths.diff, payload)
     c = payload["counts"]
     print(f"diff: {c['changes']} change(s) in the cycle, {c['outside_changes']} outside it, "

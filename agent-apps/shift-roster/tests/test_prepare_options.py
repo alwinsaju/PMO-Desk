@@ -106,9 +106,10 @@ def test_bad_or_missing_holiday_roster_disables_every_cycle(tmp_path):
     assert any("Holiday Roster cannot be used" in x["message"] for x in opts["problems"])
     assert "Holiday Roster" in by_id(opts)["2026-12"]["reason"]
 
-    p.paths.holidays.unlink()
+    p.paths.holidays.unlink()  # nothing uploaded and no reference file either
     assert p.prepare() == 0
-    assert any("Holiday Roster is missing" in x["message"] for x in options(p)["problems"])
+    assert any("no Holiday Roster: upload one or add one to roster-reference" in x["message"]
+               for x in options(p)["problems"])
 
 
 def test_default_falls_back_to_the_latest_enabled_cycle(tmp_path):
@@ -151,7 +152,7 @@ def test_prepare_runs_as_a_subprocess_with_closed_stdin(tmp_path):
     assert options(p)["default"] == "2026-12" and "default 2026-12" in done.stdout
 
 
-# ---- the Holiday Roster is a yearly upload that stays on file --------------------------------
+# ---- coverage of the Holiday Roster in use (see also test_holiday_source.py) --------------------------------
 
 def _rewrite_matrix(path, keep_years=None, extra_rows=()):
     """Synthetic Holiday Roster: the standard test rows filtered to `keep_years`, plus extras."""
@@ -192,7 +193,8 @@ def test_uncovered_year_disables_the_cycle_with_a_clear_reason(tmp_path):
     assert cycles["2026-10"]["enabled"]
     dec = cycles["2026-12"]
     assert dec["enabled"] is False
-    assert dec["reason"] == "Holiday Roster has no 2027 rows - upload the new year's Holiday Roster"
+    assert dec["reason"] == ("Holiday Roster (uploaded file) has no 2027 rows - "
+                             "upload the new year's Holiday Roster")
     # a readable but old matrix is not a "problem" (problems stay for unreadable matrices)
     assert not any(x["severity"] == "error" for x in opts["problems"])
     assert opts["default"] == "2026-10"
@@ -208,7 +210,8 @@ def test_dec_jan_cycle_needs_both_years(tmp_path):
     cycles = by_id(options(p))
     dec = cycles["2026-12"]
     assert dec["enabled"] is False
-    assert dec["reason"] == "Holiday Roster has no 2026 rows - upload the new year's Holiday Roster"
+    assert dec["reason"] == ("Holiday Roster (uploaded file) has no 2026 rows - "
+                             "upload the new year's Holiday Roster")
     assert not cycles["2026-10"]["enabled"] and "no 2026 rows" in cycles["2026-10"]["reason"]
 
     # a single row in each year is enough (the assumed 1 Jan 2027 row counts for 2027)
@@ -251,7 +254,8 @@ def test_analyze_fails_clearly_when_the_stored_matrix_is_missing(tmp_path, capsy
     p.paths.holidays.unlink()
     assert p.analyze() == 1
     err = capsys.readouterr().err
-    assert "cannot be built" in err and "holiday matrix is missing" in err
+    assert "cannot be built" in err
+    assert "no Holiday Roster: upload one or add one to roster-reference" in err
     assert "Traceback" not in err
 
 

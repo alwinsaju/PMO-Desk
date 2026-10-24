@@ -14,11 +14,11 @@
     },
     {
       "id": "holidays",
-      "label": "Holiday Roster (upload once a year)",
+      "label": "Holiday Roster (optional - the reference file is used if you don't upload one)",
       "type": "file",
       "accept": [".xlsx"],
       "dest": "input/holiday-roster.xlsx",
-      "required": true,
+      "required": false,
       "persist": true
     },
     {
@@ -43,7 +43,7 @@
   },
   "prepare": {
     "cmd": "scripts/prepare_options.py",
-    "after": ["roster", "holidays"]
+    "after": ["roster"]
   },
   "steps": [
     {

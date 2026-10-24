@@ -284,11 +284,11 @@ def test_load_helpers_report_readable_problems(tmp_path):
     paths.config.write_text("{bad", encoding="utf-8")
     with pytest.raises(c.TaskError, match="rotation config has problems"):
         c.load_config_file(paths)
-    matrix, errors = c.load_matrix_file(paths)
-    assert matrix is None and "missing" in errors[0]
+    source, errors, _ = c.resolve_holiday_source(paths)
+    assert source is None and errors == [c.NO_HOLIDAY_ROSTER]
     paths.holidays.write_bytes(b"junk")
-    matrix, errors = c.load_matrix_file(paths)
-    assert matrix is None and errors
+    source, errors, _ = c.resolve_holiday_source(paths)
+    assert source is None and "uploaded Holiday Roster cannot be used" in errors[0]
     assert c.read_pto_file(paths) is None
     paths.pto.write_bytes(b"junk")
     with pytest.raises(c.TaskError, match="PTO import"):

@@ -1,12 +1,14 @@
 """Prepare script (not a workflow step): which cycles can be selected?
 
-Read-only. Reads `input/roster.xlsx`, `input/holiday-roster.xlsx` and
-`config/rotation-config.json`, writes `output/options.json`:
+Read-only. Reads `input/roster.xlsx`, `config/rotation-config.json` and the Holiday Roster
+(the uploaded `input/holiday-roster.xlsx` when present, else the best `Holiday Roster*.xlsx` of
+`shared/roster-reference`, see `_common.resolve_holiday_source`), writes `output/options.json`:
 
     {"roster": {"first_date", "last_date", "people", ...},
      "cycles": [{"id": "2026-12", "label": "Dec 2026 - Jan 2027", "start", "end",
                  "enabled": true, "reason": "...", "coverage": 1.0, ...}],
      "default": "2026-12",
+     "holiday_source": {"kind": "uploaded|reference", "file": "...", "covers_years": [2026, 2027]},
      "problems": [{"severity": "error|warning|info", "message": "..."}]}
 
 One cycle entry per cycle that overlaps the roster plus the next cycle after the roster's
@@ -32,9 +34,11 @@ from _common import (
     cycle_range_label,
     candidate_cycles,
     cycle_is_filled,
+    cycle_years,
+    holiday_candidates,
     load_config_file,
     load_master,
-    load_matrix_file,
+    pick_source,
     run_script,
     schedule_of,
     write_json,
@@ -49,15 +53,20 @@ def problem(severity: str, message: str) -> dict[str, str]:
     return {"severity": severity, "message": message}
 
 
-def years_without_holidays(cycle, matrix) -> list[int]:
-    """Calendar years the cycle touches (first to last date) that have no row in the matrix."""
-    have = {h.date.year for h in matrix.holidays}
-    return [y for y in range(cycle.start.year, cycle.end.year + 1) if y not in have]
+def years_without_holidays(cycle, source) -> list[int]:
+    """Calendar years the cycle touches (first to last date) that have no row in the source."""
+    have = set(source.covers_years)
+    return [y for y in cycle_years(cycle) if y not in have]
+
+
+def _source_dict(source) -> dict[str, Any]:
+    return {"kind": source.kind, "file": source.file, "covers_years": source.covers_years}
 
 
 def build_options(paths: Paths) -> dict[str, Any]:
     problems: list[dict[str, str]] = []
-    options: dict[str, Any] = {"roster": None, "cycles": [], "default": None, "problems": problems}
+    options: dict[str, Any] = {"roster": None, "cycles": [], "default": None,
+                               "holiday_source": None, "problems": problems}
 
     try:
         roster = load_master(paths)
@@ -73,11 +82,16 @@ def build_options(paths: Paths) -> dict[str, Any]:
         config_problem = str(exc)
         problems.append(problem("error", config_problem))
 
-    matrix, matrix_errors = load_matrix_file(paths, config)
+    candidates, matrix_errors, notes = holiday_candidates(paths, config)
     matrix_problem: str | None = None
-    if matrix is None:
-        matrix_problem = "the Holiday Roster cannot be used: " + "; ".join(matrix_errors[:4])
+    if not candidates:
+        matrix_problem = "; ".join(matrix_errors[:4])
         problems.append(problem("error", matrix_problem))
+    for note in notes:
+        problems.append(problem("warning", note))
+
+    if candidates:
+        options["holiday_source"] = _source_dict(pick_source(candidates, None))
 
     if roster is None:
         return options
@@ -100,22 +114,27 @@ def build_options(paths: Paths) -> dict[str, Any]:
     holiday_disabled = 0
 
     entries: list[dict[str, Any]] = []
+    cycles_by_id = {}
     for cycle in candidate_cycles(roster.first_date, roster.last_date):
         avail = cycle_availability(cycle, schedule, names, counts_as_code, threshold)
         in_file, remainder = split_at_year_boundary(cycle, roster.last_date)
         filled = cycle_is_filled(cycle, schedule, names, threshold)
         enabled, reason = avail.enabled, avail.reason
+        source = pick_source(candidates, cycle_years(cycle))
+        missing = years_without_holidays(cycle, source) if source else []
         if enabled and blocked_reason:
             enabled = False
             reason = f"{cycle.label} cannot be built yet: {blocked_reason}"
-        elif enabled and matrix is not None and years_without_holidays(cycle, matrix):
-            missing = years_without_holidays(cycle, matrix)
+        elif enabled and missing:
             holiday_disabled += 1
             enabled = False
-            reason = (f"Holiday Roster has no {' or '.join(str(y) for y in missing)} rows - "
-                      "upload the new year's Holiday Roster")
+            hint = ("upload the new year's Holiday Roster or add it to roster-reference"
+                    if source.kind == "reference" else "upload the new year's Holiday Roster")
+            reason = (f"Holiday Roster ({source.label}) has no "
+                      f"{' or '.join(str(y) for y in missing)} rows - {hint}")
         elif enabled and filled:
             reason += " This cycle already has data in the roster file."
+        cycles_by_id[cycle_id(cycle)] = cycle
         entries.append({
             "id": cycle_id(cycle),
             "label": cycle_range_label(cycle),
@@ -136,10 +155,15 @@ def build_options(paths: Paths) -> dict[str, Any]:
         options["default"] = unfilled[0]["id"]
     elif enabled_entries:
         options["default"] = enabled_entries[-1]["id"]
+    if options["default"] and candidates:
+        # the Holiday Roster the default cycle will use (what the UI shows under the cycle list)
+        options["holiday_source"] = _source_dict(
+            pick_source(candidates, cycle_years(cycles_by_id[options["default"]])))
     if not enabled_entries and not blocked_reason and holiday_disabled:
         problems.append(problem(
-            "warning", "no cycle can be selected: the Holiday Roster on file does not cover the "
-                       "needed year (upload the new year's Holiday Roster)"))
+            "warning", "no cycle can be selected: the Holiday Roster in use does not cover the "
+                       "needed year (upload the new year's Holiday Roster or add it to "
+                       "roster-reference)"))
     elif not enabled_entries and not blocked_reason:
         problems.append(problem(
             "warning", "no cycle can be selected: every cycle's previous cycle is missing data "

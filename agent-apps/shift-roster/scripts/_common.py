@@ -89,9 +89,12 @@ LIBRARY_ERRORS = (CycleBuilderError, DraftBuildError, SnapshotError, FinalBuildE
 class Paths:
     """Every file of the task, derived from the task folder."""
 
-    def __init__(self, root: Path | str | None = None):
+    def __init__(self, root: Path | str | None = None, reference_dir: Path | str | None = None):
         self.root = Path(root).resolve() if root else TASK_DIR
         r = self.root
+        # the reference files live next to the shared library: `<task>/../shared/roster-reference`
+        self.reference_dir = (Path(reference_dir).resolve() if reference_dir
+                              else r.parent / "shared" / "roster-reference")
         self.input_dir = r / "input"
         self.output = r / "output"
         self.config_dir = r / "config"
@@ -236,27 +239,170 @@ def load_master(paths: Paths) -> Roster:
                         "is it a valid .xlsx file?") from None
 
 
-def load_matrix_file(paths: Paths, config: RotationConfig | None = None
-                     ) -> tuple[HolidayMatrix | None, list[str]]:
-    """The Holiday Roster as a matrix, or (None, readable problems). The first sheet is used;
-    when it has no header row the other sheets are tried."""
-    if not paths.holidays.exists():
-        return None, ["the Holiday Roster is missing (input/holiday-roster.xlsx)"]
-    codes = dict(config.location_codes) if config is not None else None
+# ---- the Holiday Roster: uploaded file, else the reference file ----------------------------
+
+HOLIDAY_REFERENCE_GLOB = "Holiday Roster*.xlsx"
+UPLOADED = "uploaded"
+REFERENCE = "reference"
+NO_HOLIDAY_ROSTER = "no Holiday Roster: upload one or add one to roster-reference"
+
+
+@dataclass
+class HolidaySource:
+    """The Holiday Roster a run uses: where it came from, which file, and its matrix."""
+    kind: str  # UPLOADED | REFERENCE
+    path: Path
+    sha256: str
+    bytes: int
+    matrix: HolidayMatrix
+    mtime: float = 0.0
+
+    @property
+    def file(self) -> str:
+        return self.path.name
+
+    @property
+    def covers_years(self) -> list[int]:
+        return sorted({h.date.year for h in self.matrix.holidays})
+
+    @property
+    def label(self) -> str:
+        return "uploaded file" if self.kind == UPLOADED else "reference file"
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"kind": self.kind, "file": self.file, "sha256": self.sha256,
+                "covers_years": self.covers_years}
+
+    def record(self) -> dict[str, Any]:
+        """The `analysis.json` input record: name / sha256 / bytes plus the kind."""
+        return {"name": self.file, "sha256": self.sha256, "bytes": self.bytes, "kind": self.kind}
+
+
+def _load_matrix_path(path: Path, codes: Mapping[str, str] | None
+                      ) -> tuple[HolidayMatrix | None, list[str]]:
+    """One Holiday Roster file as a matrix, or (None, readable problems). The first sheet is
+    used; when it has no header row the other sheets are tried."""
+    codes = dict(codes) if codes is not None else None
     try:
-        return load_holiday_matrix(paths.holidays, None, codes), []
+        return load_holiday_matrix(path, None, codes), []
     except HolidayMatrixError as first:
         try:
             from openpyxl import load_workbook
-            names = load_workbook(paths.holidays, read_only=True).sheetnames
+            names = load_workbook(path, read_only=True).sheetnames
         except Exception:  # noqa: BLE001
             return None, list(first.problems)
         for name in names[1:]:
             try:
-                return load_holiday_matrix(paths.holidays, name, codes), []
+                return load_holiday_matrix(path, name, codes), []
             except HolidayMatrixError:
                 continue
         return None, list(first.problems)
+    except Exception as exc:  # noqa: BLE001 - not an xlsx, corrupt zip, ...
+        return None, [f"the file cannot be opened ({type(exc).__name__})"]
+
+
+def _source_of(kind: str, path: Path, codes: Mapping[str, str] | None
+               ) -> tuple[HolidaySource | None, list[str]]:
+    matrix, problems = _load_matrix_path(path, codes)
+    if matrix is None:
+        return None, problems
+    st = path.stat()
+    return HolidaySource(kind, path, sha256_file(path), st.st_size, matrix, st.st_mtime), []
+
+
+def reference_files(paths: Paths) -> list[Path]:
+    """`Holiday Roster*.xlsx` files of the reference folder (Excel lock files ignored)."""
+    d = paths.reference_dir
+    if not d.is_dir():
+        return []
+    return sorted(p for p in d.glob(HOLIDAY_REFERENCE_GLOB)
+                  if p.is_file() and not p.name.startswith("~$"))
+
+
+def covers(source: HolidaySource, years: Sequence[int]) -> bool:
+    have = set(source.covers_years)
+    return all(y in have for y in years)
+
+
+def pick_source(candidates: Sequence[HolidaySource], years: Sequence[int] | None
+                ) -> HolidaySource | None:
+    """The best reference file: among those with at least one row in each of `years` the newest
+    (file modification time, then highest year); when none covers, the one with the highest year
+    (the caller's coverage rule then disables what is uncovered)."""
+    if not candidates:
+        return None
+
+    covering = [c for c in candidates if years and covers(c, years)]
+    if covering:
+        return max(covering, key=lambda c: (c.mtime, max(c.covers_years, default=0), c.file))
+    return max(candidates, key=lambda c: (max(c.covers_years, default=0), c.mtime, c.file))
+
+
+def holiday_candidates(paths: Paths, config: RotationConfig | None = None
+                       ) -> tuple[list[HolidaySource], list[str], list[str]]:
+    """Every usable Holiday Roster. -> (sources, errors, notes).
+
+    `errors` is non-empty when nothing can be used; `notes` are readable remarks about reference
+    files that were skipped. An uploaded file wins outright: when it exists and cannot be read
+    that is an error (the reference files are not used behind the user's back)."""
+    codes = dict(config.location_codes) if config is not None else None
+    if paths.holidays.exists():
+        src, problems = _source_of(UPLOADED, paths.holidays, codes)
+        if src is None:
+            return [], ["the uploaded Holiday Roster cannot be used: " + "; ".join(problems[:4])], []
+        return [src], [], []
+    sources: list[HolidaySource] = []
+    notes: list[str] = []
+    files = reference_files(paths)
+    for f in files:
+        src, problems = _source_of(REFERENCE, f, codes)
+        if src is None:
+            notes.append(f"reference file {f.name} was skipped: " + "; ".join(problems[:2]))
+        else:
+            sources.append(src)
+    if sources:
+        return sources, [], notes
+    if files:
+        return [], ["no usable Holiday Roster in roster-reference ("
+                    + "; ".join(notes[:3]) + "): upload one"], []
+    return [], [NO_HOLIDAY_ROSTER], []
+
+
+def resolve_holiday_source(paths: Paths, config: RotationConfig | None = None, *,
+                           years: Sequence[int] | None = None,
+                           pinned: Mapping[str, Any] | None = None
+                           ) -> tuple[HolidaySource | None, list[str], list[str]]:
+    """THE Holiday Roster lookup, used by every script. -> (source, errors, notes).
+
+    Order: the uploaded `input/holiday-roster.xlsx` when present, else the best file of
+    `shared/roster-reference` for `years` (see `pick_source`). `pinned` is the kind/name record
+    the analysis stored: the later steps then use that very file (comparing its sha256 and
+    refusing when it changed is `changed_inputs`' job)."""
+    codes = dict(config.location_codes) if config is not None else None
+    if pinned:
+        kind = pinned.get("kind") or UPLOADED
+        path = _pinned_path(paths, pinned)
+        if not path.is_file():
+            return None, ["the Holiday Roster used by this run is no longer available"], []
+        src, problems = _source_of(kind, path, codes)
+        if src is None:
+            return None, ["the Holiday Roster cannot be used: " + "; ".join(problems[:4])], []
+        return src, [], []
+    sources, errors, notes = holiday_candidates(paths, config)
+    if errors:
+        return None, errors, notes
+    return pick_source(sources, years), [], notes
+
+
+def _pinned_path(paths: Paths, record: Mapping[str, Any]) -> Path:
+    if record.get("kind") == REFERENCE:
+        return paths.reference_dir / Path(str(record.get("name") or "")).name
+    return paths.holidays
+
+
+def cycle_years(cycle: Cycle) -> list[int]:
+    """Calendar years a cycle touches (first to last date)."""
+    return list(range(cycle.start.year, cycle.end.year + 1))
 
 
 def read_pto_file(paths: Paths) -> list[PtoEntry] | None:
@@ -271,11 +417,21 @@ def read_pto_file(paths: Paths) -> list[PtoEntry] | None:
         raise TaskError(f"the PTO import cannot be read ({type(exc).__name__})") from None
 
 
-def input_records(paths: Paths) -> dict[str, dict[str, Any] | None]:
-    """name / sha256 / bytes of each input that exists (None when absent)."""
-    files = {"roster": paths.roster, "holidays": paths.holidays, "pto": paths.pto,
-             "config": paths.config}
-    return {key: (file_record(p) if p.exists() else None) for key, p in files.items()}
+def input_records(paths: Paths, holiday_source: HolidaySource | None = None
+                  ) -> dict[str, dict[str, Any] | None]:
+    """name / sha256 / bytes of each input that exists (None when absent). The Holiday Roster
+    entry describes `holiday_source` (the file the run resolved, uploaded or reference); without
+    one it describes the uploaded file, if any."""
+    files = {"roster": paths.roster, "pto": paths.pto, "config": paths.config}
+    out: dict[str, dict[str, Any] | None] = {
+        key: (file_record(p) if p.exists() else None) for key, p in files.items()}
+    if holiday_source is not None:
+        out["holidays"] = holiday_source.record()
+    elif paths.holidays.exists():
+        out["holidays"] = {**file_record(paths.holidays), "kind": UPLOADED}
+    else:
+        out["holidays"] = None
+    return {k: out[k] for k in ("roster", "holidays", "pto", "config")}
 
 
 LABELS = {"roster": "the roster workbook", "holidays": "the Holiday Roster",
@@ -289,9 +445,14 @@ def changed_inputs(paths: Paths, recorded: Mapping[str, Any], keys: Sequence[str
     out = []
     for key in keys:
         before = (recorded or {}).get(key)
-        after = now.get(key)
         b = before["sha256"] if before else None
-        a = after["sha256"] if after else None
+        if key == "holidays" and before:
+            # the very file the analysis used (uploaded or reference), not whatever resolves now
+            pinned = _pinned_path(paths, before)
+            a = sha256_file(pinned) if pinned.is_file() else None
+        else:
+            after = now.get(key)
+            a = after["sha256"] if after else None
         if a != b:
             out.append(f"{LABELS[key]} changed since the analysis")
     return out
@@ -632,8 +793,8 @@ def compute_diff(paths: Paths, cycle_id_text: str, plan: Plan, roster: Roster,
 
 
 def diff_payload(diff: DraftDiff, cycle_id_text: str,
-                 extra_blocking: Sequence[Mapping[str, str]] = (), carried: int = 0
-                 ) -> dict[str, Any]:
+                 extra_blocking: Sequence[Mapping[str, str]] = (), carried: int = 0,
+                 holiday_source: HolidaySource | None = None) -> dict[str, Any]:
     """`output/roster-diff.json` (see the task platform contract). `flags.remaining` counts the
     re-checked flags that still stand plus `carried` plan-time flags that cannot be re-checked."""
     def change(c) -> dict[str, Any]:
@@ -672,4 +833,5 @@ def diff_payload(diff: DraftDiff, cycle_id_text: str,
         "snapshot_source": diff.snapshot_source,
         "recheck_ran": diff.recheck_ran,
         "outside_checked": diff.outside_checked,
+        "holiday_source": holiday_source.to_dict() if holiday_source else None,
     }

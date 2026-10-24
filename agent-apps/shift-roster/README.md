@@ -36,7 +36,7 @@ All of `input/`, `output/` and `config/` hold real employee data and are gitigno
 | File | What |
 |---|---|
 | `input/roster.xlsx` | the master roster (sheet `PDT Operate`); only ever read |
-| `input/holiday-roster.xlsx` | the Holiday Roster (Holiday name, Date, one column per location; `X` = off). A YEARLY upload that stays on file (`persist`): see "The Holiday Roster stays on file" |
+| `input/holiday-roster.xlsx` | OPTIONAL upload of the Holiday Roster (Holiday name, Date, one column per location; `X` = off). Without it the reference copy in `shared/roster-reference/` is used; see "The Holiday Roster: optional, reference file by default" |
 | `input/pto-import.xlsx` | optional PTO import (Name, From, To, Code P/T/SL) |
 | `input/run-params.json` | `{"params": {"cycle": "2026-12"}}`, written by the app |
 | `config/rotation-config.json` | rotation categories, staffing minimums, disconnect windows |
@@ -69,9 +69,11 @@ date (`id` like `2026-12`, `label`, `start`, `end`, `enabled`, `reason`, `covera
 filled yet, else the latest enabled one) and `problems` (`severity` + `message`). A cycle is
 enabled only when every active person has a code in at least 95% of the weeks of the previous
 cycle; `reason` explains it and is shown on hover. A cycle is also disabled while the config
-or the Holiday Roster cannot be used. Expected problems are reported in `problems` and the
-script still exits 0. A readable but outdated Holiday Roster is not a problem: the cycles it
-does not cover are just disabled (see "The Holiday Roster stays on file").
+or the Holiday Roster (uploaded or reference) cannot be used. Expected problems are reported in
+`problems` and the script still exits 0. A readable but outdated Holiday Roster is not a problem:
+the cycles it does not cover are just disabled (see "The Holiday Roster: optional, reference file
+by default"). `holiday_source` (`kind` `uploaded|reference`, `file`, `covers_years`) says which file
+serves the default cycle; the Tasks app shows it under the cycle check.
 
 **`analyze.py`** removes the derived files of an earlier run (answers, plan, flags, diff, report
 data: stale answers must never satisfy a new form), runs `cycle_builder.analyze_cycle` and writes
@@ -108,33 +110,54 @@ finished run cannot be finalized again ("the rotation config changed since the a
 a new run. A run that died before the config was saved can simply be repeated (the identical
 final is reused, a new audit line is appended).
 
-## The Holiday Roster stays on file
+## The Holiday Roster: optional, reference file by default
 
-The Holiday Roster is a yearly input, not a per-run one. The `holidays` input is marked
-`"persist": true` in `agent.json`, so the file is kept on disk across runs (the Tasks app shows it
-as "on file") and is never cleaned: upload it once a year and replace it when the year changes.
+The PMO shares the Holiday Roster only about once a year, so the task never requires it. The
+`holidays` input is `"required": false` (and not in `prepare.after`, so it never gates Check inputs
+or Start); `"persist": true` keeps a file the user does upload on disk across runs (never cleaned).
 
-- **Coverage rule.** `prepare_options.py` checks every candidate cycle against the stored file. A
-  cycle is covered when the matrix has at least one holiday row dated in EACH calendar year the
+- **Resolution order** (one function, `_common.resolve_holiday_source`, used by ALL scripts):
+  1. the uploaded `input/holiday-roster.xlsx`, when present (an unreadable upload is an error: the
+     reference files are not used behind the user's back);
+  2. else the best `Holiday Roster*.xlsx` in `shared/roster-reference/` (found relative to the task
+     folder, `../shared/roster-reference`; Excel `~$` lock files are ignored and unreadable files
+     are skipped with a warning in `problems`). Among the files that cover the cycle's calendar
+     years the newest by file modification time wins (then the highest year); when none covers, the
+     file with the highest year is used and the coverage rule below disables what is uncovered;
+  3. neither exists: `prepare_options.py` reports the error "no Holiday Roster: upload one or add
+     one to roster-reference" and disables every cycle; `analyze.py` fails with the same words.
+- **New year.** Drop `Holiday Roster 2027.xlsx` into `shared/roster-reference/` (it is picked up on
+  the next Check inputs) or upload it in the Tasks app (an upload always wins).
+- **Source is recorded and pinned.** `output/analysis.json` (`holiday_source`: kind, file, sha256,
+  covers_years; `inputs.holidays` is the same file's record), the draft's Run log, the
+  `report-data.json` summary, `roster-diff.json` and the final audit entry all name the source.
+  `build_draft.py`, `diff_draft.py` and `finalize.py` use the very file the analysis pinned (by kind
+  and name) and refuse - "the Holiday Roster changed since the analysis ... start a new run" - when
+  its sha256 changed; a file added to the reference folder meanwhile never swaps it.
+- **Coverage rule.** `prepare_options.py` checks every candidate cycle against the file chosen for
+  it. A cycle is covered when the matrix has at least one holiday row dated in EACH calendar year the
   cycle touches (its first to its last date). A Dec-Jan cycle (e.g. Dec 2026 - Jan 2027) needs
   rows in both years. An uncovered cycle gets `enabled: false` and the reason
-  "Holiday Roster has no 2027 rows - upload the new year's Holiday Roster" (several missing years
-  are listed with "or"). Replace the file and the next prepare enables the cycle again. When that
-  leaves no cycle selectable a warning in `problems` says the Holiday Roster does not cover the
-  needed year. `problems` with severity `error` stay for an unreadable or missing matrix.
+  "Holiday Roster (reference file) has no 2027 rows - upload the new year's Holiday Roster or add it
+  to roster-reference" (for an upload: "(uploaded file)" and "upload the new year's Holiday Roster";
+  several missing years are listed with "or"). Add or upload the new file and the next prepare
+  enables the cycle again. When that leaves no cycle selectable a warning in `problems` says the
+  Holiday Roster does not cover the needed year. `problems` with severity `error` stay for an
+  unreadable or missing matrix.
 - **The assumed 1 Jan 2027 row.** The Holiday Roster 2026 file carries a 1 Jan 2027 row that is an
   ASSUMPTION (see `../DECISIONS-AND-ASSUMPTIONS.md`). That single row counts as "a 2027 row", so the
   Dec 2026 - Jan 2027 cycle stays selectable with the 2026 file; the 2027 holidays after 1 Jan are
-  missing until the new year's file is uploaded (the draft's `HOLIDAY_MATRIX_NO_ROWS` flag only
+  missing until the new year's file is added or uploaded (the draft's `HOLIDAY_MATRIX_NO_ROWS` flag only
   fires when there is no 2027 row at all).
-- **Never deleted by the scripts.** No script removes anything in `input/`: `analyze.py` and
-  `diff_draft.py` only delete derived `output/` files, and `finalize.py` only moves its own staging
-  files in `output/`. The backend's clean-up below keeps the persisted file too.
+- **Never deleted by the scripts.** No script removes anything in `input/` or in
+  `shared/roster-reference/`: `analyze.py` and `diff_draft.py` only delete derived `output/` files,
+  and `finalize.py` only moves its own staging files in `output/`. The backend's clean-up below keeps
+  an uploaded Holiday Roster too.
 
 ## Clean-up after a completed run
 
 `agent.json` has `"cleanup": {"onComplete": true}`. After a SUCCESSFUL run the backend deletes this
-task's `input/` files except persisted inputs (the Holiday Roster), the manifest's `cleanup.keep`
+task's `input/` files except persisted inputs (an uploaded Holiday Roster), the manifest's `cleanup.keep`
 paths (none here) and dotfiles. So the master roster, the optional PTO import and `run-params.json`
 are removed and the next run asks for a fresh roster upload. The stale `output/options.json` (the cycle list) is cleared too. The rest of `output/` (the final roster, next-year
 file, audit log, backups) and `config/` are never touched; a failed or abandoned run keeps its
@@ -266,7 +289,8 @@ changed since the analysis"): start the run again.
     ..\.venv\Scripts\python.exe -m pytest -q
 
 Synthetic data only (`tests/synth.py` builds a roster workbook with the library's fixture, a holiday
-matrix, a PTO import and a config). The tests drive the scripts' `main()` in order, and once as
+matrix, a PTO import and a config; the reference-file tests put their files in
+`<tmp>/shared/roster-reference`, so the real reference folder is never involved). The tests drive the scripts' `main()` in order, and once as
 subprocesses; `tests/test_real_smoke.py` runs prepare/analyze/build_draft/diff on COPIES of
-`../shared/roster-reference` and the real config when present (counts and structure only) and is
-skipped otherwise.
+`../shared/roster-reference` and the real config when present (counts and structure only), WITHOUT an
+uploaded Holiday Roster (the reference copy is used), and is skipped otherwise.

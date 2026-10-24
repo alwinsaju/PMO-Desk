@@ -7,7 +7,10 @@ the roster, the Holiday Roster, the optional PTO import and the rotation config,
 * `output/ask-me.json`   the form schema the "Answer questions" gate shows;
 * `output/analysis.json` everything the later steps need: the cycle, the sha256 of every input
                          (a later step refuses when one changed), availability, the full
-                         library analysis and the answer-conversion info.
+                         library analysis and the answer-conversion info. The Holiday Roster is
+                         the uploaded file if there is one, else the best reference file for the
+                         cycle's years; `holiday_source` (kind, file, sha256, covers_years) and
+                         `inputs.holidays` pin that very file for the later steps.
 
 A new run starts here, so the derived files of an earlier run (answers, plan, flags, diff,
 report data) are removed first: stale answers must never satisfy the new form.
@@ -60,15 +63,16 @@ from _common import (
     Paths,
     TaskError,
     cycle_dict,
+    cycle_years,
     field_id,
     input_records,
     load_config_file,
     load_master,
-    load_matrix_file,
     most_common,
     pattern_options,
     read_pto_file,
     read_selected_cycle,
+    resolve_holiday_source,
     remove_quietly,
     run_script,
     schedule_of,
@@ -205,7 +209,8 @@ def _main(paths: Paths) -> None:
     cycle = read_selected_cycle(paths)
     roster = load_master(paths)
     config = load_config_file(paths)
-    matrix, matrix_errors = load_matrix_file(paths, config)
+    source, matrix_errors, _notes = resolve_holiday_source(paths, config, years=cycle_years(cycle))
+    matrix = source.matrix if source else None
     pto_entries = read_pto_file(paths)  # None when no PTO import was uploaded
 
     removed = remove_quietly(paths.stale_outputs())
@@ -220,7 +225,8 @@ def _main(paths: Paths) -> None:
         "cycle": {**cyc, "previous": analysis.previous_cycle},
         "blocked": bool(blockers),
         "blockers": blockers,
-        "inputs": input_records(paths),
+        "inputs": input_records(paths, source),
+        "holiday_source": source.to_dict() if source else None,
         "availability": analysis.to_dict()["availability"],
         "form_info": info,
         "pto_unmatched": list(analysis.pto["unmatched"]),
@@ -233,6 +239,8 @@ def _main(paths: Paths) -> None:
     write_json(paths.ask_me, form)
     required = sum(1 for f in form["fields"] if f.get("required"))
     kinds = Counter(f["group"] for f in form["fields"] if f.get("required"))
+    print(f"holiday roster: {source.kind} file, covers "
+          f"{', '.join(str(y) for y in source.covers_years)}")
     print(f"analysis: cycle {cyc['id']} ({cyc['label']}), {analysis.active_count} active people, "
           f"{len(form['fields'])} form field(s), {required} required "
           f"({', '.join(f'{k}: {v}' for k, v in sorted(kinds.items())) or 'none'})"
