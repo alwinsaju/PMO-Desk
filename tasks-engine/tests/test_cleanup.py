@@ -9,6 +9,7 @@ running engine."""
 import asyncio
 import json
 import os
+import shutil
 import stat
 
 import pytest
@@ -645,6 +646,7 @@ def test_meta_entry_stays_for_a_file_that_could_not_be_removed(tmp_path, monkeyp
 
 def test_cleanup_with_no_input_folder_is_a_no_op(tmp_path):
     folder = cleanup_task(tmp_path, cleanup={"onComplete": True}, seed=False)
+    shutil.rmtree(folder / "input", ignore_errors=True)  # the engine creates it; a user may remove it
     assert backend._cleanup_inputs(backend.tasks["plat"]) == {"removed": 0, "bytes": 0, "skipped": 0}
     assert not (folder / "input").exists()
 

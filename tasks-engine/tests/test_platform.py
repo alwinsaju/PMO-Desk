@@ -356,7 +356,7 @@ def test_inputs_with_unsafe_dest_reads_as_absent(tmp_path):
     write(tmp_path, "escape.xlsx", b"x")
     body = client().get("/tasks/plat/inputs").json()
     assert body["inputs"][0]["present"] is False
-    assert (folder / "input").exists() is False
+    assert list((folder / "input").iterdir()) == []  # nothing written
 
 
 # --- POST /upload ---------------------------------------------------------------
@@ -424,7 +424,7 @@ def test_upload_only_while_resting(tmp_path, state):
     backend.set_state(backend.tasks["plat"], state)
     body = upload(client(), "plat", "roster")
     assert body == {"ok": False, "reason": f"task is {state}"}
-    assert not (folder / "input").exists()
+    assert list((folder / "input").iterdir()) == []  # a refused upload leaves nothing
 
 
 def test_upload_refused_while_prepare_runs(tmp_path):
@@ -500,7 +500,7 @@ def test_upload_refuses_dest_below_a_symlinked_subfolder(tmp_path):
     outside.mkdir()
     folder = make_platform_task(tmp_path, inputs=[
         {"id": "r", "type": "file", "accept": [".xlsx"], "dest": "input/sub/x.xlsx", "required": True}])
-    (folder / "input").mkdir()
+    (folder / "input").mkdir(exist_ok=True)
     make_link(folder / "input" / "sub", outside)
 
     body = upload(client(), "plat", "r")

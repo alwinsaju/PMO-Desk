@@ -200,7 +200,8 @@ def discover_tasks():
         manifest_path = folder / "task.json"
         if manifest_path.exists():
             manifest = json.loads(manifest_path.read_text())
-            tasks[manifest["id"]] = Task(manifest, folder)
+            task = tasks[manifest["id"]] = Task(manifest, folder)
+            _ensure_task_dirs(task)
 
 
 def set_state(task: Task, state: str, **kw):
@@ -530,6 +531,7 @@ async def run_steps(task: Task, steps: list[dict]):
     """Run each step's command as a subprocess until a gate pauses the task or
     the steps run out (already-completed steps are skipped)."""
     loop = asyncio.get_running_loop()
+    _ensure_task_dirs(task)
     for step in steps:
         if step["type"] == "review":
             _review_gate(task, step)
@@ -877,6 +879,45 @@ def _step_gate(step: dict) -> dict | None:
 def _is_link(path: Path) -> bool:
     is_junction = getattr(path, "is_junction", None)
     return path.is_symlink() or bool(is_junction and is_junction())
+
+
+# Folders every task expects to find in its own folder. They are gitignored and
+# not shipped in the installer, so a fresh checkout or install has none of them
+# and several scripts write into output/ without creating it.
+TASK_DATA_FOLDERS = ("input", "output", "config")
+
+
+def _manifest_data_paths(task: Task) -> list:
+    """Every data path the manifest names: input dests, options files, gate files."""
+    paths = []
+    for inp in task.inputs:
+        paths += [inp.get("dest"), inp.get("optionsFile")]
+    for step in task.steps:
+        gate = _step_gate(step) or {}
+        paths += [gate.get(key) for key in ("schema", "answers", "file")]
+    return paths
+
+
+def _ensure_task_dirs(task: Task) -> None:
+    """Create the task's data folders (and the folders its manifest paths live
+    in) when missing. Never follows a link, never leaves the task folder, and a
+    failure is only logged: the step then reports its own, clearer error."""
+    wanted = {Path(name) for name in TASK_DATA_FOLDERS}
+    for rel in _manifest_data_paths(task):
+        if not isinstance(rel, str) or "\x00" in rel or ":" in rel or rel.startswith(("/", "\\")):
+            continue
+        parts = [p for p in rel.replace("\\", "/").split("/") if p not in ("", ".")]
+        if len(parts) < 2 or ".." in parts or parts[0] not in TASK_DATA_FOLDERS:
+            continue
+        wanted.add(Path(*parts[:-1]))
+    for rel in sorted(wanted, key=lambda r: len(r.parts)):
+        path = task.folder / rel
+        try:
+            if any(_is_link(task.folder.joinpath(*rel.parts[: i + 1])) for i in range(len(rel.parts))):
+                continue
+            path.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            log.warning("could not create %s", path, exc_info=True)
 
 
 # --- poll-path caches ----------------------------------------------------------
@@ -1667,6 +1708,7 @@ _register_upload_route(app, _multipart_installed())
 
 def _run_prepare(task: Task, cmd_path: Path) -> subprocess.CompletedProcess:
     # No shell, stdin closed, the task's own folder as cwd, the engine's python.
+    _ensure_task_dirs(task)
     return subprocess.run(
         [STEP_PYTHON, "-u", str(cmd_path)],
         cwd=task.folder, stdin=subprocess.DEVNULL, capture_output=True, env=_step_env(),

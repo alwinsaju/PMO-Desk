@@ -154,7 +154,7 @@ def test_push_notification_trims_to_30(tmp_path):
 def test_pipeline_captures_entry_id_and_substitutes_into_later_step(tmp_path):
     folder = tmp_path / "mail-task"
     (folder / "scripts").mkdir(parents=True)
-    (folder / "output").mkdir()
+    (folder / "output").mkdir(exist_ok=True)
     (folder / "scripts" / "make_draft.py").write_text(
         "from pathlib import Path\n"
         "Path('output/draft-entry-id.txt').write_text('ENTRY-42')\n"
@@ -388,7 +388,7 @@ def test_resolve_output_path_returns_none_without_email_data(tmp_path):
 def test_resolve_output_path_returns_none_when_workbook_missing(tmp_path):
     folder = make_task_folder(tmp_path, "task-a", "task-a")
     backend.discover_tasks()
-    (folder / "output").mkdir()
+    (folder / "output").mkdir(exist_ok=True)
     (folder / "output" / "email-data.json").write_text(
         json.dumps({"workbook_path": str(folder / "gone.xlsx")})
     )
@@ -400,7 +400,7 @@ def test_resolve_output_path_returns_workbook_when_present(tmp_path):
     backend.discover_tasks()
     workbook = folder / "report.xlsx"
     workbook.write_text("placeholder")
-    (folder / "output").mkdir()
+    (folder / "output").mkdir(exist_ok=True)
     (folder / "output" / "email-data.json").write_text(
         json.dumps({"workbook_path": str(workbook)})
     )
@@ -412,7 +412,7 @@ def test_resolve_output_path_returns_workbook_from_report_data(tmp_path):
     backend.discover_tasks()
     workbook = folder / "report.xlsx"
     workbook.write_text("placeholder")
-    (folder / "output").mkdir()
+    (folder / "output").mkdir(exist_ok=True)
     (folder / "output" / "report-data.json").write_text(
         json.dumps({"workbook_path": str(workbook)})
     )
@@ -513,7 +513,7 @@ def test_reject_rejects_task_not_awaiting_review(tmp_path):
 def test_resolve_output_path_returns_none_when_email_data_corrupt(tmp_path):
     folder = make_task_folder(tmp_path, "task-a", "task-a")
     backend.discover_tasks()
-    (folder / "output").mkdir()
+    (folder / "output").mkdir(exist_ok=True)
     (folder / "output" / "email-data.json").write_text("{ not json")
 
     assert backend.resolve_output_path(backend.tasks["task-a"]) is None
@@ -561,7 +561,7 @@ def test_open_notification_happy_path_opens_file(tmp_path, monkeypatch):
     backend.discover_tasks()
     task = backend.tasks["task-a"]
     out_file = folder / "output" / "report.xlsx"
-    out_file.parent.mkdir()
+    out_file.parent.mkdir(exist_ok=True)
     out_file.write_text("data")
     backend.push_notification(task, "task.review_ready", "ready", "body", str(out_file))
     notif_id = task.notifications[0]["id"]

@@ -17,11 +17,12 @@ app the task folders are read-only, so the engine runs every task from a working
 `AI_OS_TASKS_DATA_DIR`). At every engine start the definition files (`task.json`, `scripts/`,
 `templates/`, docs, everything in `shared/`) are mirrored from the install, and the task's data is
 left alone: `input/`, `output/`, `reference/` and `config/` are never overwritten or deleted
-(`config/` and `reference/` are seeded once from the shipped defaults), so a reinstall keeps the
+(`config/` and `reference/` are seeded once from the shipped defaults; `input/`, `output/` and `config/` are always created, empty if need be), so a reinstall keeps the
 user's work, the persisted inputs and the audit logs. The run history is
 `<app data>\tasks-engine\history.jsonl` and starts empty on a new machine. Every path in a manifest
 or a task script (`dest: input/...`, `optionsFile: output/...`, `../shared`, `../shift-roster/config`)
 is relative to the task folder as the engine sees it, so none of this changes a manifest or a script.
+In the repo too, the engine creates a task's `input/`, `output/` and `config/` folders (and the folders its manifest paths, such as an input `dest` or a gate file, live in) when it discovers the task and again before every step, prepare and upload, because those folders are gitignored and a script may write into `output/` without creating it.
 
 ## 1. Manifest additions (task.json)
 

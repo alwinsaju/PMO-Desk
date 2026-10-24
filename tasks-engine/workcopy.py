@@ -31,6 +31,8 @@ log = logging.getLogger("tasks-engine")
 DATA_DIRS = frozenset({"input", "output", "config", "reference"})
 # Seeded from the definitions only while the working copy does not have them yet.
 SEED_ONCE_DIRS = frozenset({"config", "reference"})
+# Always present in a task's working folder, empty if need be.
+ENSURED_DIRS = ("input", "output", "config")
 # Never copied.
 SKIP_NAMES = frozenset({"tests", "__pycache__", ".pytest_cache", ".venv", ".git", "backups"})
 SHARED = "shared"
@@ -129,6 +131,13 @@ def _sync_task(src: Path, dst: Path) -> None:
     for existing in dst.iterdir():
         if existing.name not in wanted and existing.name not in DATA_DIRS:
             _remove(existing)
+    # The data folders exist even when the definitions ship none (they are
+    # gitignored, so the installer does not carry them): scripts write into them.
+    for name in ENSURED_DIRS:
+        try:
+            (dst / name).mkdir(exist_ok=True)
+        except OSError:
+            log.warning("could not create %s", dst / name, exc_info=True)
 
 
 def sync(definitions: Path, workdir: Path) -> None:

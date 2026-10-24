@@ -126,8 +126,9 @@ def test_retry_after_failure_appends_a_second_record(tmp_path):
     (folder / "scripts").mkdir(parents=True)
     (folder / "scripts" / "flaky.py").write_text(
         "import sys\nfrom pathlib import Path\n"
-        "if not Path('output').exists():\n"
-        "    Path('output').mkdir()\n"
+        "marker = Path('output/first-run-done')\n"
+        "if not marker.exists():\n"
+        "    marker.write_text('x')\n"
         "    sys.stderr.write('first run fails'); sys.exit(1)\n"
     )
     (folder / "task.json").write_text(json.dumps(
