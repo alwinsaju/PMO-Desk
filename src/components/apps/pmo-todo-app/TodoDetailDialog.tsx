@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 import {
   Button,
   Dialog,
@@ -8,6 +8,7 @@ import {
   DialogDescription,
   DialogTitle,
   Input,
+  Progress,
   Tabs,
   TabsContent,
   TabsList,
@@ -32,8 +33,19 @@ import { patchTodo, startChaser } from "./api";
 import { OriginalMessage } from "./OriginalMessage";
 import { SignoffRequestDialog } from "./SignoffRequestDialog";
 import { SnoozeMenu } from "./SnoozeMenu";
-import { Field, ScrollBody, Segmented, SourceBadge, TextArea } from "./parts";
+import {
+  ErrorLine,
+  Field,
+  MESSAGE_PANE,
+  Note,
+  QuickChip,
+  ScrollBody,
+  Segmented,
+  SourceBadge,
+  TextArea,
+} from "./parts";
 import { formatDay } from "./queueView";
+import { cn } from "@/lib/cn";
 import { TimelineTab } from "./TimelineTab";
 import { ActionItemsEditor, CheckpointsEditor } from "./TodoEditors";
 import { WaitingPanel } from "./WaitingPanel";
@@ -69,11 +81,6 @@ interface Fields {
 const TAB = "shrink-0 whitespace-nowrap";
 /** A tab's content: the rest of the dialog, scrolling on its own. */
 const PANEL = "mt-3 flex min-h-0 flex-1 flex-col";
-
-/** A quiet figure after a tab's name. */
-function Count({ children }: { children: ReactNode }) {
-  return <span className="text-ink-faint ml-1.5 tabular-nums">{children}</span>;
-}
 
 const fieldsOf = (todo: Todo): Fields => ({
   title: todo.title,
@@ -210,16 +217,18 @@ export function TodoDetailDialog({
   return (
     <Dialog open={todo !== null} onOpenChange={onOpenChange}>
       <DialogContent
-        className="flex h-[min(88vh,760px)] max-h-full max-w-3xl flex-col p-4 sm:p-5"
+        className="flex h-[min(88vh,780px)] max-h-full max-w-[700px] flex-col px-[30px] pt-7 pb-6"
         // Do not park the focus ring on the Snooze button when the dialog opens.
         onOpenAutoFocus={(event) => event.preventDefault()}
       >
-        <div className="flex shrink-0 items-center gap-2 pr-8">
+        <div className="flex shrink-0 items-center gap-3 pr-10">
           <SourceBadge source={shown.source.source} />
-          <DialogTitle className="min-w-0 flex-1 truncate">{shown.title}</DialogTitle>
+          <DialogTitle className="min-w-0 flex-1 truncate pr-0 text-[23px] tracking-[-0.02em]">
+            {shown.title}
+          </DialogTitle>
         </div>
-        <div className="flex shrink-0 items-center justify-between gap-3">
-          <DialogDescription className="min-w-0 text-[12px]">
+        <div className="mt-1 flex shrink-0 items-center justify-between gap-3">
+          <DialogDescription className="mt-0 min-w-0 text-[13px]">
             {open
               ? stage
                 ? `Stage: ${stage}`
@@ -245,24 +254,21 @@ export function TodoDetailDialog({
           )}
         </div>
         {progress.total > 0 && (
-          <div
-            className="bg-neutral-150 mt-2 h-1.5 shrink-0 overflow-hidden rounded-full"
-            role="progressbar"
-            aria-valuemin={0}
-            aria-valuemax={progress.total}
-            aria-valuenow={progress.done}
+          <Progress
+            value={percent}
+            state={allCheckpointsComplete(shown) ? "ok" : "idle"}
             aria-label="Checkpoint progress"
-          >
-            <div
-              className="ease-standard h-full rounded-full bg-neutral-600 transition-[width] duration-300"
-              style={{ width: `${percent}%` }}
-            />
-          </div>
+            aria-valuetext={`${progress.done} of ${progress.total} checkpoints`}
+            className="mt-3.5 shrink-0"
+          />
         )}
 
         {offer && open && (
-          <div className="border-border mt-3 flex shrink-0 flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-lg border bg-neutral-50 px-3 py-2">
-            <p className="text-ink text-[12px]">
+          <Note
+            tone="accent"
+            className="mt-3.5 flex shrink-0 flex-wrap items-center justify-between gap-x-3 gap-y-2"
+          >
+            <p className="text-ink text-[13px] font-semibold">
               Every checkpoint is complete. Mark this to-do as done?
             </p>
             <div className="flex shrink-0 gap-2">
@@ -281,29 +287,28 @@ export function TodoDetailDialog({
                 Mark done
               </Button>
             </div>
-          </div>
+          </Note>
         )}
 
-        <Tabs defaultValue="details" className="mt-3 flex min-h-0 flex-1 flex-col">
+        <Tabs defaultValue="details" className="mt-4 flex min-h-0 flex-1 flex-col">
           {/* Five tabs do not fit a small dialog: the strip scrolls sideways. */}
           <div className="max-w-full shrink-0 [scrollbar-width:none] self-start overflow-x-auto">
             <TabsList>
               <TabsTrigger value="details" className={TAB}>
                 Details
               </TabsTrigger>
-              <TabsTrigger value="items" className={TAB}>
+              <TabsTrigger value="items" className={TAB} count={shown.actionItems.length}>
                 Action items
-                <Count>{shown.actionItems.length}</Count>
               </TabsTrigger>
-              <TabsTrigger value="checkpoints" className={TAB}>
+              <TabsTrigger
+                value="checkpoints"
+                className={TAB}
+                count={`${progress.done}/${progress.total}`}
+              >
                 Checkpoints
-                <Count>
-                  {progress.done}/{progress.total}
-                </Count>
               </TabsTrigger>
-              <TabsTrigger value="timeline" className={TAB}>
+              <TabsTrigger value="timeline" className={TAB} count={shown.history?.length ?? 0}>
                 Timeline
-                <Count>{shown.history?.length ?? 0}</Count>
               </TabsTrigger>
               <TabsTrigger value="original" className={TAB}>
                 Original message
@@ -313,7 +318,7 @@ export function TodoDetailDialog({
 
           <TabsContent value="details" className={PANEL}>
             <ScrollBody className="pr-2">
-              <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-3.5">
                 <Field label="Title">
                   <Input
                     value={fields.title}
@@ -326,7 +331,7 @@ export function TodoDetailDialog({
                     onChange={(e) => edit({ description: e.target.value })}
                   />
                 </Field>
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
                   <Field label="Owner">
                     <Input
                       value={fields.ownerName}
@@ -340,12 +345,12 @@ export function TodoDetailDialog({
                     />
                   </Field>
                 </div>
-                <label className="text-ink-muted flex items-center gap-2 text-[12px]">
+                <label className="text-ink-soft flex items-center gap-2.5 text-[13px]">
                   <input
                     type="checkbox"
                     checked={fields.isMe}
                     onChange={(e) => edit({ isMe: e.target.checked })}
-                    className="accent-accent h-3.5 w-3.5"
+                    className="accent-accent focus-visible:ring-focus h-4 w-4 focus-visible:ring-2"
                   />
                   This is mine (I am the owner)
                 </label>
@@ -359,23 +364,18 @@ export function TodoDetailDialog({
                   apply={apply}
                   onDraftChaser={() => void draftChaser()}
                 />
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
                   <Field label="Due date">
                     <Input
                       type="date"
                       value={fields.dueAt}
                       onChange={(e) => edit({ dueAt: e.target.value })}
                     />
-                    <span className="mt-1 flex flex-wrap gap-1.5">
+                    <span className="mt-1.5 flex flex-wrap gap-1.5">
                       {dueChips.map((chip) => (
-                        <button
-                          key={chip.label}
-                          type="button"
-                          onClick={() => edit({ dueAt: chip.value })}
-                          className="text-ink-muted hover:text-ink rounded-pill border-border focus-visible:ring-accent border px-2 py-0.5 text-[11px] outline-none hover:bg-neutral-100 focus-visible:ring-2"
-                        >
+                        <QuickChip key={chip.label} onClick={() => edit({ dueAt: chip.value })}>
                           {chip.label}
-                        </button>
+                        </QuickChip>
                       ))}
                     </span>
                   </Field>
@@ -390,7 +390,7 @@ export function TodoDetailDialog({
                     }))}
                   />
                 </Field>
-                <p className="text-ink-faint text-[11px]">
+                <p className="text-ink-muted text-[12px]">
                   Approved{" "}
                   {new Date(shown.approvedAt).toLocaleString("en-GB", {
                     dateStyle: "medium",
@@ -435,27 +435,23 @@ export function TodoDetailDialog({
 
           <TabsContent value="original" className={PANEL}>
             {shown.source.intakeId ? (
-              <div className="border-border flex min-h-0 flex-1 flex-col rounded-lg border p-3">
+              <div className={cn(MESSAGE_PANE, "min-h-0 flex-1")}>
                 <OriginalMessage
                   intakeId={shown.source.intakeId}
                   className="flex min-h-0 flex-1 flex-col"
                 />
               </div>
             ) : (
-              <p className="text-ink-faint text-[13px]">
+              <p className="text-ink-muted text-[13.5px]">
                 This to-do was created by hand, so there is no original message.
               </p>
             )}
           </TabsContent>
         </Tabs>
 
-        {error && (
-          <p role="alert" className="text-ink mt-2 shrink-0 text-[12px] font-medium">
-            {error}
-          </p>
-        )}
+        {error && <ErrorLine className="mt-3 shrink-0">{error}</ErrorLine>}
 
-        <div className="border-border mt-3 flex shrink-0 flex-wrap items-center justify-between gap-x-3 gap-y-2 border-t pt-3">
+        <div className="border-line mt-4 flex shrink-0 flex-wrap items-center justify-between gap-x-3 gap-y-2 border-t pt-4">
           <div className="flex flex-wrap gap-2">
             {open ? (
               <>

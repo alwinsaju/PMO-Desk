@@ -5,6 +5,7 @@ import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui";
 import type { HistoryEntry, Todo } from "@/lib/pmo/types";
 import { OriginalMessage } from "./OriginalMessage";
+import { MESSAGE_PANE } from "./parts";
 import { HISTORY_LABEL } from "./queueView";
 
 const when = (iso: string) =>
@@ -23,7 +24,7 @@ export function TimelineTab({ todo }: { todo: Todo }) {
 
   if (entries.length === 0) {
     return (
-      <p className="text-ink-faint text-[13px]">
+      <p className="text-ink-muted text-[13.5px]">
         Nothing recorded yet. Messages in the same conversation and changes to waiting,
         the due date or the status will appear here.
       </p>
@@ -40,23 +41,23 @@ export function TimelineTab({ todo }: { todo: Todo }) {
               <span
                 className={cn(
                   "mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full",
-                  entry.kind === "message" ? "bg-accent" : "bg-neutral-300",
+                  entry.kind === "message" ? "bg-accent" : "bg-line-strong",
                 )}
               />
               {index < entries.length - 1 && (
-                <span className="bg-border mt-1 w-px flex-1" aria-hidden />
+                <span className="bg-line mt-1 w-px flex-1" aria-hidden />
               )}
             </span>
             <div className="min-w-0 flex-1">
-              <p className="text-ink-faint text-[11px]">
-                <span className="text-ink-muted font-semibold tracking-wide uppercase">
+              <p className="text-ink-muted text-[12px]">
+                <span className="text-ink-muted text-[11px] font-bold tracking-[0.08em] uppercase">
                   {HISTORY_LABEL[entry.kind]}
                 </span>
                 {" · "}
                 {when(entry.at)}
                 {entry.from ? ` · ${entry.from}` : ""}
               </p>
-              <p className="text-ink mt-0.5 text-[13px] leading-relaxed break-words whitespace-pre-wrap">
+              <p className="text-ink mt-0.5 text-[13.5px] leading-relaxed break-words whitespace-pre-wrap">
                 {entry.text}
               </p>
               {entry.intakeId && (
@@ -71,7 +72,7 @@ export function TimelineTab({ todo }: { todo: Todo }) {
                     {opened ? "Hide message" : "Open message"}
                   </Button>
                   {opened && (
-                    <div className="border-border mt-1 flex h-64 flex-col rounded-lg border p-3">
+                    <div className={cn(MESSAGE_PANE, "mt-1 h-64")}>
                       <OriginalMessage
                         intakeId={entry.intakeId}
                         className="flex min-h-0 flex-1 flex-col"

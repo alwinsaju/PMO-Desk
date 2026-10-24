@@ -4,7 +4,7 @@ import { PlusIcon, XIcon } from "@phosphor-icons/react";
 import { Button, IconButton, Input } from "@/components/ui";
 import { CHECKPOINT_TEMPLATE_LIST } from "@/lib/pmo/checkpointTemplates";
 import { PRIORITIES, type TodoDraft } from "@/lib/pmo/types";
-import { Field, Segmented, TextArea } from "./parts";
+import { Chip, Field, Segmented, TextArea } from "./parts";
 
 interface DraftFormProps {
   draft: TodoDraft;
@@ -22,7 +22,7 @@ export function DraftForm({ draft, onChange, dueBasis, disabled }: DraftFormProp
   );
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-3.5">
       <Field label="Title">
         <Input
           value={draft.title}
@@ -40,7 +40,7 @@ export function DraftForm({ draft, onChange, dueBasis, disabled }: DraftFormProp
         />
       </Field>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
         <Field label="Owner">
           <Input
             value={draft.owner.name ?? ""}
@@ -63,7 +63,7 @@ export function DraftForm({ draft, onChange, dueBasis, disabled }: DraftFormProp
         </Field>
       </div>
 
-      <label className="text-ink-muted flex items-center gap-2 text-[12px]">
+      <label className="text-ink-soft flex items-center gap-2.5 text-[13px]">
         <input
           type="checkbox"
           checked={draft.owner.isMe === true}
@@ -71,12 +71,12 @@ export function DraftForm({ draft, onChange, dueBasis, disabled }: DraftFormProp
           onChange={(event) =>
             set({ owner: { ...draft.owner, isMe: event.target.checked } })
           }
-          className="accent-accent h-3.5 w-3.5"
+          className="accent-accent focus-visible:ring-focus h-4 w-4 focus-visible:ring-2"
         />
         This is mine (I am the owner)
       </label>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
         <Field label="Due date">
           <div className="flex items-center gap-2">
             <Input
@@ -86,9 +86,7 @@ export function DraftForm({ draft, onChange, dueBasis, disabled }: DraftFormProp
               onChange={(event) => set({ dueAt: event.target.value || null })}
             />
             {draft.dueAt && dueBasis === "inferred" && (
-              <span className="text-ink-faint text-[11px] whitespace-nowrap">
-                guessed
-              </span>
+              <Chip className="shrink-0">guessed</Chip>
             )}
           </div>
         </Field>
@@ -126,14 +124,14 @@ export function DraftForm({ draft, onChange, dueBasis, disabled }: DraftFormProp
           }))}
         />
         {template && (
-          <span className="text-ink-faint text-[11px]">
+          <span className="text-ink-muted text-[12px]">
             {template.steps.map((step) => step.label).join(" → ")}
           </span>
         )}
       </Field>
 
-      <div className="flex flex-col gap-1.5">
-        <span className="text-ink-faint text-[10px] font-semibold tracking-wide uppercase">
+      <div className="flex flex-col gap-2">
+        <span className="text-ink-muted text-[11px] font-bold tracking-[0.08em] uppercase">
           Action items
         </span>
         {draft.actionItems.map((item, index) => (
@@ -142,7 +140,6 @@ export function DraftForm({ draft, onChange, dueBasis, disabled }: DraftFormProp
               value={item.text}
               disabled={disabled}
               maxLength={200}
-              className="h-9"
               onChange={(event) =>
                 set({
                   actionItems: draft.actionItems.map((existing, i) =>

@@ -13,7 +13,7 @@ import {
 import { buildMailto } from "@/lib/pmo/chaser";
 import type { ChaserJob, Todo } from "@/lib/pmo/types";
 import { discardChaser, startChaser } from "./api";
-import { Field, ScrollBody, TextArea } from "./parts";
+import { ErrorLine, Field, Note, ScrollBody, TextArea } from "./parts";
 
 interface ChaserDialogProps {
   todo: Todo;
@@ -116,36 +116,31 @@ export function ChaserDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="flex max-h-full max-w-xl flex-col p-5"
+        className="flex max-h-full max-w-xl flex-col px-[30px] pt-7 pb-6"
         // Opening should not select the address in the first field.
         onOpenAutoFocus={(event) => event.preventDefault()}
       >
         <DialogTitle className="shrink-0">
           Chaser to {todo.waitingOn ?? "the person you are waiting on"}
         </DialogTitle>
-        <DialogDescription className="shrink-0 text-[12px]">
+        <DialogDescription className="shrink-0 text-[13px]">
           Drafted by the local model from this to-do. Edit it, then copy it. This app
           never sends anything.
         </DialogDescription>
 
         {(!job || drafting) && (
-          <div
-            role="status"
-            className="border-border text-ink-muted mt-4 flex items-center gap-2 rounded-lg border bg-neutral-50 px-3 py-3 text-[13px]"
-          >
-            <span className="bg-accent h-2 w-2 shrink-0 animate-pulse rounded-full" />
+          <Note role="status" className="mt-4 flex items-center gap-2.5">
+            <span className="bg-accent h-2 w-2 shrink-0 rounded-full motion-safe:animate-blink" />
             Drafting… (can take a minute on this PC). You can close this window; the draft
             will be waiting on the to-do.
-          </div>
+          </Note>
         )}
 
         {failed && (
           <div role="alert" className="mt-4 flex flex-col gap-2">
-            <p className="border-border text-ink rounded-lg border bg-neutral-50 px-3 py-2 text-[13px]">
-              {job.error ?? "The draft failed."}
-            </p>
+            <Note tone="danger">{job.error ?? "The draft failed."}</Note>
             <div>
-              <Button size="sm" variant="secondary" disabled={busy} onClick={draftAgain}>
+              <Button variant="secondary" disabled={busy} onClick={draftAgain}>
                 Try again
               </Button>
             </div>
@@ -155,7 +150,7 @@ export function ChaserDialog({
         {ready && (
           <>
             <ScrollBody className="mt-4 flex flex-col gap-3 pr-2">
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
                 <Field label="To (optional)">
                   <Input
                     value={to}
@@ -180,20 +175,16 @@ export function ChaserDialog({
                   onChange={(e) => setText(e.target.value)}
                 />
               </Field>
-              {error && (
-                <p role="alert" className="text-ink text-[12px] font-medium">
-                  {error}
-                </p>
-              )}
+              {error && <ErrorLine>{error}</ErrorLine>}
               {!mailto.ok && (
-                <p className="text-ink-faint text-[11px]">{mailto.reason}</p>
+                <p className="text-ink-muted text-[12px]">{mailto.reason}</p>
               )}
-              <p className="text-ink-faint text-[11px]">
+              <p className="text-ink-muted text-[12px] leading-relaxed">
                 The mail link only opens a new message in your mail program with this text
                 filled in; you still check it and press Send yourself.
               </p>
             </ScrollBody>
-            <div className="border-border mt-3 flex shrink-0 flex-wrap items-center gap-2 border-t pt-3">
+            <div className="border-line mt-4 flex shrink-0 flex-wrap items-center gap-2.5 border-t pt-4">
               <Button disabled={!text.trim()} onClick={() => void copy()}>
                 {copied ? <CheckIcon size={14} weight="bold" /> : <CopyIcon size={14} />}
                 {copied ? "Copied" : "Copy"}

@@ -20,7 +20,7 @@ import { approverEmail, signoffOf } from "@/lib/pmo/signoff";
 import { buildSignoffTemplate, myFirstName } from "@/lib/pmo/signoffRequest";
 import type { Checkpoint, ChaserJob, PmoConfig, Todo } from "@/lib/pmo/types";
 import { discardSignoffDraft, requestSignoff, startSignoffDraft } from "./api";
-import { Field, ScrollBody, TextArea } from "./parts";
+import { ErrorLine, Field, Note, QuickChip, ScrollBody, TextArea } from "./parts";
 import { approverSuggestions } from "./signoffUi";
 
 interface SignoffRequestDialogProps {
@@ -189,11 +189,11 @@ export function SignoffRequestDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="flex max-h-full max-w-xl flex-col p-5"
+        className="flex max-h-full max-w-xl flex-col px-[30px] pt-7 pb-6"
         onOpenAutoFocus={(event) => event.preventDefault()}
       >
         <DialogTitle className="shrink-0">Request sign-off</DialogTitle>
-        <DialogDescription className="shrink-0 text-[12px]">
+        <DialogDescription className="shrink-0 text-[13px]">
           This only writes the request. This app never sends anything: copy it, send it
           yourself, then click &ldquo;Mark as requested&rdquo;.
         </DialogDescription>
@@ -208,27 +208,22 @@ export function SignoffRequestDialog({
               data-testid="signoff-approver"
             />
             {suggestions.length > 0 && (
-              <span className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px]">
-                <span className="text-ink-faint">Quick pick:</span>
+              <span className="mt-1 flex flex-wrap items-center gap-1.5 text-[12px]">
+                <span className="text-ink-muted font-medium">Quick pick:</span>
                 {suggestions.map((value) => (
-                  <button
-                    key={value}
-                    type="button"
-                    onClick={() => changeApprover(value)}
-                    className="text-ink-muted hover:text-ink rounded-pill border-border focus-visible:ring-accent border px-2 py-0.5 outline-none hover:bg-neutral-100 focus-visible:ring-2"
-                  >
+                  <QuickChip key={value} onClick={() => changeApprover(value)}>
                     {value}
-                  </button>
+                  </QuickChip>
                 ))}
               </span>
             )}
             {!approver.trim() && (
-              <span className="text-ink-faint mt-1 text-[11px]">
+              <span className="text-ink-muted mt-1 text-[12px]">
                 Name the approver to get chaser reminders and to recognise their reply.
               </span>
             )}
           </Field>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
             <Field label="To (optional)">
               <Input
                 value={to}
@@ -245,32 +240,27 @@ export function SignoffRequestDialog({
             </Field>
           </div>
           {drafting && (
-            <div
-              role="status"
-              className="border-border text-ink-muted flex items-center gap-2 rounded-lg border bg-neutral-50 px-3 py-2.5 text-[12px]"
-            >
-              <span className="bg-accent h-2 w-2 shrink-0 animate-pulse rounded-full" />
+            <Note role="status" className="flex items-center gap-2.5">
+              <span className="bg-accent h-2 w-2 shrink-0 rounded-full motion-safe:animate-blink" />
               Drafting&hellip; (can take a minute on this PC). You can keep editing; your
               text is not touched.
-            </div>
+            </Note>
           )}
           {failed && (
-            <p
-              role="alert"
-              className="border-border text-ink rounded-lg border bg-neutral-50 px-3 py-2 text-[12px]"
-            >
+            <Note tone="danger" role="alert">
               {job.error ?? "The improved version failed."} Your text is unchanged.
-            </p>
+            </Note>
           )}
           {improved && (
-            <div
+            <Note
+              tone="accent"
               data-testid="signoff-improved"
-              className="border-border flex flex-col gap-2 rounded-lg border bg-neutral-50 px-3 py-2.5"
+              className="flex flex-col gap-2.5"
             >
-              <p className="text-ink text-[12px] font-medium">
+              <p className="text-ink text-[13px] font-semibold">
                 An improved version is ready (written by the local model; read it first).
               </p>
-              <p className="text-ink-muted max-h-32 overflow-y-auto text-[12px] leading-relaxed break-words whitespace-pre-wrap">
+              <p className="text-ink-soft scroll-thin max-h-32 overflow-y-auto text-[12.5px] leading-relaxed break-words whitespace-pre-wrap">
                 {job.text}
               </p>
               <div className="flex gap-2">
@@ -281,7 +271,7 @@ export function SignoffRequestDialog({
                   Keep mine
                 </Button>
               </div>
-            </div>
+            </Note>
           )}
 
           <Field label="Message">
@@ -298,13 +288,9 @@ export function SignoffRequestDialog({
             />
           </Field>
 
-          {error && (
-            <p role="alert" className="text-ink text-[12px] font-medium">
-              {error}
-            </p>
-          )}
-          {!mailto.ok && <p className="text-ink-faint text-[11px]">{mailto.reason}</p>}
-          <p className="text-ink-faint text-[11px]">
+          {error && <ErrorLine>{error}</ErrorLine>}
+          {!mailto.ok && <p className="text-ink-muted text-[12px]">{mailto.reason}</p>}
+          <p className="text-ink-muted text-[12px] leading-relaxed">
             &ldquo;Mark as requested&rdquo; records that you sent it (the app cannot
             tell), starts the wait for a reply
             {approver.trim() ? ` on ${approver.trim()}` : ""} and ticks &ldquo;Sent for
@@ -313,7 +299,7 @@ export function SignoffRequestDialog({
           </p>
         </ScrollBody>
 
-        <div className="border-border mt-3 flex shrink-0 flex-wrap items-center gap-2 border-t pt-3">
+        <div className="border-line mt-4 flex shrink-0 flex-wrap items-center gap-2.5 border-t pt-4">
           <Button variant="outline" disabled={!text.trim()} onClick={() => void copy()}>
             {copied ? <CheckIcon size={14} weight="bold" /> : <CopyIcon size={14} />}
             {copied ? "Copied" : "Copy"}

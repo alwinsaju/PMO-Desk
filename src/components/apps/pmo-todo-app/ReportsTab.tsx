@@ -20,7 +20,18 @@ import {
   saveReport,
   startReportNarrative,
 } from "./api";
-import { CONTENT_WIDTH, Chip, Field, ScrollBody, TextArea } from "./parts";
+import {
+  CONTENT_WIDTH,
+  Chip,
+  ErrorLine,
+  Field,
+  GUTTER_X,
+  NativeSelect,
+  ROW_CARD,
+  ScrollBody,
+  SectionLabel,
+  TextArea,
+} from "./parts";
 import {
   PERIOD_CHOICES,
   addNarrative,
@@ -268,25 +279,25 @@ export function ReportsTab({ state, view, onViewChange }: ReportsTabProps) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <ScrollBody memoryKey="pmo:reports">
-        <div className={cn(CONTENT_WIDTH, "flex flex-col gap-4 p-3 @md:p-4")}>
+        <div className={cn(CONTENT_WIDTH, GUTTER_X, "flex flex-col gap-5 pt-1 pb-6")}>
           {/* Period and Generate. */}
-          <div className="flex flex-wrap items-end gap-2">
+          <div className="flex flex-wrap items-end gap-3">
             <Field label="Period" className="min-w-0">
-              <select
+              <NativeSelect
                 value={choice}
                 aria-label="Report period"
                 onChange={(event) => {
                   setArmed(null);
                   patchView({ choice: event.target.value as PeriodChoice });
                 }}
-                className="rounded-control border-border bg-surface-elevated text-ink focus-visible:ring-accent h-8 min-w-40 border px-2 text-[13px] outline-none focus-visible:ring-2"
+                className="min-w-44"
               >
                 {PERIOD_CHOICES.map((option) => (
                   <option key={option.id} value={option.id}>
                     {option.label}
                   </option>
                 ))}
-              </select>
+              </NativeSelect>
             </Field>
             {choice === "custom" && (
               <>
@@ -295,7 +306,7 @@ export function ReportsTab({ state, view, onViewChange }: ReportsTabProps) {
                     type="date"
                     value={view.customStart}
                     max={state.today}
-                    className="h-8 w-36 px-2 text-[13px]"
+                    className="w-40 text-[13px]"
                     onChange={(event) => patchView({ customStart: event.target.value })}
                   />
                 </Field>
@@ -304,14 +315,13 @@ export function ReportsTab({ state, view, onViewChange }: ReportsTabProps) {
                     type="date"
                     value={view.customEnd}
                     max={state.today}
-                    className="h-8 w-36 px-2 text-[13px]"
+                    className="w-40 text-[13px]"
                     onChange={(event) => patchView({ customEnd: event.target.value })}
                   />
                 </Field>
               </>
             )}
             <Button
-              size="sm"
               disabled={busy !== null}
               onClick={() => void generate()}
               className="shrink-0"
@@ -323,12 +333,12 @@ export function ReportsTab({ state, view, onViewChange }: ReportsTabProps) {
                   : "Generate"}
             </Button>
             {armed === "generate" && (
-              <span role="status" className="text-ink-muted basis-full text-[12px]">
+              <span role="status" className="text-ink-muted basis-full text-[12.5px]">
                 You have edits that are not saved. Generating again replaces them.{" "}
                 <button
                   type="button"
                   onClick={() => setArmed(null)}
-                  className="text-ink focus-visible:ring-accent rounded underline underline-offset-2 outline-none focus-visible:ring-2"
+                  className="text-ink focus-visible:ring-focus rounded font-semibold underline underline-offset-2 outline-none focus-visible:ring-2"
                 >
                   Keep editing
                 </button>
@@ -336,14 +346,10 @@ export function ReportsTab({ state, view, onViewChange }: ReportsTabProps) {
             )}
           </div>
 
-          {error && (
-            <p role="alert" className="text-ink text-[12px] font-medium">
-              {error}
-            </p>
-          )}
+          {error && <ErrorLine>{error}</ErrorLine>}
 
           {!draft ? (
-            <p className="text-ink-muted text-[13px] leading-relaxed">
+            <p className="text-ink-muted text-[13.5px] leading-relaxed">
               Pick a period and press Generate. The report is built from the to-dos in
               this app (nothing is read from Excel, ServiceNow or SharePoint), appears at
               once, and stays on this computer: this app never sends it. You can add a
@@ -353,12 +359,12 @@ export function ReportsTab({ state, view, onViewChange }: ReportsTabProps) {
           ) : (
             <>
               <div className="flex flex-col gap-1.5">
-                <p className="text-ink-muted text-[12px] leading-snug">
+                <p className="text-ink-soft text-[13px] leading-snug font-semibold">
                   {draftSubtitle(draft)}
                 </p>
                 <p
                   role="status"
-                  className="text-ink-muted text-[11px] leading-snug @md:hidden"
+                  className="text-ink-muted text-[12px] leading-snug @md:hidden"
                 >
                   {statusText}
                 </p>
@@ -376,7 +382,7 @@ export function ReportsTab({ state, view, onViewChange }: ReportsTabProps) {
               {/* The optional highlights. */}
               <section
                 aria-label="Highlights from the local model"
-                className="border-border flex flex-col gap-2 rounded-lg border bg-neutral-50 p-3"
+                className="border-line bg-card rounded-card flex flex-col gap-3 border p-4"
               >
                 <div className="flex flex-wrap items-center gap-2">
                   <Button
@@ -390,7 +396,7 @@ export function ReportsTab({ state, view, onViewChange }: ReportsTabProps) {
                       ? "Write highlights again"
                       : "Write highlights with AI"}
                   </Button>
-                  <span className="text-ink-faint min-w-0 basis-full text-[11px] leading-snug @md:flex-1 @md:basis-0">
+                  <span className="text-ink-muted min-w-0 basis-full text-[12px] leading-snug @md:flex-1 @md:basis-0">
                     Optional. The local model sees only the titles, owners and dates in
                     this report; lines that name anything else are left out.
                   </span>
@@ -399,14 +405,14 @@ export function ReportsTab({ state, view, onViewChange }: ReportsTabProps) {
                 {drafting && (
                   <p
                     role="status"
-                    className="text-ink-muted flex items-center gap-2 text-[13px]"
+                    className="text-ink-soft flex items-center gap-2.5 text-[13px]"
                   >
-                    <span className="bg-accent h-2 w-2 shrink-0 animate-pulse rounded-full" />
+                    <span className="bg-accent h-2 w-2 shrink-0 rounded-full motion-safe:animate-blink" />
                     {status.kind === "drafting" ? status.text : "Starting…"}
                   </p>
                 )}
                 {status.kind === "failed" && !drafting && (
-                  <p role="alert" className="text-ink text-[13px]">
+                  <p role="alert" className="text-red text-[13px] font-semibold">
                     {status.message}
                   </p>
                 )}
@@ -414,7 +420,7 @@ export function ReportsTab({ state, view, onViewChange }: ReportsTabProps) {
                   <div className="flex flex-col gap-2">
                     {status.parts.map((part) => (
                       <div key={part.heading}>
-                        <h4 className="text-ink-faint text-[10px] font-semibold tracking-wide uppercase">
+                        <h4 className="text-ink-muted text-[11px] font-bold tracking-[0.08em] uppercase">
                           {part.heading}
                         </h4>
                         <ul className="mt-0.5 flex list-disc flex-col gap-0.5 pl-4">
@@ -431,7 +437,7 @@ export function ReportsTab({ state, view, onViewChange }: ReportsTabProps) {
                     ))}
                     {status.removedNote && (
                       <p
-                        className="text-ink-muted text-[12px] leading-snug"
+                        className="text-ink-muted text-[12.5px] leading-snug"
                         title={status.removed
                           .map((r) => `${r.part}: ${r.reason}`)
                           .join("\n")}
@@ -444,7 +450,7 @@ export function ReportsTab({ state, view, onViewChange }: ReportsTabProps) {
                         {status.applied ? <CheckIcon size={14} weight="bold" /> : null}
                         {status.applied ? "Added to the report" : "Add to the report"}
                       </Button>
-                      <span className="text-ink-faint text-[11px]">
+                      <span className="text-ink-muted text-[12px]">
                         Written by {status.model}.
                       </span>
                     </div>
@@ -466,7 +472,7 @@ export function ReportsTab({ state, view, onViewChange }: ReportsTabProps) {
                 />
               </Field>
               {draft.capped && (
-                <p className="text-ink-faint text-[11px] leading-snug">
+                <p className="text-ink-muted text-[12px] leading-snug">
                   Long lists show their first items and &quot;+N more&quot;. Saving keeps
                   every item in a separate full copy.
                 </p>
@@ -476,35 +482,36 @@ export function ReportsTab({ state, view, onViewChange }: ReportsTabProps) {
 
           {/* Previous reports. */}
           <section aria-label="Previous reports" className="flex flex-col gap-2">
-            <h3 className="text-ink border-border border-b pb-1 text-[12px] font-semibold tracking-wide uppercase">
-              Previous reports
-            </h3>
+            <SectionLabel className="border-line border-b pb-2">Previous reports</SectionLabel>
             {saved === null ? (
-              <p className="text-ink-faint text-[13px]">Loading&hellip;</p>
+              <p className="text-ink-muted text-[13.5px]">Loading&hellip;</p>
             ) : rows.length === 0 ? (
-              <p className="text-ink-faint text-[13px]">
+              <p className="text-ink-muted text-[13.5px]">
                 Nothing saved yet. Saved reports are kept on this computer until you
                 delete them.
               </p>
             ) : (
-              <ul className="flex flex-col gap-1.5">
+              <ul className="flex flex-col gap-2.5">
                 {rows.map((row) => {
                   const current = draft?.id === row.id;
                   return (
                     <li
                       key={row.id}
-                      className="border-border flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border px-3 py-2"
+                      className={cn(
+                        ROW_CARD,
+                        "flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-3",
+                      )}
                     >
                       <div className="min-w-0 flex-1 basis-48">
-                        <p className="text-ink truncate text-[13px] font-medium">
+                        <p className="text-ink truncate text-[14px] font-semibold">
                           {row.title}: {row.periodLabel}
                         </p>
-                        <p className="text-ink-faint text-[11px]">
+                        <p className="text-ink-muted text-[12px]">
                           Saved {row.savedLabel} &middot; {row.revisionLabel}
                         </p>
                       </div>
                       {row.chips.map((chip) => (
-                        <Chip key={chip} tone="outline">
+                        <Chip key={chip} tone="neutral">
                           {chip}
                         </Chip>
                       ))}
@@ -532,15 +539,15 @@ export function ReportsTab({ state, view, onViewChange }: ReportsTabProps) {
 
       {/* Sticky actions. */}
       {draft && save_ && mailto && (
-        <div className="border-border bg-surface-elevated shrink-0 border-t">
+        <div className="bg-win border-line shrink-0 border-t">
           <div
             className={cn(
               CONTENT_WIDTH,
-              "flex flex-wrap items-center gap-2 px-3 py-2 @md:px-4",
+              GUTTER_X,
+              "flex flex-wrap items-center gap-2.5 py-3",
             )}
           >
             <Button
-              size="sm"
               disabled={!draft.text.trim()}
               aria-label="Copy as text"
               title="Copy as plain text, for Outlook or Teams"
@@ -561,7 +568,6 @@ export function ReportsTab({ state, view, onViewChange }: ReportsTabProps) {
               )}
             </Button>
             <Button
-              size="sm"
               variant="secondary"
               disabled={!draft.text.trim()}
               aria-label="Copy as Markdown"
@@ -583,7 +589,7 @@ export function ReportsTab({ state, view, onViewChange }: ReportsTabProps) {
               )}
             </Button>
             {mailto.ok && (
-              <Button size="sm" variant="outline" asChild>
+              <Button variant="outline" asChild>
                 {/* A mailto: link only opens an unsent compose window in the
                     user's own mail program; this app sends nothing. */}
                 <a
@@ -602,12 +608,11 @@ export function ReportsTab({ state, view, onViewChange }: ReportsTabProps) {
             )}
             <span
               role="status"
-              className="text-ink-muted hidden min-w-0 flex-1 text-right text-[11px] leading-snug @md:block"
+              className="text-ink-muted hidden min-w-0 flex-1 text-right text-[12px] leading-snug @md:block"
             >
               {statusText}
             </span>
             <Button
-              size="sm"
               variant="secondary"
               disabled={busy !== null || !save_.canSave}
               onClick={() => void save()}

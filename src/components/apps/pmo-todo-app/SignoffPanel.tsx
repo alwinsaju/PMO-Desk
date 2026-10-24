@@ -2,12 +2,20 @@
 
 import { useState } from "react";
 import { SealCheckIcon, WarningIcon } from "@phosphor-icons/react";
-import { Button } from "@/components/ui";
+import { Button, Input } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import type { Checkpoint, ReminderPrefs, Todo } from "@/lib/pmo/types";
 import { confirmSignoffConditions, recordSignoff, revokeSignoff } from "./api";
 import { OriginalMessage } from "./OriginalMessage";
-import { Chip, Field, Segmented, TextArea } from "./parts";
+import {
+  Chip,
+  ErrorLine,
+  Field,
+  MESSAGE_PANE,
+  NativeSelect,
+  Segmented,
+  TextArea,
+} from "./parts";
 import {
   OUTCOME_CHOICES,
   conditionsField,
@@ -30,9 +38,6 @@ interface SignoffPanelProps {
   onRequest: () => void;
   onSettled: () => void;
 }
-
-const inputClass =
-  "rounded-control border-border bg-surface-elevated text-ink focus-visible:ring-accent h-9 w-full border px-2.5 text-[13px] outline-none focus-visible:ring-2";
 
 /**
  * Everything about one sign-off step: the state in plain words, the immutable
@@ -86,13 +91,13 @@ export function SignoffPanel({
     <div
       data-testid="signoff-panel"
       data-state={view.state}
-      className="border-border bg-surface-elevated mt-1 flex w-full basis-full flex-col gap-2.5 rounded-lg border px-3 py-2.5"
+      className="border-line bg-field rounded-control mt-1 flex w-full basis-full flex-col gap-3 border px-4 py-3.5"
     >
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-        <SealCheckIcon size={15} className="text-ink-muted shrink-0" />
+        <SealCheckIcon size={16} className="text-ink-muted shrink-0" />
         <p
           className={cn(
-            "text-ink min-w-0 text-[13px] font-semibold break-words",
+            "text-ink min-w-0 text-[13.5px] font-semibold break-words",
             view.state === "skipped" && "text-ink-muted font-medium",
           )}
         >
@@ -100,14 +105,14 @@ export function SignoffPanel({
         </p>
         {view.chase && <Chip tone="accent">Time to chase</Chip>}
       </div>
-      <p className="text-ink-muted text-[12px]">
+      <p className="text-ink-muted text-[12.5px]">
         {view.approverLine}
         {view.requestedLine ? ` · ${view.requestedLine}` : ""}
       </p>
 
       {view.said && (
-        <p className="text-ink text-[12px] break-words whitespace-pre-wrap">
-          <span className="text-ink-faint block text-[10px] font-semibold tracking-wide uppercase">
+        <p className="text-ink text-[13px] break-words whitespace-pre-wrap">
+          <span className="text-ink-muted block text-[11px] font-bold tracking-[0.08em] uppercase">
             {view.said.label}
           </span>
           {view.said.text}
@@ -116,11 +121,11 @@ export function SignoffPanel({
 
       {view.stamp && <StampBlock stamp={view.stamp} confirmed={view.confirmedLine} />}
 
-      {view.next && <p className="text-ink-faint text-[11px]">{view.next}</p>}
+      {view.next && <p className="text-ink-muted text-[12px]">{view.next}</p>}
 
       {view.previous.length > 0 && (
-        <details className="text-[11px]">
-          <summary className="text-ink-muted hover:text-ink cursor-pointer select-none">
+        <details className="text-[12px]">
+          <summary className="text-ink-muted hover:text-ink focus-visible:ring-focus cursor-pointer rounded font-semibold select-none">
             Earlier records ({view.previous.length})
           </summary>
           <ul className="text-ink-muted mt-1 flex flex-col gap-1">
@@ -170,7 +175,7 @@ export function SignoffPanel({
 
       {mode === "record" && (
         <form
-          className="border-border flex flex-col gap-2.5 border-t pt-2.5"
+          className="border-line flex flex-col gap-3 border-t pt-3"
           onSubmit={(event) => {
             event.preventDefault();
             if (formProblem) return;
@@ -203,30 +208,29 @@ export function SignoffPanel({
             </Field>
           )}
           <Field label="Where it came from (evidence)">
-            <input
+            <Input
               value={form.note}
               maxLength={500}
               placeholder="e.g. email from Priya, 26 Oct"
               onChange={(e) => setForm({ ...form, note: e.target.value })}
-              className={inputClass}
             />
           </Field>
           {evidence.length > 1 && (
             <Field label="Link a message (optional)">
-              <select
+              <NativeSelect
                 value={form.intakeId}
                 onChange={(e) => setForm({ ...form, intakeId: e.target.value })}
-                className={inputClass}
+                className="w-full"
               >
                 {evidence.map((option) => (
                   <option key={option.value} value={option.value}>
                     {option.label}
                   </option>
                 ))}
-              </select>
+              </NativeSelect>
             </Field>
           )}
-          <p className="text-ink-faint text-[11px]">
+          <p className="text-ink-muted text-[12px] leading-relaxed">
             The record is stamped with your Windows user name and the time by the server.
             It cannot be edited afterwards; the only way to undo it is Revoke, with a
             reason.
@@ -235,7 +239,7 @@ export function SignoffPanel({
             {(form.outcome === "changes_requested" || form.outcome === "rejected") &&
               " The Draft step is reopened."}
           </p>
-          {error && <ErrorLine text={error} />}
+          {error && <SignoffError text={error} />}
           <div className="flex flex-wrap gap-2">
             <Button
               type="submit"
@@ -262,11 +266,11 @@ export function SignoffPanel({
       )}
 
       {mode === "conditions" && (
-        <div className="border-border flex flex-col gap-2 border-t pt-2.5">
-          <p className="text-ink text-[12px]">
+        <div className="border-line flex flex-col gap-2.5 border-t pt-3">
+          <p className="text-ink text-[13px]">
             Confirm that every condition above is met? That completes the sign-off step.
           </p>
-          {error && <ErrorLine text={error} />}
+          {error && <SignoffError text={error} />}
           <div className="flex flex-wrap gap-2">
             <Button
               size="sm"
@@ -291,15 +295,15 @@ export function SignoffPanel({
 
       {mode === "revoke" && (
         <form
-          className="border-border flex flex-col gap-2 border-t pt-2.5"
+          className="border-line flex flex-col gap-2.5 border-t pt-3"
           onSubmit={(event) => {
             event.preventDefault();
             if (revokeProblem(reason)) return;
             void run(() => revokeSignoff(todo.id, reason.trim(), checkpoint.id));
           }}
         >
-          <p className="text-ink flex items-start gap-1.5 text-[12px]">
-            <WarningIcon size={13} weight="fill" className="mt-0.5 shrink-0" />
+          <p className="text-ink flex items-start gap-2 text-[13px]">
+            <WarningIcon size={15} weight="fill" className="text-amber mt-0.5 shrink-0" />
             Revoking keeps the old record in the history and the audit log, and sends this
             step back to &ldquo;not requested&rdquo;. A reason is required.
           </p>
@@ -312,7 +316,7 @@ export function SignoffPanel({
               data-testid="signoff-revoke-reason"
             />
           </Field>
-          {error && <ErrorLine text={error} />}
+          {error && <SignoffError text={error} />}
           <div className="flex flex-wrap gap-2">
             <Button type="submit" size="sm" disabled={busy || !!revokeProblem(reason)}>
               Revoke sign-off
@@ -333,17 +337,13 @@ export function SignoffPanel({
         </form>
       )}
 
-      {mode === "idle" && error && <ErrorLine text={error} />}
+      {mode === "idle" && error && <SignoffError text={error} />}
     </div>
   );
 }
 
-function ErrorLine({ text }: { text: string }) {
-  return (
-    <p role="alert" className="text-ink text-[12px] font-medium">
-      {text}
-    </p>
-  );
+function SignoffError({ text }: { text: string }) {
+  return <ErrorLine className="text-[12.5px]">{text}</ErrorLine>;
 }
 
 /** The immutable record: who signed off, who recorded it and when, on what evidence. */
@@ -358,7 +358,7 @@ function StampBlock({
   return (
     <div
       data-testid="signoff-stamp"
-      className="border-border rounded-md border bg-neutral-50 px-2.5 py-2 text-[12px]"
+      className="border-line bg-card rounded-control border px-3.5 py-3 text-[12.5px]"
     >
       <p className="text-ink break-words">
         {stamp.signedBy ? (
@@ -382,7 +382,7 @@ function StampBlock({
               href={stamp.evidenceLink}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-ink underline underline-offset-2"
+              className="text-ink focus-visible:ring-focus rounded font-semibold underline underline-offset-2 outline-none focus-visible:ring-2"
             >
               open the link
             </a>
@@ -397,12 +397,12 @@ function StampBlock({
             type="button"
             onClick={() => setShowMessage((v) => !v)}
             aria-expanded={showMessage}
-            className="text-ink-muted hover:text-ink focus-visible:ring-accent mt-1 rounded text-[12px] underline-offset-2 outline-none hover:underline focus-visible:ring-2"
+            className="text-ink-soft hover:text-ink focus-visible:ring-focus mt-1.5 rounded text-[12.5px] font-semibold underline-offset-2 outline-none hover:underline focus-visible:ring-2"
           >
             {showMessage ? "Hide the message" : "Open the message"}
           </button>
           {showMessage && (
-            <div className="border-border mt-1 flex h-56 flex-col rounded-lg border p-3">
+            <div className={cn(MESSAGE_PANE, "mt-2 h-56")}>
               <OriginalMessage
                 intakeId={stamp.evidenceIntakeId}
                 className="flex min-h-0 flex-1 flex-col"

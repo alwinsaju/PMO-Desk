@@ -20,7 +20,7 @@ interface EditorProps {
   apply: ApplyPatch;
 }
 
-const inputClass = "h-8 px-2.5 text-[13px]";
+const inputClass = "text-[13px]";
 
 // ---------------------------------------------------------------------------
 // Action items: text, optional owner and due date, done, remove
@@ -53,7 +53,7 @@ export function ActionItemsEditor({ todo, open, busy, apply }: EditorProps) {
   return (
     <div className="flex flex-col gap-3">
       {todo.actionItems.length === 0 && (
-        <p className="text-ink-faint text-[13px]">No action items yet.</p>
+        <p className="text-ink-muted text-[13.5px]">No action items yet.</p>
       )}
       <ul className="flex flex-col gap-2">
         {todo.actionItems.map((item) => (
@@ -68,7 +68,7 @@ export function ActionItemsEditor({ todo, open, busy, apply }: EditorProps) {
       </ul>
       {open && (
         <form
-          className="border-border flex flex-wrap items-center gap-2 border-t pt-3"
+          className="border-line flex flex-wrap items-center gap-2 border-t pt-3.5"
           onSubmit={(event) => void add(event)}
         >
           <Input
@@ -161,7 +161,7 @@ function ActionItemRow({
           void apply({ actionItems: [{ id: item.id, done: e.target.checked }] })
         }
         aria-label={`Done: ${item.text}`}
-        className="accent-accent h-4 w-4 shrink-0"
+        className="accent-accent focus-visible:ring-focus h-4 w-4 shrink-0 focus-visible:ring-2"
       />
       <Input
         value={text}
@@ -173,7 +173,7 @@ function ActionItemRow({
         className={cn(
           inputClass,
           "min-w-48 flex-1",
-          item.done && "text-ink-faint line-through",
+          item.done && "text-ink-muted line-through",
         )}
       />
       <Input
@@ -253,7 +253,7 @@ export function CheckpointsEditor({
   return (
     <div className="flex flex-col gap-3">
       {todo.checkpoints.length === 0 && (
-        <p className="text-ink-faint text-[13px]">
+        <p className="text-ink-muted text-[13.5px]">
           No checkpoints. Add the steps this work goes through; progress is shown from
           them.
         </p>
@@ -288,7 +288,7 @@ export function CheckpointsEditor({
       </ol>
       {open && (
         <form
-          className="border-border flex flex-wrap items-center gap-2 border-t pt-3"
+          className="border-line flex flex-wrap items-center gap-2 border-t pt-3.5"
           onSubmit={(event) => void add(event)}
         >
           <Input
@@ -298,12 +298,12 @@ export function CheckpointsEditor({
             onChange={(e) => setLabel(e.target.value)}
             className={cn(inputClass, "min-w-48 flex-1")}
           />
-          <label className="text-ink-muted flex items-center gap-1.5 text-[12px]">
+          <label className="text-ink-soft flex items-center gap-2 text-[13px]">
             <input
               type="checkbox"
               checked={signOff}
               onChange={(e) => setSignOff(e.target.checked)}
-              className="accent-accent h-3.5 w-3.5"
+              className="accent-accent focus-visible:ring-focus h-4 w-4 focus-visible:ring-2"
             />
             Sign-off step
           </label>
@@ -366,16 +366,16 @@ function CheckpointRow({
   return (
     <li
       className={cn(
-        "border-border flex flex-wrap items-center gap-2 rounded-xl border px-3 py-2",
-        current && "border-neutral-400 bg-neutral-50",
+        "border-line bg-card rounded-control flex flex-wrap items-center gap-2 border px-3.5 py-2.5",
+        current && "border-line-strong bg-accent-soft",
       )}
     >
       <span
         aria-hidden
         className={cn(
-          "h-2.5 w-2.5 shrink-0 rounded-full border",
-          checkpoint.state === "done" && "border-ink bg-ink",
-          checkpoint.state === "skipped" && "border-ink-faint bg-neutral-300",
+          "h-3 w-3 shrink-0 rounded-full border-[1.5px]",
+          checkpoint.state === "done" && "border-accent bg-accent",
+          checkpoint.state === "skipped" && "border-line-strong bg-chip-strong",
           checkpoint.state === "pending" && "border-ink-faint",
         )}
       />
@@ -390,12 +390,12 @@ function CheckpointRow({
             if (e.key === "Enter") e.currentTarget.blur();
           }}
           className={cn(
-            "h-8 border-transparent bg-transparent px-1.5 text-[13px]",
-            checkpoint.state === "pending" ? "text-ink font-medium" : "text-ink-muted",
+            "h-8 border-transparent bg-transparent px-1.5 text-[13.5px]",
+            checkpoint.state === "pending" ? "text-ink font-semibold" : "text-ink-muted",
           )}
         />
         {(checkpoint.kind === "approval" || checkpoint.doneAt) && (
-          <p className="text-ink-faint px-1.5 text-[11px]">
+          <p className="text-ink-muted px-1.5 text-[12px]">
             {checkpoint.kind === "approval" && "sign-off"}
             {checkpoint.kind === "approval" && checkpoint.doneAt && " · "}
             {checkpoint.doneAt &&

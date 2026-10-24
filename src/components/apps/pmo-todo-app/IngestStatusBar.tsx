@@ -24,6 +24,7 @@ import {
 import { cn } from "@/lib/cn";
 import type { PmoState } from "@/lib/pmo/types";
 import { scanNow } from "./api";
+import { GUTTER_X } from "./parts";
 import { relativeTime } from "./queueView";
 import { enableReminders, useRemindersStore } from "./remindersStore";
 import {
@@ -44,18 +45,22 @@ interface PmoToolbarProps {
   onSettled: () => void;
 }
 
+/** The model dot: green with a soft halo when ready, grey when idle, red when
+ *  the model is not there. */
 const DOT: Record<ModelTone, string> = {
-  ready: "bg-accent",
-  idle: "bg-neutral-400",
-  off: "bg-ink",
+  ready:
+    "bg-success-dot shadow-[0_0_0_4px_color-mix(in_srgb,var(--color-success-dot)_22%,transparent)]",
+  idle: "bg-ink-faint",
+  off: "bg-red shadow-[0_0_0_4px_color-mix(in_srgb,var(--color-red)_18%,transparent)]",
 };
 
 /** How long the result of "Scan now" stays in place of the model status. */
 const SCAN_NOTE_MS = 6000;
 
 /**
- * The single row at the top of the window: the tabs on the left, then the model
- * status and the few things you do (Scan now, Paste, Settings). Everything that
+ * The single row at the top of the window: the tabs on the left, then a status
+ * strip with the model status and the few things you do (Scan now, Paste,
+ * Settings); the strip's bottom hairline sweeps while a scan runs. Everything that
  * is only information (inbox path, last scan, filtered count) lives in tooltips
  * and in Settings, and anything that needs attention is a notice underneath
  * (`NoticeStack`). The window is a size container: labels drop to icons below
@@ -110,115 +115,119 @@ export function PmoToolbar({
   const chipText = scanNote ?? status.progress ?? status.label;
 
   return (
-    <div className="border-border flex shrink-0 items-center gap-2 border-b px-3 py-2">
-      <div className="min-w-0 flex-1 [scrollbar-width:none] overflow-x-auto">{tabs}</div>
+    <div className={cn("flex shrink-0 items-center gap-3 pt-2 pb-3", GUTTER_X)}>
+      <div className="min-w-0 shrink [scrollbar-width:none] overflow-x-auto">{tabs}</div>
 
-      <span
-        role="status"
-        aria-label={`${status.detail}${scanNote ? `. ${scanNote}` : ""}`}
-        title={status.detail}
-        className="text-ink-muted flex min-w-0 shrink items-center gap-1.5 text-[12px]"
+      {/* The status strip: model dot, what it is doing, the actions. The hairline
+          sweeps along the bottom edge while a scan or the model is working. */}
+      <div
+        data-scanning={scanning || status.busy}
+        className="rounded-card border-line bg-card relative flex h-12 min-w-0 flex-1 items-center gap-3 overflow-hidden border pr-1.5 pl-4"
       >
         <span
-          className={cn(
-            "h-2 w-2 shrink-0 rounded-full",
-            DOT[status.tone],
-            status.busy && "animate-pulse",
-          )}
-        />
-        <span className="hidden max-w-44 truncate @xl:inline">{chipText}</span>
-      </span>
+          role="status"
+          aria-label={`${status.detail}${scanNote ? `. ${scanNote}` : ""}`}
+          title={status.detail}
+          className="text-ink-soft flex min-w-0 flex-1 items-center gap-2.5 text-[13px] font-semibold"
+        >
+          <span
+            className={cn(
+              "h-2 w-2 shrink-0 rounded-full",
+              DOT[status.tone],
+              status.busy && "motion-safe:animate-blink",
+            )}
+          />
+          <span className="hidden min-w-0 truncate @xl:inline">{chipText}</span>
+          <span className="text-ink-muted hidden shrink-0 text-[12px] font-medium @3xl:inline">
+            {scanned}
+          </span>
+        </span>
 
-      {/* Wide: the actions as buttons. */}
-      <div className="hidden shrink-0 items-center gap-1.5 @lg:flex">
-        <Tooltip label={`Scan the inbox now. ${scanned}.`}>
-          <Button
-            variant="secondary"
-            size="sm"
-            disabled={scanning}
-            aria-label="Scan now"
-            className="px-2 @2xl:px-3"
-            onClick={() => void scan()}
-          >
-            <ArrowsClockwiseIcon
-              size={14}
-              weight="bold"
-              className={scanning ? "animate-spin" : ""}
-            />
-            <span className="hidden @2xl:inline">
-              {scanning ? "Scanning" : "Scan now"}
-            </span>
-          </Button>
-        </Tooltip>
-        <Tooltip label="Paste a Teams message or an email">
-          <Button
-            variant="secondary"
-            size="sm"
-            aria-label="Paste a message"
-            className="px-2 @2xl:px-3"
-            onClick={onPaste}
-          >
-            <ClipboardTextIcon size={14} weight="bold" />
-            <span className="hidden @2xl:inline">Paste</span>
-          </Button>
-        </Tooltip>
-        {remindersOffered && (
-          <Tooltip label="Enable reminders in this browser">
-            <IconButton
-              aria-label="Enable reminders"
-              size="sm"
-              variant="ghost"
-              onClick={() => void enableReminders()}
+        {/* Wide: the actions as buttons. */}
+        <div className="hidden shrink-0 items-center gap-1.5 @lg:flex">
+          <Tooltip label={`Scan the inbox now. ${scanned}.`}>
+            <Button
+              variant="secondary"
+              disabled={scanning}
+              aria-label="Scan now"
+              className="px-2.5 @2xl:px-4"
+              onClick={() => void scan()}
             >
-              <BellRingingIcon size={16} />
+              <ArrowsClockwiseIcon
+                size={15}
+                weight="bold"
+                className={scanning ? "motion-safe:animate-rot" : ""}
+              />
+              <span className="hidden @2xl:inline">
+                {scanning ? "Scanning" : "Scan now"}
+              </span>
+            </Button>
+          </Tooltip>
+          <Tooltip label="Paste a Teams message or an email">
+            <Button
+              variant="secondary"
+              aria-label="Paste a message"
+              className="px-2.5 @2xl:px-4"
+              onClick={onPaste}
+            >
+              <ClipboardTextIcon size={15} weight="bold" />
+              <span className="hidden @2xl:inline">Paste</span>
+            </Button>
+          </Tooltip>
+          {remindersOffered && (
+            <Tooltip label="Enable reminders in this browser">
+              <IconButton
+                aria-label="Enable reminders"
+                variant="ghost"
+                onClick={() => void enableReminders()}
+              >
+                <BellRingingIcon size={18} />
+              </IconButton>
+            </Tooltip>
+          )}
+          <Tooltip label="PMO settings">
+            <IconButton aria-label="PMO settings" variant="ghost" onClick={onSettings}>
+              <GearIcon size={18} />
             </IconButton>
           </Tooltip>
-        )}
-        <Tooltip label="PMO settings">
-          <IconButton
-            aria-label="PMO settings"
-            size="sm"
-            variant="ghost"
-            onClick={onSettings}
-          >
-            <GearIcon size={16} />
-          </IconButton>
-        </Tooltip>
-      </div>
+        </div>
 
-      {/* Narrow: the same actions in one menu. */}
-      <div className="shrink-0 @lg:hidden">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <IconButton aria-label="More actions" size="sm" variant="ghost">
-              <DotsThreeIcon size={18} weight="bold" />
-            </IconButton>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="min-w-52">
-            <DropdownMenuLabel className="max-w-64 tracking-normal whitespace-normal normal-case">
-              {scanNote ?? status.detail}
-            </DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem disabled={scanning} onSelect={() => void scan()}>
-              <ArrowsClockwiseIcon size={14} weight="bold" />
-              Scan now
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={onPaste}>
-              <ClipboardTextIcon size={14} weight="bold" />
-              Paste a message
-            </DropdownMenuItem>
-            {remindersOffered && (
-              <DropdownMenuItem onSelect={() => void enableReminders()}>
-                <BellRingingIcon size={14} />
-                Enable reminders
+        {/* Narrow: the same actions in one menu. */}
+        <div className="shrink-0 @lg:hidden">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <IconButton aria-label="More actions" variant="ghost">
+                <DotsThreeIcon size={20} weight="bold" />
+              </IconButton>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="min-w-52">
+              <DropdownMenuLabel className="max-w-64 tracking-normal whitespace-normal normal-case">
+                {scanNote ?? status.detail}
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem disabled={scanning} onSelect={() => void scan()}>
+                <ArrowsClockwiseIcon size={14} weight="bold" />
+                Scan now
               </DropdownMenuItem>
-            )}
-            <DropdownMenuItem onSelect={onSettings}>
-              <GearIcon size={14} />
-              PMO settings
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+              <DropdownMenuItem onSelect={onPaste}>
+                <ClipboardTextIcon size={14} weight="bold" />
+                Paste a message
+              </DropdownMenuItem>
+              {remindersOffered && (
+                <DropdownMenuItem onSelect={() => void enableReminders()}>
+                  <BellRingingIcon size={14} />
+                  Enable reminders
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuItem onSelect={onSettings}>
+                <GearIcon size={14} />
+                PMO settings
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+
+        <i aria-hidden className="scan-bar" />
       </div>
     </div>
   );
@@ -247,7 +256,7 @@ export function NoticeStack({
         type="button"
         aria-expanded={expanded}
         onClick={() => setExpanded((open) => !open)}
-        className="text-ink-muted hover:text-ink focus-visible:ring-accent ml-auto shrink-0 rounded px-1 text-[12px] whitespace-nowrap underline-offset-2 outline-none hover:underline focus-visible:ring-2"
+        className="text-ink-soft hover:text-ink focus-visible:ring-focus rounded-chip ml-auto shrink-0 px-2.5 py-0.5 text-[12px] font-semibold whitespace-nowrap underline-offset-2 outline-none hover:underline focus-visible:ring-2"
       >
         {expanded ? "Show fewer" : `+${notices.length - 1} more`}
       </button>
@@ -256,7 +265,10 @@ export function NoticeStack({
   return (
     <section
       aria-label="Notices"
-      className="border-border flex max-h-[45%] shrink-0 flex-col overflow-y-auto border-b bg-neutral-50"
+      className={cn(
+        "scroll-thin flex max-h-[45%] shrink-0 flex-col gap-2 overflow-y-auto pb-3",
+        GUTTER_X,
+      )}
     >
       {shown.map((notice, index) => (
         <NoticeRow
@@ -270,6 +282,8 @@ export function NoticeStack({
   );
 }
 
+/** One notice as a banner: the accent tint for information, amber when
+ *  something needs attention. */
 function NoticeRow({
   notice,
   onSettings,
@@ -284,16 +298,16 @@ function NoticeRow({
   return (
     <p
       className={cn(
-        "flex items-start gap-2 px-3 py-1.5 text-[12px] leading-snug break-words",
-        attention ? "text-ink" : "text-ink-muted",
+        "rounded-card text-ink-soft flex items-start gap-2.5 px-4 py-2.5 text-[13px] leading-snug break-words",
+        attention ? "bg-amber-soft" : "bg-accent-soft",
       )}
     >
       <Icon
-        size={14}
+        size={18}
         weight={attention ? "fill" : "regular"}
-        className={cn("mt-px shrink-0", attention ? "text-ink" : "text-ink-faint")}
+        className={cn("mt-px shrink-0", attention ? "text-amber" : "text-accent-ink")}
       />
-      <span className="min-w-0">
+      <span className="min-w-0 flex-1">
         {notice.text}
         {notice.action === "settings" && (
           <>
@@ -301,7 +315,7 @@ function NoticeRow({
             <button
               type="button"
               onClick={onSettings}
-              className="text-ink focus-visible:ring-accent rounded underline underline-offset-2 outline-none focus-visible:ring-2"
+              className="text-ink focus-visible:ring-focus rounded font-semibold underline underline-offset-2 outline-none focus-visible:ring-2"
             >
               Open settings
             </button>

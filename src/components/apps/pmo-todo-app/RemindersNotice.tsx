@@ -18,18 +18,18 @@ export function NotificationStatus({ attention }: { attention: number }) {
   return (
     <div
       data-reminders-notice={desktop ? "desktop" : permission}
-      className="border-border text-ink-muted flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border bg-neutral-50 px-3.5 py-3 text-[12px] leading-relaxed"
+      className="border-line bg-card text-ink-soft rounded-card flex flex-wrap items-center gap-x-3 gap-y-2 border px-4 py-3 text-[13px] leading-relaxed"
     >
       <span className="min-w-0 flex-1 basis-60">
-        <strong className="text-ink font-medium">{status.title}</strong> {status.text}
+        <strong className="text-ink font-semibold">{status.title}</strong> {status.text}
       </span>
       {!desktop && permission === "default" && (
-        <Button variant="secondary" size="sm" onClick={() => void enableReminders()}>
+        <Button variant="secondary" onClick={() => void enableReminders()}>
           Enable reminders
         </Button>
       )}
       {!desktop && permission === "granted" && (
-        <Button variant="secondary" size="sm" onClick={sendTestReminder}>
+        <Button variant="secondary" onClick={sendTestReminder}>
           Send a test
         </Button>
       )}

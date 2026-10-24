@@ -10,7 +10,6 @@ import {
   DialogTitle,
   Input,
 } from "@/components/ui";
-import { cn } from "@/lib/cn";
 import {
   DEFAULT_REPORT_TITLE,
   DEFAULT_RETENTION_DAYS,
@@ -21,7 +20,14 @@ import {
   type PmoState,
 } from "@/lib/pmo/types";
 import { updateConfig } from "./api";
-import { Field, ScrollBody, TextArea } from "./parts";
+import {
+  ErrorLine,
+  Field,
+  FieldError,
+  FilterPill,
+  ScrollBody,
+  TextArea,
+} from "./parts";
 import { NotificationStatus } from "./RemindersNotice";
 import { useRemindersStore } from "./remindersStore";
 import {
@@ -121,14 +127,14 @@ export function SettingsDialog({
         className="min-h-0 font-mono text-[12px]"
         onChange={(event) => set({ [field]: event.target.value })}
       />
-      {hint && <span className="text-ink-faint text-[11px] leading-relaxed">{hint}</span>}
+      {hint && <span className="text-ink-muted text-[12px] leading-relaxed">{hint}</span>}
       <FieldError message={errors[field]} />
     </Field>
   );
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-full max-w-2xl flex-col p-5">
+      <DialogContent className="flex max-h-full max-w-2xl flex-col px-[30px] pt-7 pb-6">
         <DialogTitle className="shrink-0">PMO settings</DialogTitle>
         <DialogDescription className="shrink-0">
           One entry per line. Changes apply to the next scan; nothing already in the queue
@@ -136,9 +142,9 @@ export function SettingsDialog({
         </DialogDescription>
 
         <ScrollBody className="mt-4 pr-2">
-          <div className="flex flex-col gap-5">
+          <div className="flex flex-col gap-7">
             <Section title="About you">
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
                 {listBox(
                   "names",
                   "Your names and aliases",
@@ -165,7 +171,7 @@ export function SettingsDialog({
                 2,
                 <>
                   Teams is blocked until a tenant or chat is listed.{" "}
-                  <strong className="text-ink-muted">How to find your tenant ID:</strong>{" "}
+                  <strong className="text-ink-soft">How to find your tenant ID:</strong>{" "}
                   in Power Automate open your Teams flow, then <em>My flows</em>, the
                   flow, its run history and a run; open the trigger card (For a selected
                   message) and copy the value of{" "}
@@ -185,7 +191,7 @@ export function SettingsDialog({
             </Section>
 
             <Section title="Always blocked">
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
                 {listBox(
                   "blockedDomains",
                   "Blocked domains",
@@ -213,7 +219,7 @@ export function SettingsDialog({
                   aria-invalid={errors.retentionDays ? true : undefined}
                   onChange={(event) => set({ retentionDays: event.target.value })}
                 />
-                <span className="text-ink-faint text-[11px] leading-relaxed">
+                <span className="text-ink-muted text-[12px] leading-relaxed">
                   {MIN_RETENTION_DAYS} to {MAX_RETENTION_DAYS} days, default{" "}
                   {DEFAULT_RETENTION_DAYS}. After this, logs and the saved message text of
                   a closed to-do or a rejected item are deleted daily. Open to-dos keep
@@ -225,11 +231,11 @@ export function SettingsDialog({
             </Section>
 
             <Section title="Weekly report">
-              <p className="text-ink-faint text-[11px] leading-relaxed">
+              <p className="text-ink-muted text-[12px] leading-relaxed">
                 The heading of the Reports tab&apos;s weekly status. The report covers the
                 to-dos in this app only, and nothing in it is sent anywhere.
               </p>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
                 <Field label="Report title">
                   <Input
                     value={form.reportTitle}
@@ -253,14 +259,14 @@ export function SettingsDialog({
                   <FieldError message={errors["report.projectName"]} />
                 </Field>
               </div>
-              <span className="text-ink-faint text-[11px] leading-relaxed">
+              <span className="text-ink-muted text-[12px] leading-relaxed">
                 Saved reports are kept on this computer until you delete them; they are
                 never purged by the retention setting above.
               </span>
             </Section>
 
             <Section title="Reminders">
-              <p className="text-ink-faint text-[11px] leading-relaxed">
+              <p className="text-ink-muted text-[12px] leading-relaxed">
                 Reminders are shown on this computer only; nothing is sent to anyone. A
                 to-do is reminded when it is due tomorrow (once), overdue (at the start of
                 the working day, then every working day), or when you are waiting on
@@ -288,7 +294,7 @@ export function SettingsDialog({
                 label="Stay quiet outside working hours"
                 hint="Held reminders appear when the working day starts."
               />
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-3">
                 <Field label="Day starts">
                   <Input
                     type="time"
@@ -329,10 +335,9 @@ export function SettingsDialog({
                   {WEEKDAYS.map(({ day, label }) => {
                     const on = form.reminders.workDays.includes(day);
                     return (
-                      <button
+                      <FilterPill
                         key={day}
-                        type="button"
-                        aria-pressed={on}
+                        active={on}
                         disabled={busy}
                         onClick={() =>
                           setReminders({
@@ -341,16 +346,9 @@ export function SettingsDialog({
                               : [...form.reminders.workDays, day],
                           })
                         }
-                        className={cn(
-                          "rounded-pill ease-standard border px-3 py-1 text-[12px] font-medium transition-colors duration-150",
-                          "focus-visible:ring-accent focus-visible:ring-2 focus-visible:outline-none disabled:opacity-40",
-                          on
-                            ? "border-ink bg-ink text-ink-inverse"
-                            : "border-border text-ink-muted hover:bg-neutral-100",
-                        )}
                       >
                         {label}
-                      </button>
+                      </FilterPill>
                     );
                   })}
                 </div>
@@ -365,7 +363,7 @@ export function SettingsDialog({
                   aria-invalid={errors["reminders.chaserDays"] ? true : undefined}
                   onChange={(event) => setReminders({ chaserDays: event.target.value })}
                 />
-                <span className="text-ink-faint text-[11px] leading-relaxed">
+                <span className="text-ink-muted text-[12px] leading-relaxed">
                   1 to {MAX_CHASER_DAYS}. Only to-dos with &quot;waiting on&quot; filled
                   in get a chaser, and again after each further stretch of the same
                   length.
@@ -408,18 +406,14 @@ export function SettingsDialog({
           </div>
         </ScrollBody>
 
-        {serverError && (
-          <p role="alert" className="text-ink mt-2 shrink-0 text-[12px] font-medium">
-            {serverError}
-          </p>
-        )}
+        {serverError && <ErrorLine className="mt-3 shrink-0">{serverError}</ErrorLine>}
         {Object.keys(errors).length > 0 && (
-          <p role="alert" className="text-ink mt-2 shrink-0 text-[12px] font-medium">
-            Fix the highlighted fields to save.
-          </p>
+          <ErrorLine className="mt-3 shrink-0">Fix the highlighted fields to save.</ErrorLine>
         )}
-        <div className="border-border mt-3 flex shrink-0 items-center justify-end gap-2 border-t pt-3">
-          {saved && <span className="text-ink-muted mr-auto text-[12px]">Saved.</span>}
+        <div className="border-line mt-4 flex shrink-0 items-center justify-end gap-2.5 border-t pt-4">
+          {saved && (
+            <span className="text-success mr-auto text-[13px] font-semibold">Saved.</span>
+          )}
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
             {saved ? "Close" : "Cancel"}
           </Button>
@@ -434,8 +428,8 @@ export function SettingsDialog({
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="flex flex-col gap-3">
-      <h3 className="text-ink border-border border-b pb-1 text-[12px] font-semibold tracking-wide uppercase">
+    <section className="flex flex-col gap-3.5">
+      <h3 className="text-ink-muted border-line border-b pb-2 text-[11px] font-bold tracking-[0.08em] uppercase">
         {title}
       </h3>
       {children}
@@ -457,30 +451,21 @@ function CheckRow({
   disabled?: boolean;
 }) {
   return (
-    <label className="flex items-start gap-2.5">
+    <label className="flex items-start gap-3">
       <input
         type="checkbox"
         checked={checked}
         disabled={disabled}
         onChange={(event) => onChange(event.target.checked)}
-        className="accent-accent mt-0.5 h-3.5 w-3.5 shrink-0"
+        className="accent-accent focus-visible:ring-focus mt-0.5 h-4 w-4 shrink-0 focus-visible:ring-2"
       />
       <span className="flex min-w-0 flex-col gap-0.5">
-        <span className="text-ink text-[13px]">{label}</span>
+        <span className="text-ink text-[13.5px] font-medium">{label}</span>
         {hint && (
-          <span className="text-ink-faint text-[11px] leading-relaxed">{hint}</span>
+          <span className="text-ink-muted text-[12px] leading-relaxed">{hint}</span>
         )}
       </span>
     </label>
-  );
-}
-
-function FieldError({ message }: { message: string | undefined }) {
-  if (!message) return null;
-  return (
-    <span role="alert" className="text-ink text-[11px] font-medium">
-      {message}
-    </span>
   );
 }
 
@@ -496,12 +481,12 @@ function PathRow({ label, value, note }: { label: string; value: string; note: s
     }
   }
   return (
-    <div className="flex flex-col gap-1">
-      <span className="text-ink-faint text-[10px] font-semibold tracking-wide uppercase">
+    <div className="flex flex-col gap-1.5">
+      <span className="text-ink-muted text-[11px] font-bold tracking-[0.08em] uppercase">
         {label}
       </span>
       <div className="flex items-center gap-2">
-        <code className="border-border text-ink min-w-0 flex-1 rounded-lg border bg-neutral-50 px-3 py-1.5 font-mono text-[12px] break-all select-all">
+        <code className="bg-chip text-ink rounded-control min-w-0 flex-1 px-3.5 py-2 font-mono text-[12px] break-all select-all">
           {value}
         </code>
         <Button variant="secondary" size="sm" onClick={() => void copy()}>
@@ -509,7 +494,7 @@ function PathRow({ label, value, note }: { label: string; value: string; note: s
           {copied ? "Copied" : "Copy"}
         </Button>
       </div>
-      <span className="text-ink-faint text-[11px] leading-relaxed">{note}</span>
+      <span className="text-ink-muted text-[12px] leading-relaxed">{note}</span>
     </div>
   );
 }

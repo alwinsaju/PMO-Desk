@@ -9,12 +9,23 @@ import {
   PlusIcon,
   SealCheckIcon,
 } from "@phosphor-icons/react";
-import { Button } from "@/components/ui";
+import { Button, Progress } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { describeInstant } from "@/lib/pmo/due";
 import type { PmoState, ReminderPrefs, Todo } from "@/lib/pmo/types";
 import { patchTodo } from "./api";
-import { CONTENT_WIDTH, Chip, PILL_STRIP, PanelMessage } from "./parts";
+import {
+  CONTENT_WIDTH,
+  Chip,
+  FilterPill,
+  GUTTER_X,
+  NativeSelect,
+  PILL_STRIP,
+  PanelMessage,
+  ROW_CARD,
+  STICKY_BAR,
+  type ChipTone,
+} from "./parts";
 import { SnoozeMenu } from "./SnoozeMenu";
 import { signoffBadgeText, signoffRowView } from "./signoffUi";
 import {
@@ -79,8 +90,8 @@ export function TodoList({
   return (
     <div className="flex flex-col">
       {/* Stays at the top while the list scrolls under it. */}
-      <div className="bg-surface-elevated border-border sticky top-0 z-10 border-b">
-        <div className={cn(CONTENT_WIDTH, "flex items-center gap-2 px-3 py-2 @md:px-4")}>
+      <div className={STICKY_BAR}>
+        <div className={cn(CONTENT_WIDTH, GUTTER_X, "flex items-center gap-2.5 py-2.5")}>
           <div
             role="group"
             aria-label="To-do filter"
@@ -90,38 +101,36 @@ export function TodoList({
               <FilterPill
                 key={id}
                 active={filter === id}
+                count={counts[id]}
                 onClick={() => onViewChange({ ...view, filter: id })}
               >
                 {label}
-                <span className="text-ink-faint ml-1 tabular-nums">{counts[id]}</span>
               </FilterPill>
             ))}
           </div>
-          <label className="text-ink-muted flex shrink-0 items-center gap-1.5 text-[12px]">
+          <label className="text-ink-muted flex shrink-0 items-center gap-2 text-[12px] font-semibold">
             <span className="hidden @xl:inline">Sort</span>
-            <select
+            <NativeSelect
               value={sort}
               aria-label="Sort to-dos"
               onChange={(event) =>
                 onViewChange({ ...view, sort: event.target.value as TodoSort })
               }
-              className="rounded-control border-border bg-surface-elevated text-ink focus-visible:ring-accent h-8 max-w-32 border px-2 text-[12px] outline-none focus-visible:ring-2"
+              className="max-w-36"
             >
               {TODO_SORTS.map(({ id, label }) => (
                 <option key={id} value={id}>
                   {label}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
           </label>
           <Button
-            variant="secondary"
-            size="sm"
-            className="shrink-0 px-2 @xl:px-3"
+            className="shrink-0 px-3 @xl:px-[17px]"
             aria-label="New to-do"
             onClick={onNew}
           >
-            <PlusIcon size={14} weight="bold" />
+            <PlusIcon size={15} weight="bold" />
             <span className="hidden @xl:inline">New to-do</span>
           </Button>
         </div>
@@ -130,14 +139,15 @@ export function TodoList({
       {visible.length === 0 ? (
         <PanelMessage className="min-h-56">{EMPTY[filter]}</PanelMessage>
       ) : (
-        <div className={cn(CONTENT_WIDTH, "flex flex-col gap-2.5 p-3 @md:p-4")}>
-          {visible.map((todo) => (
+        <div className={cn(CONTENT_WIDTH, GUTTER_X, "flex flex-col gap-2.5 pt-3.5 pb-6")}>
+          {visible.map((todo, index) => (
             <TodoCard
               key={todo.id}
               todo={todo}
               today={state.today}
               nowIso={nowMinute}
               prefs={state.config.reminders}
+              index={index}
               onOpen={onOpen}
               onSettled={onSettled}
             />
@@ -148,39 +158,24 @@ export function TodoList({
   );
 }
 
-function FilterPill({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      aria-pressed={active}
-      onClick={onClick}
-      className={cn(
-        "rounded-pill ease-standard shrink-0 px-2.5 py-1 text-[12px] font-medium whitespace-nowrap transition-colors duration-150",
-        "focus-visible:ring-accent focus-visible:ring-2 focus-visible:outline-none",
-        active ? "bg-neutral-150 text-ink" : "text-ink-muted hover:bg-neutral-100",
-      )}
-    >
-      {children}
-    </button>
-  );
-}
+/** The priority stripe at the start of a row; the word is read out for screen
+ *  readers and the high ones also say it in the row's text. */
+const PRIORITY_BAR: Record<Todo["priority"], string> = {
+  high: "bg-[#e0584d]",
+  normal: "bg-[#d29a2c]",
+  low: "bg-[#5a93e0]",
+};
 
-/** One to-do. Reading order is the hierarchy: the title, then who and when,
- *  then where it stands (waiting / snoozed / progress), then the next steps. At
- *  most one chip (the urgent one) sits beside the title. */
+/** One to-do. The first line is the same height on every card (priority stripe,
+ *  title, who and when, a fixed-width due chip, snooze); under a hairline come
+ *  only the things this to-do actually has: waiting, sign-off, snoozed, progress
+ *  and the first action items. */
 const TodoCard = memo(function TodoCard({
   todo,
   today,
   nowIso,
   prefs,
+  index,
   onOpen,
   onSettled,
 }: {
@@ -188,6 +183,8 @@ const TodoCard = memo(function TodoCard({
   today: string;
   nowIso: string;
   prefs: ReminderPrefs;
+  /** Position in the list; only staggers the entrance animation. */
+  index: number;
   onOpen: (todoId: string) => void;
   onSettled: () => void;
 }) {
@@ -197,6 +194,23 @@ const TodoCard = memo(function TodoCard({
   const waiting = row.open ? describeWaiting(todo, now, prefs, today) : null;
   const signoff = signoffRowView(todo, now, prefs);
   const shownItems = todo.actionItems.slice(0, 3);
+  const hasMore =
+    !!waiting || !!signoff || row.snoozed || row.total > 0 || shownItems.length > 0;
+
+  // The due chip: the view-logic's headline (Overdue / Due soon / Done /
+  // Cancelled) when there is one, else the day itself.
+  const dueChip: { label: string; tone: ChipTone } = row.headline
+    ? {
+        label: row.headline.label,
+        tone: !row.open
+          ? todo.status === "done"
+            ? "success"
+            : "neutral"
+          : row.overdue
+            ? "danger"
+            : "warning",
+      }
+    : { label: todo.dueAt ? formatDay(todo.dueAt, today) : "No date", tone: "neutral" };
 
   async function change(patch: Parameters<typeof patchTodo>[1], id: string) {
     setBusyId(id);
@@ -212,26 +226,50 @@ const TodoCard = memo(function TodoCard({
 
   return (
     <article
-      className={cn(
-        "border-border bg-surface-elevated flex min-w-0 flex-col gap-2 rounded-2xl border px-3.5 py-3",
-        !row.open && "opacity-70",
-      )}
+      style={{ animationDelay: `${Math.min(index, 8) * 45}ms` }}
+      className={cn(ROW_CARD, "flex flex-col", !row.open && "opacity-65")}
     >
-      <div className="flex items-start gap-2">
+      <div className="flex min-h-16 items-center gap-3.5 py-3 pr-3 pl-4">
+        <span
+          aria-hidden
+          className={cn("h-[26px] w-1 shrink-0 rounded-[2px]", PRIORITY_BAR[todo.priority])}
+        />
         <button
           type="button"
           onClick={() => onOpen(todo.id)}
-          className="focus-visible:ring-accent min-w-0 flex-1 rounded-lg text-left outline-none focus-visible:ring-2"
+          title={todo.title}
+          className="focus-visible:ring-focus rounded-control flex min-w-0 flex-1 flex-col gap-0.5 text-left outline-none focus-visible:ring-2"
         >
-          <span className="text-ink line-clamp-2 text-[14px] leading-snug font-semibold break-words">
+          <span
+            className={cn(
+              "block truncate text-[14.5px] font-semibold",
+              row.open ? "text-ink" : "text-ink-muted line-through",
+            )}
+          >
             {todo.title}
           </span>
+          <span className="text-ink-muted flex min-w-0 items-center gap-x-3 overflow-hidden text-[12.5px] whitespace-nowrap">
+            <span className="min-w-0 truncate">
+              <span className="text-ink-muted">Owner </span>
+              <span className="text-ink-soft font-semibold">{ownerLabel(todo.owner)}</span>
+            </span>
+            <span className={cn("shrink-0", row.overdue && "text-red font-semibold")}>
+              {row.dueText}
+            </span>
+            {todo.priority === "high" && (
+              <span className="text-ink-soft inline-flex shrink-0 items-center gap-1 font-semibold">
+                <FlagIcon size={12} weight="fill" />
+                High priority
+              </span>
+            )}
+            <span className="text-ink-muted hidden shrink-0 @lg:inline">
+              {SOURCE_LABEL[todo.source.source]}
+            </span>
+          </span>
         </button>
-        {row.headline && (
-          <Chip tone={row.headline.tone} className="shrink-0">
-            {row.headline.label}
-          </Chip>
-        )}
+        <Chip tone={dueChip.tone} fixedWidth={92} className="shrink-0">
+          {dueChip.label}
+        </Chip>
         {row.open && (
           <SnoozeMenu
             todo={todo}
@@ -244,143 +282,126 @@ const TodoCard = memo(function TodoCard({
         )}
       </div>
 
-      <p className="text-ink-muted flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[12px]">
-        <span>
-          <span className="text-ink-faint">Owner </span>
-          <span className="text-ink font-medium">{ownerLabel(todo.owner)}</span>
-        </span>
-        <span className={cn(row.overdue && "text-ink font-semibold")}>{row.dueText}</span>
-        {todo.priority === "high" && (
-          <span className="text-ink inline-flex items-center gap-1 font-medium">
-            <FlagIcon size={12} weight="fill" />
-            High priority
-          </span>
-        )}
-        <span className="text-ink-faint">{SOURCE_LABEL[todo.source.source]}</span>
-      </p>
-
-      {waiting && (
-        <div
-          data-testid="waiting-chip"
-          className="text-ink-muted flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px]"
-        >
-          <HourglassMediumIcon size={13} className="shrink-0" />
-          <span className="min-w-0">
-            Waiting on <strong className="text-ink font-medium">{waiting.who}</strong>
-            <span className="text-ink-faint">
-              {" · "}
-              {waiting.since}
-              {waiting.age && ` (${waiting.age})`}
-            </span>
-          </span>
-          {waiting.chaseDue && <Chip tone="accent">Time to chase</Chip>}
-          <Button
-            variant="ghost"
-            size="sm"
-            className="ml-auto h-7 px-2.5 text-[12px]"
-            disabled={busyId === "reply"}
-            title={`Clear "waiting on ${waiting.who}"`}
-            onClick={() => void change({ waitingOn: null }, "reply")}
-          >
-            <CheckIcon size={12} weight="bold" />
-            Got a reply
-          </Button>
-        </div>
-      )}
-      {signoff && (
-        <p
-          data-testid="signoff-chip"
-          className="text-ink-muted flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px]"
-        >
-          <SealCheckIcon size={13} className="shrink-0" />
-          <span className="min-w-0 break-words">{signoff.text}</span>
-          <Chip tone={signoff.tone}>{signoffBadgeText(signoff)}</Chip>
-        </p>
-      )}
-      {row.snoozed && (
-        <p className="text-ink-muted flex items-center gap-1.5 text-[12px]">
-          <BellSlashIcon size={13} className="shrink-0" />
-          Snoozed until {describeInstant(todo.reminders.snoozedUntil!, prefs.timeZone)}
-        </p>
-      )}
-
-      {row.total > 0 && (
-        <div className="flex items-center gap-2.5">
-          <div
-            className="bg-neutral-150 h-1.5 w-20 shrink-0 overflow-hidden rounded-full @md:w-32"
-            role="progressbar"
-            aria-valuemin={0}
-            aria-valuemax={row.total}
-            aria-valuenow={row.done}
-            aria-label="Checkpoint progress"
-          >
+      {hasMore && (
+        <div className="border-line flex flex-col gap-2.5 border-t py-3 pr-4 pl-[38px]">
+          {waiting && (
             <div
-              className="ease-standard h-full rounded-full bg-neutral-600 transition-[width] duration-300"
-              style={{ width: `${row.percent}%` }}
-            />
-          </div>
-          <span className="text-ink-muted min-w-0 flex-1 truncate text-[12px]">
-            {row.stageText}
-            <span className="text-ink-faint tabular-nums">
-              {" · "}
-              {row.done}/{row.total}
-            </span>
-          </span>
-          {row.readyToClose && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="shrink-0"
-              disabled={busyId === "done"}
-              onClick={() => void change({ status: "done" }, "done")}
+              data-testid="waiting-chip"
+              className="text-ink-muted flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px]"
             >
-              Mark done
-            </Button>
+              <HourglassMediumIcon size={14} className="shrink-0" />
+              <span className="min-w-0">
+                Waiting on <strong className="text-ink font-semibold">{waiting.who}</strong>
+                <span className="text-ink-muted">
+                  {" · "}
+                  {waiting.since}
+                  {waiting.age && ` (${waiting.age})`}
+                </span>
+              </span>
+              {waiting.chaseDue && <Chip tone="accent">Time to chase</Chip>}
+              <Button
+                variant="ghost"
+                size="sm"
+                className="ml-auto"
+                disabled={busyId === "reply"}
+                title={`Clear "waiting on ${waiting.who}"`}
+                onClick={() => void change({ waitingOn: null }, "reply")}
+              >
+                <CheckIcon size={13} weight="bold" />
+                Got a reply
+              </Button>
+            </div>
+          )}
+          {signoff && (
+            <p
+              data-testid="signoff-chip"
+              className="text-ink-muted flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px]"
+            >
+              <SealCheckIcon size={14} className="shrink-0" />
+              <span className="min-w-0 break-words">{signoff.text}</span>
+              <Chip tone={signoff.tone}>{signoffBadgeText(signoff)}</Chip>
+            </p>
+          )}
+          {row.snoozed && (
+            <p className="text-ink-muted flex items-center gap-2 text-[12.5px]">
+              <BellSlashIcon size={14} className="shrink-0" />
+              Snoozed until {describeInstant(todo.reminders.snoozedUntil!, prefs.timeZone)}
+            </p>
+          )}
+
+          {row.total > 0 && (
+            <div className="flex items-center gap-3">
+              <Progress
+                value={row.percent}
+                state={row.readyToClose ? "ok" : "idle"}
+                aria-label="Checkpoint progress"
+                aria-valuetext={`${row.done} of ${row.total} checkpoints`}
+                className="w-20 shrink-0 @md:w-36"
+              />
+              <span className="text-ink-muted min-w-0 flex-1 truncate text-[12.5px]">
+                {row.stageText}
+                <span className="text-ink-muted tabular-nums">
+                  {" · "}
+                  {row.done}/{row.total}
+                </span>
+              </span>
+              {row.readyToClose && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0"
+                  disabled={busyId === "done"}
+                  onClick={() => void change({ status: "done" }, "done")}
+                >
+                  Mark done
+                </Button>
+              )}
+            </div>
+          )}
+
+          {shownItems.length > 0 && (
+            <ul className="flex flex-col gap-1.5">
+              {shownItems.map((item) => (
+                <li key={item.id} className="flex min-w-0 items-center gap-2.5">
+                  <input
+                    type="checkbox"
+                    checked={item.done}
+                    disabled={busyId === item.id || !row.open}
+                    onChange={(event) => void toggle(item.id, event.target.checked)}
+                    aria-label={item.text}
+                    className="accent-accent focus-visible:ring-focus h-4 w-4 shrink-0 focus-visible:ring-2"
+                  />
+                  <span
+                    className={cn(
+                      "min-w-0 flex-1 truncate text-[13px]",
+                      item.done ? "text-ink-muted line-through" : "text-ink-soft",
+                    )}
+                  >
+                    {item.text}
+                  </span>
+                  {(item.owner || item.dueAt) && (
+                    <span className="text-ink-muted hidden shrink-0 text-[12px] @md:inline">
+                      {[item.owner, item.dueAt ? formatDay(item.dueAt, today) : null]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </span>
+                  )}
+                </li>
+              ))}
+              {todo.actionItems.length > shownItems.length && (
+                <li>
+                  <button
+                    type="button"
+                    onClick={() => onOpen(todo.id)}
+                    className="text-ink-muted hover:text-ink focus-visible:ring-focus rounded text-[12px] font-semibold outline-none focus-visible:ring-2"
+                  >
+                    +{todo.actionItems.length - shownItems.length} more
+                  </button>
+                </li>
+              )}
+            </ul>
           )}
         </div>
-      )}
-
-      {shownItems.length > 0 && (
-        <ul className="flex flex-col gap-1">
-          {shownItems.map((item) => (
-            <li key={item.id} className="flex min-w-0 items-center gap-2">
-              <input
-                type="checkbox"
-                checked={item.done}
-                disabled={busyId === item.id || !row.open}
-                onChange={(event) => void toggle(item.id, event.target.checked)}
-                aria-label={item.text}
-                className="accent-accent focus-visible:ring-accent h-3.5 w-3.5 shrink-0 focus-visible:ring-2"
-              />
-              <span
-                className={cn(
-                  "min-w-0 flex-1 truncate text-[12px]",
-                  item.done ? "text-ink-faint line-through" : "text-ink",
-                )}
-              >
-                {item.text}
-              </span>
-              {(item.owner || item.dueAt) && (
-                <span className="text-ink-faint hidden shrink-0 text-[11px] @md:inline">
-                  {[item.owner, item.dueAt ? formatDay(item.dueAt, today) : null]
-                    .filter(Boolean)
-                    .join(" · ")}
-                </span>
-              )}
-            </li>
-          ))}
-          {todo.actionItems.length > shownItems.length && (
-            <li>
-              <button
-                type="button"
-                onClick={() => onOpen(todo.id)}
-                className="text-ink-faint hover:text-ink focus-visible:ring-accent rounded text-[11px] outline-none focus-visible:ring-2"
-              >
-                +{todo.actionItems.length - shownItems.length} more
-              </button>
-            </li>
-          )}
-        </ul>
       )}
     </article>
   );

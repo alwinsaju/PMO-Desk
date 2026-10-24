@@ -5,9 +5,18 @@ import { Button } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import type { PmoState, QuarantineRecord } from "@/lib/pmo/types";
 import { updateConfig } from "./api";
-import { CONTENT_WIDTH, Chip, PILL_STRIP, PanelMessage } from "./parts";
 import {
-  SOURCE_LABEL,
+  CONTENT_WIDTH,
+  Chip,
+  FilterPill,
+  GUTTER_X,
+  PILL_STRIP,
+  PanelMessage,
+  ROW_CARD,
+  STICKY_BAR,
+  SourceBadge,
+} from "./parts";
+import {
   WHY_NO_BODY,
   filterByReason,
   reasonCounts,
@@ -52,42 +61,44 @@ export function FilteredList({
   }
   return (
     <div className="flex flex-col">
-      <div className="bg-surface-elevated border-border sticky top-0 z-10 border-b">
+      <div className={STICKY_BAR}>
         <div
-          className={cn(CONTENT_WIDTH, PILL_STRIP, "px-3 py-2 @md:px-4")}
+          className={cn(CONTENT_WIDTH, GUTTER_X, PILL_STRIP, "py-2.5")}
           role="group"
           aria-label="Filter by reason"
         >
-          <ReasonPill active={active === null} onClick={() => onReasonChange(null)}>
+          <FilterPill
+            active={active === null}
+            count={state.filtered.length}
+            onClick={() => onReasonChange(null)}
+          >
             All
-            <span className="text-ink-faint ml-1 tabular-nums">
-              {state.filtered.length}
-            </span>
-          </ReasonPill>
+          </FilterPill>
           {counts.map((entry) => (
-            <ReasonPill
+            <FilterPill
               key={entry.code}
               active={active === entry.code}
+              count={entry.count}
               onClick={() => onReasonChange(entry.code)}
             >
               {entry.label}
-              <span className="text-ink-faint ml-1 tabular-nums">{entry.count}</span>
-            </ReasonPill>
+            </FilterPill>
           ))}
         </div>
       </div>
 
-      <div className={cn(CONTENT_WIDTH, "flex flex-col gap-2.5 p-3 @md:p-4")}>
-        <p className="text-ink-muted text-[12px] leading-relaxed">
+      <div className={cn(CONTENT_WIDTH, GUTTER_X, "flex flex-col gap-2.5 pt-3.5 pb-6")}>
+        <p className="text-ink-muted text-[12.5px] leading-relaxed">
           {state.ingest.filteredCount} message
           {state.ingest.filteredCount === 1 ? "" : "s"} kept out of the review queue.
-          <span className="text-ink-faint"> {WHY_NO_BODY}</span>
+          <span className="text-ink-muted"> {WHY_NO_BODY}</span>
         </p>
-        {shown.map((record) => (
+        {shown.map((record, index) => (
           <FilteredRow
             key={record.id}
             record={record}
             state={state}
+            index={index}
             onSettled={onSettled}
             onOpenSettings={onOpenSettings}
           />
@@ -97,39 +108,17 @@ export function FilteredList({
   );
 }
 
-function ReasonPill({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      aria-pressed={active}
-      onClick={onClick}
-      className={cn(
-        "rounded-pill ease-standard shrink-0 px-2.5 py-1 text-[12px] font-medium whitespace-nowrap transition-colors duration-150",
-        "focus-visible:ring-accent focus-visible:ring-2 focus-visible:outline-none",
-        active ? "bg-neutral-150 text-ink" : "text-ink-muted hover:bg-neutral-100",
-      )}
-    >
-      {children}
-    </button>
-  );
-}
-
 function FilteredRow({
   record,
   state,
+  index,
   onSettled,
   onOpenSettings,
 }: {
   record: QuarantineRecord;
   state: PmoState;
+  /** Position in the list; only staggers the entrance animation. */
+  index: number;
   onSettled: () => void;
   onOpenSettings: () => void;
 }) {
@@ -155,28 +144,29 @@ function FilteredRow({
   }
 
   return (
-    <article className="border-border bg-surface-elevated flex min-w-0 flex-col gap-1.5 rounded-2xl border px-3.5 py-3">
-      <div className="flex items-baseline gap-2">
-        <span className="text-ink min-w-0 flex-1 truncate text-[14px] font-semibold">
-          {summary.subject || "(no subject)"}
-        </span>
-        <span className="text-ink-faint shrink-0 text-[11px]">
-          {relativeTime(summary.receivedAt, Date.parse(state.serverTime))}
-        </span>
-      </div>
-      <p className="text-ink-muted truncate text-[12px]">
-        {SOURCE_LABEL[summary.source]}
-        {" · "}
-        {summary.senderName ?? "Unknown sender"}
-        {summary.senderAddress ? ` <${summary.senderAddress}>` : ""}
-      </p>
-      <p className="text-ink text-[12px] break-words">
-        <Chip tone="outline" className="mr-1.5 align-middle">
+    <article
+      style={{ animationDelay: `${Math.min(index, 8) * 45}ms` }}
+      className={cn(ROW_CARD, "flex flex-col gap-2 px-4 py-3")}
+    >
+      <div className="flex min-h-10 items-center gap-3.5">
+        <SourceBadge source={summary.source} />
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <span className="text-ink block truncate text-[14.5px] font-semibold">
+            {summary.subject || "(no subject)"}
+          </span>
+          <span className="text-ink-muted block truncate text-[12.5px]">
+            {summary.senderName ?? "Unknown sender"}
+            {summary.senderAddress ? ` <${summary.senderAddress}>` : ""}
+            {" · "}
+            {relativeTime(summary.receivedAt, Date.parse(state.serverTime))}
+          </span>
+        </div>
+        <Chip tone="neutral" fixedWidth={176} className="hidden shrink-0 @md:inline-flex">
           {reasonLabel(record.code)}
         </Chip>
-        {record.reason}
-      </p>
-      <p className="text-ink-muted text-[12px] leading-relaxed">{guidance.steps}</p>
+      </div>
+      <p className="text-ink text-[13px] break-words">{record.reason}</p>
+      <p className="text-ink-muted text-[12.5px] leading-relaxed">{guidance.steps}</p>
       <div className="flex flex-wrap items-center gap-2">
         {guidance.allowTenantId && (
           <>
@@ -199,7 +189,7 @@ function FilteredRow({
               Allow this tenant
             </Button>
             <span
-              className="text-ink-faint min-w-0 truncate font-mono text-[11px]"
+              className="text-ink-muted min-w-0 truncate font-mono text-[11.5px]"
               title={guidance.allowTenantId}
             >
               {guidance.allowTenantId}
@@ -233,7 +223,7 @@ function FilteredRow({
         )}
       </div>
       {note && (
-        <p role="status" className="text-ink-muted text-[12px] break-words">
+        <p role="status" className="text-ink-soft text-[12.5px] font-medium break-words">
           {note}
         </p>
       )}

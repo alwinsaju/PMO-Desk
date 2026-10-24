@@ -201,8 +201,8 @@ export function PmoTodoApp({ windowId }: { windowId: string }) {
   );
 }
 
-/** A tab trigger whose label shortens in a narrow window and whose count is a
- *  quiet figure after the name. */
+/** A tab trigger whose label shortens in a narrow window; the count is the
+ *  Tabs primitive's bubble (it tints to the accent on the active tab). */
 function TabButton({
   value,
   short,
@@ -212,16 +212,17 @@ function TabButton({
   value: string;
   short: string;
   full: string;
-  /** A quiet figure after the name; none for a tab that is not a list. */
+  /** The bubble after the name; none for a tab that is not a list. */
   count?: number;
 }) {
   return (
-    <TabsTrigger value={value} className="shrink-0 px-2.5 whitespace-nowrap @md:px-3.5">
+    <TabsTrigger
+      value={value}
+      count={count}
+      className="shrink-0 px-3 whitespace-nowrap @md:px-4"
+    >
       <span className="@xl:hidden">{short}</span>
       <span className="hidden @xl:inline">{full}</span>
-      {count !== undefined && (
-        <span className="text-ink-faint ml-1.5 tabular-nums">{count}</span>
-      )}
     </TabsTrigger>
   );
 }

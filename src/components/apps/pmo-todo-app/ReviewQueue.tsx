@@ -6,8 +6,17 @@ import { Button } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import type { PmoState, Proposal, StructuringInfo } from "@/lib/pmo/types";
 import { rejectProposal } from "./api";
-import { CONTENT_WIDTH, Chip, PanelMessage, ProposalStatusBadge } from "./parts";
-import { SOURCE_LABEL, groupQueue, relativeTime } from "./queueView";
+import {
+  CONTENT_WIDTH,
+  Chip,
+  GUTTER_X,
+  PanelMessage,
+  ProposalStatusBadge,
+  ROW_CARD,
+  SectionLabel,
+  SourceBadge,
+} from "./parts";
+import { groupQueue, relativeTime } from "./queueView";
 import { UpdateCard } from "./UpdateCard";
 
 interface ReviewQueueProps {
@@ -52,9 +61,9 @@ export function ReviewQueue({
   const { structuring } = state;
 
   return (
-    <div className={cn(CONTENT_WIDTH, "flex flex-col gap-5 p-3 @md:p-4")}>
+    <div className={cn(CONTENT_WIDTH, GUTTER_X, "flex flex-col gap-6 pt-1 pb-6")}>
       {nothingElse && (
-        <p className="text-ink-faint py-2 text-center text-[13px]">
+        <p className="text-ink-muted py-2 text-center text-[13.5px]">
           Nothing needs your review right now.
         </p>
       )}
@@ -103,12 +112,12 @@ export function ReviewQueue({
         ))}
       </Section>
       {groups.notTask.length > 0 && (
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-2.5">
           <button
             type="button"
             onClick={() => onNotTaskOpenChange(!notTaskOpen)}
             aria-expanded={notTaskOpen}
-            className="text-ink-muted hover:text-ink focus-visible:ring-accent flex items-center gap-1.5 self-start rounded text-[11px] font-semibold tracking-wide uppercase outline-none focus-visible:ring-2"
+            className="text-ink-muted hover:text-ink focus-visible:ring-focus flex items-center gap-1.5 self-start rounded text-[11px] font-bold tracking-[0.08em] uppercase outline-none focus-visible:ring-2"
           >
             {notTaskOpen ? (
               <CaretDownIcon size={12} weight="bold" />
@@ -116,7 +125,7 @@ export function ReviewQueue({
               <CaretRightIcon size={12} weight="bold" />
             )}
             Probably not a task
-            <span className="text-ink-faint tabular-nums">{groups.notTask.length}</span>
+            <CountBubble>{groups.notTask.length}</CountBubble>
           </button>
           {notTaskOpen &&
             groups.notTask.map((p) => (
@@ -146,13 +155,22 @@ function Section({
 }) {
   if (count === 0) return null;
   return (
-    <section className="flex flex-col gap-2" aria-label={title}>
-      <h3 className="text-ink-muted flex items-center gap-1.5 text-[11px] font-semibold tracking-wide uppercase">
+    <section className="flex flex-col gap-2.5" aria-label={title}>
+      <SectionLabel className="flex items-center gap-2">
         {title}
-        <span className="text-ink-faint tabular-nums">{count}</span>
-      </h3>
+        <CountBubble>{count}</CountBubble>
+      </SectionLabel>
       {children}
     </section>
+  );
+}
+
+/** The small count after a section name. */
+function CountBubble({ children }: { children: ReactNode }) {
+  return (
+    <span className="bg-chip-strong text-ink-soft inline-grid h-5 min-w-5 place-items-center rounded-full px-1.5 text-[11.5px] leading-none font-semibold tracking-normal tabular-nums">
+      {children}
+    </span>
   );
 }
 
@@ -178,35 +196,36 @@ const Row = memo(function Row({
     draft && title !== summary.subject && summary.subject ? summary.subject : null;
 
   return (
-    <div className="border-border bg-surface-elevated flex items-center gap-3 rounded-2xl border px-3.5 py-2.5">
+    <div className={cn(ROW_CARD, "flex min-h-16 items-center gap-3 pr-3 pl-4")}>
       <button
         type="button"
         onClick={() => onOpen(proposal.id)}
-        className="focus-visible:ring-accent flex min-w-0 flex-1 flex-col gap-1 rounded-lg text-left outline-none focus-visible:ring-2"
+        className="focus-visible:ring-focus rounded-control flex min-w-0 flex-1 items-center gap-3.5 py-3 text-left outline-none focus-visible:ring-2"
       >
-        <span className="text-ink block truncate text-[14px] font-semibold">{title}</span>
-        <span className="flex min-w-0 items-center gap-2 text-[12px]">
-          <ProposalStatusBadge proposal={proposal} structuring={structuring} />
-          {proposal.status === "ready" && proposal.quoteVerified === false && (
-            <Chip
-              tone="outline"
-              className="border-ink text-ink gap-1"
-              title="The sentence the model quoted was not found in the message"
-            >
-              <WarningIcon size={11} weight="fill" />
-              Check original
-            </Chip>
-          )}
-          <span className="text-ink-muted min-w-0 truncate">
-            {SOURCE_LABEL[summary.source]}
-            {" · "}
-            {sender}
-            <span className="text-ink-faint">
-              {" · "}
-              {relativeTime(summary.receivedAt, nowMs)}
-              {subject ? ` · ${subject}` : ""}
-            </span>
+        <SourceBadge source={summary.source} />
+        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <span className="text-ink block truncate text-[14.5px] font-semibold">
+            {title}
           </span>
+          <span className="text-ink-muted block truncate text-[12.5px]">
+            {sender}
+            {" · "}
+            {relativeTime(summary.receivedAt, nowMs)}
+            {subject ? ` · ${subject}` : ""}
+          </span>
+        </span>
+        {proposal.status === "ready" && proposal.quoteVerified === false && (
+          <Chip
+            tone="warning"
+            className="shrink-0 gap-1"
+            title="The sentence the model quoted was not found in the message"
+          >
+            <WarningIcon size={11} weight="fill" />
+            Check original
+          </Chip>
+        )}
+        <span className="flex shrink-0 justify-end @md:w-40">
+          <ProposalStatusBadge proposal={proposal} structuring={structuring} />
         </span>
       </button>
       {onDismiss && (

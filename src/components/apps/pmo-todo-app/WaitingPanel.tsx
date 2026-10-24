@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { CheckIcon, HourglassMediumIcon } from "@phosphor-icons/react";
 import { Button, Input } from "@/components/ui";
-import { Chip } from "./parts";
+import { Chip, NativeSelect, QuickChip } from "./parts";
 import { zonedInstant } from "@/lib/pmo/due";
 import type { TodoPatch } from "@/lib/pmo/todoLogic";
 import type { ChaserJob, ReminderPrefs, Todo } from "@/lib/pmo/types";
@@ -61,13 +61,13 @@ export function WaitingPanel({
   return (
     <section
       aria-label="Waiting on"
-      className="border-border flex flex-col gap-2.5 rounded-xl border bg-neutral-50 px-3.5 py-3"
+      className="border-line bg-card rounded-card flex flex-col gap-3 border px-4 py-3.5"
     >
       {waiting && !editing ? (
         <>
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-ink flex items-center gap-2 text-[13px]">
-              <HourglassMediumIcon size={15} className="text-ink-muted shrink-0" />
+            <p className="text-ink flex flex-wrap items-center gap-2 text-[13.5px]">
+              <HourglassMediumIcon size={16} className="text-ink-muted shrink-0" />
               <span>
                 Waiting on <strong className="font-semibold">{waiting.who}</strong>
                 <span className="text-ink-muted">
@@ -103,12 +103,12 @@ export function WaitingPanel({
             </div>
           </div>
           {open && (
-            <div className="text-ink-muted flex flex-wrap items-center gap-x-4 gap-y-2 text-[12px]">
-              <label className="flex items-center gap-1.5">
+            <div className="text-ink-muted flex flex-wrap items-center gap-x-4 gap-y-2 text-[12.5px] font-medium">
+              <label className="flex items-center gap-2">
                 Waiting since
                 <Input
                   type="date"
-                  className="h-8 w-40 text-[12px]"
+                  className="w-40 text-[12.5px]"
                   value={waiting.sinceDay}
                   max={today}
                   disabled={busy}
@@ -125,9 +125,9 @@ export function WaitingPanel({
                   }}
                 />
               </label>
-              <label className="flex items-center gap-1.5">
+              <label className="flex items-center gap-2">
                 Chase after
-                <select
+                <NativeSelect
                   value={todo.chaserDays ?? ""}
                   disabled={busy}
                   onChange={(event) =>
@@ -135,7 +135,7 @@ export function WaitingPanel({
                       chaserDays: event.target.value ? Number(event.target.value) : null,
                     })
                   }
-                  className="rounded-control border-border bg-surface-elevated text-ink focus-visible:ring-accent h-8 border px-2 text-[12px] outline-none focus-visible:ring-2"
+                  className="text-[12.5px]"
                 >
                   <option value="">Default ({prefs.chaserDays})</option>
                   {CADENCES.map((days) => (
@@ -148,7 +148,7 @@ export function WaitingPanel({
                     !CADENCES.includes(todo.chaserDays) && (
                       <option value={todo.chaserDays}>{todo.chaserDays}</option>
                     )}
-                </select>
+                </NativeSelect>
                 working days
               </label>
               <button
@@ -157,7 +157,7 @@ export function WaitingPanel({
                   setName(waiting.who);
                   setEditing(true);
                 }}
-                className="text-ink-muted hover:text-ink focus-visible:ring-accent rounded underline-offset-2 outline-none hover:underline focus-visible:ring-2"
+                className="text-ink-soft hover:text-ink focus-visible:ring-focus rounded font-semibold underline-offset-2 outline-none hover:underline focus-visible:ring-2"
               >
                 Change who
               </button>
@@ -166,8 +166,8 @@ export function WaitingPanel({
         </>
       ) : (
         <>
-          <p className="text-ink-muted flex items-center gap-2 text-[12px]">
-            <HourglassMediumIcon size={15} className="shrink-0" />
+          <p className="text-ink-muted flex items-center gap-2 text-[13px]">
+            <HourglassMediumIcon size={16} className="shrink-0" />
             {editing
               ? "Who are you waiting on now?"
               : "Not waiting on anyone. Mark it to get a chaser if nothing comes back."}
@@ -202,18 +202,12 @@ export function WaitingPanel({
             )}
           </form>
           {suggestions.length > 0 && (
-            <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
-              <span className="text-ink-faint">Quick pick:</span>
+            <div className="flex flex-wrap items-center gap-1.5 text-[12px]">
+              <span className="text-ink-muted font-medium">Quick pick:</span>
               {suggestions.map((value) => (
-                <button
-                  key={value}
-                  type="button"
-                  disabled={busy}
-                  onClick={() => void mark(value)}
-                  className="text-ink-muted hover:text-ink rounded-pill border-border focus-visible:ring-accent border px-2 py-0.5 outline-none hover:bg-neutral-100 focus-visible:ring-2"
-                >
+                <QuickChip key={value} disabled={busy} onClick={() => void mark(value)}>
                   {value}
-                </button>
+                </QuickChip>
               ))}
             </div>
           )}

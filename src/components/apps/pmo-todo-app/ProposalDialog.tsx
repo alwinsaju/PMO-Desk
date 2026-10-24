@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { WarningIcon } from "@phosphor-icons/react";
 import {
   Button,
   Dialog,
@@ -8,6 +9,7 @@ import {
   DialogDescription,
   DialogTitle,
 } from "@/components/ui";
+import { cn } from "@/lib/cn";
 import { effectiveDraft } from "@/lib/pmo/todoLogic";
 import {
   MAX_AI_ATTEMPTS,
@@ -24,7 +26,15 @@ import {
 } from "./api";
 import { DraftForm } from "./DraftForm";
 import { OriginalMessage } from "./OriginalMessage";
-import { ProposalStatusBadge, ScrollBody, SourceBadge } from "./parts";
+import {
+  ErrorLine,
+  MESSAGE_PANE,
+  Note,
+  ProposalStatusBadge,
+  ScrollBody,
+  SectionLabel,
+  SourceBadge,
+} from "./parts";
 
 interface ProposalDialogProps {
   /** null closes the dialog. */
@@ -119,13 +129,13 @@ export function ProposalDialog({
       onOpenChange={(open) => (open ? undefined : void close())}
     >
       <DialogContent
-        className="flex h-[min(86vh,720px)] max-h-full max-w-5xl flex-col p-4 @md:p-5"
+        className="flex h-[min(88vh,760px)] max-h-full max-w-5xl flex-col px-7 pt-6 pb-5"
         // Don't drop the cursor (and a text selection) into the title field.
         onOpenAutoFocus={(event) => event.preventDefault()}
       >
-        <div className="flex shrink-0 items-center gap-2 pr-8">
+        <div className="flex shrink-0 items-center gap-3 pr-10">
           <SourceBadge source={shown.summary.source} />
-          <DialogTitle className="min-w-0 flex-1 truncate">
+          <DialogTitle className="min-w-0 flex-1 truncate pr-0 text-[23px] tracking-[-0.02em]">
             {shown.summary.subject || "(no subject)"}
           </DialogTitle>
           <ProposalStatusBadge proposal={shown} structuring={structuring} />
@@ -136,43 +146,43 @@ export function ProposalDialog({
         </DialogDescription>
 
         {notATask && shown.draft && (
-          <p className="border-border text-ink-muted mt-3 shrink-0 rounded-lg border bg-neutral-50 px-3 py-2 text-[12px]">
+          <Note className="mt-3.5 shrink-0">
             The model thinks this is <strong className="text-ink">not a task</strong>:{" "}
             {shown.draft.reason}
-          </p>
+          </Note>
         )}
         {isReady && shown.quoteVerified === false && (
-          <p
-            role="alert"
-            className="bg-ink text-ink-inverse mt-3 shrink-0 rounded-lg px-3 py-2 text-[12px]"
-          >
-            <strong>Check against the original.</strong> The sentence the model quoted was
-            not found in the message
-            {shown.draft?.quote ? `: “${shown.draft.quote}”` : "."}
-          </p>
+          <Note tone="warning" role="alert" className="mt-3.5 flex shrink-0 gap-2.5">
+            <WarningIcon size={16} weight="fill" className="text-amber mt-0.5 shrink-0" />
+            <span>
+              <strong>Check against the original.</strong> The sentence the model quoted
+              was not found in the message
+              {shown.draft?.quote ? `: “${shown.draft.quote}”` : "."}
+            </span>
+          </Note>
         )}
         {isFailed && (
-          <p className="border-border text-ink mt-3 shrink-0 rounded-lg border bg-neutral-50 px-3 py-2 text-[12px]">
+          <Note tone="danger" className="mt-3.5 shrink-0">
             The local model could not structure this message
             {shown.ai.error ? ` (${shown.ai.error.replace(/\.$/, "")})` : ""}. Attempts
             used: {shown.ai.attempts} of {MAX_AI_ATTEMPTS}.
-          </p>
+          </Note>
         )}
         {(shown.status === "pending" || shown.status === "structuring") && (
-          <p className="border-border text-ink-muted mt-3 shrink-0 rounded-lg border bg-neutral-50 px-3 py-2 text-[12px]">
+          <Note className="mt-3.5 shrink-0">
             {structuring.paused
               ? "Waiting for the local model to come back. This will be structured automatically."
               : "The local model has not finished with this message yet."}
-          </p>
+          </Note>
         )}
 
         {/* Two panes side by side on a wide screen, stacked and scrolling as one
             below that. */}
-        <div className="mt-3 grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-y-auto md:grid-cols-2 md:grid-rows-[minmax(0,1fr)] md:overflow-hidden">
+        <div className="mt-4 grid min-h-0 flex-1 grid-cols-1 gap-6 overflow-y-auto md:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)] md:grid-rows-[minmax(0,1fr)] md:overflow-hidden">
           <div className="flex flex-col md:min-h-0">
-            <p className="text-ink-muted mb-2 text-[11px] font-semibold tracking-wide uppercase">
+            <SectionLabel className="mb-2.5">
               {manual ? "New to-do (typed by you)" : "Proposed to-do"}
-            </p>
+            </SectionLabel>
             {showForm && draft ? (
               <ScrollBody className="md:pr-2">
                 <DraftForm
@@ -186,7 +196,7 @@ export function ProposalDialog({
                 />
               </ScrollBody>
             ) : (
-              <p className="text-ink-faint text-[13px]">
+              <p className="text-ink-muted text-[13.5px]">
                 {isFailed
                   ? "Retry the model, or create the to-do yourself from the original message."
                   : "The proposal appears here once the model has read the message."}
@@ -194,15 +204,15 @@ export function ProposalDialog({
             )}
           </div>
 
-          <div className="border-border flex h-72 flex-col rounded-lg border p-3 md:h-auto md:min-h-0">
-            <p className="text-ink-muted mb-2 text-[11px] font-semibold tracking-wide uppercase">
+          <div className={cn(MESSAGE_PANE, "h-72 px-5 py-4 md:h-auto md:min-h-0")}>
+            <SectionLabel className="mb-2.5">
               Original message
               {isReady && shown.quoteVerified && (
-                <span className="text-ink-faint ml-2 font-normal normal-case">
+                <span className="text-ink-muted ml-2 font-medium tracking-normal normal-case">
                   quote highlighted
                 </span>
               )}
-            </p>
+            </SectionLabel>
             <OriginalMessage
               intakeId={shown.intakeId}
               quote={isReady ? shown.draft?.quote : null}
@@ -211,19 +221,15 @@ export function ProposalDialog({
           </div>
         </div>
 
-        {error && (
-          <p role="alert" className="text-ink mt-3 shrink-0 text-[12px] font-medium">
-            {error}
-          </p>
-        )}
+        {error && <ErrorLine className="mt-3 shrink-0">{error}</ErrorLine>}
 
-        <div className="border-border mt-3 flex shrink-0 flex-wrap items-center justify-between gap-x-3 gap-y-2 border-t pt-3">
-          <p className="text-ink-faint min-w-0 truncate text-[11px]">
+        <div className="border-line mt-4 flex shrink-0 flex-wrap items-center justify-between gap-x-3 gap-y-2 border-t pt-4">
+          <p className="text-ink-muted min-w-0 truncate text-[12px]">
             {shown.ai.model && shown.ai.durationMs !== null
               ? `${shown.ai.model} · ${(shown.ai.durationMs / 1000).toFixed(1)} s`
               : ""}
           </p>
-          <div className="ml-auto flex flex-wrap justify-end gap-2">
+          <div className="ml-auto flex flex-wrap justify-end gap-2.5">
             {isFailed && !manual && shown.ai.attempts < MAX_AI_ATTEMPTS && (
               <Button
                 variant="secondary"
