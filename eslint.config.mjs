@@ -20,6 +20,7 @@ const eslintConfig = [
       "desktop/**",
       "node_modules/**",
       ".next/**",
+      ".next-live*/**",
       "out/**",
       "build/**",
       "release/**",
