@@ -58,8 +58,11 @@ team, shift)`; nothing flagged is ever fixed automatically. Kinds:
   PTO_NOTE                                                           (PTO)
   HEADCOUNT_CHANGED, HEADCOUNT_BELOW_MIN, ROTATION_WARNING, UNCLASSIFIED_PERSON,
   CHANGE_NOTE, CONFIG_NOT_UPDATED                                    (rotation / config)
-  YEAR_BOUNDARY, HOLIDAY_MATRIX_NO_ROWS, DISCONNECT_HOLIDAY_SKIPPED, OVERWRITES_EXISTING,
-  PRESERVED_LEAVE
+  YEAR_BOUNDARY, HOLIDAY_MATRIX_NO_ROWS, HOLIDAY_ROSTER_MAY_BE_INCOMPLETE,
+  DISCONNECT_HOLIDAY_SKIPPED, OVERWRITES_EXISTING, PRESERVED_LEAVE,
+  INTERNAL_STRAY_HOL_WRITTEN (ERROR: the program wrote a HOL it must not have; never expected)
+  PATTERN_NOT_DETECTED (WARNING: a PATTERN group has no stable pattern, copied forward / asked),
+  PATTERN_CONTINUED (INFO: what a PATTERN group's rotation was detected as and where it resumed)
 Severity is ERROR, WARNING or INFO. Every flag has a stable `key` (`kind|person|date|team|
 shift`); `flag_delta(before, after)` -> (new, resolved, remaining) compares two runs, and
 `make_rechecker(...)` recomputes the check flags (HOL check, staffing, headcount per shift)
@@ -90,19 +93,21 @@ from .checks import (
     daterange,
     hol_check,
     is_shift_canonical,
+    resolve_location,
     schedule_from_roster,
     staffing_check,
 )
-from .codes import counts_as_code, is_leave_code, try_parse_code
+from .codes import HOL, counts_as_code, is_leave_code, try_parse_code
 from .config import PER_TEAM_DAY, Rotation, RotationConfig, name_key, parse_config
 from .cycles import Availability, Cycle, cycle_availability, previous_cycle, split_at_year_boundary
 from .holiday_engine import (
     OffCounter,
+    _location_map,
     apply_edits,
     assign_holidays,
     build_counters_from_schedule,
 )
-from .holiday_matrix import HolidayMatrix
+from .holiday_matrix import HolidayMatrix, is_off
 from .pto import (
     PtoEntry,
     PtoImportError,
@@ -119,6 +124,7 @@ from .roster_changes import (
     ask_me_list,
     detect_changes,
 )
+from .pattern_rotation import GroupPlan, plan_pattern_groups
 from .roster_io import Person as RosterPerson
 from .rotation import InvalidAnswers, MissingAnswers, derive_state, rotate
 
@@ -186,6 +192,9 @@ class Flag:
     date: date | None = None
     team: str | None = None
     shift: str | None = None
+    # where the cell behind the flag came from: "master" (already in the roster file, not added
+    # by this run), "program" (written by this run), "user" (typed into the draft) or None
+    origin: str | None = None
 
     @property
     def key(self) -> str:
@@ -201,12 +210,12 @@ class Flag:
     def to_dict(self) -> dict[str, Any]:
         return {"key": self.key, "kind": self.kind, "severity": self.severity,
                 "message": self.message, "person": self.person, "date": _iso(self.date),
-                "team": self.team, "shift": self.shift}
+                "team": self.team, "shift": self.shift, "origin": self.origin}
 
     @staticmethod
     def from_dict(d: Mapping[str, Any]) -> "Flag":
         return Flag(d["kind"], d["severity"], d["message"], d.get("person"),
-                    _date(d.get("date")), d.get("team"), d.get("shift"))
+                    _date(d.get("date")), d.get("team"), d.get("shift"), d.get("origin"))
 
 
 def flag_delta(before: Iterable[Any], after: Iterable[Any]
@@ -294,6 +303,33 @@ class _Prep:
     missing: list[MissingAnswer]
     invalid: list[str]
     required: list[RequiredAnswer]
+    pattern_plans: dict[str, GroupPlan] = field(default_factory=dict)
+
+
+def works_hints(pattern_plans: Mapping[str, GroupPlan]) -> dict[str, Callable[[date], bool | None]]:
+    """Per PATTERN person: `hint(date)` -> does their weekly template have them working that
+    day (the checks use it instead of inferring Mon-Fri / Wed-Sun weekly offs)."""
+    out: dict[str, Callable[[date], bool | None]] = {}
+    for gp in pattern_plans.values():
+        if not gp.detected:
+            continue
+        for name in gp.detection.templates:
+            out[name] = (lambda d, det=gp.detection, n=name: det.works(n, d))
+    return out
+
+
+def hints_from_run_info(run_info: Mapping[str, Any]) -> dict[str, Callable[[date], bool | None]]:
+    """The same hints rebuilt from `run_info["pattern_works"]` (what a plan.json carries):
+    `{name: {"start": iso, "works": "0111110..."}}`, one character per cycle date."""
+    out: dict[str, Callable[[date], bool | None]] = {}
+    for name, entry in (run_info.get("pattern_works") or {}).items():
+        start, bits = date.fromisoformat(entry["start"]), entry["works"]
+
+        def hint(d: date, start=start, bits=bits) -> bool | None:
+            i = (d - start).days
+            return None if not 0 <= i < len(bits) else bits[i] == "1"
+        out[name] = hint
+    return out
 
 
 def _read_answers(answers: Mapping[str, Any] | None
@@ -315,8 +351,8 @@ def _read_answers(answers: Mapping[str, Any] | None
     return out[0], out[1], problems
 
 
-def _prepare(roster, config: RotationConfig, cycle: Cycle, answers, *, bootstrap: bool
-             ) -> _Prep:
+def _prepare(roster, config: RotationConfig, cycle: Cycle, answers, *, bootstrap: bool,
+             history: Mapping[str, Mapping[date, str]] | None = None) -> _Prep:
     people = list(roster.people)
     active = active_people(people, config)
     active_names = [p.name for p in active]
@@ -328,7 +364,8 @@ def _prepare(roster, config: RotationConfig, cycle: Cycle, answers, *, bootstrap
                                for n, cells in schedule.items()}
 
     availability = cycle_availability(cycle, schedule, active_names, counts_as_code,
-                                      config.has_data_threshold, bootstrap)
+                                      config.has_data_threshold, bootstrap,
+                                      data_range=(roster.first_date, roster.last_date))
 
     changes_answers, rotation_answers_in, problems = _read_answers(answers)
     changes = detect_changes(active, config, prev_schedule)
@@ -365,8 +402,11 @@ def _prepare(roster, config: RotationConfig, cycle: Cycle, answers, *, bootstrap
     rotation_answers.update(rotation_answers_in)
     answered = {name_key(n) for n in rotation_answers}
 
+    pattern_plans = plan_pattern_groups(config_after, active_names, schedule, cycle,
+                                        history=history)
     ask_items = ask_me_list(config_after, active, prev_schedule, cycle,
-                            replaces=applied.replaces if applied is not None else None)
+                            replaces=applied.replaces if applied is not None else None,
+                            pattern_plans=pattern_plans)
     for item in ask_items:
         if name_key(item.name) in answered:
             continue
@@ -381,7 +421,7 @@ def _prepare(roster, config: RotationConfig, cycle: Cycle, answers, *, bootstrap
 
     return _Prep(roster, config, cycle, prev, active, excluded, schedule, prev_schedule,
                  availability, changes, applied, config_after, rotation_answers, ask_items,
-                 missing, invalid, required)
+                 missing, invalid, required, pattern_plans)
 
 
 @dataclass
@@ -439,7 +479,43 @@ def _matrix_summary(matrix: HolidayMatrix | None, errors: Sequence[str], cycle: 
         "rows_beyond_file": sum(1 for h in in_cycle if h.date > last_date),
         "years_without_rows": sorted({y for y in (cycle.start.year, cycle.end.year)
                                       if y not in years}),
+        "may_be_incomplete": [m for _, m in holiday_roster_warnings(matrix, cycle)],
     })
+    return out
+
+
+MIN_HOLIDAY_ROWS_PER_YEAR = 3
+
+
+def holiday_roster_warnings(matrix: HolidayMatrix | None, cycle: Cycle) -> list[tuple[date, str]]:
+    """Reasons the Holiday Roster may be incomplete for `cycle`: [(first date of the period,
+    message)], one per calendar-year piece of the cycle (non-blocking, see the
+    `HOLIDAY_ROSTER_MAY_BE_INCOMPLETE` flag).
+
+    The holiday rule needs one row per calendar year, so a Holiday Roster that holds only the
+    assumed 1 January row of a year would silently give a cycle with NO holidays. A piece of
+    the cycle is suspect when the matrix has fewer than `MIN_HOLIDAY_ROWS_PER_YEAR` rows in that
+    calendar year, or no row inside the piece's own dates other than a 1 January row (the
+    assumed one). A year with no rows at all is reported by HOLIDAY_MATRIX_NO_ROWS instead."""
+    if matrix is None:
+        return []
+    out: list[tuple[date, str]] = []
+    for seg_start, seg_end in _segments(cycle):
+        year = seg_start.year
+        in_year = [h for h in matrix.holidays if h.date.year == year]
+        if not in_year:
+            continue
+        in_piece = [h for h in in_year
+                    if seg_start <= h.date <= seg_end and not (h.date.month == 1 and h.date.day == 1)]
+        if len(in_year) >= MIN_HOLIDAY_ROWS_PER_YEAR and in_piece:
+            continue
+        why = (f"only {len(in_year)} row(s) for {year}" if len(in_year) < MIN_HOLIDAY_ROWS_PER_YEAR
+               else f"no holiday row between {seg_start.isoformat()} and {seg_end.isoformat()}")
+        out.append((seg_start, (
+            f"the Holiday Roster has {why} (apart from a 1 January row): holidays of "
+            f"{seg_start.isoformat()}..{seg_end.isoformat()} may be missing, and no HOL is "
+            f"assigned for a holiday that is not in the Holiday Roster. Check that it covers "
+            f"{year} (upload the new year's Holiday Roster)")))
     return out
 
 
@@ -484,6 +560,7 @@ class Analysis:
     excluded_people: list[str]
     unclassified: list[str]
     blockers: list[str]
+    pattern_groups: list[dict[str, Any]] = field(default_factory=list)
 
     @property
     def ready(self) -> bool:
@@ -498,7 +575,8 @@ class Analysis:
             "ready": self.ready,
             "blockers": list(self.blockers),
             "availability": {"enabled": av.enabled, "reason": av.reason, "coverage": av.coverage,
-                             "failing_people": list(av.failing_people)},
+                             "failing_people": list(av.failing_people),
+                             "weeks_checked": av.weeks_checked, "weeks_total": av.weeks_total},
             "changes": {
                 "new": [{"name": n.name, "location": n.location_code, "team_label": n.team_label,
                          "section": n.section, "in_config": n.in_config}
@@ -518,6 +596,7 @@ class Analysis:
             "active_people": self.active_count,
             "excluded_people": list(self.excluded_people),
             "unclassified": list(self.unclassified),
+            "pattern_groups": list(self.pattern_groups),
         }
 
     def to_json(self) -> str:
@@ -583,7 +662,8 @@ def analyze_cycle(
         unclassified=[p.name for p in prep.active
                       if (cp := prep.config_after.find(p.name)) is not None
                       and cp.rotation is Rotation.UNCLASSIFIED],
-        blockers=blockers)
+        blockers=blockers,
+        pattern_groups=[gp.report() for _, gp in sorted(prep.pattern_plans.items())])
 
 
 # ---- headcount ------------------------------------------------------------------------
@@ -748,9 +828,45 @@ def _finding_dict(f) -> dict[str, Any]:
             "person": f.person, "location": f.location, "message": f.message}
 
 
+def internal_stray_hol(edits: Mapping[tuple[str, date], str], schedule: Schedule,
+                       people: Iterable[RosterPerson], matrix: HolidayMatrix,
+                       config: RotationConfig) -> list[Flag]:
+    """Self-check of the HOL this run wrote: `INTERNAL_STRAY_HOL_WRITTEN` (ERROR) for every HOL
+    in `edits` where the person's location is not ticked in the Holiday Roster that day (or is
+    unknown), or where the person does not work that day (`schedule` = the cycle before HOL:
+    a weekly off or leave day). It must never fire: the holiday engine only writes HOL for
+    working people at a ticked location. Preserved master cells are not in `edits`."""
+    locs = _location_map(matrix, config)
+    loc_of = {p.name: resolve_location(p.location_code, locs) for p in people}
+    out: list[Flag] = []
+    for (name, d), text in sorted(edits.items()):
+        parsed = try_parse_code(text or "")
+        if parsed is None or parsed.canonical != HOL:
+            continue
+        loc = loc_of.get(name)
+        before = try_parse_code((schedule.get(name) or {}).get(d, "") or "")
+        if loc is None or not is_off(matrix, loc, d):
+            why = (f"the location ({loc}) is not ticked in the Holiday Roster that day" if loc
+                   else "the person's location is unknown")
+        elif before is None or not is_working_code_or_custom(before):
+            why = "the person does not work that day (weekly off or leave)"
+        else:
+            continue
+        out.append(Flag("INTERNAL_STRAY_HOL_WRITTEN", "ERROR",
+                        f"{name} {d.isoformat()}: the program itself wrote HOL but {why}. This "
+                        "is a defect of the program, not of the roster: do not approve this "
+                        "draft; report it", name, d, origin="program"))
+    return out
+
+
+def is_working_code_or_custom(parsed) -> bool:
+    """A shift code, custom hours or on-call (what the holiday engine may turn into HOL)."""
+    return parsed.canonical not in ("BLANK", "HOL") and not is_leave_code(parsed.canonical)
+
+
 def _existing_findings(roster, active: Sequence[RosterPerson], config: RotationConfig,
                        matrix: HolidayMatrix, schedule: Schedule, year: int,
-                       disconnect: Collection[date]) -> dict[str, Any]:
+                       disconnect: Collection[date], hints=None) -> dict[str, Any]:
     start = max(date(year, 1, 1), roster.first_date)
     end = min(date(year, 12, 31), roster.last_date)
     out: dict[str, Any] = {"year": year, "start": start.isoformat(), "end": end.isoformat(),
@@ -758,8 +874,8 @@ def _existing_findings(roster, active: Sequence[RosterPerson], config: RotationC
     if start > end:
         return out
     hol = hol_check(schedule, active, matrix, roster.holiday_labels(expand_merges=True),
-                    start, end, ignore_dates=disconnect)
-    short = staffing_check(schedule, active, config, start, end)
+                    start, end, ignore_dates=disconnect, works_hint=hints)
+    short = staffing_check(schedule, active, config, start, end, works_hint=hints)
     out["hol"] = [_finding_dict(f) for f in hol]
     by_kind: dict[str, int] = {}
     for f in hol:
@@ -772,28 +888,58 @@ def _existing_findings(roster, active: Sequence[RosterPerson], config: RotationC
     return out
 
 
+_ORIGIN_NOTE = {
+    "master": "already in the master roster; not added by this run",
+    "program": "written by this run",
+    "user": "typed into the draft by the user",
+}
+
+
+def hol_origin(person: str, d: date, draft: Schedule, master: Schedule,
+               program_hol: Collection[tuple[str, date]]) -> str | None:
+    """Who put the HOL in a cell of the draft: "program" (the holiday engine of this run),
+    "master" (already in the roster file), "user" (typed into the draft); None if the draft cell
+    is not a HOL. The program wins a cell it wrote; a cell already HOL in the master is the
+    master's."""
+    parsed = try_parse_code((draft.get(person) or {}).get(d, "") or "")
+    if parsed is None or parsed.canonical != HOL:
+        return None
+    if (person, d) in program_hol:
+        return "program"
+    old = try_parse_code((master.get(person) or {}).get(d, "") or "")
+    return "master" if old is not None and old.canonical == HOL else "user"
+
+
 def _draft_flags(roster, active: Sequence[RosterPerson], cfg: RotationConfig,
                  matrix: HolidayMatrix, draft: Schedule, cycle_schedule: Schedule, cycle: Cycle,
                  last_date: date, disconnect: Collection[date], coverage: frozenset,
-                 cannot_meet: Collection[tuple]) -> list[Flag]:
+                 cannot_meet: Collection[tuple], master: Schedule | None = None,
+                 program_hol: Collection[tuple[str, date]] = (), hints=None) -> list[Flag]:
     """The checks on a draft: HOL check, staffing check and headcount per shift. Shared by
     `build_plan` and the re-checker. `draft` = the existing roster overlaid with the new cycle
-    (every date of the cycle), `cycle_schedule` = the cycle's cells only."""
+    (every date of the cycle), `cycle_schedule` = the cycle's cells only. `master` (the roster
+    file's own cells) and `program_hol` (the HOL cells this run wrote) give every HOL-check
+    flag about an existing HOL cell its `origin`."""
     flags: list[Flag] = []
     in_file_end = min(cycle.end, last_date)
     hol_findings = []
     if cycle.start <= last_date:
         hol_findings += hol_check(draft, active, matrix, roster.holiday_labels(expand_merges=True),
                                   cycle.start, in_file_end, coverage_ok=coverage,
-                                  ignore_dates=disconnect)
+                                  ignore_dates=disconnect, works_hint=hints)
     if cycle.end > last_date:
         beyond_from = max(cycle.start, last_date + timedelta(days=1))
         hol_findings += [f for f in hol_check(draft, active, matrix, {}, beyond_from, cycle.end,
-                                              coverage_ok=coverage, ignore_dates=disconnect)
+                                              coverage_ok=coverage, ignore_dates=disconnect,
+                                              works_hint=hints)
                          if not f.kind.name.startswith("MISMATCH")]
     for f in hol_findings:
-        flags.append(Flag("HOL_" + f.kind.name, f.severity.value, f.message, f.person, f.date))
-    for s in staffing_check(draft, active, cfg, cycle.start, cycle.end):
+        origin = (hol_origin(f.person, f.date, draft, master, program_hol)
+                  if master is not None and f.person and f.date else None)
+        message = f.message if origin is None else f"{f.message} ({_ORIGIN_NOTE[origin]})"
+        flags.append(Flag("HOL_" + f.kind.name, f.severity.value, message, f.person, f.date,
+                          origin=origin))
+    for s in staffing_check(draft, active, cfg, cycle.start, cycle.end, works_hint=hints):
         if (s.team, s.shift, s.date) in cannot_meet:
             continue  # already reported as CANNOT_MEET_MINIMUM by the holiday engine
         flags.append(Flag("STAFFING_SHORTAGE", s.severity, s.message, date=s.date, team=s.team,
@@ -832,6 +978,9 @@ def make_rechecker(roster, config: RotationConfig, cycle: Cycle, holiday_matrix:
                    if f.kind == "CANNOT_MEET_MINIMUM"}
     base = schedule_from_roster(roster)
     cycle_dates = daterange(cycle.start, cycle.end)
+    program_hol = frozenset((n, date.fromisoformat(a["date"]))
+                            for a in plan.holiday_assignments for n in a["off"])
+    hints = hints_from_run_info(plan.run_info)
 
     def recheck(edited: Mapping[str, Mapping[date, str]]) -> list[Flag]:
         draft: Schedule = {p.name: dict(base[p.name]) for p in active}
@@ -844,7 +993,8 @@ def make_rechecker(roster, config: RotationConfig, cycle: Cycle, holiday_matrix:
         cycle_schedule = {n: {d: cells[d] for d in cycle_dates if d in cells}
                           for n, cells in draft.items()}
         flags = _draft_flags(roster, active, config, holiday_matrix, draft, cycle_schedule,
-                             cycle, last_date, disconnect, coverage, cannot_meet)
+                             cycle, last_date, disconnect, coverage, cannot_meet,
+                             master=base, program_hol=program_hol, hints=hints)
         return sorted(flags, key=_flag_order)
 
     return recheck
@@ -864,7 +1014,7 @@ def build_plan(
     `NeedsAnswers` instead of guessing. See the module docstring."""
     if holiday_matrix is None:
         raise MissingInput("the holiday matrix is required to build the holiday step")
-    prep = _prepare(roster, config, cycle, answers, bootstrap=bootstrap)
+    prep = _prepare(roster, config, cycle, answers, bootstrap=bootstrap, history=history)
     if not prep.availability.enabled:
         raise CycleUnavailable(prep.availability.reason, prep.availability)
     pto = _pto_prepare(pto_entries, prep.active, prep.excluded, confirmed_pto)
@@ -886,7 +1036,8 @@ def build_plan(
         hist.setdefault(n, {}).update(cells)
     try:
         rotated = rotate(prep.schedule, cfg, cycle, prep.rotation_answers, people=active,
-                         history=hist, replaces=prep.applied.replaces if prep.applied else None)
+                         history=hist, replaces=prep.applied.replaces if prep.applied else None,
+                         pattern_plans=prep.pattern_plans)
     except MissingAnswers as exc:
         raise NeedsAnswers([MissingAnswer("rotation", n, r) for n, r in exc.reasons.items()]) from exc
     except InvalidAnswers as exc:
@@ -913,9 +1064,11 @@ def build_plan(
                 preserved[(p.name, d)] = cells[d]
     base = apply_edits(rotated.schedule, preserved)
 
+    hints = works_hints(prep.pattern_plans)
     rule = shift_group_rule(
         base, lambda n: team_of_name[n], minimum_for,
-        lambda n: cfg.min_staff_mode_for_team(team_of_name[n]) == PER_TEAM_DAY)
+        lambda n: cfg.min_staff_mode_for_team(team_of_name[n]) == PER_TEAM_DAY,
+        works_hint=hints)
     pto_result = apply_pto(base, pto.entries, cycle, confirmed_pto, min_staff_for=rule,
                            preserved=preserved)
     with_pto = apply_edits(base, pto_result.edits)
@@ -939,10 +1092,11 @@ def build_plan(
     flags: list[Flag] = []
     for i, (seg_start, seg_end) in enumerate(segments):
         counters = build_counters_from_schedule(prep.schedule, active, holiday_matrix,
-                                                seg_start.year, cfg, seg_start, disconnect)
+                                                seg_start.year, cfg, seg_start, disconnect,
+                                                works_hint=hints)
         result = assign_holidays(with_pto, active, matrix_eff, counters, cfg, seg_start, seg_end,
                                  seed=seed_used, inherited_counters=inherited,
-                                 pool_average_seats=average_seats)
+                                 pool_average_seats=average_seats, works_hint=hints)
         hol_edits.update(result.edits)
         assignments.extend(_assignment_dict(a) for a in result.assignments)
         engine_flags.extend(result.flags)
@@ -960,6 +1114,8 @@ def build_plan(
                 f"for {seg_start.isoformat()}..{seg_end.isoformat()}"
                 + ("" if in_file else " (after the end of the roster file; apply it when the "
                    "new year's matrix is supplied)"), date=seg_start))
+    for first, message in holiday_roster_warnings(holiday_matrix, cycle):
+        flags.append(Flag("HOLIDAY_ROSTER_MAY_BE_INCOMPLETE", "WARNING", message, date=first))
     for d in skipped_days:
         flags.append(Flag("DISCONNECT_HOLIDAY_SKIPPED", "INFO",
                           f"{d.isoformat()} is inside a December Disconnect window: no HOL "
@@ -973,7 +1129,8 @@ def build_plan(
         draft[n].update(final[n])
     cannot_meet = {(f.team, f.shift, f.date) for f in engine_flags if f.kind == "CANNOT_MEET_MINIMUM"}
     flags += _draft_flags(roster, active, cfg, holiday_matrix, draft, final, cycle, last_date,
-                          disconnect, frozenset(coverage), cannot_meet)
+                          disconnect, frozenset(coverage), cannot_meet, master=prep.schedule,
+                          program_hol=frozenset(hol_edits), hints=hints)
     for f in engine_flags:
         if f.kind == "STAFFING_SHORTAGE":
             continue  # reported by the staffing check below
@@ -1012,6 +1169,16 @@ def build_plan(
     if prep.applied is not None:
         for note in prep.applied.notes:
             flags.append(Flag("CHANGE_NOTE", "INFO", note))
+    for gid, gp in sorted(prep.pattern_plans.items()):
+        if gp.detected:
+            flags.append(Flag("PATTERN_CONTINUED", "INFO", gp.detection.summary(cycle.start)
+                              + f" ({gp.detection.reason}; source: {gp.detection.source})"))
+        else:
+            flags.append(Flag(
+                "PATTERN_NOT_DETECTED", "WARNING",
+                f"pattern group {gid}: no stable weekly pattern was found ({gp.detection.reason}); "
+                "its people are copied forward like PERMANENT (or as answered): check the "
+                "weekend and on-call cells", team=gid))
 
     # ---- step 6: assemble --------------------------------------------------------------
     edits: Edits = {}
@@ -1031,7 +1198,9 @@ def build_plan(
     for (n, d), raw in sorted(preserved.items()):
         flags.append(Flag("PRESERVED_LEAVE", "INFO",
                           f"{n} {d.isoformat()}: the existing {raw.strip()!r} is leave and was "
-                          "kept; the draft does not rewrite this cell", n, d))
+                          "kept; the draft does not rewrite this cell (already in the master "
+                          "roster; not added by this run)", n, d, origin="master"))
+    flags.extend(internal_stray_hol({**edits, **remainder}, with_pto, active, holiday_matrix, cfg))
     overwritten: dict[str, int] = {}
     for (n, d), t in edits.items():
         existing = prep.schedule[n].get(d, "") or ""
@@ -1048,10 +1217,16 @@ def build_plan(
                                                        sorted(overwritten.items())) + ")"))
 
     config_out = copy.deepcopy(cfg)
+    for gid, gp in prep.pattern_plans.items():  # keep the learned pattern for the next run
+        if gp.detected:
+            for old in [k for k in config_out.pattern_groups if name_key(k) == name_key(gid)]:
+                del config_out.pattern_groups[old]
+            config_out.pattern_groups[gid] = gp.detection.to_config()
     for p in active:
         state = derive_state({d: t for d, t in final[p.name].items()}, cycle)
         cp = config_out.find(p.name)
-        if state is None or cp is None or state.code == cp.shift:
+        if (state is None or cp is None or state.code == cp.shift
+                or cp.rotation is Rotation.PATTERN):
             continue
         if not is_shift_canonical(state.code):
             continue
@@ -1062,7 +1237,12 @@ def build_plan(
                               f"{p.name}: the config shift was not updated to {state.code}", p.name))
 
     existing = _existing_findings(roster, active, cfg, holiday_matrix, prep.schedule,
-                                  cycle.first_month.year, disconnect)
+                                  cycle.first_month.year, disconnect, hints=hints)
+
+    pattern_works = {}
+    for name, hint in hints.items():
+        bits = "".join("1" if hint(d) else "0" for d in cycle_dates)
+        pattern_works[name] = {"start": cycle.start.isoformat(), "works": bits}
 
     run_info = {
         "library_version": LIBRARY_VERSION, "library_commit": library_commit,
@@ -1080,10 +1260,14 @@ def build_plan(
                    "holiday_rows": len(holiday_matrix.holidays),
                    "history_supplied": history is not None, "bootstrap": bootstrap},
         "availability": {"enabled": prep.availability.enabled, "reason": prep.availability.reason,
-                         "coverage": prep.availability.coverage},
+                         "coverage": prep.availability.coverage,
+                         "weeks_checked": prep.availability.weeks_checked,
+                         "weeks_total": prep.availability.weeks_total},
         "year_boundary": _year_boundary(cycle, last_date),
         "segments": [{"start": s.isoformat(), "end": e.isoformat()} for s, e in segments],
         "disconnect_days": len(disconnect),
+        "pattern_groups": [gp.report() for _, gp in sorted(prep.pattern_plans.items())],
+        "pattern_works": pattern_works,
         "counts": {"edits": len(edits), "remainder_edits": len(remainder),
                    "holiday_edits": len(hol_edits), "pto_edits": len(pto_result.edits),
                    "preserved_leave": len(preserved)},

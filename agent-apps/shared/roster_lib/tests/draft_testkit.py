@@ -44,6 +44,7 @@ class FakeFlag:
     date: Optional[date] = None
     team: Optional[str] = None
     shift: Optional[str] = None
+    origin: Optional[str] = None
 
 
 @dataclass
@@ -108,7 +109,8 @@ def make_plan(info: FixtureInfo, *, n_people: int = 6, start=date(2026, 1, 4), e
     if flags is None:
         flags = [
             FakeFlag("k-err", "STAFFING_SHORTAGE", "ERROR", "Team DIS has 2 of 3 on Shift-1", None, date(2026, 1, 14), "DIS", "S1"),
-            FakeFlag("k-warn", "HOL_ON_WEEKLY_OFF", "WARNING", "HOL on a weekly off", info.people[1].name, date(2026, 1, 17)),
+            FakeFlag("k-warn", "HOL_ON_WEEKLY_OFF", "WARNING", "HOL on a weekly off", info.people[1].name, date(2026, 1, 17),
+                     origin="master"),
             FakeFlag("k-info", "CHANGE_NOTE", "INFO", "note"),
         ]
     plan = FakePlan(

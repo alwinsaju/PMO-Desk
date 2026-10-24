@@ -500,12 +500,14 @@ def candidate_cycles(first: date, last: date) -> list[Cycle]:
 
 
 def cycle_is_filled(cycle: Cycle, schedule: Mapping[str, Mapping[date, str]],
-                    names: Sequence[str], threshold: float) -> bool:
+                    names: Sequence[str], threshold: float,
+                    data_range: tuple[date, date] | None = None) -> bool:
     """True when the cycle itself already holds data in the roster file, by the library's own
     "has data" rule (a cycle that runs past the file end never counts: its remainder lives in
-    the next-year file)."""
+    the next-year file). With `data_range` (the roster file's first and last date) a cycle that
+    starts before the file's first date counts as filled when its in-file weeks have data."""
     return cycle_availability(next_cycle(cycle), schedule, names, counts_as_code,
-                              threshold).enabled
+                              threshold, data_range=data_range).enabled
 
 
 def read_selected_cycle(paths: Paths) -> Cycle:

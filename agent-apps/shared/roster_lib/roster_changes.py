@@ -51,6 +51,7 @@ from .codes import counts_as_code, partner_shift
 from .config import Person, Rotation, RotationConfig, name_key
 from .cycles import Cycle, cycle_containing, next_cycle, previous_cycle
 from .roster_io import Person as RosterPerson
+from .pattern_rotation import GroupPlan, plan_pattern_groups
 from .rotation import InvalidAnswers, MissingAnswers, _read_answer, derive_state
 
 Schedule = Mapping[str, Mapping[date, str]]
@@ -100,7 +101,7 @@ class AskMeItem:
     name: str
     current_shift: str | None  # canonical code, or the custom text; None if unknown
     current_pattern: str | None  # "MON_FRI" / "WED_SUN"; None if unknown
-    category: str  # ASK_ME | UNCLASSIFIED | NEW_SEAT | AUTO_SWAP (needs an answer)
+    category: str  # ASK_ME | UNCLASSIFIED | NEW_SEAT | AUTO_SWAP | PATTERN_NOT_DETECTED
     current_text: str | None = None
     reason: str = ""
 
@@ -176,7 +177,8 @@ def apply_changes(
                 replaced_by[old_key] = new.name
                 fields = dict(team=old.person.team, subteam=old.person.subteam,
                               rotation=old.person.rotation, shift=old.person.shift,
-                              location=location or old.person.location)
+                              location=location or old.person.location,
+                              pattern_group=old.person.pattern_group)
                 _store(new_config, new, fields)
                 applied.inherited_counters[new.name] = old.name
                 applied.notes.append(f"{new.name} replaces {old.name}: inherits "
@@ -195,8 +197,10 @@ def apply_changes(
                 code, pattern, _ = _read_answer(new.name, {"shift": seat.get("shift"),
                                                            "pattern": seat.get("pattern")}, None)
                 subteam = str(seat["subteam"]).strip() if seat.get("subteam") else None
+                group = str(seat["pattern_group"]).strip() if seat.get("pattern_group") else None
                 _store(new_config, new, dict(team=str(seat["team"]).strip(), subteam=subteam,
-                                             rotation=rotation, shift=code, location=loc))
+                                             rotation=rotation, shift=code, location=loc,
+                                             pattern_group=group))
                 applied.pool_average_seats.add(new.name)
                 applied.rotation_answers[new.name] = {"shift": code, "pattern": pattern.name}
                 applied.notes.append(f"{new.name}: new seat; holiday counter starts at the pool "
@@ -223,8 +227,14 @@ def ask_me_list(
     prev_schedule: Schedule,
     cycle: Cycle | None = None,
     replaces: Mapping[str, str] | None = None,
+    pattern_plans: Mapping[str, GroupPlan] | None = None,
 ) -> list[AskMeItem]:
-    """Who the ask-me form must ask, in roster order; see the module docstring."""
+    """Who the ask-me form must ask, in roster order; see the module docstring.
+
+    PATTERN people whose group has no detected pattern are asked too (`PATTERN_NOT_DETECTED`;
+    answering KEEP copies their week forward like PERMANENT). `pattern_plans` come from
+    `pattern_rotation.plan_pattern_groups` over the whole roster; when not given they are
+    computed from `prev_schedule` alone."""
     if cycle is None:
         dates = [d for cells in prev_schedule.values() for d in cells]
         if not dates:
@@ -237,12 +247,29 @@ def ask_me_list(
     def cells_of(name: str) -> dict[date, str]:
         return {d: t for d, t in prev_schedule.get(name, {}).items() if prev.contains(d)}
 
+    if pattern_plans is None:
+        pattern_plans = (plan_pattern_groups(config, names, prev_schedule, cycle)
+                         if any(p.rotation is Rotation.PATTERN for p in config.people) else {})
+    pattern_of = {name_key(m): gp for gp in pattern_plans.values() for m in gp.members}
+
     items: list[AskMeItem] = []
     for name in names:
         cp = config.find(name)
         if cp is None:
             continue
         state = derive_state(cells_of(name), prev)
+        if cp.rotation is Rotation.PATTERN:
+            gp = pattern_of.get(name_key(name))
+            if gp is not None and gp.detected and name in gp.detection.templates:
+                continue  # the pattern decides: nothing to ask
+            items.append(AskMeItem(
+                name, state.label if state else None,
+                state.pattern.name if state and state.pattern else None,
+                "PATTERN_NOT_DETECTED", state.text if state else None,
+                f"pattern group {cp.pattern_group}: "
+                + (gp.detection.reason if gp is not None else "the group has no data")
+                + "; answer KEEP to copy the week forward like PERMANENT"))
+            continue
         shift = state.label if state else None
         pattern = state.pattern.name if state and state.pattern else None
         text = state.text if state else None

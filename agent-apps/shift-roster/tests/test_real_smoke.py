@@ -66,7 +66,11 @@ def test_real_files_prepare_analyze_build_draft_and_diff(tmp_path):
     assert [c["id"] for c in opts["cycles"]] == [
         "2025-12", "2026-02", "2026-04", "2026-06", "2026-08", "2026-10", "2026-12", "2027-02"]
     assert [c["id"] for c in opts["cycles"] if c["enabled"]] == ["2026-10", "2026-12"]
-    assert opts["default"] == "2026-12" and opts["problems"] == []
+    assert opts["default"] == "2026-12"
+    # the real Holiday Roster 2026 has only the assumed 1 Jan 2027 row for 2027: the Dec-Jan
+    # cycle stays selectable but carries the (non-blocking) completeness warning
+    assert [(x["severity"], "only 1 row(s) for 2027" in x["message"]) for x in opts["problems"]]         == [("warning", True)]
+    assert opts["problems"][0]["message"].startswith("Dec 2026:")
     source = opts["holiday_source"]
     assert source["kind"] == "reference" and source["file"] == HOLIDAYS.name
     assert {2026, 2027} <= set(source["covers_years"])

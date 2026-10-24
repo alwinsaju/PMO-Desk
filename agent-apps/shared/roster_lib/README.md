@@ -25,11 +25,23 @@ API: `Cycle(first_month, start, end, rotation_sunday)` (+ `.label`, `.days`,
 `crosses_date(c, last_column_date)`, `split_at_year_boundary(c, last_date)` ->
 `(part_in_file, remainder)` as `DateSpan | None`,
 `cycle_availability(cycle, cells, active_people, counts_as_code, threshold=0.95,
-bootstrap=False)` -> `Availability(enabled, reason, coverage, failing_people)`.
+bootstrap=False, data_range=None)` -> `Availability(enabled, reason, coverage,
+failing_people, weeks_checked, weeks_total)`.
 A cycle is selectable only if every active person has a shift/leave code in at
 least `threshold` of the previous cycle's weeks; `bootstrap=True` allows a
 previous cycle with no data at all. `cells` is `{person: {date: raw text}}`, so
 it does not depend on the workbook reader.
+
+`data_range=(first date, last date)` of the roster file makes the rule work for a NEXT-YEAR
+file, which starts part-way through the Dec-Jan cycle (e.g. Sat 2027-01-02): only the weeks of
+the previous cycle that do not start before the file's first date are judged (numerator and
+denominator; the rest are in the previous year's file) and at least one must exist; the reason
+says so ("Checked 4 of 9 weeks of the previous cycle that are inside this file (the rest are in
+the previous year's file)"). A week running past the file's LAST date is not excluded: it counts
+as missing, so the OLD year's file does not enable the cycle after a Dec-Jan cycle that
+crossed its end (the latest weeks are in the next-year file). Without `data_range` every week
+counts (the old behaviour). `previous_cycle_weeks_in_file(cycle, data_range)` returns the weeks
+judged and left out.
 
 ### `codes.py` - code normalizer and table
 
@@ -76,7 +88,11 @@ writes deterministically (people sorted by name, fixed key order). Schema is in
 the module docstring; see `examples/rotation_config.example.json`.
 Rotation categories: `PERMANENT` (copy forward), `AUTO_SWAP` (flip to the
 partner of the OBSERVED shift; weekly-off pattern follows the new code), `ASK_ME`,
-`UNCLASSIFIED` (asked every run). The listed `shift`/`partner` of an AUTO_SWAP person
+`UNCLASSIFIED` (asked every run), `PATTERN` (a periodic weekly template shared by a group, see
+`pattern_rotation.py`: each PATTERN person has a `pattern_group` id; the optional top-level
+`pattern_groups[id]` holds `period_weeks`, `anchor` (a Sunday) and the learned `template`;
+`pattern_min_confidence`, default 0.95, is the agreement needed to accept a detected pattern;
+validated, saved deterministically, `cfg.pattern_group_members()` / `pattern_group_settings(id)`). The listed `shift`/`partner` of an AUTO_SWAP person
 is only a snapshot: shifts may be changed by hand in the roster between cycles, so the
 rotation reads each person's shift from the previous cycle (`rotation.derive_state`: the
 last full weeks win, a manual change inside the cycle is respected) and swaps THAT one
@@ -255,6 +271,13 @@ last full weeks, custom time-range text copied verbatim).
   string for that code (previous cycle, then `history`) -> the team's most common
   string for it in the previous cycle -> the person's own string restyled
   (`Shift-1` -> `Shift-2`) -> canonical `Shift-N`.
+- PATTERN: `rotate(..., pattern_plans=None)` takes the group plans of
+  `pattern_rotation.plan_pattern_groups` (computed from the whole `prev_schedule` + `history` when
+  not given) and writes each member's exact template cells; a group without a stable pattern
+  asks its people like ASK_ME (`PATTERN_NOT_DETECTED`; answer `KEEP` = PERMANENT copy-forward).
+  PATTERN people take no part in the headcount comparison or in `ShiftChange`s.
+  `RotationResult.pattern_groups` carries the plans. `derive_state` ignores weeks that are only
+  partly inside the supplied cells (a next-year file starts mid-cycle).
 - `headcount_by_shift(schedule, roster_people, date)`; the rotation warns when a
   team's headcount per shift differs before/after (new seats excluded).
 - Missing answers raise `MissingAnswers(.names, .reasons)`; unusable ones raise
@@ -272,6 +295,52 @@ keeps the current pattern if the shift is unchanged, else the code's default
 (S2/S4 are always Wed-Sun; asking for S2 with MON_FRI is invalid). `ShiftChange`
 carries person, old/new shift, `effective` (rotation Sunday), `first_worked`, and
 old/new pattern.
+
+### `pattern_rotation.py` - periodic weekly templates (PATTERN)
+
+Some teams do not swap a plain shift: a GROUP shares a duty that moves between people on a
+timetable (Device Support: three people take turns on the weekend shift with Sunday on-call
+and two of them swap their weekday shifts every six weeks; CMS 2.0: two people alternate
+on-call weekends). Each person's week (Sun..Sat, 7 raw texts) is one of a few templates and the
+sequence of templates repeats with a period of P weeks.
+
+- `detect_pattern(cells_by_person, weeks, *, group, min_confidence=0.95, max_period=52,
+  min_overlap=6, period=None) -> PatternDetection`: the smallest P at which week i equals week
+  i-P (cell tokens: `S3`, `OC`, a custom time range, blank; "ON-call"/"On call" are one code;
+  leave codes P/T/SL/HOL/COMP and weeks before a person's first non-blank cell are wildcards)
+  with at least `min_confidence` agreement over at least `min_overlap` compared weeks. A long
+  period needs P + `min_overlap` weeks of history; with fewer the group is NOT detected (never
+  guessed). `period` forces P (config override; one compared week is enough). The template of
+  each phase is the per-cell consensus: a cell's own shorter cycle (the weekend duty repeats
+  every 9 weeks inside the 36-week pattern) outvotes a one-off exception, a pattern seen twice is
+  kept. Raw texts are the most frequent ones each person used.
+- `PatternDetection`: `detected`, `period`, `confidence`, `overlap_weeks`, `anchor` (the Sunday
+  that starts template 0), `source` (`history` / `stored` / `override`), `templates` (name -> P
+  weeks x 7 raw texts), `observed` (last weeks and their phases), `phase_of(sunday)`,
+  `works(name, date)`, `duty()` (weekend/on-call channel: its own period, people, weeks per
+  turn), `summary(start)` ("support: 36-week pattern (3 people share the weekend/on-call duty,
+  repeating every 9 weeks, 3 week(s) per turn), continuing from week 12 of 36"),
+  `to_config()`.
+- `continue_pattern(detection, cycle)`: every cell of the cycle with the exact raw strings. The
+  phase is `((sunday - anchor).days // 7) % P`: pure date arithmetic, never reset at a cycle or
+  year boundary; cycles are whole Sunday-Saturday weeks, so a weekend that starts on the last
+  Saturday of one cycle and ends with the Sunday on-call of the next is covered once.
+- `plan_pattern_groups(config, roster_names, schedule, cycle, history=None)` -> `{group:
+  GroupPlan}` (`detected`, `rows()`, `report()` for the analysis / run info). Order: detect from
+  the history before the cycle; else use the state stored in `config.pattern_groups[id]` when the
+  weeks that are in the file agree with it (the next-year file holds only a few weeks); else not
+  detected. `build_plan` stores the learned period, anchor and templates in `config_after`.
+- Checks: a PATTERN person's weekly offs are the blank cells of their template. `works_hints`
+  (`cycle_builder`) feeds `PersonCells(hint=...)`, `hol_check`, `staffing_check`,
+  `assign_holidays`, `build_counters_from_schedule` and `shift_group_rule` (`works_hint=`) so the
+  Mon-Fri / Wed-Sun inference never overrules the template (no false `HOL_ON_WEEKLY_OFF`); an `OC`
+  cell is a working code with no lane as usual. `run_info["pattern_works"]` keeps the hints for
+  the re-checker of the diff step.
+- `seed_config`: the names file may list `"pattern": [{"group": "id", "names": [...],
+  "period_weeks": N}]`; the group's templates are learned from the whole roster and stored.
+  `suggest_pattern_groups(schedule, people, last_date=...)` proposes groups from the data
+  (people of one section with on-call cells whose templates repeat together); the seed report
+  lists them as `pattern_suggestions`.
 
 ### `pto.py` - Step 3 PTO import
 
@@ -330,7 +399,7 @@ tests or docs.
 
 ### `checks.py`
 
-- `staffing_check(schedule, people, config, start, end, team_of=None) ->
+- `staffing_check(schedule, people, config, start, end, team_of=None, works_hint=None) ->
   [Shortage(team, shift, date, have, need)]`: per (team, shift code, day) for the
   shifts ACTIVE that day, people WORKING (a shift code in the cell; not leave, HOL,
   blank, on-call or custom hours) against `min_staff_for_team`. A shift is active
@@ -437,7 +506,11 @@ What the UI shows before building. `Analysis` fields: `cycle`, `previous_cycle`,
 `unmatched`, `dropped_excluded`, `error` for a bad PTO workbook), `year_boundary`
 (crosses, in-file span, remainder span), `holiday_matrix` (present, errors, rows in
 the cycle, years without rows), `active_count`, `excluded_people`, `unclassified`,
-`blockers`; `ready` is true when nothing blocks `build_plan`. `to_dict()`/`to_json()`.
+`blockers`, `pattern_groups` (one report per PATTERN group: detected, period, agreement, source,
+phase the cycle starts at, summary); `availability` also carries `weeks_checked` / `weeks_total`
+(a next-year file judges only the previous-cycle weeks inside it); `holiday_matrix` carries
+`may_be_incomplete` (see `holiday_roster_warnings`). `ready` is true when nothing blocks
+`build_plan`. `to_dict()`/`to_json()`.
 
 ### `build_plan(roster, config, cycle, answers=None, *, holiday_matrix, pto_entries=None, confirmed_pto=None, seed=None, history=None, bootstrap=False, library_commit=None) -> Plan`
 
@@ -484,8 +557,11 @@ version and optional commit); `existing_roster_findings` (HOL check and staffing
 the EXISTING roster for the cycle's calendar year, for the Draft Summary).
 `to_json()` is deterministic (same inputs, byte-identical text); `Plan.from_json`.
 
-`Flag(kind, severity, message, person, date, team, shift)`, severity ERROR / WARNING /
-INFO, sorted by severity then date. `Flag.key` is a stable identity string
+`Flag(kind, severity, message, person, date, team, shift, origin)`, severity ERROR / WARNING /
+INFO, sorted by severity then date. `origin` says where the cell behind a HOL flag came from:
+`master` (already in the roster file, not added by this run: the message ends "already in the
+master roster; not added by this run"), `program` (written by this run) or `user` (typed into
+the draft, set by the re-checker); it is not part of `key` and is `None` on other flags. `Flag.key` is a stable identity string
 (`kind|person|date|team|shift`, empty where absent; a flag with none of them also carries a
 short digest of its message) so two runs can be compared: `flag_delta(before, after) ->
 (new, resolved, remaining)`. `make_rechecker(roster, config, cycle, holiday_matrix, plan)`
@@ -501,8 +577,16 @@ headcount per shift; not the plan-time rotation, PTO or unclassified flags). Kin
 its minimum even before leave; per_team_day teams use the effective minimum instead), `ROTATION_WARNING`, `UNCLASSIFIED_PERSON`, `CHANGE_NOTE`,
 `CONFIG_NOT_UPDATED`; `YEAR_BOUNDARY`, `HOLIDAY_MATRIX_NO_ROWS` (a calendar year of the
 cycle has no matrix rows: error inside the file, warning beyond it),
-`DISCONNECT_HOLIDAY_SKIPPED`, `OVERWRITES_EXISTING`, `PRESERVED_LEAVE`. Flagged problems are
-never fixed.
+`HOLIDAY_ROSTER_MAY_BE_INCOMPLETE` (WARNING, non-blocking: for a calendar-year piece of the cycle
+the Holiday Roster has fewer than 3 rows in that year or no row inside the piece other than a 1
+January row, so a Feb-Mar draft built from a Holiday Roster holding only the assumed 1 Jan 2027
+row would silently get no holidays; `holiday_roster_warnings(matrix, cycle)`; also in
+`options.json` problems), `DISCONNECT_HOLIDAY_SKIPPED`, `OVERWRITES_EXISTING`, `PRESERVED_LEAVE`
+(origin `master`), `INTERNAL_STRAY_HOL_WRITTEN` (ERROR, never expected: the holiday engine wrote
+a HOL where the person's location is not ticked, or on a day they do not work; the self-check
+`internal_stray_hol` runs on every plan), `PATTERN_CONTINUED` (INFO: what a PATTERN group was
+detected as and where it resumed) and `PATTERN_NOT_DETECTED` (WARNING: no stable pattern; the
+people are asked, KEEP copies forward). Flagged problems are never fixed.
 `headcount_table(schedule, people, config, cycle)` gives per team: headcount, people per
 shift, spec minimum, `mode` and whether that minimum is attainable (per shift, or for the
 whole team under key `ALL` for a per_team_day team; feeds the min-staff proposal written by
@@ -559,7 +643,8 @@ The cells are patched into a copy of the master (`xlsx_patch`), then these sheet
 appended: `Draft Summary` (counts, flags by severity and kind, HOL check on the draft,
 existing-roster findings, year-boundary note), `Shift changes`, `Holiday assignments`,
 `Flags` (red rows for errors, amber for warnings, plain info; columns severity, kind,
-person, date, message, team, shift, key), `Run log` (master / matrix / PTO / config file
+person, date, message, team, shift, key, origin), a "Pattern groups" table and the counts of
+HOL written by this run versus HOL kept from the master in the Draft Summary, `Run log` (master / matrix / PTO / config file
 names and sha256, cycle, config version, seed, library version and commit, creation time,
 approver placeholder, plan hash) and the **veryHidden** `_snapshot`. A sidecar
 `<draft>.snapshot.json` carries the same snapshot plus the flags the plan raised.

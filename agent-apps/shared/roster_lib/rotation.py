@@ -54,6 +54,12 @@ Rotation rules
                    the previous cycle (ties: alphabetical);
                 3. the person's own string restyled (`Shift-1` -> `Shift-2`);
                 4. canonical `Shift-N`.
+  PATTERN     a group whose members share a periodic weekly template (a weekend duty with
+              Sunday on-call moving between people, on-call weekends alternating, ...):
+              `pattern_rotation` detects the templates and the phase from the whole roster and
+              continues them (the exact raw cell texts) with the phase running on by date. No
+              stable pattern -> the people are asked like ASK_ME (`PATTERN_NOT_DETECTED`,
+              answer KEEP = copy forward like PERMANENT); nothing is guessed.
   ASK_ME / UNCLASSIFIED / no previous data: from `answers`.
 
 Swap Sunday: nothing special is coded; the plain pattern rule gives the verified
@@ -87,6 +93,7 @@ from .codes import (
 )
 from .config import Rotation, RotationConfig, name_key
 from .cycles import Cycle, previous_cycle, weeks
+from .pattern_rotation import GroupPlan, plan_pattern_groups
 from .roster_io import Person as RosterPerson
 
 Schedule = Mapping[str, Mapping[date, str]]
@@ -142,6 +149,7 @@ class RotationResult:
     changes: list[ShiftChange] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     old_states: dict[str, PersonState] = field(default_factory=dict)
+    pattern_groups: dict[str, GroupPlan] = field(default_factory=dict)  # PATTERN groups
 
     @property
     def edits(self) -> dict[tuple[str, date], str]:
@@ -167,10 +175,12 @@ class _Week:
     sunday: date
     kinds: list[str]  # per day: W working, L leave/on-call, O blank, U unrecognised
     working: list[tuple[date, tuple, str]]  # (date, code key, raw)
+    partial: bool = False  # only part of the week lies inside the supplied cells (file edge)
 
     @property
     def clean(self) -> bool:
-        return "U" not in self.kinds and len({k for _, k, _ in self.working}) == 1
+        return (not self.partial and "U" not in self.kinds
+                and len({k for _, k, _ in self.working}) == 1)
 
     @property
     def key(self) -> tuple:
@@ -189,7 +199,12 @@ class _Week:
 def _read_weeks(cells: Mapping[date, str], prev: Cycle) -> tuple[list[_Week], int]:
     out: list[_Week] = []
     unparseable = 0
-    for sunday, _ in weeks(prev):
+    # A week that starts before the first supplied date (a next-year file begins part-way
+    # through the Dec-Jan cycle) or ends after the last one is only partly in the file: it is
+    # never evidence of the shift, only the weeks fully inside the file are.
+    lo, hi = (min(cells), max(cells)) if cells else (None, None)
+    for sunday, saturday in weeks(prev):
+        partial = lo is not None and (sunday < lo or saturday > hi)
         kinds, working = [], []
         for i in range(7):
             d = sunday + timedelta(days=i)
@@ -207,7 +222,7 @@ def _read_weeks(cells: Mapping[date, str], prev: Cycle) -> tuple[list[_Week], in
                 key = (CUSTOM, _custom_key(parsed.custom or "")) if parsed.is_custom \
                     else (parsed.canonical, "")
                 working.append((d, key, raw))
-        out.append(_Week(sunday, kinds, working))
+        out.append(_Week(sunday, kinds, working, partial))
     return out, unparseable
 
 
@@ -387,8 +402,11 @@ def rotate(
     people: Sequence[RosterPerson] | None = None,
     history: Schedule | None = None,
     replaces: Mapping[str, str] | None = None,
+    pattern_plans: Mapping[str, GroupPlan] | None = None,
 ) -> RotationResult:
-    """Build the new cycle's schedule (no leave); see the module docstring."""
+    """Build the new cycle's schedule (no leave); see the module docstring. `pattern_plans`
+    (from `pattern_rotation.plan_pattern_groups`, computed from `prev_schedule`/`history` when
+    not given) are the PATTERN groups of this cycle."""
     prev = previous_cycle(cycle)
     answers_by_key = {name_key(k): v for k, v in (answers or {}).items()}
     replaces_by_key = {name_key(k): v for k, v in (replaces or {}).items()}
@@ -405,6 +423,15 @@ def rotate(
             return rp.team_label
         cp = config.find(name)
         return (cp.subteam or cp.team) if cp else ""
+
+    if pattern_plans is None:
+        pattern_plans = (plan_pattern_groups(config, names, prev_schedule, cycle, history=history)
+                         if any(p.rotation is Rotation.PATTERN for p in config.people) else {})
+    pattern_of: dict[str, GroupPlan] = {}
+    pattern_rows: dict[str, dict[date, str]] = {}
+    for gp in pattern_plans.values():
+        for member in gp.members:
+            pattern_of[name_key(member)] = gp
 
     states: dict[str, PersonState | None] = {}
     source: dict[str, str] = {}  # whose cells a person's state/history comes from
@@ -463,6 +490,16 @@ def rotate(
         if cp is None:
             missing[name] = "not in the rotation config (apply roster changes first)"
             continue
+        if cp.rotation is Rotation.PATTERN:
+            gp = pattern_of.get(name_key(name))
+            if gp is not None and gp.detected and name in gp.detection.templates:
+                pattern_rows[name] = gp.rows()[name]
+            elif has_answer:
+                use_answer(name, state)
+            else:
+                why = gp.detection.reason if gp is not None else "the group has no data"
+                missing[name] = f"PATTERN_NOT_DETECTED ({cp.pattern_group}): {why}"
+            continue
         if state is None:
             if has_answer:
                 use_answer(name, None)
@@ -515,6 +552,9 @@ def rotate(
     schedule: dict[str, dict[date, str]] = {}
     changes: list[ShiftChange] = []
     for name in names:
+        if name in pattern_rows:
+            schedule[name] = pattern_rows[name]
+            continue
         code, text, pattern = plan[name]
         row: dict[date, str] = {}
         d = cycle.start
@@ -531,7 +571,8 @@ def rotate(
 
     warnings.extend(_headcount_warnings(names, states, plan, team_of))
     return RotationResult(schedule, changes, warnings,
-                          {n: s for n, s in states.items() if s is not None})
+                          {n: s for n, s in states.items() if s is not None},
+                          dict(pattern_plans))
 
 
 def _headcount_warnings(names, states, plan, team_of) -> list[str]:
@@ -539,8 +580,8 @@ def _headcount_warnings(names, states, plan, team_of) -> list[str]:
     after: dict[str, Counter] = defaultdict(Counter)
     for name in names:
         old = states[name]
-        if old is None:
-            continue  # a new seat legitimately changes headcount
+        if old is None or name not in plan:
+            continue  # a new seat legitimately changes headcount; PATTERN people are not compared
         team = team_of(name)
         before[team][old.code if old.code != CUSTOM else old.label] += 1
         new_code, new_text, _ = plan[name]

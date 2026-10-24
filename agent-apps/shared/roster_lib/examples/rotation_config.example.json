@@ -41,6 +41,55 @@
     }
   ],
   "has_data_threshold": 0.95,
+  "pattern_min_confidence": 0.95,
+  "pattern_groups": {
+    "support-weekend": {
+      "period_weeks": 2,
+      "anchor": "2026-01-04",
+      "template": {
+        "Helen Pattern": [
+          [
+            "",
+            "Shift-3",
+            "Shift-3",
+            "Shift-3",
+            "Shift-3",
+            "Shift-3",
+            "On-call"
+          ],
+          [
+            "On-call",
+            "Shift-3",
+            "Shift-3",
+            "Shift-3",
+            "Shift-3",
+            "Shift-3",
+            ""
+          ]
+        ],
+        "Ivan Pattern": [
+          [
+            "On-call",
+            "Shift-3",
+            "Shift-3",
+            "Shift-3",
+            "Shift-3",
+            "Shift-3",
+            ""
+          ],
+          [
+            "",
+            "Shift-3",
+            "Shift-3",
+            "Shift-3",
+            "Shift-3",
+            "Shift-3",
+            "On-call"
+          ]
+        ]
+      }
+    }
+  },
   "seed": 12345,
   "people": [
     {
@@ -98,6 +147,22 @@
       "subteam": "DIS",
       "location": "Kol",
       "rotation": "UNCLASSIFIED"
+    },
+    {
+      "name": "Helen Pattern",
+      "team": "Operate",
+      "subteam": "Support",
+      "location": "Hyd",
+      "rotation": "PATTERN",
+      "pattern_group": "support-weekend"
+    },
+    {
+      "name": "Ivan Pattern",
+      "team": "Operate",
+      "subteam": "Support",
+      "location": "Hyd",
+      "rotation": "PATTERN",
+      "pattern_group": "support-weekend"
     }
   ]
 }

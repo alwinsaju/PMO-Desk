@@ -8,6 +8,7 @@ from datetime import date
 from pathlib import Path
 
 from draft_testkit import pmo_save
+from _common import Paths
 from synth import World, answer_defaults, build_world, write_run_params
 
 PTO_FIELD = "pto:Persn 07"
@@ -19,6 +20,16 @@ class Pipeline:
         self.paths = self.world.paths
         self.root = root
         self.cycle = "2026-12"
+
+    @classmethod
+    def adopt(cls, root: Path) -> "Pipeline":
+        """A pipeline over an EXISTING task folder (nothing is built)."""
+        p = object.__new__(cls)
+        p.world = None
+        p.paths = Paths(root)
+        p.root = root
+        p.cycle = "2026-12"
+        return p
 
     # ---- steps (each returns the exit code) ----
     def prepare(self) -> int:

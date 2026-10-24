@@ -15,6 +15,12 @@ writes it back deterministically. Schema (version 1):
       "excluded_section_patterns": ["Leadership", "Governance", "PMO", "Analytics"],
       "disconnect_windows": [{"start": "2026-12-25", "end": "2027-01-01"}],   # ISO dates
       "has_data_threshold": 0.95,                      # share of weeks, (0, 1]
+      "pattern_min_confidence": 0.95,                  # PATTERN detection, share of cells, (0, 1]
+      "pattern_groups": {                              # optional settings per PATTERN group
+        "support-weekend": {"period_weeks": 9,         # optional override of the detected period
+                            "anchor": "2026-01-04",    # optional: a Sunday that starts week 0
+                            "template": {...}}         # learned weekly templates (written by the
+      },                                               # program, see `pattern_rotation`)
       "seed": 12345,                                   # int, for tie-breaks
       "people": [
         {"name": "Alice Test", "team": "Operate", "subteam": "DIS",   # subteam optional;
@@ -22,7 +28,8 @@ writes it back deterministically. Schema (version 1):
          "location": "Blr",                      # a location name or its code
          "rotation": "PERMANENT",
          "shift": "S1",                          # optional snapshot of the current shift
-         "partner": "S2"}                        # AUTO_SWAP only: derived from `shift`
+         "partner": "S2",                        # AUTO_SWAP only: derived from `shift`
+         "pattern_group": "support-weekend"}     # PATTERN only (and required there)
       ]
     }
 
@@ -72,7 +79,17 @@ Rotation categories (`Rotation`):
                Mon-Fri). An observed shift with no partner (S5, NS, US-*, custom hours)
                goes to the ask-me list;
   ASK_ME       the user is asked what to do for this person;
-  UNCLASSIFIED not yet categorised; the user is asked every run.
+  UNCLASSIFIED not yet categorised; the user is asked every run;
+  PATTERN      the person's schedule follows a periodic WEEKLY TEMPLATE shared by a group
+               (`pattern_group`: e.g. three people taking turns on a weekend duty with
+               Sunday on-call). The group's templates and phase are detected from the roster
+               and continued across cycles and years by `pattern_rotation`; when no stable
+               pattern is found the group falls back to PERMANENT copy-forward and the
+               people are asked (`PATTERN_NOT_DETECTED`). `pattern_groups[id]` optionally
+               pins `period_weeks` and `anchor` and holds the learned `template` (the program
+               writes it after every run so the next-year file, which holds only a few weeks,
+               can continue the rotation). Members of a group are the people carrying its
+               `pattern_group`; every PATTERN person needs one, no other category may have one.
 
 `load_config` / `parse_config` raise `ConfigError` listing ALL problems found.
 Names are matched case- and whitespace-insensitively via `name_key`.
@@ -103,12 +120,16 @@ DEFAULT_TEAM_ALIASES = {"L2": "DIS"}
 DEFAULT_EXCLUDED_SECTIONS = ("Governance",)
 DEFAULT_EXCLUDED_SECTION_PATTERNS = ("Leadership", "Governance", "PMO", "Analytics")
 DEFAULT_HAS_DATA_THRESHOLD = 0.95
+DEFAULT_PATTERN_MIN_CONFIDENCE = 0.95
+MAX_PATTERN_PERIOD_WEEKS = 104
 DEFAULT_SEED = 0
 
 _TOP_KEYS = {"version", "location_codes", "min_staff", "min_staff_mode", "team_aliases", "excluded_sections",
-             "excluded_section_patterns", "disconnect_windows", "has_data_threshold", "seed",
-             "people"}
-_PERSON_KEYS = ("name", "team", "subteam", "location", "rotation", "shift", "partner")
+             "excluded_section_patterns", "disconnect_windows", "has_data_threshold",
+             "pattern_min_confidence", "pattern_groups", "seed", "people"}
+_PERSON_KEYS = ("name", "team", "subteam", "location", "rotation", "shift", "partner",
+                "pattern_group")
+_GROUP_KEYS = {"period_weeks", "anchor", "template"}
 
 
 @dataclass(frozen=True)
@@ -130,6 +151,7 @@ class Rotation(Enum):
     AUTO_SWAP = "AUTO_SWAP"
     ASK_ME = "ASK_ME"
     UNCLASSIFIED = "UNCLASSIFIED"
+    PATTERN = "PATTERN"
 
 
 class ConfigError(ValueError):
@@ -159,6 +181,7 @@ class Person:
     subteam: str | None = None
     shift: str | None = None
     partner: str | None = None
+    pattern_group: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         out: dict[str, Any] = {}
@@ -208,6 +231,8 @@ class RotationConfig:
     has_data_threshold: float = DEFAULT_HAS_DATA_THRESHOLD
     seed: int = DEFAULT_SEED
     version: int = CONFIG_VERSION
+    pattern_min_confidence: float = DEFAULT_PATTERN_MIN_CONFIDENCE
+    pattern_groups: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     # -- lookups ---------------------------------------------------------------
     def find(self, name: str) -> Person | None:
@@ -224,6 +249,23 @@ class RotationConfig:
 
     def people_by_rotation(self, rotation: Rotation) -> list[Person]:
         return [p for p in self.people if p.rotation is rotation]
+
+    def pattern_group_settings(self, group_id: str) -> dict[str, Any]:
+        """The optional `pattern_groups` entry of a group (empty when none), id matched
+        case- and whitespace-insensitively."""
+        key = _label_key(group_id)
+        for gid, group in self.pattern_groups.items():
+            if _label_key(gid) == key:
+                return group
+        return {}
+
+    def pattern_group_members(self) -> dict[str, list[Person]]:
+        """PATTERN people by group id (people in config order)."""
+        out: dict[str, list[Person]] = {}
+        for p in self.people:
+            if p.rotation is Rotation.PATTERN and p.pattern_group:
+                out.setdefault(p.pattern_group, []).append(p)
+        return out
 
     def team_of(self, subject: Any) -> str | None:
         """Team name for a section title (str), a `roster_io.Person` (its `section`) or a
@@ -355,6 +397,10 @@ class RotationConfig:
             "disconnect_windows": [w.to_dict() for w in sorted(
                 self.disconnect_windows, key=lambda w: (w.start, w.end))],
             "has_data_threshold": self.has_data_threshold,
+            "pattern_min_confidence": self.pattern_min_confidence,
+            "pattern_groups": {k: _group_to_dict(self.pattern_groups[k])
+                               for k in sorted(self.pattern_groups,
+                                               key=lambda v: (_label_key(v), v))},
             "seed": self.seed,
             "people": [p.to_dict() for p in sorted(self.people,
                                                    key=lambda p: (name_key(p.name), p.name))],
@@ -388,6 +434,11 @@ class RotationConfig:
                                 f"{shift or p.shift} (expected {expected})")
         elif p.partner is not None:
             problems.append(f"{label}: partner is only valid for AUTO_SWAP")
+        if p.rotation is Rotation.PATTERN:
+            if not isinstance(p.pattern_group, str) or not p.pattern_group.strip():
+                problems.append(f"{label}: a PATTERN person needs a pattern_group (a non-empty id)")
+        elif p.pattern_group is not None:
+            problems.append(f"{label}: pattern_group is only valid for PATTERN")
         return problems
 
     def _normalized(self, p: Person) -> Person:
@@ -404,6 +455,7 @@ class RotationConfig:
             location=p.location.strip(),
             shift=shift,
             partner=partner,
+            pattern_group=" ".join(p.pattern_group.split()) if p.pattern_group else None,
         )
 
 
@@ -446,6 +498,87 @@ def _windows(raw: Any, problems: list[str]) -> list[DateWindow]:
     for a, b in zip(ordered, ordered[1:]):
         if b.start <= a.end:
             problems.append(f"disconnect_windows overlap: {a.start}..{a.end} and {b.start}..{b.end}")
+    return out
+
+
+def _group_to_dict(group: Mapping[str, Any]) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    if group.get("period_weeks") is not None:
+        out["period_weeks"] = group["period_weeks"]
+    if group.get("anchor") is not None:
+        out["anchor"] = group["anchor"]
+    if group.get("template") is not None:
+        template = group["template"]
+        out["template"] = {n: [list(week) for week in template[n]]
+                           for n in sorted(template, key=lambda v: (name_key(v), v))}
+    return out
+
+
+def _pattern_groups(raw: Any, problems: list[str]) -> dict[str, dict[str, Any]]:
+    """Validate `pattern_groups`: id -> {period_weeks?, anchor?, template?}."""
+    if not isinstance(raw, dict):
+        problems.append("pattern_groups must be an object of group id -> settings")
+        return {}
+    out: dict[str, dict[str, Any]] = {}
+    seen: set[str] = set()
+    for gid, entry in raw.items():
+        label = f"pattern_groups[{gid!r}]"
+        if not isinstance(gid, str) or not gid.strip():
+            problems.append("pattern_groups has an invalid group id (a non-empty string is needed)")
+            continue
+        key = _label_key(gid)
+        if key in seen:
+            problems.append(f"{label}: duplicate group id (ids match case-insensitively)")
+            continue
+        seen.add(key)
+        if not isinstance(entry, dict):
+            problems.append(f"{label}: must be an object")
+            continue
+        for k in sorted(set(entry) - _GROUP_KEYS):
+            problems.append(f"{label}: unknown field {k!r}")
+        group: dict[str, Any] = {}
+        period = entry.get("period_weeks")
+        if period is not None:
+            if not _is_int(period) or not 1 <= period <= MAX_PATTERN_PERIOD_WEEKS:
+                problems.append(f"{label}: period_weeks must be an integer from 1 to "
+                                f"{MAX_PATTERN_PERIOD_WEEKS}, got {period!r}")
+            else:
+                group["period_weeks"] = period
+        anchor = entry.get("anchor")
+        if anchor is not None:
+            try:
+                anchor_date = date.fromisoformat(anchor)
+            except (TypeError, ValueError):
+                problems.append(f"{label}: anchor must be an ISO date (YYYY-MM-DD), got {anchor!r}")
+            else:
+                if anchor_date.weekday() != 6:
+                    problems.append(f"{label}: anchor {anchor} must be a Sunday (week 0 starts "
+                                    "on a Sunday)")
+                else:
+                    group["anchor"] = anchor
+        template = entry.get("template")
+        if template is not None:
+            ok = (isinstance(template, dict) and template
+                  and all(isinstance(n, str) and n.strip() and isinstance(weeks_, list) and weeks_
+                          and all(isinstance(w, list) and len(w) == 7
+                                  and all(isinstance(c, str) for c in w) for w in weeks_)
+                          for n, weeks_ in template.items()))
+            lengths = {len(v) for v in template.values()} if ok else set()
+            if not ok or len(lengths) != 1:
+                problems.append(f"{label}: template must map each member name to a list of weeks, "
+                                "each a list of 7 cell texts, all members with the same number "
+                                "of weeks")
+            else:
+                n_weeks = lengths.pop()
+                if group.get("period_weeks") not in (None, n_weeks):
+                    problems.append(f"{label}: period_weeks {group['period_weeks']} does not match "
+                                    f"the template length {n_weeks}")
+                if "anchor" not in group:
+                    problems.append(f"{label}: a template needs an anchor (the Sunday of its "
+                                    "week 0)")
+                group["template"] = {n: [list(w) for w in weeks_] for n, weeks_ in template.items()}
+                group.setdefault("period_weeks", n_weeks)
+        out[gid.strip()] = group
     return out
 
 
@@ -542,6 +675,15 @@ def parse_config(data: Any) -> RotationConfig:
         problems.append(f"has_data_threshold must be a number in (0, 1], got {threshold!r}")
         threshold = DEFAULT_HAS_DATA_THRESHOLD
 
+    pattern_conf = data.get("pattern_min_confidence", DEFAULT_PATTERN_MIN_CONFIDENCE)
+    if (isinstance(pattern_conf, bool) or not isinstance(pattern_conf, (int, float))
+            or not 0 < pattern_conf <= 1):
+        problems.append(f"pattern_min_confidence must be a number in (0, 1], got {pattern_conf!r}")
+        pattern_conf = DEFAULT_PATTERN_MIN_CONFIDENCE
+    pattern_groups: dict[str, dict[str, Any]] = {}
+    if "pattern_groups" in data:
+        pattern_groups = _pattern_groups(data["pattern_groups"], problems)
+
     seed = data.get("seed", DEFAULT_SEED)
     if not _is_int(seed):
         problems.append(f"seed must be an integer, got {seed!r}")
@@ -555,7 +697,8 @@ def parse_config(data: Any) -> RotationConfig:
         team_aliases=team_aliases, excluded_sections=excluded_sections,
         excluded_section_patterns=patterns, disconnect_windows=windows,
         has_data_threshold=float(threshold), seed=seed,
-        version=CONFIG_VERSION,
+        version=CONFIG_VERSION, pattern_min_confidence=float(pattern_conf),
+        pattern_groups=pattern_groups,
     )
 
     raw_people = data.get("people")
@@ -591,6 +734,7 @@ def parse_config(data: Any) -> RotationConfig:
             subteam=entry.get("subteam"),
             shift=entry.get("shift"),
             partner=entry.get("partner"),
+            pattern_group=entry.get("pattern_group"),
         )
         person_problems = cfg._person_problems(person, label)
         problems.extend(person_problems)
@@ -603,6 +747,18 @@ def parse_config(data: Any) -> RotationConfig:
         if not person_problems:
             cfg.people.append(cfg._normalized(person))
 
+    members = {gid: {name_key(p.name) for p in people}
+               for gid, people in cfg.pattern_group_members().items()}
+    by_key = {_label_key(g): g for g in members}
+    for gid, group in pattern_groups.items():
+        known = by_key.get(_label_key(gid))
+        if known is None:
+            problems.append(f"pattern_groups[{gid!r}]: no PATTERN person has this pattern_group")
+            continue
+        for member in (group.get("template") or {}):
+            if name_key(member) not in members[known]:
+                problems.append(f"pattern_groups[{gid!r}].template: {member!r} is not a member "
+                                "of the group")
     if problems:
         raise ConfigError(problems)
     return cfg

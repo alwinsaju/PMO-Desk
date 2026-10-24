@@ -234,7 +234,8 @@ def flag_key(flag: Any) -> str:
 def flag_dict(flag: Any) -> dict[str, Any]:
     return {"key": flag_key(flag), "kind": _get(flag, "kind", ""), "severity": _get(flag, "severity", ""),
             "message": _get(flag, "message", ""), "person": _get(flag, "person"),
-            "date": _iso(_get(flag, "date")), "team": _get(flag, "team"), "shift": _get(flag, "shift")}
+            "date": _iso(_get(flag, "date")), "team": _get(flag, "team"), "shift": _get(flag, "shift"),
+            "origin": _get(flag, "origin")}
 
 
 _SEV_RANK = {"ERROR": 0, "WARNING": 1, "INFO": 2}
@@ -342,12 +343,23 @@ def _summary_sheet(plan: Any, roster: Roster, cells: Cells, flags: list[dict[str
         _kv("People", len({n for n, _ in cells})),
         _kv("Shift changes", len(_get(plan, "shift_changes", []) or [])),
         _kv("Holiday assignment groups", len(_get(plan, "holiday_assignments", []) or [])),
+        _kv("HOL cells written by this run", sum(1 for t in cells.values() if (t or "").strip().upper() == "HOL")),
+        _kv("HOL cells already in the master (kept, not written by this run)",
+            sum(1 for t in (_get(plan, "preserved", {}) or {}).values() if (t or "").strip().upper() == "HOL")),
         _kv("Flags: errors", sev.get("ERROR", 0), "flag_red" if sev.get("ERROR") else None),
         _kv("Flags: warnings", sev.get("WARNING", 0), "flag_amber" if sev.get("WARNING") else None),
         _kv("Flags: info", sev.get("INFO", 0)),
         _kv("Year boundary", _boundary_note(plan, roster), "wrap"),
     ]
     rows += _table("Flags by kind", ["Kind", "Count"], [[k, v] for k, v in sorted(by_kind.items())])
+    groups = (_get(plan, "run_info", {}) or {}).get("pattern_groups") or []
+    if groups:
+        rows += _table(
+            "Pattern groups (weekly template rotations)",
+            ["Group", "Detected", "Period (weeks)", "Agreement", "Source", "What was found"],
+            [[g.get("group"), "yes" if g.get("detected") else "NO", g.get("period_weeks"),
+              g.get("confidence"), g.get("source"), clean_text(g.get("summary", ""))] for g in groups],
+            note="A group with no detected pattern is copied forward and flagged PATTERN_NOT_DETECTED.")
     hol = {k: v for k, v in by_kind.items() if k.startswith("HOL_")}
     rows += _table("HOL check on the draft", ["Kind", "Count"], [[k, v] for k, v in sorted(hol.items())],
                    note="Result of the holiday check on the draft cycle (details on the Flags sheet).")
@@ -409,15 +421,15 @@ def _holiday_sheet(plan: Any) -> SheetSpec:
 
 
 def _flags_sheet(flags: list[dict[str, Any]]) -> SheetSpec:
-    rows: list[list[Any]] = [[Cell(h, "header") for h in ("Severity", "Kind", "Person", "Date", "Message", "Team", "Shift", "Key")]]
+    rows: list[list[Any]] = [[Cell(h, "header") for h in ("Severity", "Kind", "Person", "Date", "Message", "Team", "Shift", "Key", "Origin")]]
     styles: dict[int, str] = {}
     for f in flags:
         style = _sev_style(f["severity"])
         if style:
             styles[len(rows)] = style
         rows.append([f["severity"], f["kind"], f["person"], _to_date(f["date"]), clean_text(f["message"]),
-                     f["team"], f["shift"], f["key"]])
-    return SheetSpec(FLAGS_SHEET, rows, col_widths=[10, 26, 26, 12, 90, 14, 10, 40], freeze="A2",
+                     f["team"], f["shift"], f["key"], f.get("origin")])
+    return SheetSpec(FLAGS_SHEET, rows, col_widths=[10, 26, 26, 12, 90, 14, 10, 40, 10], freeze="A2",
                      tab_color="C00000", row_styles=styles)
 
 

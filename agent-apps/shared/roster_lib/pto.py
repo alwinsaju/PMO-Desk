@@ -305,6 +305,7 @@ def shift_group_rule(
     team_of: Callable[[str], str],
     minimum_for: Callable[[str], int | None],
     per_team_day: Callable[[str], bool] | None = None,
+    works_hint: Mapping[str, Callable[[date], bool | None]] | None = None,
 ) -> Callable[[str, date], tuple[Hashable, int] | None]:
     """Build a `min_staff_for` for `apply_pto`: group = (team, canonical shift on that day).
 
@@ -314,7 +315,8 @@ def shift_group_rule(
     every working cell, with the EFFECTIVE minimum min(minimum, members of the team
     scheduled that day before leave/HOL) (see `checks.effective_min`).
     """
-    cells = {n: PersonCells(c) for n, c in schedule.items()} if per_team_day else {}
+    cells = ({n: PersonCells(c, (works_hint or {}).get(n)) for n, c in schedule.items()}
+             if per_team_day else {})
     scheduled: dict[tuple[str, date], int] = {}
 
     def team_scheduled(team: str, d: date) -> int:

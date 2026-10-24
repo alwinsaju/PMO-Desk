@@ -78,7 +78,7 @@ import hashlib
 import logging
 from dataclasses import dataclass
 from datetime import date
-from typing import Collection, Iterable, Mapping
+from typing import Callable, Collection, Iterable, Mapping
 
 from .checks import (
     ALL_SHIFTS,
@@ -180,6 +180,7 @@ def _location_map(matrix: HolidayMatrix, config: RotationConfig | None) -> dict[
 def build_counters_from_schedule(
     schedule: Schedule, people: Iterable, matrix: HolidayMatrix, year: int,
     config: RotationConfig | None, cycle_start: date, disconnect_dates: Collection[date] = (),
+    works_hint: Mapping[str, Callable[[date], bool | None]] | None = None,
 ) -> Counters:
     """Counters for every India-based person from an existing schedule (see module docs)."""
     locs = _location_map(matrix, config)
@@ -191,7 +192,7 @@ def build_counters_from_schedule(
         if loc not in india:
             continue
         cells = schedule.get(person.name) or {}
-        pc = PersonCells(cells)
+        pc = PersonCells(cells, (works_hint or {}).get(person.name))
         offs, last = 0, None
         for d in sorted(cells):
             if d.year != year or d >= cycle_start or d in skip or pc.canon(d) != HOL:
@@ -200,7 +201,10 @@ def build_counters_from_schedule(
                       if h.type is HolidayType.COMMON and loc in h.off_locations]
             if not common:
                 continue  # stray, or a location-specific holiday: not counted
-            pattern = pc.pattern_on(d)
+            hinted = pc.hint(d) if pc.hint else None
+            if hinted is False:
+                continue  # HOL on a weekly off of the person's weekly template
+            pattern = None if hinted else pc.pattern_on(d)
             if pattern is not None and not works_on(pattern, d):
                 continue  # HOL on a weekly off
             offs += 1
@@ -273,6 +277,7 @@ def assign_holidays(
     config: RotationConfig, start: date, end: date, *, seed: int | None = None,
     inherited_counters: Mapping[str, str] | None = None,
     pool_average_seats: Collection[str] = (),
+    works_hint: Mapping[str, Callable[[date], bool | None]] | None = None,
 ) -> HolidayResult:
     """Compute the HOL edits for every holiday in start..end (see the module docstring)."""
     seed = config.seed if seed is None else seed
@@ -283,7 +288,8 @@ def assign_holidays(
     team_of = {p.name: config.team_of(p) or p.section for p in people}
     team_day = {t for t in set(team_of.values())
                 if config.min_staff_mode_for_team(t) == PER_TEAM_DAY}
-    cells_of = {p.name: PersonCells(schedule.get(p.name) or {}) for p in people}
+    cells_of = {p.name: PersonCells(schedule.get(p.name) or {}, (works_hint or {}).get(p.name))
+                for p in people}
     india_people = [p for p in people if loc_of[p.name] in india]
 
     before, average = _seed_counters(counters, india_people, inherited_counters or {},
@@ -391,7 +397,8 @@ def assign_holidays(
     if holiday_dates:
         wanted = set(holiday_dates)
         for s in staffing_check(result_schedule, people, config, holiday_dates[0],
-                                holiday_dates[-1], team_of=lambda p: team_of[p.name]):
+                                holiday_dates[-1], team_of=lambda p: team_of[p.name],
+                                works_hint=works_hint):
             if s.date in wanted and (s.team, s.shift, s.date) not in flagged_groups:
                 flags.append(HolidayFlag(
                     "STAFFING_SHORTAGE", s.date, s.team, s.shift, s.have, s.need,

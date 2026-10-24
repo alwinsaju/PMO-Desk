@@ -268,3 +268,44 @@ def test_no_script_deletes_the_stored_holiday_roster(tmp_path):
     p.run_to_diff()
     assert p.finalize() == 0
     assert p.paths.holidays.is_file() and p.paths.holidays.read_bytes() == before
+
+
+def test_next_year_file_makes_the_next_cycle_selectable(tmp_path):
+    """The PMO uploads the 2027 file produced by finalize as `roster` for Feb-Mar 2027: only the
+    previous-cycle weeks inside that file are judged (it starts on Sat 2027-01-02)."""
+    import shutil
+
+    p = Pipeline(tmp_path / "t")
+    p.run_to_diff()
+    assert p.finalize() == 0
+    nxt = p.paths.final_dir / "roster - 2027.xlsx"
+    root = tmp_path / "t2"
+    (root / "input").mkdir(parents=True)
+    (root / "output").mkdir()
+    (root / "config").mkdir()
+    shutil.copyfile(nxt, root / "input" / "roster.xlsx")
+    shutil.copyfile(p.paths.config, root / "config" / "rotation-config.json")
+    shutil.copyfile(p.paths.holidays, root / "input" / "holiday-roster.xlsx")
+    p2 = Pipeline.adopt(root)
+    assert p2.prepare() == 0
+    opts = options(p2)
+    assert opts["roster"]["first_date"] == "2027-01-02"
+    cycles = by_id(opts)
+    feb = cycles["2027-02"]
+    assert feb["enabled"] and (feb["weeks_checked"], feb["weeks_total"]) == (4, 9)
+    assert ("Checked 4 of 9 weeks of the previous cycle that are inside this file "
+            "(the rest are in the previous year's file)") in feb["reason"]
+    assert feb["filled"] is False and opts["default"] == "2027-02"
+    # the Dec-Jan cycle (part of it is in this file) already holds data; its own previous cycle
+    # (Oct-Nov) is entirely in the previous year's file; the cycle after Feb-Mar is not ready
+    assert cycles["2026-12"]["filled"] is True and not cycles["2026-12"]["enabled"]
+    assert not cycles["2027-04"]["enabled"]
+    # the whole pipeline runs for the cycle
+    assert p2.analyze("2027-02") == 0
+    analysis = json.loads(p2.paths.analysis.read_text(encoding="utf-8"))
+    assert analysis["availability"]["weeks_checked"] == 4 and analysis["cycle"]["previous"] == "Dec 2026"
+    assert analysis["analysis"]["changes"]["new"] == []
+    p2.answer()
+    assert p2.build_draft() == 0
+    plan = json.loads(p2.paths.plan.read_text(encoding="utf-8"))
+    assert plan["run_info"]["previous_cycle"] == "Dec 2026" and plan["remainder_edits"] == []

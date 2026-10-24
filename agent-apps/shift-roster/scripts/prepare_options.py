@@ -45,7 +45,7 @@ from _common import (
 )
 from roster_lib.codes import counts_as_code
 from roster_lib.config import RotationConfig
-from roster_lib.cycle_builder import active_people
+from roster_lib.cycle_builder import active_people, holiday_roster_warnings
 from roster_lib.cycles import cycle_availability, previous_cycle, split_at_year_boundary
 
 
@@ -116,9 +116,11 @@ def build_options(paths: Paths) -> dict[str, Any]:
     entries: list[dict[str, Any]] = []
     cycles_by_id = {}
     for cycle in candidate_cycles(roster.first_date, roster.last_date):
-        avail = cycle_availability(cycle, schedule, names, counts_as_code, threshold)
+        avail = cycle_availability(cycle, schedule, names, counts_as_code, threshold,
+                                   data_range=(roster.first_date, roster.last_date))
         in_file, remainder = split_at_year_boundary(cycle, roster.last_date)
-        filled = cycle_is_filled(cycle, schedule, names, threshold)
+        filled = cycle_is_filled(cycle, schedule, names, threshold,
+                                 (roster.first_date, roster.last_date))
         enabled, reason = avail.enabled, avail.reason
         source = pick_source(candidates, cycle_years(cycle))
         missing = years_without_holidays(cycle, source) if source else []
@@ -135,6 +137,12 @@ def build_options(paths: Paths) -> dict[str, Any]:
         elif enabled and filled:
             reason += " This cycle already has data in the roster file."
         cycles_by_id[cycle_id(cycle)] = cycle
+        warnings: list[str] = []
+        if enabled and not filled and source is not None:
+            warnings = [m for _, m in holiday_roster_warnings(source.matrix, cycle)]
+            for message in warnings:
+                problems.append(problem("warning", f"{cycle.label}: {message} "
+                                                   f"(Holiday Roster: {source.file})"))
         entries.append({
             "id": cycle_id(cycle),
             "label": cycle_range_label(cycle),
@@ -146,6 +154,9 @@ def build_options(paths: Paths) -> dict[str, Any]:
             "filled": filled,
             "previous": previous_cycle(cycle).label,
             "crosses_file_end": in_file is not None and remainder is not None,
+            "weeks_checked": avail.weeks_checked,
+            "weeks_total": avail.weeks_total,
+            "warnings": warnings,
         })
     options["cycles"] = entries
 

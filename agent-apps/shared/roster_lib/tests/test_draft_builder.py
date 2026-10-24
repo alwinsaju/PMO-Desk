@@ -132,6 +132,9 @@ def test_flags_sheet_colours_and_columns(setup):
     assert ws.cell(amber, 4).value.date() == date(2026, 1, 17)
     assert ws.cell(amber, 3).value == info.people[1].name
     assert ws.cell(red, 8).value == "k-err"
+    # the Origin column is appended (older readers keep working: columns 1-8 are unchanged)
+    assert ws.cell(1, 9).value == "Origin"
+    assert ws.cell(amber, 9).value == "master" and ws.cell(red, 9).value is None
     assert ws.freeze_panes == "A2"
     assert [ws.cell(r, 1).value for r in range(2, 5)] == ["ERROR", "WARNING", "INFO"]
 
@@ -142,6 +145,8 @@ def test_summary_and_other_sheets_content(setup):
     texts = {str(c.value) for row in wb[SUMMARY_SHEET].iter_rows() for c in row if c.value is not None}
     assert "Cells written into the roster" in texts and str(len(plan.edits)) in texts
     assert "HOL check on the draft" in texts and "HOL_ON_WEEKLY_OFF" in texts
+    assert "HOL cells written by this run" in texts
+    assert "HOL cells already in the master (kept, not written by this run)" in texts
     assert any(t.startswith("Existing roster findings 2026") for t in texts)
     assert "MISSING" in texts  # existing roster finding
     assert any("cycle ends inside the roster file" in t for t in texts)

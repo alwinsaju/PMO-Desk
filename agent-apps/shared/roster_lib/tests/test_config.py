@@ -48,7 +48,7 @@ def test_example_loads_and_covers_all_categories():
     assert cfg.seed == 12345 and cfg.has_data_threshold == 0.95
     assert cfg.min_staff == {"DIS": 3, "DEP": 3, "L3": 3, "default": 2}
     assert cfg.team_aliases == {"L2": "DIS", "L N S 2.0": "LNS 2.0"}
-    assert len(cfg.people) == 7
+    assert len(cfg.people) == 9
 
 
 def test_example_is_canonical_form(tmp_path):
@@ -59,7 +59,7 @@ def test_example_is_canonical_form(tmp_path):
 
 def test_example_uses_only_synthetic_names():
     allowed = {"Alice Test", "Bob Sample", "Carol Example", "Dave Demo", "Erin Placeholder",
-               "Frank Mock", "Grace Fixture"}
+               "Frank Mock", "Grace Fixture", "Helen Pattern", "Ivan Pattern"}
     assert {p.name for p in load_config(EXAMPLE).people} == allowed
 
 

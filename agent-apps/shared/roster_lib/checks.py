@@ -176,8 +176,14 @@ _VOTES = {
 class PersonCells:
     """One person's cells with cached parsing, nearest-shift lookup and pattern inference."""
 
-    def __init__(self, cells: Mapping[date, str]):
+    def __init__(self, cells: Mapping[date, str],
+                 hint: Callable[[date], bool | None] | None = None):
+        """`hint(d)` (optional) says whether the person's weekly TEMPLATE has them working on
+        `d` (True), off (False) or knows nothing (None); a PATTERN person's weekly offs are
+        whatever blank cells their template has, so the Mon-Fri / Wed-Sun inference below
+        yields to it."""
         self.cells = cells
+        self.hint = hint
         self._canon: dict[date, str] = {}
         self._shift_dates: list[date] | None = None
         self._week_pattern: dict[date, Pattern | None] = {}
@@ -268,6 +274,9 @@ def scheduled_on(pc: PersonCells, d: date) -> bool:
     if is_working_code(canon):
         return True
     if canon in LEAVE_CODES:
+        hinted = pc.hint(d) if pc.hint else None
+        if hinted is not None:
+            return hinted
         if pc.nearest_shift_code(d) is None:
             return False
         pattern = pc.pattern_on(d)
@@ -305,7 +314,9 @@ class Shortage:
 
 
 def staffing_check(schedule: Schedule, people: Iterable, config, start: date, end: date, *,
-                   team_of: Callable[[object], str | None] | None = None) -> list[Shortage]:
+                   team_of: Callable[[object], str | None] | None = None,
+                   works_hint: Mapping[str, Callable[[date], bool | None]] | None = None
+                   ) -> list[Shortage]:
     """Shortages per (team, shift code, day) for shifts active that day, and per (team, day)
     for `per_team_day` teams (`shift == ALL_SHIFTS`). Never auto-fixes."""
     team_fn = team_of or config.team_of
@@ -319,7 +330,7 @@ def staffing_check(schedule: Schedule, people: Iterable, config, start: date, en
         team = team_fn(person)
         if not team:
             continue
-        pc = PersonCells(cells)
+        pc = PersonCells(cells, (works_hint or {}).get(person.name))
         if config.min_staff_mode_for_team(team) == PER_TEAM_DAY:
             for d in days:
                 canon = pc.canon(d)
@@ -338,6 +349,11 @@ def staffing_check(schedule: Schedule, people: Iterable, config, start: date, en
             elif canon in LEAVE_CODES:
                 code = pc.nearest_shift_code(d)
                 if code is None:
+                    continue
+                hinted = pc.hint(d) if pc.hint else None
+                if hinted is not None:
+                    if hinted:
+                        members[(team, code, d)] += 1
                     continue
                 pattern = pc.pattern_on(d)
                 if pattern is not None and works_on(pattern, d):
@@ -416,6 +432,7 @@ def hol_check(schedule: Schedule, people: Iterable, matrix: HolidayMatrix,
               coverage_ok: CoverageOk | None = None,
               ignore_dates: Collection[date] = (),
               ignore_label_pattern: "re.Pattern[str] | str | None" = DEFAULT_NON_HOLIDAY_LABELS,
+              works_hint: Mapping[str, Callable[[date], bool | None]] | None = None,
               ) -> list[Finding]:
     """Structured HOL findings for start..end (see the module docstring for the semantics)."""
     ignored = frozenset(ignore_dates)
@@ -430,7 +447,7 @@ def hol_check(schedule: Schedule, people: Iterable, matrix: HolidayMatrix,
         if not cells:
             continue
         loc = resolve_location(person.location_code, matrix.location_codes)
-        pc = PersonCells(cells)
+        pc = PersonCells(cells, (works_hint or {}).get(person.name))
         for d in days:
             if d in ignored or d not in cells:
                 continue
@@ -450,7 +467,14 @@ def hol_check(schedule: Schedule, people: Iterable, matrix: HolidayMatrix,
                         f"{person.name} ({loc}) has HOL on {_fmt(d)} but {loc} has no holiday "
                         "that day (not ticked in the Holiday Roster)"))
                     continue
-                pattern = pc.pattern_on(d)
+                hinted = pc.hint(d) if pc.hint else None
+                if hinted is False:
+                    findings.append(_finding(
+                        FindingKind.HOL_ON_WEEKLY_OFF, d, person.name, loc,
+                        f"{person.name} ({loc}) has HOL on {_fmt(d)}, which is a weekly off "
+                        "in their weekly template"))
+                    continue
+                pattern = None if hinted else pc.pattern_on(d)
                 if pattern is not None and not works_on(pattern, d):
                     findings.append(_finding(
                         FindingKind.HOL_ON_WEEKLY_OFF, d, person.name, loc,

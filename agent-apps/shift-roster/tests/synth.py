@@ -121,6 +121,7 @@ def write_matrix(path: Path) -> None:
         ("Test Regional Two", date(2026, 12, 17), ["Chennai"]),
         ("Test New Year", date(2027, 1, 1), india + ["Mexico"]),
         ("Test Republic Day", date(2027, 1, 26), india),
+        ("Test Spring Day", date(2027, 3, 10), india),  # >= 3 rows in 2027: roster looks complete
     ]
     for i, (name, d, off) in enumerate(rows, start=2):
         ws.cell(i, 1, name)

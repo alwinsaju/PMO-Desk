@@ -203,6 +203,31 @@ Full detail and edge cases are in `../shared/roster_lib/README.md`.
   keeps its number of date columns, has its grid cleared and then filled with the remainder, and
   carries the holiday names the matrix has for those dates. Excel recalculates it on open. Open it
   once in Excel to check it (see "Known limits" in the library README).
+- **Building the next cycle from the next-year file.** Upload that 2027 file as `roster` for the
+  Feb-Mar 2027 cycle. It starts on Sat 2 Jan, so the weeks of the Dec-Jan cycle before that are
+  in the previous year's file: the "has data" rule judges only the previous-cycle weeks that lie
+  inside the file ("Checked 4 of 9 weeks of the previous cycle that are inside this file (the
+  rest are in the previous year's file)", `weeks_checked` / `weeks_total` in `options.json`), the
+  shifts are derived from those weeks, and counters start from zero (they are per calendar
+  year). The OLD year's file does not enable the cycle after a crossing Dec-Jan cycle. A
+  PATTERN group (below) keeps its rotation phase through the learned pattern stored in the
+  config.
+- **Weekly-template groups (PATTERN).** People whose weeks follow a periodic template (Device
+  Support: three people taking turns on the weekend shift with Sunday on-call, two of them swapping
+  Shift-3/Shift-4 every six weeks, 36-week full pattern; CMS 2.0: two people alternating on-call
+  weekends) get `"rotation": "PATTERN"` and a shared `"pattern_group"`. The task detects the
+  period and phase from the roster, continues the exact cell texts (on-call included) and shows
+  "N-week pattern ... continuing from week X of N" in the analysis, the Draft Summary and an INFO
+  flag `PATTERN_CONTINUED`. When no stable pattern is found (too little history, or no repeat) the
+  group is copied forward like PERMANENT after the people are asked (`PATTERN_NOT_DETECTED`, answer
+  KEEP) and a WARNING flag says so. The detected pattern is stored in the config
+  (`pattern_groups`), so later cycles and the next-year file continue it.
+- **HOL provenance.** Every flag about a HOL cell says where it came from: `HOL_STRAY` and
+  `PRESERVED_LEAVE` on a cell that was already in the master end "already in the master roster;
+  not added by this run" and carry `origin: "master"` in `flags.json` (and the Draft's Flags tab);
+  the Draft Summary counts the HOL cells written by this run versus kept from the master. A
+  self-check, `INTERNAL_STRAY_HOL_WRITTEN` (error), would fire if the program ever wrote a HOL where
+  the location is not ticked; it never has.
 - **December Disconnect.** `disconnect_windows` days are skipped by the holiday assignment, the HOL
   check and the counters.
 
@@ -259,16 +284,22 @@ Recipes (edit `config/rotation-config.json` between runs, then start a new run):
 * change who is never touched: `excluded_sections` / `excluded_section_patterns`;
 * make a different tie-break: change `seed` (an int; the used seed is printed in the Run log of every draft);
 * change when a cycle becomes selectable: `has_data_threshold` (default 0.95);
-* change a person's category (`PERMANENT`, `AUTO_SWAP`, `ASK_ME`, `UNCLASSIFIED`): the person's `rotation`.
+* change a person's category (`PERMANENT`, `AUTO_SWAP`, `ASK_ME`, `UNCLASSIFIED`, `PATTERN`): the person's `rotation`;
+  a PATTERN person also needs a `pattern_group` (one id for everybody who shares the weekly template);
+  `pattern_groups[id]` optionally pins `period_weeks` / `anchor` and `pattern_min_confidence` (default 0.95) is the
+  agreement needed to accept a detected pattern;
 
 - `people[]`: `name`, `team`, `subteam` (= the roster section), `location`, `rotation`
-  (`PERMANENT`, `AUTO_SWAP`, `ASK_ME`, `UNCLASSIFIED`), `shift` (snapshot).
+  (`PERMANENT`, `AUTO_SWAP`, `ASK_ME`, `UNCLASSIFIED`, `PATTERN`), `shift` (snapshot),
+  `pattern_group` (PATTERN only).
 - `min_staff` and `min_staff_mode`: per team, plus a required `default`. `0` means no minimum.
 - `team_aliases`: maps a roster section title to a team (default `L2` -> `DIS`; a map in the file
   REPLACES the default, so list every alias you want).
 - `excluded_sections` / `excluded_section_patterns`: sections the program never touches.
 - `disconnect_windows`: `[{"start": "2026-12-26", "end": "2026-12-31"}]` (inclusive, ISO dates).
 - `has_data_threshold` (default 0.95) and `seed` (int, holiday tie-break).
+- `pattern_min_confidence` (default 0.95) and `pattern_groups` (optional per group: `period_weeks`,
+  `anchor`, and the learned `template`, written by the program).
 
 Changing the config after the analysis makes `build_draft.py` refuse ("the rotation config
 changed since the analysis"): start the run again.

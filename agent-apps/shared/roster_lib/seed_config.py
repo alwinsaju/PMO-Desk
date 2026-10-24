@@ -7,6 +7,9 @@ The names live in a GITIGNORED JSON file (this module and its tests contain none
      "auto_swap":   [{"shifts": ["S1", "S2"], "names": ["Full Name", ...]},
                      {"shifts": ["S3", "S4"], "names": [...]}],
      "ask_me":      [...],
+     "pattern":     [{"group": "support-weekend",           # a PATTERN group: people whose
+                      "names": ["Full Name", ...],         # weeks follow a shared periodic
+                      "period_weeks": 36}],                # template (optional override)
      "unclassified": [...],                  # optional: same as not listing them
      "not_on_roster": [...],                 # part of the team but not on the roster: never
                                              # reported as unmatched, no config entry
@@ -25,6 +28,13 @@ Rules
     location = the roster Loc resolved to a config location code; a location that
     does not resolve is reported (the person is left out of the config).
   - rotation = the listed category; anyone in scope who is not listed is UNCLASSIFIED.
+  - PATTERN groups: the members get `pattern_group`, and the group's period, anchor and weekly
+    templates are detected from the WHOLE roster and stored in `pattern_groups` (so the
+    next-year file, which has few weeks, can continue the rotation). A group that shows no
+    stable pattern is listed in the report (`pattern_not_detected`) and still seeded.
+    `suggest_pattern_groups` proposes groups from the data (people of one team who hold
+    on-call cells and whose templates interlock); the report lists them as
+    `pattern_suggestions` when the names file defines none for those people.
   - shift = the shift the person worked in the latest cycle with data
     (`rotation.derive_state`); none when it is custom hours or unknown. For AUTO_SWAP
     people the listed pair is INFORMATIONAL: the rotation derives the partner from the
@@ -48,7 +58,7 @@ import argparse
 import json
 import re
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -57,6 +67,7 @@ from .codes import partner_shift
 from .config import Person, Rotation, RotationConfig, name_key, save_config
 from .cycle_builder import active_people, headcount_table
 from .cycles import Cycle, cycle_containing, previous_cycle
+from .pattern_rotation import detect_pattern, history_weeks, plan_pattern_groups
 from .pto import match_names
 from .roster_io import Person as RosterPerson
 from .roster_io import load_roster
@@ -79,6 +90,8 @@ class SeedEntry:
     alternatives: tuple[str, ...]  # spellings of one person
     category: Rotation
     pair: tuple[str, str] | None = None  # AUTO_SWAP only
+    group: str | None = None  # PATTERN only: the pattern group id
+    period_weeks: int | None = None  # PATTERN only: optional period override
 
 
 @dataclass
@@ -108,7 +121,8 @@ def _alternatives(raw: Any, label: str) -> tuple[str, ...]:
 def parse_seed_names(data: Any) -> SeedNames:
     if not isinstance(data, Mapping):
         raise SeedNamesError("the seed-names file must be a JSON object")
-    known = {"permanent", "auto_swap", "ask_me", "unclassified", "not_on_roster", "confirmed"}
+    known = {"permanent", "auto_swap", "ask_me", "unclassified", "pattern", "not_on_roster",
+             "confirmed"}
     extra = sorted(set(data) - known)
     if extra:
         raise SeedNamesError(f"unknown key(s): {', '.join(extra)}")
@@ -125,6 +139,17 @@ def parse_seed_names(data: Any) -> SeedNames:
         for i, raw in enumerate(group.get("names") or [], start=1):
             entries.append(SeedEntry(_alternatives(raw, f"auto_swap[{g}].names[{i}]"),
                                      Rotation.AUTO_SWAP, (str(shifts[0]), str(shifts[1]))))
+    for g, group in enumerate(data.get("pattern") or [], start=1):
+        gid = group.get("group") if isinstance(group, Mapping) else None
+        period = group.get("period_weeks") if isinstance(group, Mapping) else None
+        if not isinstance(gid, str) or not gid.strip():
+            raise SeedNamesError(f"pattern[{g}]: 'group' must be a non-empty id")
+        if period is not None and (isinstance(period, bool) or not isinstance(period, int)
+                                   or not 1 <= period <= 104):
+            raise SeedNamesError(f"pattern[{g}]: 'period_weeks' must be an integer from 1 to 104")
+        for i, raw in enumerate(group.get("names") or [], start=1):
+            entries.append(SeedEntry(_alternatives(raw, f"pattern[{g}].names[{i}]"),
+                                     Rotation.PATTERN, None, " ".join(gid.split()), period))
     confirmed = data.get("confirmed") or {}
     if not isinstance(confirmed, Mapping) or not all(
             isinstance(k, str) and isinstance(v, str) for k, v in confirmed.items()):
@@ -197,6 +222,47 @@ def _match_entry(entry: SeedEntry, roster_names: Sequence[str], confirmed: Mappi
     return None, "no matching person in scope", []
 
 
+def _before_end(last_date: date) -> Cycle:
+    """A stand-in cycle that starts on the Sunday after the last whole week of the file, so
+    pattern detection reads every whole week of the roster."""
+    start = last_date + timedelta(days=1)
+    start += timedelta(days=(6 - start.weekday()) % 7)
+    return Cycle(start.replace(day=1), start, start + timedelta(days=55), start)
+
+
+def suggest_pattern_groups(schedule: Mapping[str, Mapping[date, str]],
+                           people: Sequence[RosterPerson], *, last_date: date,
+                           min_on_call: int = 3) -> list[dict[str, Any]]:
+    """Propose PATTERN groups from the data: per roster section, the people who hold at least
+    `min_on_call` on-call cells (two or more of them make a group) whose weekly templates
+    repeat together (`detect_pattern`). Each suggestion: members, whether a pattern was
+    detected, its period and confidence, and how many people share the weekend/on-call duty.
+    Nothing is applied; the PMO lists the groups in the seed file (counts go to the summary)."""
+    from .codes import OC, try_parse_code
+    by_section: dict[str, list[str]] = {}
+    for p in people:
+        cells = schedule.get(p.name) or {}
+        n_oc = sum(1 for t in cells.values()
+                   if (c := try_parse_code(t)) is not None and c.canonical == OC)
+        if n_oc >= min_on_call:
+            by_section.setdefault(p.section, []).append(p.name)
+    out = []
+    end = _before_end(last_date)
+    for section, names in sorted(by_section.items()):
+        if len(names) < 2:
+            continue
+        merged = {n: dict(schedule[n]) for n in names}
+        det = detect_pattern(merged, history_weeks(merged, end.start), group=section)
+        duty = det.duty() if det.detected else {}
+        out.append({"section": section, "members": names, "detected": det.detected,
+                    "period_weeks": det.period,
+                    "confidence": None if det.confidence is None else round(det.confidence, 4),
+                    "duty_members": duty.get("duty_members"),
+                    "duty_period_weeks": duty.get("duty_period_weeks"),
+                    "reason": det.reason})
+    return out
+
+
 def seed_config(roster, names: SeedNames, *, base: RotationConfig | None = None,
                 team: str = DEFAULT_TEAM, seed: int = DEFAULT_SEED,
                 cycle: Cycle | None = None) -> SeedResult:
@@ -251,10 +317,34 @@ def seed_config(roster, names: SeedNames, *, base: RotationConfig | None = None,
             report["listed_pair_differs"].append({  # informational: the observed shift rules
                 "name": p.name, "listed_pair": list(entry.pair), "current_shift": shift})
         config.add_person(Person(p.name, team, location, category, subteam=p.section,
-                                 shift=shift))
+                                 shift=None if category is Rotation.PATTERN else shift,
+                                 pattern_group=entry.group if category is Rotation.PATTERN
+                                 else None))
         matched[p.name] = category.value
         if category is Rotation.UNCLASSIFIED and entry is None:
             report["unclassified_people"].append(p.name)
+
+    # PATTERN groups: learn the period, anchor and templates from the whole roster
+    report["pattern_not_detected"] = []
+    pattern_groups = {p.pattern_group for p in config.people if p.rotation is Rotation.PATTERN}
+    if pattern_groups:
+        overrides = {e.group: e.period_weeks for e in chosen.values()
+                     if e.category is Rotation.PATTERN and e.period_weeks}
+        end = _before_end(roster.last_date)
+        for gid, override in sorted(overrides.items()):
+            config.pattern_groups[gid] = {"period_weeks": override}
+        plans = plan_pattern_groups(config, active_names, schedule, end)
+        for gid, gp in sorted(plans.items()):
+            if gp.detected:
+                config.pattern_groups[gid] = gp.detection.to_config()
+            else:
+                if gid not in overrides:
+                    config.pattern_groups.pop(gid, None)
+                report["pattern_not_detected"].append({"group": gid, "reason": gp.detection.reason})
+    in_pattern = {n for n, c in matched.items() if c == Rotation.PATTERN.value}
+    report["pattern_suggestions"] = [
+        g for g in suggest_pattern_groups(schedule, active, last_date=roster.last_date)
+        if not set(g["members"]) <= in_pattern]
 
     by_category: dict[str, int] = {}
     for value in matched.values():
@@ -270,6 +360,9 @@ def seed_config(roster, names: SeedNames, *, base: RotationConfig | None = None,
         "duplicates": len(report["duplicates"]),
         "location_problems": len(report["location_problems"]),
         "unlisted_unclassified": len(report["unclassified_people"]),
+        "pattern_groups": len(pattern_groups),
+        "pattern_not_detected": len(report["pattern_not_detected"]),
+        "pattern_suggestions": len(report["pattern_suggestions"]),
         "latest_cycle": cycle.label if cycle else None,
     }
     return SeedResult(config, cycle, report, summary, matched)

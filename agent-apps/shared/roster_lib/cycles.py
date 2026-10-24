@@ -156,6 +156,28 @@ class Availability:
     reason: str
     coverage: float | None  # lowest per-person share of covered weeks (None if unmeasured)
     failing_people: tuple[str, ...] = ()
+    weeks_checked: int | None = None  # previous-cycle weeks that were judged
+    weeks_total: int | None = None  # all weeks of the previous cycle
+
+
+def previous_cycle_weeks_in_file(
+    cycle: Cycle, data_range: tuple[date, date] | None
+) -> tuple[list[tuple[date, date]], list[tuple[date, date]]]:
+    """(weeks judged, weeks left out) of the PREVIOUS cycle for a roster file spanning
+    `data_range` = (first date, last date); `None` judges every week (the old rule).
+
+    A week that STARTS before the file's first date lies in the previous year's file (a
+    next-year file begins part-way through the Dec-Jan cycle): it is left out of the check.
+    A week that runs past the file's LAST date is NOT left out: the file cannot be built
+    from while the latest weeks of the previous cycle live in the next file, so those weeks
+    count as missing data (the old behaviour; this is what keeps the next cycle unavailable
+    in the old year's file once the Dec-Jan cycle crosses its end)."""
+    prev_weeks = weeks(previous_cycle(cycle))
+    if data_range is None:
+        return prev_weeks, []
+    first = data_range[0]
+    judged = [w for w in prev_weeks if w[0] >= first]
+    return judged, [w for w in prev_weeks if w[0] < first]
 
 
 def cycle_availability(
@@ -165,6 +187,7 @@ def cycle_availability(
     counts_as_code: Callable[[str], bool],
     threshold: float = DEFAULT_HAS_DATA_THRESHOLD,
     bootstrap: bool = False,
+    data_range: tuple[date, date] | None = None,
 ) -> Availability:
     """Decide whether `cycle` is selectable.
 
@@ -175,13 +198,27 @@ def cycle_availability(
     unparseable text should not count). With `bootstrap=True` a previous cycle
     with no data at all is allowed (first ever cycle); partial data is still
     judged normally. Returns the decision and a hover-friendly reason.
+
+    `data_range` = (first, last) date of the roster file. A next-year file starts part-way
+    through the Dec-Jan cycle (the earlier weeks are in the previous year's file), so only the
+    previous-cycle weeks that do not start before the file's first date are judged (numerator
+    and denominator); at least one such week must exist. See `previous_cycle_weeks_in_file`.
     """
     if not 0 < threshold <= 1:
         raise ValueError(f"threshold must be in (0, 1], got {threshold}")
     prev = previous_cycle(cycle)
     people = sorted(set(active_people))
-    prev_weeks = weeks(prev)
+    all_weeks = weeks(prev)
+    prev_weeks, left_out = previous_cycle_weeks_in_file(cycle, data_range)
+    total_all = len(all_weeks)
     needed = threshold * len(prev_weeks)
+    scope = (f"Checked {len(prev_weeks)} of {total_all} weeks of the previous cycle that are "
+             f"inside this file (the rest are in the previous year's file). "
+             if left_out else "")
+    tail = [w for w in prev_weeks if data_range is not None and w[1] > data_range[1]]
+    if tail:
+        scope += (f"{len(tail)} week(s) of the previous cycle run past the end of this file "
+                  "(they are in the next year's file), so they count as missing here.")
 
     covered: dict[str, int] = {}
     for person in people:
@@ -195,33 +232,44 @@ def cycle_availability(
             )
         )
 
+    def result(enabled: bool, reason: str, coverage, failing=()) -> Availability:
+        return Availability(enabled, reason, coverage, tuple(failing), len(prev_weeks), total_all)
+
     any_data = any(covered.values())
     if not people:
-        return Availability(False, f"{cycle.label} is unavailable: no active people were "
-                                   f"supplied to check {prev.label} against.", None)
+        return result(False, f"{cycle.label} is unavailable: no active people were "
+                             f"supplied to check {prev.label} against.", None)
+    if not prev_weeks:
+        if bootstrap:
+            return result(True, f"{cycle.label} enabled as the first cycle: no earlier data "
+                                f"({prev.label}) was expected.", 0.0)
+        return result(False, f"{cycle.label} is unavailable: there is no roster data for the "
+                             f"previous cycle ({prev.label}): none of its weeks is inside this "
+                             "file (they are in the previous year's file).", 0.0)
     if not any_data:
         if bootstrap:
-            return Availability(True, f"{cycle.label} enabled as the first cycle: "
-                                      f"no earlier data ({prev.label}) was expected.", 0.0)
-        return Availability(False, f"{cycle.label} is unavailable: there is no roster data "
-                                   f"for the previous cycle ({prev.label}).", 0.0)
+            return result(True, f"{cycle.label} enabled as the first cycle: "
+                                f"no earlier data ({prev.label}) was expected.", 0.0)
+        return result(False, f"{cycle.label} is unavailable: there is no roster data "
+                             f"for the previous cycle ({prev.label}). {scope}".rstrip(), 0.0)
 
     total = len(prev_weeks)
     lowest = min(covered.values()) / total
     failing = tuple(p for p in people if covered[p] < needed - 1e-9)
     if not failing:
-        return Availability(
+        return result(
             True,
             f"{cycle.label} enabled: every active person has a shift or leave code in at "
-            f"least {threshold:.0%} of the weeks of {prev.label} (lowest coverage {lowest:.0%}).",
+            f"least {threshold:.0%} of the weeks of {prev.label} (lowest coverage {lowest:.0%}). "
+            f"{scope}".rstrip(),
             lowest,
         )
     shown = ", ".join(failing[:5]) + (f" and {len(failing) - 5} more" if len(failing) > 5 else "")
-    return Availability(
+    return result(
         False,
         f"{cycle.label} is unavailable: {len(failing)} of {len(people)} active people have "
         f"codes in fewer than {threshold:.0%} of the weeks of {prev.label} "
-        f"(lowest coverage {lowest:.0%}); e.g. {shown}.",
+        f"(lowest coverage {lowest:.0%}); e.g. {shown}. {scope}".rstrip(),
         lowest,
         failing,
     )

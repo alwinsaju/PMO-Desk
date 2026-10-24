@@ -49,7 +49,12 @@ def test_files_written(drafted):
     assert set(flags) == {"counts", "flags"} and set(flags["counts"]) == {"error", "warning", "info"}
     assert sum(flags["counts"].values()) == len(flags["flags"]) == len(plan.flags)
     first = flags["flags"][0]
-    assert set(first) == {"key", "kind", "severity", "message", "person", "date", "team", "shift"}
+    assert set(first) == {"key", "kind", "severity", "message", "person", "date", "team", "shift",
+                          "origin"}
+    # a leave code already typed in the master is labelled as such (never mistaken for app output)
+    kept = [f for f in flags["flags"] if f["kind"] == "PRESERVED_LEAVE"]
+    assert kept and all(f["origin"] == "master" and "not added by this run" in f["message"]
+                        for f in kept)
     assert all(f["severity"] in ("error", "warning", "info") for f in flags["flags"])
     assert flags["counts"]["error"] >= 1  # the PTO name that matches nobody
 
