@@ -8,7 +8,7 @@ any step. The master roster is never modified.
 **Documents.** First run (click path, what to check in Excel, bugs, rollback):
 [`../FIRST-RUN-GUIDE.md`](../FIRST-RUN-GUIDE.md). What was decided and what is assumed:
 [`../DECISIONS-AND-ASSUMPTIONS.md`](../DECISIONS-AND-ASSUMPTIONS.md). Acceptance criteria against test evidence:
-[`../ACCEPTANCE.md`](../ACCEPTANCE.md). File and endpoint contract with the Tasks app and the backend:
+[`../ACCEPTANCE.md`](../ACCEPTANCE.md). File and endpoint contract with the Tasks app and the Tasks engine:
 [`../TASK-PLATFORM-CONTRACT.md`](../TASK-PLATFORM-CONTRACT.md). Library behavior:
 [`../shared/roster_lib/README.md`](../shared/roster_lib/README.md).
 
@@ -23,8 +23,8 @@ any step. The master roster is never modified.
     [confirm_diff gate]   -> the user confirms the changed cells
     finalize.py           -> final roster, backup, audit log, next-year file, new config
 
-The manifest is `task.json` (runtime `local`; inputs, `prepare`, steps and gates as in
-`../TASK-PLATFORM-CONTRACT.md`). `TASK.md` is the short instruction file for the runtime.
+The manifest is `task.json` (inputs, `prepare`, steps and gates as in
+`../TASK-PLATFORM-CONTRACT.md`). `TASK.md` is the task's short description (documentation only).
 The optional top-level `completedMessage` is the plain-words body of the task-complete notification
 (it says the final roster, the next-year file when there is one, and the audit log are ready in the
 output folder). `workbook_path` in `output/report-data.json` is relative to the task folder.
@@ -59,8 +59,8 @@ All of `input/`, `output/` and `config/` hold real employee data and are gitigno
 All scripts are headless (stdin closed, they never prompt), find the task folder from their own
 location (`--task-dir PATH` overrides it for tests), take no other arguments, print a few
 progress lines and, on failure, ONE `ERROR: <reason>` line on stderr with a non-zero exit code
-(`SHIFT_ROSTER_DEBUG=1` adds a traceback). Run them with the venv python:
-`..\.venv\Scripts\python.exe scripts\analyze.py`. Shared helpers: `scripts/_common.py`.
+(`SHIFT_ROSTER_DEBUG=1` adds a traceback). Run them with the Tasks engine's venv python:
+`..\..\tasks-engine\.venv\Scripts\python.exe scripts\analyze.py`. Shared helpers: `scripts/_common.py`.
 
 **`prepare_options.py`** (read-only) writes `output/options.json`: the roster's first/last date and
 people count, one entry per cycle that overlaps the roster plus the next cycle after its last
@@ -151,12 +151,12 @@ or Start); `"persist": true` keeps a file the user does upload on disk across ru
   fires when there is no 2027 row at all).
 - **Never deleted by the scripts.** No script removes anything in `input/` or in
   `shared/roster-reference/`: `analyze.py` and `diff_draft.py` only delete derived `output/` files,
-  and `finalize.py` only moves its own staging files in `output/`. The backend's clean-up below keeps
+  and `finalize.py` only moves its own staging files in `output/`. The Tasks engine's clean-up below keeps
   an uploaded Holiday Roster too.
 
 ## Clean-up after a completed run
 
-`task.json` has `"cleanup": {"onComplete": true}`. After a SUCCESSFUL run the backend deletes this
+`task.json` has `"cleanup": {"onComplete": true}`. After a SUCCESSFUL run the Tasks engine deletes this
 task's `input/` files except persisted inputs (an uploaded Holiday Roster), the manifest's `cleanup.keep`
 paths (none here) and dotfiles. So the master roster, the optional PTO import and `run-params.json`
 are removed and the next run asks for a fresh roster upload. The stale `output/options.json` (the cycle list) is cleared too. The rest of `output/` (the final roster, next-year
@@ -265,7 +265,7 @@ answer only counts for ASK_ME / UNCLASSIFIED seats and for people without any pr
 `config/backups/`; restore a backup by copying it over the config). Schema and defaults: the
 module docstring of `../shared/roster_lib/config.py` and `../shared/roster_lib/examples/
 rotation_config.example.json`. Created once from the roster and a names file with
-`cd ..\shared; ..\.venv\Scripts\python.exe -m roster_lib.seed_config --help`.
+`cd ..\shared; ..\..\tasks-engine\.venv\Scripts\python.exe -m roster_lib.seed_config --help`.
 
 **Examples** (synthetic, tracked) in `../shared/roster_lib/examples/`:
 
@@ -317,7 +317,7 @@ changed since the analysis"): start the run again.
 ## Testing
 
     cd tasks\shift-roster
-    ..\.venv\Scripts\python.exe -m pytest -q
+    ..\..\tasks-engine\.venv\Scripts\python.exe -m pytest -q
 
 Synthetic data only (`tests/synth.py` builds a roster workbook with the library's fixture, a holiday
 matrix, a PTO import and a config; the reference-file tests put their files in

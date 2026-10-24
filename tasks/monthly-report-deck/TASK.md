@@ -1,11 +1,11 @@
-# Monthly Report Deck Agent
+# Monthly Report Deck
 
 ## Purpose
-Processes a monthly ServiceNow incident export into the proven monthly trend-analysis workbook, refreshes its current-month native Excel PivotTables and linked charts, and pauses for review. This agent's scope ends at the reviewed workbook; updating the PowerPoint deck from it is handled outside this agent.
+Processes a monthly ServiceNow incident export into the proven monthly trend-analysis workbook, refreshes its current-month native Excel PivotTables and linked charts, and pauses for review. This task's scope ends at the reviewed workbook; updating the PowerPoint deck from it is handled outside this task.
 
 ## Inputs
 - `input/incident*.xlsx` - the raw ServiceNow export for one calendar month. The newest matching file is used.
-- Upload and clean-up: Run opens an upload dialog with one required input, the month's ServiceNow export, saved as `input/incident.xlsx` (matches `incident*.xlsx`; the newest match is still used). `task.json` has `cleanup: {onComplete: true}`: after a COMPLETED run the backend deletes this run's `input/` files (dotfiles aside); `reference/` (previous monthly workbooks) and `output/` are never touched, and a failed or abandoned run keeps its input.
+- Upload and clean-up: Run opens an upload dialog with one required input, the month's ServiceNow export, saved as `input/incident.xlsx` (matches `incident*.xlsx`; the newest match is still used). `task.json` has `cleanup: {onComplete: true}`: after a COMPLETED run the Tasks engine deletes this run's `input/` files (dotfiles aside); `reference/` (previous monthly workbooks) and `output/` are never touched, and a failed or abandoned run keeps its input.
 - Previous monthly workbooks (`Monthly Incidents Trend Analysis - *.xlsx`) in `reference/` and `output/` - the classification knowledge base. `prepare_data.py` discovers all of them (month read from `Trend analysis!A1`), and the newest one before the report month becomes the structural template. `output/` holds the user-reviewed deliverables and outranks `reference/` for the same month, so always leave the final corrected workbook in `output/`.
 - `reference/incident-June2026-chitra.xlsx` - June classification reference.
 - `reference/monthly trend notes (updated).docx` - business notes for trend categorization.
@@ -19,7 +19,7 @@ All inputs and outputs contain real operational data and are intentionally ignor
 
    Classification look-back: knowledge comes from ALL previous monthly workbooks, not just the template. When the newest workbook can't classify an incident, earlier months (July, August, September, ... when building October) often can; on conflict the newest month wins.
 4. The script writes `output/prepared-incidents.xlsx` with `Incidents`, static names-only `Org`, and `Review Needed` sheets. Every review row includes a `Review reason` identifying the unresolved helper field. It also writes `output/report-data.json` with metrics and paths, and `output/review-incidents.json` — the review queue (per-incident classifying fields + the Subcategory2 option vocabulary) that powers the in-app review feature.
-5. The task pauses at the `review_incidents` gate. In Agent Office / the Tasks app, the user opens the review queue, picks a Subcategory2 for each incident (saved to `output/review-resolutions.json`), and approves. The gate refuses to pass while any incident is still unclassified.
+5. The task pauses at the `review_incidents` gate. In the Tasks app, the user opens the review queue, picks a Subcategory2 for each incident (saved to `output/review-resolutions.json`), and approves. The gate refuses to pass while any incident is still unclassified.
 6. `scripts/refresh_workbook.ps1` first folds the resolutions into the staging workbook via `scripts/apply_resolutions.py` (updating both `Incidents` and `Review Needed` in place), then copies the proper workbook to `output/`, transfers values with Excel's native values-only paste so long text and reference formatting are preserved, installs the static Org lookup and review queue, and repoints only PivotTables backed by the local `Incidents` sheet. Historical pivots backed by prior workbooks or SharePoint are left untouched. It builds a hidden Deloitte-intake source (Deloitte tickets opened in the report month) for the application, priority, and `Trend analysis` pivots. On `Trend analysis` it PRESERVES the previous month: the prior current-month block (and its summary table) is frozen to static values before columns shift, a fresh intake pivot block is inserted at the far left (WIP and Cancelled stay visible so the block reconciles with Deloitte intake), the static `Total incidents` cell is rewritten to the Deloitte intake count, and the top-9 summary table (placeholders excluded, % over Deloitte intake) plus its `% of Occurence` chart are rebuilt and repointed.
 7. The task pauses at `review_workbook` so the user can inspect the generated workbook before its values are used in a deck.
 
@@ -33,7 +33,7 @@ This phase refreshes one month's raw export against the prior month's analysis w
 From this folder:
 
 ```powershell
-& ..\.venv\Scripts\python.exe -m pytest -q
+& ..\..\tasks-engine\.venv\Scripts\python.exe -m pytest -q
 ```
 
 The tests are synthetic and contain no client or PMO data.

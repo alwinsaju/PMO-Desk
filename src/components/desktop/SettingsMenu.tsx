@@ -12,6 +12,7 @@ import {
   CircleNotchIcon,
   GearSixIcon,
   LightningIcon,
+  ListChecksIcon,
   MoonIcon,
   SunIcon,
 } from "@phosphor-icons/react";
@@ -25,6 +26,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui";
 import { cn } from "@/lib/cn";
+import { useSetupUi } from "@/components/setup/setupStore";
 import { useBrand } from "@/lib/useBrand";
 import { useTheme } from "@/lib/useTheme";
 import { useEngineRestart, type EngineRestartStatus } from "./useEngineRestart";
@@ -219,7 +221,7 @@ function restartHint(status: EngineRestartStatus): string {
 /** "Restart Tasks engine" - restarts the Tasks engine this app launched,
  *  so engine code and task manifest changes load without quitting AI OS.
  *  Warns first if a task is mid-run. Only uses the app's own launcher routes
- *  (see src/lib/engineRestart.ts); never a engine action endpoint. */
+ *  (see src/lib/engineRestart.ts); never an engine action endpoint. */
 function RestartEngineRow() {
   const { status, requestRestart, confirmRestart, cancelRestart } = useEngineRestart();
   const cancelRef = useRef<HTMLDivElement>(null);
@@ -300,11 +302,27 @@ function RestartEngineRow() {
   );
 }
 
+/** "Setup and health check" - reopens the first-run setup screen (the local AI,
+ *  its model, the PMO inbox folder, classic Outlook, the Tasks engine). */
+function SetupRow() {
+  const openSetup = useSetupUi((state) => state.openSetup);
+  return (
+    <DropdownMenuItem onSelect={() => openSetup()} className="group gap-3 py-2.5">
+      <RowBody
+        icon={<ListChecksIcon size={18} weight="regular" aria-hidden />}
+        title="Setup and health check"
+        hint="Local AI, PMO inbox, Outlook, Tasks"
+      />
+    </DropdownMenuItem>
+  );
+}
+
 const settingsRows: { id: string; Row: ComponentType }[] = [
   { id: "dark-mode", Row: DarkModeRow },
   { id: "deloitte-mode", Row: DeloitteModeRow },
   { id: "hardware-acceleration", Row: HardwareAccelerationRow },
   { id: "restart-engine", Row: RestartEngineRow },
+  { id: "setup", Row: SetupRow },
 ];
 
 export function SettingsMenu() {

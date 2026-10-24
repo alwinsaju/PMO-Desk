@@ -52,9 +52,23 @@ describe("desktop packaging", () => {
     assert.match(preload, /isDesktop: true/);
     assert.match(preload, /onOpenTodo\(callback\)/);
     assert.match(preload, /setBadge\(count\)/);
+    assert.match(
+      preload,
+      /chooseFolder: \(\) => ipcRenderer\.invoke\("setup:choose-folder"\)/,
+    );
     assert.match(preload, /displayMode/);
     assert.match(preload, /display: \{/);
     assert.doesNotMatch(preload, /require\((?!"electron")/);
+  });
+
+  it("answers the setup screen's folder picker only for the main window", () => {
+    const handler =
+      /ipcMain\.handle\("setup:choose-folder", async \(event\) => \{([\s\S]*?)\n\}\);/.exec(
+        main,
+      );
+    assert.ok(handler, "main.cjs handles setup:choose-folder");
+    assert.match(handler[1], /!isFromMainWindow\(event\)/);
+    assert.match(handler[1], /properties: \["openDirectory"\]/);
   });
 
   it("reads the hardware-acceleration setting before ready and disables the GPU when OFF", () => {
@@ -103,8 +117,14 @@ describe("desktop packaging", () => {
     });
 
     it("builds the runtime before packaging", () => {
-      assert.equal(pkg.scripts["runtime:python"], "python scripts/build-python-runtime.py build");
-      assert.match(pkg.scripts["desktop:package"], /^pnpm runtime:python && pnpm build && electron-builder/);
+      assert.equal(
+        pkg.scripts["runtime:python"],
+        "python scripts/build-python-runtime.py build",
+      );
+      assert.match(
+        pkg.scripts["desktop:package"],
+        /^pnpm runtime:python && pnpm build && electron-builder/,
+      );
     });
 
     it("keeps the asar off so Python can read the task folders", () => {
@@ -114,7 +134,10 @@ describe("desktop packaging", () => {
     it("points the UI server at the bundled Python and a userData data folder, packaged builds only", () => {
       assert.match(main, /function tasksEngineEnv\(\)/);
       assert.match(main, /if \(!app\.isPackaged\) \{\s*return \{\};/);
-      assert.match(main, /path\.join\(process\.resourcesPath, "python", "pythonw\.exe"\)/);
+      assert.match(
+        main,
+        /path\.join\(process\.resourcesPath, "python", "pythonw\.exe"\)/,
+      );
       assert.match(main, /path\.join\(app\.getPath\("userData"\), "tasks-engine"\)/);
       assert.match(main, /\.\.\.tasksEngineEnv\(\),/);
     });
@@ -135,7 +158,10 @@ describe("desktop packaging", () => {
 
       it("pins the embeddable interpreter by version, URL and SHA-256", () => {
         assert.match(pin.python, /^3\.\d+\.\d+$/);
-        assert.equal(pin.url, `https://www.python.org/ftp/python/${pin.python}/python-${pin.python}-embed-amd64.zip`);
+        assert.equal(
+          pin.url,
+          `https://www.python.org/ftp/python/${pin.python}/python-${pin.python}-embed-amd64.zip`,
+        );
         assert.equal(pin.file, `python-${pin.python}-embed-amd64.zip`);
         assert.match(pin.sha256, /^[0-9a-f]{64}$/);
       });
@@ -148,7 +174,10 @@ describe("desktop packaging", () => {
       });
 
       it("covers the engine and task requirements and ships no test tools", () => {
-        const direct = ["tasks-engine/requirements.txt", "tasks/requirements.txt"].flatMap((file) =>
+        const direct = [
+          "tasks-engine/requirements.txt",
+          "tasks/requirements.txt",
+        ].flatMap((file) =>
           readFileSync(path.join(root, file), "utf8")
             .split(/\r?\n/)
             .map((line) => /^([A-Za-z0-9_.-]+)==([\w.]+)$/.exec(line.trim()))
@@ -160,7 +189,11 @@ describe("desktop packaging", () => {
           if (["pytest", "pytest-cov", "coverage", "httpx"].includes(name)) {
             assert.ok(!locked.has(name), `${name} is a test tool and is not shipped`);
           } else {
-            assert.equal(locked.get(name)?.version, version, `${name} is locked at ${version}`);
+            assert.equal(
+              locked.get(name)?.version,
+              version,
+              `${name} is locked at ${version}`,
+            );
           }
         }
         for (const name of ["pytest", "pytest-cov", "httpx", "coverage"]) {

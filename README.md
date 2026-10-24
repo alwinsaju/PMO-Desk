@@ -68,6 +68,16 @@ different folder in the installer). The installer creates Start-menu and
 desktop shortcuts; pin either to the Windows taskbar. The installed app does
 not need HTTPS, a browser tab, or a terminal.
 
+### First run on a new computer
+
+The installer carries the app, the Tasks engine, its task folders and a private Python, so Tasks work
+straight away. The local AI is not in the installer: on first start the **Set up AI OS** screen checks
+Ollama, the AI model (about 12 GB), the PMO inbox folder (is OneDrive signed in?), classic Outlook (the four
+mail tasks need it; report only) and the Tasks engine, and installs or downloads what is missing. It opens by
+itself while something required is open and from the gear menu > *Setup and health check* at any time. Task
+inputs, outputs, config and run history live in `%APPDATA%\AI OS\tasks-engine`, not in the install folder, so a
+reinstall keeps them. How to test all of this on a clean machine: [`docs/clean-machine-test.md`](./docs/clean-machine-test.md).
+
 ### Getting fixes without reinstalling
 
 An installed (packaged) build defaults to `bundled`, the production server

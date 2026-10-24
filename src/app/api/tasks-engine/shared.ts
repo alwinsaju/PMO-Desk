@@ -41,7 +41,9 @@ function configuredUrl(): string | null {
  */
 export async function isTasksEngine(url: string): Promise<boolean> {
   try {
-    const res = await fetch(`${url}/health`, { signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) });
+    const res = await fetch(`${url}/health`, {
+      signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+    });
     if (!res.ok) return false;
     const body = (await res.json()) as { service?: string };
     return body.service === "tasks-engine";
@@ -80,7 +82,11 @@ export const configuredEngineUrl = configuredUrl;
 
 /** First port in the range that nothing is listening on (null if all are taken). */
 export async function pickFreePort(): Promise<number | null> {
-  for (let port = ENGINE_PORT_START; port < ENGINE_PORT_START + ENGINE_PORT_SPAN; port++) {
+  for (
+    let port = ENGINE_PORT_START;
+    port < ENGINE_PORT_START + ENGINE_PORT_SPAN;
+    port++
+  ) {
     if (await isPortFree(port)) return port;
   }
   return null;

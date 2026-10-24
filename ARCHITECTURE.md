@@ -542,6 +542,30 @@ reinstall. Run from the repo, tasks run in place. The UI server (not the Electro
 the engine, in every mode, so dev and desktop share one launcher; main only supplies the settings above and
 stops the engine tree on quit.
 
+## First-run setup (`src/lib/setup/`, `src/components/setup/`, `/api/setup`)
+
+On a new computer the installer is enough to start AI OS, but the AI features need a few things
+the installer does not carry. The **Set up AI OS** dialog (opened at launch while something required
+is missing, unless the person chose "Not now" for exactly that list; reopened any time from Settings >
+"Setup and health check") reports each one in plain language and fixes what it can:
+
+| Check | Required | What it does |
+|---|---|---|
+| Local AI (Ollama) | yes | Finds `ollama.exe` (the AI runtime's own resolution: `AI_OS_OLLAMA_EXE`, PATH, `%LOCALAPPDATA%\Programs\Ollama`). *Install Ollama* downloads the official `OllamaSetup.exe` from ollama.com into a fresh temp folder, requires a valid Authenticode signature by "Ollama Inc.", runs it silently per user (no administrator rights), verifies with `ollama --version`, and deletes the download. A blocked download (company proxy) ends in manual steps; the installer is never run unverified. |
+| AI model | yes | `gemma4:12b` (the runtime's default; fallback `qwen3.5:9b`) through Ollama's own `/api/pull`, with progress, speed and time left, retry with pauses (Ollama resumes partial files), cancel, and free-disk / RAM advice before it starts (a pull that cannot fit is refused). Only the configured model and the fallback can be requested. |
+| PMO inbox folder | yes | Resolves the folder exactly as the PMO service does (`AI_OS_PMO_INBOX_DIR`, else `config.json`), says whether OneDrive is signed in, suggests `PMO-Inbox` inside each OneDrive root, and saves a chosen folder to the PMO config (never starts the poller). |
+| Tasks engine | yes | Runs `tasks-engine/selftest.py` with the bundled Python: package imports, the shared task libraries loading their shipped example files, and a task-style step on generated fixture data. No Outlook, no network, no sends. |
+| Classic Outlook | no | Reads two registry keys (`Outlook.Application` COM registration, `OUTLOOK.EXE` app path) and, only if COM is not registered, the installed packages for the new Outlook. Report only; never opens a mailbox. |
+
+The pure logic (`report.ts`, `pull.ts`, `ollamaInstall.ts`, `models.ts`, `inbox.ts`, `outlook.ts`, `jobs.ts`)
+takes its fetch, clock, file and process access as arguments, so the whole flow is tested with fakes and no
+real download or installer ever runs in a test. `src/lib/setup/server.ts` is the thin real-world wiring.
+`GET /api/setup` returns the report and the progress of the three background jobs (install, download,
+self-test); `POST /api/setup` takes one of a fixed list of actions and nothing in a request chooses a command,
+URL or file. Both are guarded by the same loopback/same-origin check as `/api/pmo`. The folder picker for the
+inbox is `window.aiOsDesktop.chooseFolder()` (preload + one main-process handler); a plain browser gets a text
+field. How to test the whole thing on a clean machine: [`docs/clean-machine-test.md`](./docs/clean-machine-test.md).
+
 ## Local AI runtime (`src/lib/ai-runtime/`)
 
 The firm does not allow internal messages to go to a cloud model, so AI

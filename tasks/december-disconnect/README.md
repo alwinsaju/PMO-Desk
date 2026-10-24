@@ -14,7 +14,7 @@ modified: the rosters and both configs are only read.
 **Documents.** First run (click path, what to check in Excel, bugs, rollback):
 [`../FIRST-RUN-GUIDE.md`](../FIRST-RUN-GUIDE.md). What was decided and what is assumed (including the open items):
 [`../DECISIONS-AND-ASSUMPTIONS.md`](../DECISIONS-AND-ASSUMPTIONS.md). Acceptance criteria against test evidence:
-[`../ACCEPTANCE.md`](../ACCEPTANCE.md). File and endpoint contract with the Tasks app and the backend:
+[`../ACCEPTANCE.md`](../ACCEPTANCE.md). File and endpoint contract with the Tasks app and the Tasks engine:
 [`../TASK-PLATFORM-CONTRACT.md`](../TASK-PLATFORM-CONTRACT.md). Library behavior:
 [`../shared/winter_lib/README.md`](../shared/winter_lib/README.md).
 
@@ -29,13 +29,13 @@ modified: the rosters and both configs are only read.
     [confirm_diff gate]   -> the PMO confirms the changed cells
     finalize.py           -> final files, audit log, disconnect days into the Shift Roster config
 
-The manifest is `task.json` (runtime `local`; inputs, `prepare`, steps and gates as in
-`../TASK-PLATFORM-CONTRACT.md`, plus `completedMessage`). `TASK.md` is the short instruction file for
-the runtime. Every script is headless (stdin closed, never prompts), finds the task folder from its own
+The manifest is `task.json` (inputs, `prepare`, steps and gates as in
+`../TASK-PLATFORM-CONTRACT.md`, plus `completedMessage`). `TASK.md` is the task's short description
+(documentation only). Every script is headless (stdin closed, never prompts), finds the task folder from its own
 location (`--task-dir PATH` overrides it for tests), prints a few COUNTS-ONLY progress lines (no person
 name is ever printed) and, on failure, ONE `ERROR: <reason>` line on stderr with a non-zero exit code
-(`DECEMBER_DISCONNECT_DEBUG=1` adds a traceback). Run them with the venv python:
-`..\.venv\Scripts\python.exe scripts\analyze.py`. Shared helpers: `scripts/_common.py`, the comparison
+(`DECEMBER_DISCONNECT_DEBUG=1` adds a traceback). Run them with the Tasks engine's venv python:
+`..\..\tasks-engine\.venv\Scripts\python.exe scripts\analyze.py`. Shared helpers: `scripts/_common.py`, the comparison
 logic shared by the diff and the finalize step: `scripts/_diffing.py`.
 
 ## Inputs and where files land
@@ -66,7 +66,7 @@ All of `input/`, `output/` and `config/` hold real employee data and are gitigno
 | `output/final/Analytics Winter Coverage FINAL <window>.xlsx` | the final Analytics plan |
 | `output/audit/<run id>.json`, `audit.log.jsonl` | who approved which cells (append-only) |
 
-Clean-up: `task.json` has `"cleanup": {"onComplete": true}`. After a SUCCESSFUL run the backend deletes this task's `input/` files (the uploaded rosters and `run-params.json`; dotfiles and any `cleanup.keep` path stay), so the next run asks for fresh uploads. The stale `output/options.json` is cleared too; `config/` and the rest of `output/` (the finals and the audit log) are never touched; a failed or abandoned run keeps its input.
+Clean-up: `task.json` has `"cleanup": {"onComplete": true}`. After a SUCCESSFUL run the Tasks engine deletes this task's `input/` files (the uploaded rosters and `run-params.json`; dotfiles and any `cleanup.keep` path stay), so the next run asks for fresh uploads. The stale `output/options.json` is cleared too; `config/` and the rest of `output/` (the finals and the audit log) are never touched; a failed or abandoned run keeps its input.
 
 `<window>` reads like `2026-12-25 to 2027-01-01`. The Tasks app shows one Open button per workbook:
 `report-data.json` lists both files in `extra_paths` (`[{"label": "Main plan", "path": ...},
@@ -287,7 +287,7 @@ The full list, with who decided each point and the open items, is in
 
 ## Tests
 
-`..\.venv\Scripts\python.exe -m pytest -q` from this folder. Synthetic data only (the winter_lib sample
+`..\..\tasks-engine\.venv\Scripts\python.exe -m pytest -q` from this folder. Synthetic data only (the winter_lib sample
 builders); the pipeline tests run every script's `main()` in order, the subprocess test runs them headless
 with `--task-dir`, and the real-file smoke test (counts only, on COPIES, skipped when the gitignored
 reference files or configs are absent) checks 34 of 34 Analytics slots and zero audit errors on the main plan.

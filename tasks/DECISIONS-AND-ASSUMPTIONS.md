@@ -93,14 +93,14 @@ Related documents: [`ACCEPTANCE.md`](./ACCEPTANCE.md) (each acceptance criterion
 
 | Topic | Decision or assumption | Status |
 |---|---|---|
-| Deterministic code | No LLM judgment in any step; the AI only orchestrates. Every step is headless Python (runtime `local`), never a Claude-CLI session. | PMO |
+| Deterministic code | No LLM judgment in any step. Every step is headless Python, run as a plain subprocess of the Tasks engine; no AI session runs any step. | PMO |
 | Storage | Everything real is under gitignored `input/`, `output/` and `config/` folders (and `shared/roster-reference/`). Nothing real is committed; tests use synthetic names. | PMO |
 | Approver | Approve and Send record the **OS user** and a UTC time on the run, for **all** tasks (also the older ones). The client never supplies a name. | PMO |
-| Platform changes ("Option A") | Additive changes to the agent-office backend were approved (uploads, prepare, options, params, form, diff, flags endpoints, approver stamp, `outputPaths`). The four older tasks and the incident-review gate behave as before. | PMO |
-| Installed dependencies | `openpyxl`, `scipy`, `numpy`, `xlsxwriter`, `lxml`, `pillow` and `python-multipart` were installed into the tasks venv and into the agent-office venv. The solver is the HiGHS bundled in `scipy` (no extra package). | Assumed |
+| Platform changes ("Option A") | Additive changes to the task platform (at the time the separate agent-office service, now the in-repo Tasks engine) were approved (uploads, prepare, options, params, form, diff, flags endpoints, approver stamp, `outputPaths`). The four older tasks and the incident-review gate behave as before. | PMO |
+| Installed dependencies | `openpyxl`, `scipy`, `numpy`, `xlsxwriter`, `lxml`, `pillow` and `python-multipart` are in the hash-locked package list (`scripts/python-runtime/requirements.lock.txt`) that builds `tasks-engine/.venv` and the Python bundled with the installed app. The solver is the HiGHS bundled in `scipy` (no extra package). | Assumed |
 | Master protection | The master roster is never modified: every writer takes a source and a different destination, and the master's sha256 is compared before and after (analyze, build draft, diff, finalize). | PMO |
 | Re-runnable | Re-running a step with the same inputs gives the same files; the audit log is append-only. | PMO |
-| Blocked confirm | The backend refuses Reject at the confirm gate, so a blocked confirm cannot be repaired in place: the Tasks app shows **Start over** (Reset) and you run the task again. | Assumed |
+| Blocked confirm | The Tasks engine refuses Reject at the confirm gate, so a blocked confirm cannot be repaired in place: the Tasks app shows **Start over** (Reset) and you run the task again. | Assumed |
 
 ## Engineering limits and unverified items
 
@@ -111,9 +111,9 @@ Related documents: [`ACCEPTANCE.md`](./ACCEPTANCE.md) (each acceptance criterion
 | Excel re-save tolerance | The diff steps read text only and find tables by header text, so an Excel re-save (strings reindexed, styles rewritten, cached values recomputed) does not matter. Verified with synthetic re-save variants, not with real Excel output. A hyperlinked data cell re-saved through openpyxl shows as a spurious outside-plan change. |
 | Diff compares text | A formula typed into a grid cell is compared by its cached text (and warned about); a date typed into a code cell shows up as its serial number. |
 | Inline strings | The draft patcher writes text as inline strings when the text is not already in the shared strings; Excel converts them on its next save (harmless). |
-| Reject at confirm | The backend does not offer Reject at the confirm gate; a blocked confirm needs **Start over** and a re-run. |
+| Reject at confirm | The Tasks engine does not offer Reject at the confirm gate; a blocked confirm needs **Start over** and a re-run. |
 | Analytics re-run loses manual edits | A re-run builds fresh drafts without your manual edits. The December Disconnect archives the earlier drafts in `output/archive/<UTC time>/` so nothing is destroyed; re-apply the edits you still want or enter them as availability exceptions. |
-| Backend restart | The agent-office backend keeps run state in memory and loads code at start-up, so it **must be restarted** once to load the new endpoints and manifests. A restart forgets any in-progress run (files on disk stay). |
-| Interpreters | The Tasks app launches the backend with `Agents-workspace\.venv\Scripts\pythonw.exe` and the backend runs every step with that same interpreter. The README commands and the test suites use `tasks\.venv\Scripts\python.exe`. Both are Microsoft Store Python 3.13 venvs; a new dependency must be installed in both. |
-| Real-file tests | Tests marked "real" read COPIES of the gitignored reference files and configs and skip when those are absent. They ran on this machine (see `ACCEPTANCE.md`). They assert counts and dates, never names. |
-| Not tested | Real click-through of the Tasks app against a live backend with these two tasks (the lifecycle is tested through the backend's TestClient with subprocess steps, and the UI by its own tests). That is what the first run is for. |
+| Engine restart | The Tasks engine keeps run state in memory and loads code and task manifests at start-up, so after a change to either use gear menu > Restart Tasks engine. A restart forgets any in-progress run (files on disk stay). |
+| Interpreters | The engine runs every step with its own Python. From the repo that is `tasks-engine\.venv` (or `AI_OS_TASKS_PYTHON`, if set); the installed app uses the private Python it bundles. The README commands and every test suite use `tasks-engine\.venv\Scripts\python.exe`; a new dependency must be added to `scripts\python-runtime\requirements.lock.txt` (with hashes) so the installed Python gets it too. |
+| Real-file tests | Tests marked "real" read COPIES of the gitignored reference files and configs and skip when those are absent. They ran on this machine on 2026-10-23 (see `ACCEPTANCE.md`). They assert counts and dates, never names. |
+| Not tested | Real click-through of the Tasks app against a running Tasks engine with these two tasks (the lifecycle is tested through the engine's TestClient with subprocess steps, and the UI by its own tests). That is what the first run is for. |

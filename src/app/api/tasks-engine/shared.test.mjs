@@ -9,7 +9,12 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, it } from "node:test";
 import { resolvePython } from "./python.ts";
-import { engineUrlFor, findRunningEngine, isTasksEngine, pickFreePort } from "./shared.ts";
+import {
+  engineUrlFor,
+  findRunningEngine,
+  isTasksEngine,
+  pickFreePort,
+} from "./shared.ts";
 
 const servers = [];
 
@@ -17,13 +22,17 @@ function serve(handler) {
   return new Promise((resolve) => {
     const server = http.createServer(handler);
     servers.push(server);
-    server.listen(0, "127.0.0.1", () => resolve(`http://127.0.0.1:${server.address().port}`));
+    server.listen(0, "127.0.0.1", () =>
+      resolve(`http://127.0.0.1:${server.address().port}`),
+    );
   });
 }
 
 const engineHandler = (req, res) => {
   res.setHeader("content-type", "application/json");
-  res.end(req.url === "/health" ? JSON.stringify({ ok: true, service: "tasks-engine" }) : "[]");
+  res.end(
+    req.url === "/health" ? JSON.stringify({ ok: true, service: "tasks-engine" }) : "[]",
+  );
 };
 
 afterEach(async () => {
@@ -39,7 +48,9 @@ describe("isTasksEngine", () => {
   });
 
   it("is false for something else answering /health, an old service without it, or nothing", async () => {
-    const other = await serve((req, res) => res.end(JSON.stringify({ ok: true, service: "other" })));
+    const other = await serve((req, res) =>
+      res.end(JSON.stringify({ ok: true, service: "other" })),
+    );
     const old = await serve((req, res) => {
       res.statusCode = 404;
       res.end("not found");

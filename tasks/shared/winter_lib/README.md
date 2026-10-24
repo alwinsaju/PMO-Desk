@@ -2,7 +2,7 @@
 
 Shared building blocks for the December Disconnect (winter coverage) task: the main plan
 and the Analytics plan. Plain Python, deterministic, unit-tested with synthetic data only.
-Run the tests from this folder with `..\..\.venv\Scripts\python.exe -m pytest -q`.
+Run the tests from this folder with `..\..\..\tasks-engine\.venv\Scripts\python.exe -m pytest -q`.
 
 ## Main winter plan
 

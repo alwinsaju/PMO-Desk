@@ -1,9 +1,9 @@
 # roster_lib
 
-Shared, deterministic building blocks for the Shift Roster agents. Plain Python,
+Shared, deterministic building blocks for the Shift Roster task. Plain Python,
 unit-tested, no LLM judgment. Run the tests from this folder:
 
-    ..\..\.venv\Scripts\python.exe -m pytest -q
+    ..\..\..\tasks-engine\.venv\Scripts\python.exe -m pytest -q
 
 ## Logic modules (cycles, codes, holiday matrix, config)
 
@@ -484,7 +484,7 @@ are affected (PTO beats HOL and is never counted).
 workbook touched; the draft is plain data and a later phase writes the xlsx).
 `seed_config.py` creates the first rotation config from the roster and a (gitignored)
 names file; run it from `tasks/shared` with
-`..\.venv\Scripts\python.exe -m roster_lib.seed_config --help`. Real names live only in
+`..\..\tasks-engine\.venv\Scripts\python.exe -m roster_lib.seed_config --help`. Real names live only in
 gitignored files (`tasks/shift-roster/config/`, `.../output/`). In the names file an
 AUTO_SWAP group's listed pair is informational (a person observed outside it stays AUTO_SWAP,
 noted as `listed_pair_differs`; no conflict), and `not_on_roster` lists team members who are

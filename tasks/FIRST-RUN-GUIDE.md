@@ -7,44 +7,50 @@ Companion documents: [`DECISIONS-AND-ASSUMPTIONS.md`](./DECISIONS-AND-ASSUMPTION
 confirm), [`ACCEPTANCE.md`](./ACCEPTANCE.md) (test evidence per criterion),
 [`shift-roster/README.md`](./shift-roster/README.md), [`december-disconnect/README.md`](./december-disconnect/README.md).
 
-> **Live system warning.** The Tasks app talks to the agent-office backend, which also runs the older mailer and
-> report tasks (Weekly Backlog Report, Weekly Aging Report, Deployment DEP Weekend Mailer, Monthly Report Deck).
+> **Live system warning.** The Tasks engine that runs these two tasks also hosts the older mailer and report tasks
+> (Weekly Backlog Report, Weekly Aging Report, Deployment DEP Weekend Mailer, Monthly Report Deck).
 > Those drive real Outlook and send real e-mail on **Send**. While testing, **never press Run, Approve, Confirm or
-> Send on any task other than Shift Roster and December Disconnect.** Some older tasks can also be scheduled to start
-> by themselves; do not approve what they produce.
+> Send on any task other than Shift Roster and December Disconnect.**
 
 ## 0. Before you start (one-time, about 3 minutes)
 
-1. **Restart the agent-office backend once.** It loads its code and the task manifests at start-up, so a backend
-   that was already running does not know the new tasks, the file upload, the questions form or the diff review.
+1. **Make sure the Tasks engine is running the current code.** AI OS starts the engine by itself when the Tasks app
+   opens (it shows a launch screen until the engine answers). The engine loads its code and the task manifests at
+   start-up, so an engine that was already running before an update does not know the new tasks, the file upload,
+   the questions form or the diff review. Restart it once:
    - Look at the Tasks app first. If any task shows **working**, **needs review** or **needs confirm**, finish or
      reset it first: a restart forgets the state of any run in progress (the files on disk stay).
-   - Stop the old backend (PowerShell):
-     `Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }`
-     If nothing is listening on port 8000 there is nothing to stop.
-   - Start it again by **opening the Tasks app**: AI OS (with `pnpm dev` running at http://localhost:3000) launches
-     the backend by itself when the Tasks app opens and shows a launch screen until it answers. The launch log is
-     `%TEMP%\ai-os-agent-office.log` (the loading screen quotes the last lines if it fails).
-   - No auto-launch? Start it by hand: `cd C:\Projects\Agents-workspace\agent-office` then
-     `..\.venv\Scripts\python.exe -m uvicorn backend.main:app --port 8000`.
+   - Click the **gear icon (top right) > Restart Tasks engine**. It also warns you itself if a task is mid-run.
+   - If the engine does not come up, the launch log is `%TEMP%\ai-os-tasks-engine.log` (the loading screen quotes
+     the last lines).
 2. **Check that the new code is loaded.** The Tasks app lists **Shift Roster** and **December Disconnect**, and
    pressing **Run** on either opens a dialog with file upload boxes. If Run just starts the task or the tasks are
-   missing, the old backend is still running: repeat step 1. (Read-only check: open http://localhost:8000/tasks in a
-   browser; the two tasks appear with an `inputs` list.)
+   missing, the old engine is still running: repeat step 1. (Read-only check: the engine's address is at
+   `/api/tasks-engine/config` on the AI OS web address, for example http://localhost:3000/api/tasks-engine/config
+   when running from the repo; open `<that address>/tasks` in a browser and the two tasks appear with an `inputs`
+   list.)
 3. **Have these files ready** (any location; you upload them in the app):
    - the live roster workbook (the file with the sheet `PDT Operate`);
-   - optional: a new Holiday Roster (Holiday name, Date, one column per location, `X` = off). You do **not** need one:
-     the Holiday Roster 2026 reference copy in `tasks\shared\roster-reference\` is used automatically. When the
-     PMO shares next year's file, drop `Holiday Roster 2027.xlsx` into that folder (or upload it in the app); the file
-     that covers the cycle (newest first) is chosen;
+   - optional: a new Holiday Roster (Holiday name, Date, one column per location, `X` = off). You do **not** need one
+     when running from the repo: the Holiday Roster 2026 reference copy in `tasks\shared\roster-reference\` is used
+     automatically. When the PMO shares next year's file, drop `Holiday Roster 2027.xlsx` into that folder (or upload
+     it in the app); the file that covers the cycle (newest first) is chosen. In the installed app, upload the
+     Holiday Roster in the app: the `shared` folder of its working copy is rebuilt from the install at every
+     engine start, so a file dropped there does not stay;
    - optional: a PTO import (Name, From, To, Code P/T/SL);
    - for December Disconnect: the PDT staff roster, and optionally the two monthly Analytics rosters (Oct, Nov).
    Templates: `tasks\shared\roster_lib\examples\holiday_roster_template.xlsx` and `pto_import_template.xlsx`.
 4. **Before the first December Disconnect run, edit the winter config** if anybody has rolled off:
    `tasks\december-disconnect\config\winter-config.json`, list them in `exclusions.people` (the roll-off column
-   in the staff roster is not used). Details: open item (c) in the decisions note.
+   in the staff roster is not used). Details: open item (c) in the decisions note. (In the installed app the file
+   is in the working copy, see the next section.)
 
 ## 1. Where files go
+
+Paths below are relative to the repo's `tasks\` folder when AI OS runs from the repo (the tasks run in place). In the
+installed app the tasks run from a working copy under `%APPDATA%\AI OS\tasks-engine\tasks\<task>\`: the same
+`input\`, `output\`, `config\` and `reference\` folders are there, and they are your data (never overwritten; task
+definitions are refreshed from the install at every engine start). Reinstalling keeps them.
 
 | What | Where |
 |---|---|
@@ -195,7 +201,7 @@ Say which task, which step and what you clicked. Then attach, in this order:
 3. The task's **`output\` files**: `options.json`, `analysis.json`, `ask-me.json`, `flags.json`, `roster-diff.json`,
    `report-data.json`, `plan.json`, and the newest file in `output\audit\`. They contain real names: keep them on
    your machine and hand them to the developer directly.
-4. For a launch problem: `%TEMP%\ai-os-agent-office.log`.
+4. For a launch problem: `%TEMP%\ai-os-tasks-engine.log`.
 5. A screenshot of any Excel message, and the draft file you saved.
 
 Scripts print counts only (no names) in their log lines, so the Log tab is safe to screenshot.
@@ -208,7 +214,7 @@ Scripts print counts only (no names) in their log lines, so the Log tab is safe 
 | "no cycle can be selected" / "The Holiday Roster cannot be used: ..." | Bad or missing rows in the Holiday Roster (messages quote row numbers) | Fix the file, upload it again, **Check inputs** again. |
 | A cycle is greyed out with "Holiday Roster (reference file) has no 2027 rows ..." | The reference Holiday Roster does not cover a year the cycle touches | Drop the new year's `Holiday Roster 2027.xlsx` into `tasks\shared\roster-reference\`, or upload it in the dialog, then **Check inputs** again. |
 | "no Holiday Roster: upload one or add one to roster-reference" | No upload and no `Holiday Roster*.xlsx` in the reference folder | Upload a Holiday Roster, or put one in `tasks\shared\roster-reference\`. |
-| **Run** does not show upload boxes | Old backend still running | Section 0, step 1. |
+| **Run** does not show upload boxes | An engine started before the update is still running | Section 0, step 1. |
 | Start is greyed out ("Still needed: ...") | A required file or the cycle/window is missing | Upload it or choose the option. |
 | Approve is refused at Questions | A required answer is missing, or you have unsaved answers | Press **Save answers** first, answer the required (marked) questions. |
 | "the answers are incomplete or invalid: ..." | The answers file does not match the form | Press Reject / Start over, run again, answer all questions. |
@@ -219,11 +225,11 @@ Scripts print counts only (no names) in their log lines, so the Log tab is safe 
 | Confirm refused: blocking `MASTER_CHANGED` / `INPUT_CHANGED` / `CONFIG_CHANGED` / `PLAN_CHANGED` | A file the draft was built from changed | Start over and re-run. |
 | Confirm refused: blocking `PERSON_MISSING` (renamed or deleted a name row) | A person row in the draft was renamed or removed | Restore it in Excel, save, approve again; otherwise start over. |
 | Confirm refused: blocking `WINTER_*` / `ANALYTICS_*` | Your edit breaks a rule (team minimum, 3-5 days, usual shift, on-call, ...) | Read the row to learn which rule. You cannot go back to Excel from the confirm gate, so press **Start over**, run again and make a different edit. |
-| **Blocked confirm: Start over, then run again** | The backend has no Reject at the confirm gate | Press **Start over**, then **Run** from the start. A Shift Roster re-run **overwrites** the draft (copy your edited draft first if you want to keep it); a December Disconnect re-run **archives** the old drafts in `output\archive\<UTC time>\` and builds new ones without your manual edits (re-apply the ones you want, or enter them as availability exceptions). |
+| **Blocked confirm: Start over, then run again** | The Tasks engine has no Reject at the confirm gate | Press **Start over**, then **Run** from the start. A Shift Roster re-run **overwrites** the draft (copy your edited draft first if you want to keep it); a December Disconnect re-run **archives** the old drafts in `output\archive\<UTC time>\` and builds new ones without your manual edits (re-apply the ones you want, or enter them as availability exceptions). |
 | "the draft was changed after you confirmed the comparison" | The draft file was saved again after Confirm | Run the comparison again (start over if needed) and confirm. |
 | "the master roster changed since the analysis: start a new run" | The roster input changed | Start a new run. |
 | "the rotation config changed since the analysis" on a finished run | `finalize` updates the rotation config, so a finished run cannot be finalized twice | Start a new run. |
-| "no idle agents" / Run greyed out | All four workers are busy with other tasks | Wait or press Reset on a stuck task (Force reset only clears the status, it does not stop a running script). |
+| Run greyed out | The task is already running or is waiting at a gate (review, confirm) | Finish the run, or press Reset on a stuck task (Force reset only clears the status, it does not stop a running script). |
 
 ## 8. Rollback and cleaning up
 
@@ -257,10 +263,10 @@ You should not need to reinstall AI OS when a bug is fixed:
   (the persistent way; the installer deletes `live-config.json` on every reinstall) and the app runs the UI from
   the project folder (`C:\Projects\AI OS`) and reloads when the code changes. The window title shows
   `AI OS (live-dev: ...)` when this is active; `Help > About AI OS` explains it if it fell back to the bundled copy.
-  If a page looks stale, use `View > Reload`, or `Developer > Restart UI server` (this also restarts the backend).
-* **Task and backend fixes** (scripts, `task.json` manifests, the agent-office code) load when the backend
-  restarts: click the **gear icon (top right) > Restart backend**. It first looks at the Tasks app state: if a task
-  is **working**, **needs review** or **needs confirm**, it lists it and asks you to confirm, because a restart
-  stops that run (default is Cancel). Finish or reset the run first when in doubt. It works only on a backend that AI
-  OS itself started; if you started the backend by hand it tells you so and leaves it alone.
+  If a page looks stale, use `View > Reload`, or `Developer > Restart UI server` (this also restarts the Tasks engine).
+* **Task and engine fixes** (scripts, `task.json` manifests, the Tasks engine code) load when the engine
+  restarts: click the **gear icon (top right) > Restart Tasks engine**. It first looks at the Tasks app state: if a
+  task is **working**, **needs review** or **needs confirm**, it lists it and asks you to confirm, because a restart
+  stops that run (default is Cancel). Finish or reset the run first when in doubt. It works only on an engine that AI
+  OS itself started; if you started the engine by hand it tells you so and leaves it alone.
 * A reinstall is needed only when the Electron shell itself changes (you will be told).

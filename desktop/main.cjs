@@ -666,6 +666,18 @@ ipcMain.handle("display:get-state", (event) =>
   isFromMainWindow(event) ? displayState() : null,
 );
 
+/** The setup screen's "Browse": a folder picker over the main window. */
+ipcMain.handle("setup:choose-folder", async (event) => {
+  if (!isFromMainWindow(event) || !mainWindow) {
+    return null;
+  }
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: "Choose the PMO inbox folder",
+    properties: ["openDirectory"],
+  });
+  return result.canceled ? null : (result.filePaths[0] ?? null);
+});
+
 ipcMain.handle("display:set-hardware-acceleration", (event, enabled) => {
   if (!isFromMainWindow(event) || typeof enabled !== "boolean") {
     return null;

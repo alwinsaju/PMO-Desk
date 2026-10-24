@@ -52,8 +52,7 @@ const LOG_PATH = path.join(tmpdir(), "ai-os-tasks-engine.log");
 const LOG_TAIL_CHARS = 800;
 
 type StartResult =
-  | { ok: true; alreadyRunning: boolean; url: string }
-  | { ok: false; reason: string };
+  { ok: true; alreadyRunning: boolean; url: string } | { ok: false; reason: string };
 
 // Module-scoped: concurrent/rapid POSTs to this route while the dev server
 // is up (React StrictMode's dev-only double-effect, two Tasks windows
@@ -100,7 +99,10 @@ async function attemptStart(): Promise<StartResult> {
   }
   const port = await pickFreePort();
   if (port === null) {
-    return { ok: false, reason: "No free port for the Tasks engine (8000-8019 are all in use)." };
+    return {
+      ok: false,
+      reason: "No free port for the Tasks engine (8000-8019 are all in use).",
+    };
   }
   const url = engineUrlFor(port);
   const engineArgs = ["main.py", "--port", String(port)];
