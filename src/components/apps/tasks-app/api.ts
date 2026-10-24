@@ -1,6 +1,5 @@
 import type {
   ActionResult,
-  Agent,
   CleanupPayload,
   DiffPayload,
   FlagsPayload,
@@ -83,13 +82,6 @@ export function fetchTasks(): Promise<Task[]> {
   return getJsonShared<Task[]>("/tasks");
 }
 
-/** All pool workers with their live state — used only to derive whether
- *  any worker is idle (see taskPresenter.ts's `canStartFromAgents`); never
- *  rendered as its own panel. */
-export function fetchAgents(): Promise<Agent[]> {
-  return getJsonShared<Agent[]>("/agents");
-}
-
 /** This task's past runs, newest first. The endpoint replies
  *  `{ok: false, reason}` for an unknown task id instead of an HTTP error,
  *  so that case just yields an empty list here rather than throwing. */
@@ -123,7 +115,7 @@ export async function fetchTaskLog(taskId: string): Promise<LogEntry[]> {
 // triggering them for real.
 // ---------------------------------------------------------------------------
 
-/** Starts a task's pipeline on an idle worker. Also used for "Retry" from
+/** Starts a task's pipeline. Also used for "Retry" from
  *  the error state — the engine itself distinguishes fresh-start from
  *  retry by the task's current state (see main.py's start_task). */
 export function startTask(taskId: string): Promise<ActionResult> {

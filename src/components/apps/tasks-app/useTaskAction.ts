@@ -48,8 +48,7 @@ export interface TaskActionState {
  *
  * `onSettled` fires after every call settles (success or failure) so the
  * caller can refetch immediately instead of waiting for the next poll tick
- * — mirrors main.js's `buildActions(task, api, refresh, ...)`, where
- * `refresh` is exactly this "onDone" callback.
+ * (the card's `refresh`).
  */
 export function useTaskAction(
   taskId: string,

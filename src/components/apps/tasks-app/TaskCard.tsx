@@ -14,7 +14,6 @@ import type { Task } from "./types";
 
 interface TaskCardProps {
   task: Task;
-  canStart: boolean;
   /** Called after any action on this card settles, so the caller can
    *  refetch immediately instead of waiting for the next poll tick. */
   onSettled: () => void;
@@ -34,7 +33,6 @@ interface TaskCardProps {
  */
 export const TaskCard = memo(function TaskCard({
   task,
-  canStart,
   onSettled,
   onOpenDetail,
   index = 0,
@@ -95,7 +93,6 @@ export const TaskCard = memo(function TaskCard({
         <div className="min-w-0 flex-1">
           <TaskActions
             task={task}
-            canStart={canStart}
             onSettled={onSettled}
             onOpenDetail={openDetail}
             gate={gate}

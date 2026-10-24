@@ -41,7 +41,7 @@ function matchesFilter(task: Task, filter: TaskFilter): boolean {
  * registry's usual convention (see AppStoreApp.tsx).
  */
 export function TasksApp({ windowId }: { windowId: string }) {
-  const { tasks, canStart, connection, hasLoadedOnce, refetch } = useTasksData();
+  const { tasks, connection, hasLoadedOnce, refetch } = useTasksData();
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [filter, setFilter] = useState<TaskFilter>("all");
 
@@ -137,7 +137,6 @@ export function TasksApp({ windowId }: { windowId: string }) {
                   <TaskCard
                     key={task.id}
                     task={task}
-                    canStart={canStart}
                     onSettled={refetch}
                     onOpenDetail={setSelectedTaskId}
                     index={index}
@@ -151,7 +150,6 @@ export function TasksApp({ windowId }: { windowId: string }) {
 
       <TaskDetailDialog
         task={selectedTask}
-        canStart={canStart}
         onSettled={refetch}
         onOpenChange={handleDetailOpenChange}
       />

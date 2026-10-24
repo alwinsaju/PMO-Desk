@@ -1,25 +1,20 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ENGINE_RESTARTED_EVENT } from "@/lib/engineRestart";
-import { fetchAgents, fetchTasks } from "./api";
-import { canStartFromAgents } from "./taskPresenter";
-import type { Agent, Task } from "./types";
+import { fetchTasks } from "./api";
+import type { Task } from "./types";
 
-/** Matches the reference tasks-engine frontend's own poll cadence (see
- *  main.js's `POLL_MS`). */
+/** How often the task list is re-read while the window is visible. */
 const POLL_INTERVAL_MS = 2000;
 
 /** Reflects only the OUTCOME of the most recent poll attempt — "offline"
- *  does not discard whatever tasks/agents were last successfully loaded
+ *  does not discard whatever tasks were last successfully loaded
  *  (see the hook's own doc comment below for why). */
 export type ConnectionStatus = "loading" | "online" | "offline";
 
 export interface TasksData {
   tasks: Task[];
-  agents: Agent[];
-  /** True once at least one worker in the pool is idle. */
-  canStart: boolean;
   connection: ConnectionStatus;
   /** True once the very first poll has ever succeeded — distinguishes
    *  "still loading for the first time" from "was online, then dropped." */
@@ -31,9 +26,9 @@ export interface TasksData {
 }
 
 /**
- * Polls GET /tasks + GET /agents every 2s against the Tasks engine
+ * Polls GET /tasks every 2s against the Tasks engine
  * (see api.ts). Network failures never blank the UI: the last-known-good
- * tasks/agents stay on screen and only `connection` flips to "offline", so
+ * tasks stay on screen and only `connection` flips to "offline", so
  * the caller can show a small non-disruptive indicator instead of losing
  * the whole grid — mirroring main.js's `refresh()`, which does the same
  * (`setConnected(false)` on failure, without ever clearing already-rendered
@@ -44,7 +39,6 @@ export interface TasksData {
  */
 export function useTasksData(): TasksData {
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [agents, setAgents] = useState<Agent[]>([]);
   const [connection, setConnection] = useState<ConnectionStatus>("loading");
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
 
@@ -72,10 +66,9 @@ export function useTasksData(): TasksData {
       if (inFlight) return;
       inFlight = true;
       try {
-        const [nextTasks, nextAgents] = await Promise.all([fetchTasks(), fetchAgents()]);
+        const nextTasks = await fetchTasks();
         if (cancelled) return;
         setTasks(nextTasks);
-        setAgents(nextAgents);
         setConnection("online");
         setHasLoadedOnce(true);
       } catch {
@@ -123,7 +116,5 @@ export function useTasksData(): TasksData {
     return () => window.removeEventListener(ENGINE_RESTARTED_EVENT, onRestarted);
   }, []);
 
-  const canStart = useMemo(() => canStartFromAgents(agents), [agents]);
-
-  return { tasks, agents, canStart, connection, hasLoadedOnce, refetch };
+  return { tasks, connection, hasLoadedOnce, refetch };
 }

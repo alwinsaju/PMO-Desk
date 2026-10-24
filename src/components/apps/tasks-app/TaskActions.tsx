@@ -11,7 +11,6 @@ import type { Task } from "./types";
 
 interface TaskActionsProps {
   task: Task;
-  canStart: boolean;
   /** Called after any action on this task settles, so the caller can
    *  refetch immediately instead of waiting for the next poll tick. */
   onSettled: () => void;
@@ -33,7 +32,6 @@ interface TaskActionsProps {
  */
 export function TaskActions({
   task,
-  canStart,
   onSettled,
   onOpenDetail,
   gate,
@@ -83,7 +81,6 @@ export function TaskActions({
     <>
       <TaskActionBar
         state={task.state}
-        canStart={canStart}
         pending={action.pending}
         lastFailure={action.lastFailure}
         reviewBlock={action.reviewBlock}

@@ -89,10 +89,8 @@ function task(overrides = {}) {
     state: "resting",
     error: null,
     currentStep: null,
-    assignedAgentId: null,
     steps: [],
     notifications: [],
-    schedule: null,
     ...overrides,
   };
 }
@@ -1706,12 +1704,11 @@ describe("polled GETs share the previous parsed value when the body is unchanged
     assert.equal(third[0].state, "resting");
   });
 
-  it("keeps paths independent (tasks vs agents)", async () => {
-    globalThis.fetch = async (url) =>
-      reply(String(url).endsWith("/tasks") ? "[1]" : "[1]");
+  it("keeps paths independent (tasks vs a task's log)", async () => {
+    globalThis.fetch = async () => reply("[1]");
     const tasks = await api.fetchTasks();
-    const agents = await api.fetchAgents();
-    assert.notEqual(tasks, agents);
+    const log = await api.fetchTaskLog("a");
+    assert.notEqual(tasks, log);
   });
 
   it("shares gate GETs too, and never shares a failure", async () => {

@@ -5,7 +5,6 @@
  */
 import type {
   ActionResult,
-  Agent,
   OutputFile,
   Task,
   TaskNotification,
@@ -13,8 +12,7 @@ import type {
   TaskStep,
 } from "./types";
 
-/** Human-readable label for each state — mirrors agentPresenter.js's
- *  STATE_LABEL exactly. */
+/** Human-readable label for each state. */
 export const STATE_LABEL: Record<TaskState, string> = {
   resting: "Idle",
   working: "Running",
@@ -25,8 +23,7 @@ export const STATE_LABEL: Record<TaskState, string> = {
 };
 
 /** Converts a snake_case step/task id into a readable label, e.g.
- *  "build_report" -> "Build report". Mirrors agentPresenter.js's
- *  `humanize`. */
+ *  "build_report" -> "Build report". */
 export function humanize(id: string | null | undefined): string {
   if (!id) return "";
   return id.replace(/_/g, " ").replace(/^./, (char) => char.toUpperCase());
@@ -41,14 +38,9 @@ export function stepLabel(task: Task, stepId: string | null | undefined): string
 }
 
 /**
- * One-line status sentence for a task card — adapted from agentPresenter.js's
- * `statusLabel`, which names the assigned worker (e.g. "Adam is running
- * ..."); this app deliberately drops that framing (the person it's built
- * for doesn't want agent names surfaced while a task is running) and just
- * describes the state/step, but otherwise keeps the same one-line-per-state
- * shape, including its one asymmetry: "error" resolves to an empty string
- * here too, because that state renders its own dedicated error box instead
- * (see TaskCard) rather than a status sentence.
+ * One-line status sentence for a task card, plain words per state ("Running
+ * Build report…"). "error" resolves to an empty string: that state renders its
+ * own dedicated error box instead (see TaskCard).
  */
 export function statusSentence(task: Task): string {
   switch (task.state) {
@@ -71,8 +63,7 @@ export type StepStatus = "done" | "active" | "gate" | "failed" | "pending";
 
 /**
  * Per-step done/active/gate/failed/pending status for the horizontal step
- * tracker, derived purely from `currentStep` + `state` — mirrors
- * agentPresenter.js's `buildStepTracker` exactly. Steps are fully dynamic
+ * tracker, derived purely from `currentStep` + `state`. Steps are fully dynamic
  * per task (a manifest can have as few as 3 steps and no review/send gate
  * at all), so this never assumes a fixed pipeline shape, and a
  * `currentStep` that no longer matches any step id (e.g. mid-rescan on the
@@ -89,13 +80,6 @@ export function computeStepStatuses(task: Task): StepStatus[] {
     if (task.state === "error") return "failed";
     return step.type === "review" || step.type === "confirm" ? "gate" : "active";
   });
-}
-
-/** Whether the "Run"/"Retry" action should be enabled — true when at least
- *  one pool worker is currently idle. Mirrors main.js's `lastCanStart`
- *  (`workers.some((w) => !w.currentTaskId)`). */
-export function canStartFromAgents(agents: Pick<Agent, "currentTaskId">[]): boolean {
-  return agents.some((agent) => !agent.currentTaskId);
 }
 
 // ---------------------------------------------------------------------------

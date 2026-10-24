@@ -100,30 +100,13 @@ export interface Task {
   state: TaskState;
   error: string | null;
   currentStep: string | null;
-  assignedAgentId: string | null;
   steps: TaskStep[];
   notifications: TaskNotification[];
-  schedule: { daily: string } | null;
   /** Declared only by tasks on the input/form platform; undefined for the
    *  four older tasks, which keep their one-click Run. */
   inputs?: TaskInputDef[];
   prepare?: TaskPrepare;
-  runtime?: string | null;
   cleanup?: TaskCleanup | null;
-}
-
-/** One pool worker. This app only ever uses it to compute whether any
- *  worker is idle (see taskPresenter.ts's `canStartFromAgents`) — never
- *  rendered as a standalone panel (explicitly out of scope for this pass),
- *  and no longer used for an id -> displayName lookup now that task status
- *  text doesn't name the assigned worker. */
-export interface Agent {
-  id: string;
-  displayName: string;
-  state: string;
-  currentTaskId: string | null;
-  currentTaskName: string | null;
-  currentStep: string | null;
 }
 
 /** One past run record from GET /tasks/{id}/history, newest first. */
@@ -131,9 +114,6 @@ export interface HistoryRun {
   run_id: string;
   task_id: string;
   task_name: string | null;
-  agent_id: string | null;
-  agent_name: string | null;
-  runtime: string;
   started_at: string;
   ended_at: string;
   outcome: "completed" | "failed" | string;
@@ -164,8 +144,8 @@ export interface LogEntry {
 
 /** Every POST action endpoint (start/approve/reject/send/reset, and
  *  notifications/{id}/open) replies with this same small shape — `ok:
- *  false` is a legitimate, non-exceptional response (e.g. "no idle
- *  agents"), not a thrown error. */
+ *  false` is a legitimate, non-exceptional response (e.g. "task is
+ *  working"), not a thrown error. */
 export interface ActionResult {
   ok: boolean;
   reason?: string;

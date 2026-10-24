@@ -96,8 +96,7 @@ interface StepTrackerProps {
  *  (done / in progress / waiting on you / failed / not started). Steps are
  *  fully dynamic per task — some have as few as 3 steps and no review/send
  *  gate at all — so this never assumes a fixed shape. Status derivation
- *  mirrors agentPresenter.js's `buildStepTracker` via
- *  taskPresenter.computeStepStatuses. */
+ *  lives in taskPresenter.computeStepStatuses. */
 export function StepTracker({ task }: StepTrackerProps) {
   const count = task.steps.length;
   if (count === 0) return null;

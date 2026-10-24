@@ -29,7 +29,6 @@ const LIVE_TASKS = [
     state: "resting",
     error: null,
     currentStep: null,
-    assignedAgentId: null,
     steps: [
       {
         id: "analyze",
@@ -85,8 +84,6 @@ const LIVE_TASKS = [
       },
     ],
     notifications: [],
-    schedule: null,
-    runtime: "local",
     inputs: [
       {
         id: "roster",
@@ -137,7 +134,6 @@ const LIVE_TASKS = [
     state: "resting",
     error: null,
     currentStep: null,
-    assignedAgentId: null,
     steps: [
       {
         id: "prepare_data",
@@ -165,8 +161,6 @@ const LIVE_TASKS = [
       },
     ],
     notifications: [],
-    schedule: null,
-    runtime: null,
     inputs: [],
     prepare: false,
   },
@@ -176,7 +170,6 @@ const LIVE_TASKS = [
     state: "resting",
     error: null,
     currentStep: null,
-    assignedAgentId: null,
     steps: [
       {
         id: "analyze",
@@ -232,8 +225,6 @@ const LIVE_TASKS = [
       },
     ],
     notifications: [],
-    schedule: null,
-    runtime: "local",
     inputs: [
       {
         id: "roster",
@@ -363,14 +354,11 @@ const OLDER_TASKS = [
   state: "resting",
   error: null,
   currentStep: null,
-  assignedAgentId: null,
   steps: [
     { id: "prepare_data", type: "python", label: null, gate: null },
     { id: "review_incidents", type: "review", label: null, gate: null },
   ],
   notifications: [],
-  schedule: null,
-  runtime: null,
   inputs: [
     {
       id: "data",
