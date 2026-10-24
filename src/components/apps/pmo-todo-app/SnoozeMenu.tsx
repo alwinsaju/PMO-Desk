@@ -96,7 +96,7 @@ export function SnoozeMenu({
           })}
         </ul>
         <form
-          className="border-border/60 mt-1 flex flex-col gap-1.5 border-t px-2 pt-2 pb-1"
+          className="border-border mt-1 flex flex-col gap-1.5 border-t px-2 pt-2 pb-1"
           onSubmit={(event) => {
             event.preventDefault();
             if (customValid) pick(customInstant);
@@ -127,7 +127,7 @@ export function SnoozeMenu({
           <button
             type="button"
             onClick={() => pick(null)}
-            className="border-border/60 rounded-control mt-1 w-full border-t px-2 py-1.5 text-left text-[13px] outline-none hover:bg-neutral-100"
+            className="border-border rounded-control focus-visible:ring-accent mt-1 w-full border-t px-2 py-1.5 text-left text-[13px] outline-none hover:bg-neutral-100 focus-visible:ring-2"
           >
             Wake it up now
           </button>

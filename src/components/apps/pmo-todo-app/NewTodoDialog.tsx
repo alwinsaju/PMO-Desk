@@ -7,12 +7,12 @@ import {
   DialogContent,
   DialogDescription,
   DialogTitle,
-  ScrollArea,
 } from "@/components/ui";
 import { emptyDraft } from "@/lib/pmo/todoLogic";
 import type { TodoDraft } from "@/lib/pmo/types";
 import { createTodo } from "./api";
 import { DraftForm } from "./DraftForm";
+import { ScrollBody } from "./parts";
 
 interface NewTodoDialogProps {
   open: boolean;
@@ -47,22 +47,20 @@ export function NewTodoDialog({ open, onSettled, onOpenChange }: NewTodoDialogPr
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[85vh] max-w-xl flex-col">
-        <DialogTitle>New to-do</DialogTitle>
-        <DialogDescription>
+      <DialogContent className="flex max-h-full max-w-xl flex-col p-5">
+        <DialogTitle className="shrink-0">New to-do</DialogTitle>
+        <DialogDescription className="shrink-0">
           Create a to-do yourself; it does not come from a message.
         </DialogDescription>
-        <ScrollArea className="mt-4 min-h-0 flex-1">
-          <div className="pr-3">
-            <DraftForm draft={draft} disabled={busy} onChange={setDraft} />
-          </div>
-        </ScrollArea>
+        <ScrollBody className="mt-4 pr-2">
+          <DraftForm draft={draft} disabled={busy} onChange={setDraft} />
+        </ScrollBody>
         {error && (
-          <p role="alert" className="text-ink mt-2 text-[12px] font-medium">
+          <p role="alert" className="text-ink mt-2 shrink-0 text-[12px] font-medium">
             {error}
           </p>
         )}
-        <div className="mt-4 flex justify-end gap-2">
+        <div className="border-border mt-3 flex shrink-0 justify-end gap-2 border-t pt-3">
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>

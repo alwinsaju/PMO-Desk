@@ -4,10 +4,18 @@
 // code, and shown to the human as a before -> after list they approve. Pure
 // (no node imports), shared by the server (which applies) and the review card
 // (which shows).
+import {
+  SIGNOFF_OUTCOME_LABEL,
+  approvalQuoteIsClean,
+  approverName,
+  awaitingSignoff,
+  senderIsApprover,
+  type RecordableOutcome,
+} from "./signoff.ts";
 import { istDate } from "./time.ts";
 import { looksLikeReplyFrom } from "./thread.ts";
 import type { TodoPatch } from "./todoLogic.ts";
-import type { AiUpdate, Todo, UpdateKind } from "./types.ts";
+import type { AiUpdate, SignoffClass, Todo, UpdateKind } from "./types.ts";
 
 export const UPDATE_KIND_LABEL: Record<UpdateKind, string> = {
   unrelated: "Not about this to-do",
@@ -21,7 +29,7 @@ export const UPDATE_KIND_LABEL: Record<UpdateKind, string> = {
 export interface UpdateChange {
   /** Stable within one plan: "waiting", "due", "note", "action:0", ... */
   id: string;
-  kind: "waiting" | "due" | "note" | "action";
+  kind: "waiting" | "due" | "note" | "action" | "signoff";
   label: string;
   /** What it says now and what it would say (display text). */
   before: string | null;
@@ -30,8 +38,35 @@ export interface UpdateChange {
   defaultOn: boolean;
   /** A caution or suggestion shown under the line. */
   hint?: string;
-  /** The to-do patch this change stands for. */
+  /** The to-do patch this change stands for (empty for a sign-off, which is
+   *  recorded by the sign-off logic with the server's identity and time). */
   patch: TodoPatch;
+  /** A sign-off change: what would be recorded. */
+  signoff?: {
+    checkpointId: string;
+    outcome: RecordableOutcome;
+    conditions: string;
+    quote: string;
+  };
+}
+
+/** What the reply said about the sign-off the to-do is awaiting (phase 6). */
+export interface SignoffSuggestion {
+  classification: SignoffClass;
+  /** The outcome that could be recorded; null for "unclear" / "not a sign-off". */
+  outcome: RecordableOutcome | null;
+  /** Who the sign-off is awaited from, and who wrote the reply. */
+  approver: string | null;
+  from: string;
+  senderIsApprover: boolean;
+  quote: string;
+  quoteVerified: boolean;
+  /** The model's own reasoning, shown on the card. */
+  reason: string;
+  /** Why the server lowered the model's answer, if it did. */
+  guard: string | null;
+  /** The id of the change that records it (absent when nothing is recordable). */
+  changeId: string | null;
 }
 
 export interface UpdateSender {
@@ -53,6 +88,8 @@ export interface UpdatePlan {
    *  survives the checks below (a "nothing" answer stays "nothing" even if the
    *  unticked reply suggestion is offered). */
   kind: UpdateKind;
+  /** Set when the to-do was awaiting a sign-off and the model read a reply to it. */
+  signoff: SignoffSuggestion | null;
 }
 
 const dayLabel = (day: string) =>
@@ -84,8 +121,78 @@ export function planUpdate(todo: Todo, result: AiUpdate, ctx: UpdateContext): Up
   const sender = senderLabel(ctx.sender);
   const waitingOn = todo.waitingOn?.trim() || null;
   const replyFrom = waitingOn && looksLikeReplyFrom(waitingOn, ctx.sender) ? sender : null;
+  let signoff: SignoffSuggestion | null = null;
 
   if (result.kind !== "unrelated") {
+    // First, because it is the important one. Never ticked unless the sender IS
+    // the named approver, the model says "approved", and the quoted sentence is
+    // really in the message and reads as a clean, unconditional approval.
+    const awaiting = awaitingSignoff(todo);
+    if (awaiting && result.signoff && result.signoff !== "not_a_signoff") {
+      const classification = result.signoff;
+      const outcome: RecordableOutcome | null =
+        classification === "unclear" ? null : classification;
+      const quote = (result.signoffQuote ?? "").trim();
+      const verified = result.signoffQuoteVerified === true && quote !== "";
+      const isApprover = senderIsApprover(awaiting.approver, ctx.sender);
+      const approver = approverName(awaiting.approver);
+      const reason = result.signoffReason?.trim() || result.reason;
+      signoff = {
+        classification,
+        outcome,
+        approver,
+        from: sender,
+        senderIsApprover: isApprover,
+        quote,
+        quoteVerified: verified,
+        reason,
+        guard: result.signoffGuard ?? null,
+        changeId: outcome ? "signoff" : null,
+      };
+      if (outcome) {
+        const sure =
+          outcome === "approved" && isApprover && verified && approvalQuoteIsClean(quote);
+        const who = approver ?? "the approver";
+        const hint = [
+          outcome === "approved"
+            ? isApprover
+              ? `Looks like sign-off from ${sender}: mark received?`
+              : `The model reads this as an approval, but ${sender} is not obviously ${who}. Check before recording it.`
+            : outcome === "approved_with_conditions"
+              ? `${isApprover ? sender : `${sender} (not obviously ${who})`} approved with conditions. Recording keeps the step open until you confirm the conditions are met.`
+              : outcome === "changes_requested"
+                ? `${isApprover ? sender : `${sender} (not obviously ${who})`} asked for changes. Recording reopens the Draft step.`
+                : `${isApprover ? sender : `${sender} (not obviously ${who})`} declined. Recording reopens the Draft step.`,
+          outcome === "approved" && isApprover && !sure
+            ? verified
+              ? "The sentence does not read as a plain approval, so it is not ticked."
+              : "The quoted sentence was not found in the message, so it is not ticked."
+            : "",
+        ]
+          .filter(Boolean)
+          .join(" ");
+        changes.push({
+          id: "signoff",
+          kind: "signoff",
+          label: "Sign-off",
+          before: `Awaiting sign-off${approver ? ` from ${approver}` : ""}`,
+          after: SIGNOFF_OUTCOME_LABEL[outcome],
+          defaultOn: sure,
+          hint,
+          patch: {},
+          signoff: {
+            checkpointId: awaiting.checkpoint.id,
+            outcome,
+            conditions:
+              outcome === "approved_with_conditions" || outcome === "changes_requested"
+                ? quote || result.summary || ""
+                : "",
+            quote,
+          },
+        });
+      }
+    }
+
     if (waitingOn && (result.clearsWaiting || replyFrom)) {
       const modelAgrees = result.clearsWaiting || result.kind === "reply";
       changes.push({
@@ -164,7 +271,7 @@ export function planUpdate(todo: Todo, result: AiUpdate, ctx: UpdateContext): Up
       : changes.length === 0
         ? "nothing"
         : result.kind;
-  return { changes, replyFrom, kind };
+  return { changes, replyFrom, kind, signoff };
 }
 
 /** Merge the patches of the ticked changes into one patch (an action item list
@@ -205,6 +312,8 @@ export function describeApplied(
         return `added action item "${change.after}"`;
       case "note":
         return "added a note to the description";
+      case "signoff":
+        return `recorded the sign-off (${(change.after ?? "").toLowerCase()})`;
     }
   });
   const did = parts.length ? `Applied: ${parts.join("; ")}.` : "Linked, no changes applied.";

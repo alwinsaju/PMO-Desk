@@ -7,7 +7,13 @@ import {
   getAiRuntimeConfig,
   getRuntimeStatus,
 } from "@/lib/ai-runtime";
-import { AiStructuredSchema, AiUpdateSchema, type RuntimeSummary } from "../types.ts";
+import { AiNarrativeSchema } from "../reportNarrative.ts";
+import {
+  AiStructuredSchema,
+  AiUpdateModelSchema,
+  AiUpdateSignoffModelSchema,
+  type RuntimeSummary,
+} from "../types.ts";
 import type { Generator } from "./structure.ts";
 
 /** A 12B model on CPU reading a 12k-character message can take minutes; the
@@ -29,12 +35,13 @@ export function createRuntimeGenerator(): Generator {
         timeoutMs: TIMEOUT_MS,
         think: false,
       }),
-    // Same runtime, same queue (concurrency 1), same think: false.
-    generateUpdate: ({ system, prompt }) =>
+    // Same runtime, same queue (concurrency 1), same think: false. A to-do that
+    // is awaiting a sign-off also gets the reply classified (a few more fields).
+    generateUpdate: ({ system, prompt, signoff }) =>
       generateJson({
         system,
         prompt,
-        schema: AiUpdateSchema,
+        schema: signoff ? AiUpdateSignoffModelSchema : AiUpdateModelSchema,
         timeoutMs: TIMEOUT_MS,
         think: false,
       }),
@@ -46,6 +53,26 @@ export function createRuntimeGenerator(): Generator {
         prompt,
         timeoutMs: TIMEOUT_MS,
         temperature: 0.4,
+        think: false,
+      }),
+    // The optional "improve with AI" version of a sign-off request: plain text,
+    // like the chaser, never sent by this app.
+    draftSignoffRequest: ({ system, prompt }) =>
+      generateText({
+        system,
+        prompt,
+        timeoutMs: TIMEOUT_MS,
+        temperature: 0.4,
+        think: false,
+      }),
+    // The weekly report's three short parts as bounded JSON (so constrained
+    // decoding cannot run on), temperature 0, same queue and think: false.
+    draftNarrative: ({ system, prompt }) =>
+      generateJson({
+        system,
+        prompt,
+        schema: AiNarrativeSchema,
+        timeoutMs: TIMEOUT_MS,
         think: false,
       }),
   };

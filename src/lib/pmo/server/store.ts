@@ -27,7 +27,7 @@ import {
   writeJsonAtomic,
   type Mutex,
 } from "./fsx.ts";
-import { isSafeId, pmoPaths, type PmoPaths } from "./paths.ts";
+import { isSafeId, migratedInboxDir, pmoPaths, type PmoPaths } from "./paths.ts";
 
 export interface SeenEntry {
   at: string;
@@ -49,6 +49,15 @@ export type AuditAction =
   | "update-apply"
   | "update-separate"
   | "chaser-draft"
+  | "signoff-request"
+  | "signoff-record"
+  | "signoff-conditions-met"
+  | "signoff-revoke"
+  | "signoff-draft"
+  | "signoff-refused"
+  | "report-generate"
+  | "report-narrative"
+  | "report-save"
   | "config";
 
 /** state/notify.json: reminders already delivered (by key) and the claims that
@@ -86,6 +95,8 @@ export class Store {
   private seen: Record<string, SeenEntry> | null = null;
   /** Records skipped because their file was unreadable; surfaced in state. */
   corruptFiles = 0;
+  /** The one-time inbox path migration, run on first config load (see loadConfig). */
+  private inboxMigration: Promise<void> | null = null;
 
   readonly root: string;
 
@@ -102,9 +113,15 @@ export class Store {
   async init(): Promise<void> {
     const p = this.paths;
     await Promise.all(
-      [p.raw, p.quarantine, p.rejectedFiles, p.queue, p.todos, path.dirname(p.seen)].map(
-        (dir) => mkdir(dir, { recursive: true }),
-      ),
+      [
+        p.raw,
+        p.quarantine,
+        p.rejectedFiles,
+        p.queue,
+        p.todos,
+        p.reports,
+        path.dirname(p.seen),
+      ].map((dir) => mkdir(dir, { recursive: true })),
     );
     // Write the defaults out once so the file is there to edit by hand.
     if ((await readJson(p.config)) === null) {
@@ -114,7 +131,36 @@ export class Store {
 
   // --- config ---------------------------------------------------------------
 
+  /** If config.json still holds a former default inboxDir (first run wrote the
+   *  then-default into it, which would override the new one), swap in the current
+   *  default and persist. Only an exact match of a known old default (loosely
+   *  compared) is touched; a custom path never is. Unknown keys are kept as they
+   *  are. Runs once per Store; a failed attempt is retried on the next load. */
+  private migrateInboxDir(): Promise<void> {
+    this.inboxMigration ??= (async () => {
+      try {
+        const raw = await readJson<Record<string, unknown>>(this.paths.config);
+        if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+          this.inboxMigration = null; // no config file yet: check again once it exists
+          return;
+        }
+        const next = migratedInboxDir(raw.inboxDir);
+        if (next === null) return;
+        await writeJsonAtomic(this.paths.config, { ...raw, inboxDir: next });
+        await this.audit("config", {
+          migrated: "inboxDir",
+          from: String(raw.inboxDir),
+          to: next,
+        });
+      } catch {
+        this.inboxMigration = null; // unreadable or unwritable now; try again next load
+      }
+    })();
+    return this.inboxMigration;
+  }
+
   async loadConfig(): Promise<PmoConfig> {
+    await this.migrateInboxDir();
     try {
       return PmoConfigSchema.parse((await readJson(this.paths.config)) ?? {});
     } catch {

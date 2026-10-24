@@ -3,6 +3,21 @@
 // { ok, reason? } envelope the routes send back (HTTP 200 either way, the
 // repo convention). Approve is the one door into todos/: nothing else ever
 // builds a Todo from a proposal.
+import {
+  PERIOD_KEY,
+  PeriodRequestSchema,
+  buildReport,
+  isCapped,
+  markdownToPlainText,
+  renderMarkdown,
+  type ReportData,
+  type SavedReportSummary,
+} from "../report.ts";
+import {
+  recordSignoff,
+  signoffKeysInPatchBody,
+  signoffPatchProblem,
+} from "../signoff.ts";
 import { threadKeyOf } from "../thread.ts";
 import {
   appendHistory,
@@ -19,6 +34,7 @@ import {
   type Intake,
   type PmoConfig,
   type Proposal,
+  type ReportNarrativeJob,
   type Todo,
   type TodoDraft,
   type TodoSource,
@@ -30,8 +46,19 @@ import {
   planUpdate,
 } from "../updateLogic.ts";
 import type { ChaserDrafts } from "./chaserDrafts.ts";
+import type { SignoffDrafts } from "./signoffDrafts.ts";
 import { syncDesktopPrefs } from "./desktopPrefs.ts";
 import type { Ingestor } from "./ingest.ts";
+import type { ReportDrafts } from "./reportDrafts.ts";
+import {
+  SaveReportBodySchema,
+  listReports,
+  newReportId,
+  readReport,
+  saveReport,
+  type ReadResult,
+  type SaveResult,
+} from "./reports.ts";
 import { osUser, type Store } from "./store.ts";
 import type { StructuringWorker } from "./structure.ts";
 import { z } from "zod";
@@ -42,6 +69,10 @@ export interface Pmo {
   worker: StructuringWorker;
   /** Local, copy-only follow-up drafts (nothing is ever sent). */
   chaser: ChaserDrafts;
+  /** Local, copy-only "improve with AI" sign-off request texts (never sent). */
+  signoffDrafts: SignoffDrafts;
+  /** Local, verified weekly-report highlights (nothing is ever sent). */
+  reportDrafts: ReportDrafts;
   now: () => Date;
   /** The inbox folder for a config (env override applied). */
   inboxDir: (config: PmoConfig) => string;
@@ -285,11 +316,40 @@ export function approveUpdate(
         from: sender.name ?? sender.address ?? null,
       },
     );
-    const { todo: next, kinds } = applyTodoPatch(
+    const patched = applyTodoPatch(
       { ...todo, history: appendHistory(todo.history, message) },
       patch.data,
       now,
     );
+    let next = patched.todo;
+    const kinds = patched.kinds;
+    // A ticked sign-off suggestion is recorded by the same logic as the record
+    // endpoint: the identity is the OS user who is approving this card and the
+    // time is the server's, never anything from the request; the evidence is
+    // this very message. If it cannot be recorded (someone recorded or revoked
+    // meanwhile) nothing at all is applied.
+    const signoffChange = applied.find((change) => change.kind === "signoff");
+    let signoffAudit: Record<string, unknown> | null = null;
+    if (signoffChange?.signoff) {
+      const { checkpointId, outcome, conditions, quote } = signoffChange.signoff;
+      const who = sender.name ?? sender.address ?? "the sender";
+      const recorded = recordSignoff(next, {
+        checkpointId,
+        outcome,
+        conditions,
+        evidence: {
+          intakeId: proposal.intakeId,
+          messageLink: raw?.intake.link ?? proposal.summary.link ?? null,
+          note: `Reply from ${who}${quote ? `: "${quote}"` : ""}`.slice(0, 500),
+        },
+        now,
+        by: osUser(),
+        from: who,
+      });
+      if (!recorded.ok) return fail(recorded.reason);
+      next = recorded.todo;
+      signoffAudit = recorded.audit;
+    }
     const tooMuch = todoLimitProblem(next);
     if (tooMuch) return fail(tooMuch);
 
@@ -307,6 +367,14 @@ export function approveUpdate(
       applied: applied.map((change) => change.id),
       kinds,
     });
+    if (signoffAudit) {
+      await pmo.store.audit("signoff-record", {
+        todoId: next.id,
+        via: "update-card",
+        proposalId: proposal.id,
+        ...signoffAudit,
+      });
+    }
     return { ok: true as const, todo: next };
   });
 }
@@ -331,6 +399,105 @@ export function startChaserDraft(
 export function discardChaserDraft(pmo: Pmo, todoId: string): ActionResult {
   pmo.chaser.discard(todoId);
   return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// Weekly report (local text; nothing is sent)
+// ---------------------------------------------------------------------------
+
+const PeriodBody = z.object({ period: PeriodRequestSchema });
+
+/** The deterministic report for a period, as of now: no model involved, instant.
+ *  Nothing is written until the person saves. */
+export function generateReport(
+  pmo: Pmo,
+  body: unknown,
+): Promise<
+  ActionResult<{
+    id: string;
+    data: ReportData;
+    markdown: string;
+    text: string;
+    capped: boolean;
+  }>
+> {
+  const input = PeriodBody.safeParse(body);
+  if (!input.success)
+    return Promise.resolve(fail("Choose a valid period for the report."));
+  return buildFor(pmo, input.data.period).then(async (built) => {
+    if (!built.ok) return built;
+    const { data } = built;
+    const markdown = renderMarkdown(data);
+    const id = newReportId();
+    await pmo.store.audit("report-generate", {
+      reportId: id,
+      period: `${data.period.startDay}..${data.period.endDay}`,
+      kind: data.period.kind,
+      open: data.summary.open,
+      closed: data.summary.closed,
+    });
+    return {
+      ok: true as const,
+      id,
+      data,
+      markdown,
+      text: markdownToPlainText(markdown),
+      capped: isCapped(data),
+    };
+  });
+}
+
+async function buildFor(
+  pmo: Pmo,
+  request: z.infer<typeof PeriodRequestSchema>,
+): Promise<{ ok: true; data: ReportData } | { ok: false; reason: string }> {
+  const [todos, config] = await Promise.all([
+    pmo.store.listTodos(),
+    pmo.store.loadConfig(),
+  ]);
+  return buildReport(todos, pmo.now(), request, config);
+}
+
+/** Ask the local model for highlights, risks and next week's focus. Returns at
+ *  once with the job; poll `getReportNarrative`. */
+export async function startReportNarrative(
+  pmo: Pmo,
+  body: unknown,
+): Promise<ActionResult<{ job: ReportNarrativeJob }>> {
+  const input = PeriodBody.safeParse(body);
+  if (!input.success) return fail("Choose a valid period for the report.");
+  const built = await buildFor(pmo, input.data.period);
+  if (!built.ok) return built;
+  return { ok: true, job: pmo.reportDrafts.start(built.data) };
+}
+
+export function getReportNarrative(
+  pmo: Pmo,
+  key: string | null,
+): ActionResult<{ job: ReportNarrativeJob | null }> {
+  if (!key || !PERIOD_KEY.test(key)) return fail("Missing or invalid period.");
+  return { ok: true, job: pmo.reportDrafts.get(key) };
+}
+
+export async function listSavedReports(
+  pmo: Pmo,
+): Promise<ActionResult<{ reports: SavedReportSummary[] }>> {
+  return { ok: true, reports: await listReports(pmo.store) };
+}
+
+export async function getSavedReport(
+  pmo: Pmo,
+  id: string,
+  rev: number | undefined,
+): Promise<ReadResult> {
+  return readReport(pmo.store, id, rev);
+}
+
+/** Save the text as a new revision (the first save creates the report). */
+export function saveReportText(pmo: Pmo, id: string, body: unknown): Promise<SaveResult> {
+  const input = SaveReportBodySchema.safeParse(body);
+  if (!input.success) return Promise.resolve(fail(firstIssue(input.error)));
+  return saveReport(pmo.store, id, input.data, { now: pmo.now() });
 }
 
 // ---------------------------------------------------------------------------
@@ -396,18 +563,36 @@ export function createManualTodo(
   });
 }
 
-export function patchTodo(
+export async function patchTodo(
   pmo: Pmo,
   id: string,
   body: unknown,
 ): Promise<ActionResult<{ todo: Todo; offerDone: boolean }>> {
+  // The generic edit route can neither write a sign-off nor fake one: a body
+  // that carries any sign-off field is refused outright (the schema below would
+  // only drop it silently), and so is one that ticks a sign-off step as done.
+  const forged = signoffKeysInPatchBody(body);
+  if (forged.length > 0) {
+    await pmo.store.audit("signoff-refused", {
+      todoId: id,
+      via: "patch",
+      fields: forged,
+    });
+    return fail(
+      `Sign-off details can only be recorded with the sign-off actions (Request sign-off / Record sign-off), not by editing the to-do. Remove: ${forged.join(", ")}.`,
+    );
+  }
   const parsed = TodoPatchSchema.safeParse(body);
-  if (!parsed.success)
-    return Promise.resolve(fail(`Invalid change: ${firstIssue(parsed.error)}`));
+  if (!parsed.success) return fail(`Invalid change: ${firstIssue(parsed.error)}`);
 
   return pmo.store.withLock(async () => {
     const todo = await pmo.store.getTodo(id);
     if (!todo) return fail("That to-do no longer exists.");
+    const refused = signoffPatchProblem(todo, parsed.data);
+    if (refused) {
+      await pmo.store.audit("signoff-refused", { todoId: id, via: "patch", fields: [] });
+      return fail(refused);
+    }
     const {
       todo: next,
       offerDone,
@@ -469,6 +654,12 @@ export function updateConfig(
       reminders: patch.reminders
         ? { ...patch.reminders, timeZone: patch.reminders.timeZone.trim() }
         : current.reminders,
+      report: patch.report
+        ? {
+            title: patch.report.title.trim(),
+            projectName: patch.report.projectName.trim(),
+          }
+        : current.report,
     };
     if (next.me.names.length === 0)
       return fail("Invalid config: me.names: Add at least one name.");

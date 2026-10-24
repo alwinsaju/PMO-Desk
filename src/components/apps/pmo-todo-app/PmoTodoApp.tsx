@@ -1,21 +1,24 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { ScrollArea, Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui";
+import { useEffect, useState, type ReactNode } from "react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui";
 import { FilteredList } from "./FilteredList";
-import { IngestStatusBar } from "./IngestStatusBar";
+import { NoticeStack, PmoToolbar } from "./IngestStatusBar";
 import { NewTodoDialog } from "./NewTodoDialog";
 import { PasteIntakeDialog } from "./PasteIntakeDialog";
 import { useDockBadgeStore } from "@/components/taskbar/dockBadgeStore";
 import { getDesktopBridge } from "@/lib/pmo/desktopBridge";
+import { PanelMessage, ScrollBody } from "./parts";
 import { ProposalDialog } from "./ProposalDialog";
-import { RemindersNotice } from "./RemindersNotice";
 import { useRemindersStore } from "./remindersStore";
+import { ReportsTab } from "./ReportsTab";
 import { ReviewQueue } from "./ReviewQueue";
 import { SettingsDialog } from "./SettingsDialog";
 import { TodoDetailDialog } from "./TodoDetailDialog";
 import { TodoList } from "./TodoList";
-import { reviewCount as countReview } from "./queueView";
+import { reviewCount as countReview, type TodoFilter, type TodoSort } from "./queueView";
+import { initialReportView, type ReportViewState } from "./reportView";
+import { istDate } from "@/lib/pmo/time";
 import { usePmoData } from "./usePmoData";
 
 /**
@@ -24,6 +27,11 @@ import { usePmoData } from "./usePmoData";
  * proposals; they wait in the Review Queue and only a human Approve turns one
  * into a to-do. Everything here talks to the app's own /api/pmo routes and
  * sends nothing anywhere.
+ *
+ * Layout: one toolbar row (tabs + status + actions), an optional notice strip,
+ * then the active tab filling the rest and scrolling on its own. The root is a
+ * size container (`@container`), so the toolbar adapts to the window, not the
+ * screen.
  */
 export function PmoTodoApp({ windowId }: { windowId: string }) {
   const { state, connection, refetch } = usePmoData();
@@ -33,6 +41,19 @@ export function PmoTodoApp({ windowId }: { windowId: string }) {
   const [creating, setCreating] = useState(false);
   const [pasting, setPasting] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // View choices live here, not in the tab content, which unmounts when you
+  // switch tabs: coming back finds the same filter, sort and open sections.
+  const [todoView, setTodoView] = useState<{ filter: TodoFilter; sort: TodoSort }>({
+    filter: "open",
+    sort: "due",
+  });
+  const [filteredReason, setFilteredReason] = useState<string | null>(null);
+  // The weekly report's period choice and draft live here too: the tab's
+  // content unmounts on a tab switch, and the person's edits must not.
+  const [reportView, setReportView] = useState<ReportViewState>(() =>
+    initialReportView(istDate(new Date())),
+  );
+  const [notTaskOpen, setNotTaskOpen] = useState(false);
 
   // A clicked reminder (desktop notification, web notification or the in-app
   // toast) asks for this window to open a to-do. It waits for the first state
@@ -59,15 +80,12 @@ export function PmoTodoApp({ windowId }: { windowId: string }) {
 
   if (!state) {
     return (
-      <div
-        data-window-id={windowId}
-        className="flex h-full w-full items-center justify-center p-6"
-      >
-        <p className="text-ink-faint text-sm">
+      <div data-window-id={windowId} className="h-full w-full">
+        <PanelMessage className="h-full">
           {connection === "offline"
             ? "Can't reach the AI OS server. This will connect automatically once it's available."
             : "Loading PMO To-Do…"}
-        </p>
+        </PanelMessage>
       </div>
     );
   }
@@ -78,63 +96,75 @@ export function PmoTodoApp({ windowId }: { windowId: string }) {
   const todo = todoId ? (state.todos.find((t) => t.id === todoId) ?? null) : null;
   const reviewCount = countReview(state.queue);
   const openCount = state.todos.filter((t) => t.status === "open").length;
+  const offline = connection === "offline";
 
   return (
-    <div data-window-id={windowId} className="flex h-full w-full flex-col">
-      <IngestStatusBar
-        state={state}
-        offline={connection === "offline"}
-        onShowFiltered={() => setTab("filtered")}
-        onPaste={() => setPasting(true)}
-        onSettings={() => setSettingsOpen(true)}
-        onSettled={refetch}
-      />
-      <RemindersNotice attention={state.attention.count} />
-
+    <div data-window-id={windowId} className="@container flex h-full w-full flex-col">
       <Tabs value={tab} onValueChange={setTab} className="flex min-h-0 flex-1 flex-col">
-        <div className="px-4 pt-3">
-          <TabsList>
-            <TabsTrigger value="review">
-              Review Queue{state.queue.length > 0 ? ` (${reviewCount})` : ""}
-            </TabsTrigger>
-            <TabsTrigger value="todos">To-Do ({openCount})</TabsTrigger>
-            <TabsTrigger value="filtered">
-              Filtered ({state.ingest.filteredCount})
-            </TabsTrigger>
-          </TabsList>
-        </div>
+        <PmoToolbar
+          state={state}
+          tabs={
+            <TabsList aria-label="PMO views">
+              <TabButton
+                value="review"
+                short="Review"
+                full="Review Queue"
+                count={reviewCount}
+              />
+              <TabButton value="todos" short="To-Do" full="To-Do" count={openCount} />
+              <TabButton
+                value="filtered"
+                short="Filtered"
+                full="Filtered"
+                count={state.ingest.filteredCount}
+              />
+              <TabButton value="reports" short="Report" full="Reports" />
+            </TabsList>
+          }
+          onPaste={() => setPasting(true)}
+          onSettings={() => setSettingsOpen(true)}
+          onSettled={refetch}
+        />
+        <NoticeStack
+          state={state}
+          offline={offline}
+          onSettings={() => setSettingsOpen(true)}
+        />
 
-        <TabsContent value="review" className="min-h-0 flex-1">
-          <ScrollArea className="h-full">
-            <ReviewQueue
-              state={state}
-              onOpen={setProposalId}
-              onOpenTodo={(id) => {
-                setTab("todos");
-                setTodoId(id);
-              }}
-              onSettled={refetch}
-            />
-          </ScrollArea>
-        </TabsContent>
-        <TabsContent value="todos" className="min-h-0 flex-1">
-          <ScrollArea className="h-full">
-            <TodoList
-              state={state}
-              onOpen={setTodoId}
-              onNew={() => setCreating(true)}
-              onSettled={refetch}
-            />
-          </ScrollArea>
-        </TabsContent>
-        <TabsContent value="filtered" className="min-h-0 flex-1">
-          <ScrollArea className="h-full">
-            <FilteredList
-              state={state}
-              onSettled={refetch}
-              onOpenSettings={() => setSettingsOpen(true)}
-            />
-          </ScrollArea>
+        <Panel value="review">
+          <ReviewQueue
+            state={state}
+            notTaskOpen={notTaskOpen}
+            onNotTaskOpenChange={setNotTaskOpen}
+            onOpen={setProposalId}
+            onOpenTodo={(id) => {
+              setTab("todos");
+              setTodoId(id);
+            }}
+            onSettled={refetch}
+          />
+        </Panel>
+        <Panel value="todos">
+          <TodoList
+            state={state}
+            view={todoView}
+            onViewChange={setTodoView}
+            onOpen={setTodoId}
+            onNew={() => setCreating(true)}
+            onSettled={refetch}
+          />
+        </Panel>
+        <Panel value="filtered">
+          <FilteredList
+            state={state}
+            reason={filteredReason}
+            onReasonChange={setFilteredReason}
+            onSettled={refetch}
+            onOpenSettings={() => setSettingsOpen(true)}
+          />
+        </Panel>
+        <TabsContent value="reports" className="flex min-h-0 flex-1 flex-col">
+          <ReportsTab state={state} view={reportView} onViewChange={setReportView} />
         </TabsContent>
       </Tabs>
 
@@ -152,6 +182,8 @@ export function PmoTodoApp({ windowId }: { windowId: string }) {
         reminders={state.config.reminders}
         nowIso={state.serverTime}
         chaser={todo ? state.chasers?.[todo.id] : undefined}
+        signoffDraft={todo ? state.signoffDrafts?.[todo.id] : undefined}
+        me={state.config.me}
         onSettled={refetch}
         onOpenChange={(open) => {
           if (!open) setTodoId(null);
@@ -166,5 +198,39 @@ export function PmoTodoApp({ windowId }: { windowId: string }) {
         onOpenChange={setSettingsOpen}
       />
     </div>
+  );
+}
+
+/** A tab trigger whose label shortens in a narrow window and whose count is a
+ *  quiet figure after the name. */
+function TabButton({
+  value,
+  short,
+  full,
+  count,
+}: {
+  value: string;
+  short: string;
+  full: string;
+  /** A quiet figure after the name; none for a tab that is not a list. */
+  count?: number;
+}) {
+  return (
+    <TabsTrigger value={value} className="shrink-0 px-2.5 whitespace-nowrap @md:px-3.5">
+      <span className="@xl:hidden">{short}</span>
+      <span className="hidden @xl:inline">{full}</span>
+      {count !== undefined && (
+        <span className="text-ink-faint ml-1.5 tabular-nums">{count}</span>
+      )}
+    </TabsTrigger>
+  );
+}
+
+/** One tab's content: fills the rest of the window and scrolls by itself. */
+function Panel({ value, children }: { value: string; children: ReactNode }) {
+  return (
+    <TabsContent value={value} className="flex min-h-0 flex-1 flex-col">
+      <ScrollBody memoryKey={`pmo:${value}`}>{children}</ScrollBody>
+    </TabsContent>
   );
 }

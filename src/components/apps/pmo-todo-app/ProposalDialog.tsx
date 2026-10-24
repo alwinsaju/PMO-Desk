@@ -7,7 +7,6 @@ import {
   DialogContent,
   DialogDescription,
   DialogTitle,
-  ScrollArea,
 } from "@/components/ui";
 import { effectiveDraft } from "@/lib/pmo/todoLogic";
 import {
@@ -25,7 +24,7 @@ import {
 } from "./api";
 import { DraftForm } from "./DraftForm";
 import { OriginalMessage } from "./OriginalMessage";
-import { ProposalStatusBadge, SourceBadge } from "./parts";
+import { ProposalStatusBadge, ScrollBody, SourceBadge } from "./parts";
 
 interface ProposalDialogProps {
   /** null closes the dialog. */
@@ -120,11 +119,11 @@ export function ProposalDialog({
       onOpenChange={(open) => (open ? undefined : void close())}
     >
       <DialogContent
-        className="flex h-[min(82vh,720px)] max-w-5xl flex-col"
+        className="flex h-[min(86vh,720px)] max-h-full max-w-5xl flex-col p-4 @md:p-5"
         // Don't drop the cursor (and a text selection) into the title field.
         onOpenAutoFocus={(event) => event.preventDefault()}
       >
-        <div className="flex items-center gap-2 pr-8">
+        <div className="flex shrink-0 items-center gap-2 pr-8">
           <SourceBadge source={shown.summary.source} />
           <DialogTitle className="min-w-0 flex-1 truncate">
             {shown.summary.subject || "(no subject)"}
@@ -137,7 +136,7 @@ export function ProposalDialog({
         </DialogDescription>
 
         {notATask && shown.draft && (
-          <p className="border-border text-ink-muted mt-3 rounded-lg border bg-neutral-50 px-3 py-2 text-[12px]">
+          <p className="border-border text-ink-muted mt-3 shrink-0 rounded-lg border bg-neutral-50 px-3 py-2 text-[12px]">
             The model thinks this is <strong className="text-ink">not a task</strong>:{" "}
             {shown.draft.reason}
           </p>
@@ -145,7 +144,7 @@ export function ProposalDialog({
         {isReady && shown.quoteVerified === false && (
           <p
             role="alert"
-            className="bg-ink text-ink-inverse mt-3 rounded-lg px-3 py-2 text-[12px]"
+            className="bg-ink text-ink-inverse mt-3 shrink-0 rounded-lg px-3 py-2 text-[12px]"
           >
             <strong>Check against the original.</strong> The sentence the model quoted was
             not found in the message
@@ -153,39 +152,39 @@ export function ProposalDialog({
           </p>
         )}
         {isFailed && (
-          <p className="border-border text-ink mt-3 rounded-lg border bg-neutral-50 px-3 py-2 text-[12px]">
+          <p className="border-border text-ink mt-3 shrink-0 rounded-lg border bg-neutral-50 px-3 py-2 text-[12px]">
             The local model could not structure this message
             {shown.ai.error ? ` (${shown.ai.error.replace(/\.$/, "")})` : ""}. Attempts
             used: {shown.ai.attempts} of {MAX_AI_ATTEMPTS}.
           </p>
         )}
         {(shown.status === "pending" || shown.status === "structuring") && (
-          <p className="border-border text-ink-muted mt-3 rounded-lg border bg-neutral-50 px-3 py-2 text-[12px]">
+          <p className="border-border text-ink-muted mt-3 shrink-0 rounded-lg border bg-neutral-50 px-3 py-2 text-[12px]">
             {structuring.paused
               ? "Waiting for the local model to come back. This will be structured automatically."
               : "The local model has not finished with this message yet."}
           </p>
         )}
 
-        <div className="mt-3 grid min-h-0 flex-1 grid-cols-1 gap-4 md:grid-cols-2">
-          <div className="flex min-h-0 flex-col">
+        {/* Two panes side by side on a wide screen, stacked and scrolling as one
+            below that. */}
+        <div className="mt-3 grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-y-auto md:grid-cols-2 md:grid-rows-[minmax(0,1fr)] md:overflow-hidden">
+          <div className="flex flex-col md:min-h-0">
             <p className="text-ink-muted mb-2 text-[11px] font-semibold tracking-wide uppercase">
               {manual ? "New to-do (typed by you)" : "Proposed to-do"}
             </p>
             {showForm && draft ? (
-              <ScrollArea className="min-h-0 flex-1">
-                <div className="pr-3">
-                  <DraftForm
-                    draft={draft}
-                    dueBasis={shown.draft?.dueBasis}
-                    disabled={busy}
-                    onChange={(next) => {
-                      setDraft(next);
-                      setDirty(true);
-                    }}
-                  />
-                </div>
-              </ScrollArea>
+              <ScrollBody className="md:pr-2">
+                <DraftForm
+                  draft={draft}
+                  dueBasis={shown.draft?.dueBasis}
+                  disabled={busy}
+                  onChange={(next) => {
+                    setDraft(next);
+                    setDirty(true);
+                  }}
+                />
+              </ScrollBody>
             ) : (
               <p className="text-ink-faint text-[13px]">
                 {isFailed
@@ -195,7 +194,7 @@ export function ProposalDialog({
             )}
           </div>
 
-          <div className="border-border/60 flex min-h-0 flex-col rounded-lg border p-3">
+          <div className="border-border flex h-72 flex-col rounded-lg border p-3 md:h-auto md:min-h-0">
             <p className="text-ink-muted mb-2 text-[11px] font-semibold tracking-wide uppercase">
               Original message
               {isReady && shown.quoteVerified && (
@@ -213,18 +212,18 @@ export function ProposalDialog({
         </div>
 
         {error && (
-          <p role="alert" className="text-ink mt-3 text-[12px] font-medium">
+          <p role="alert" className="text-ink mt-3 shrink-0 text-[12px] font-medium">
             {error}
           </p>
         )}
 
-        <div className="mt-4 flex items-center justify-between gap-3">
+        <div className="border-border mt-3 flex shrink-0 flex-wrap items-center justify-between gap-x-3 gap-y-2 border-t pt-3">
           <p className="text-ink-faint min-w-0 truncate text-[11px]">
             {shown.ai.model && shown.ai.durationMs !== null
               ? `${shown.ai.model} · ${(shown.ai.durationMs / 1000).toFixed(1)} s`
               : ""}
           </p>
-          <div className="flex shrink-0 gap-2">
+          <div className="ml-auto flex flex-wrap justify-end gap-2">
             {isFailed && !manual && shown.ai.attempts < MAX_AI_ATTEMPTS && (
               <Button
                 variant="secondary"

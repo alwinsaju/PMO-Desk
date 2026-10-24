@@ -4,6 +4,8 @@
 import type { Pmo } from "./actions.ts";
 import { ChaserDrafts } from "./chaserDrafts.ts";
 import { Ingestor } from "./ingest.ts";
+import { SignoffDrafts } from "./signoffDrafts.ts";
+import { ReportDrafts } from "./reportDrafts.ts";
 import { resolveInboxDir } from "./paths.ts";
 import { Store } from "./store.ts";
 import type { PmoConfig } from "../types.ts";
@@ -36,5 +38,15 @@ export async function createPmo(options: {
     generator: options.generator,
     now: () => now().getTime(),
   });
-  return { store, ingestor, worker, chaser, now, inboxDir };
+  const signoffDrafts = new SignoffDrafts({
+    store,
+    generator: options.generator,
+    now: () => now().getTime(),
+  });
+  const reportDrafts = new ReportDrafts({
+    store,
+    generator: options.generator,
+    now: () => now().getTime(),
+  });
+  return { store, ingestor, worker, chaser, signoffDrafts, reportDrafts, now, inboxDir };
 }

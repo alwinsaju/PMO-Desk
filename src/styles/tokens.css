@@ -301,7 +301,6 @@
   --color-ink-muted: var(--color-neutral-600);
   --color-ink-faint: var(--color-neutral-500);
   --color-ink-inverse: var(--color-surface-elevated);
-
   --color-line: rgba(255, 255, 255, 0.09);
   --color-line-strong: rgba(255, 255, 255, 0.14);
 

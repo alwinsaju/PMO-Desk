@@ -72,5 +72,6 @@ export async function buildState(
     config,
     dataDir: deps.dataDir,
     chasers: pmo.chaser.snapshot(),
+    signoffDrafts: pmo.signoffDrafts.snapshot(),
   };
 }

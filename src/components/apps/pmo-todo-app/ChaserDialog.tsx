@@ -13,7 +13,7 @@ import {
 import { buildMailto } from "@/lib/pmo/chaser";
 import type { ChaserJob, Todo } from "@/lib/pmo/types";
 import { discardChaser, startChaser } from "./api";
-import { Field, TextArea } from "./parts";
+import { Field, ScrollBody, TextArea } from "./parts";
 
 interface ChaserDialogProps {
   todo: Todo;
@@ -31,7 +31,13 @@ interface ChaserDialogProps {
  * program, which only opens a compose window. The model's text is untrusted and
  * is only ever shown inside a <textarea> (plain text, never as HTML).
  */
-export function ChaserDialog({ todo, job, open, onOpenChange, onSettled }: ChaserDialogProps) {
+export function ChaserDialog({
+  todo,
+  job,
+  open,
+  onOpenChange,
+  onSettled,
+}: ChaserDialogProps) {
   const [seededFor, setSeededFor] = useState<string | null>(null);
   const [text, setText] = useState("");
   const [subject, setSubject] = useState("");
@@ -109,9 +115,15 @@ export function ChaserDialog({ todo, job, open, onOpenChange, onSettled }: Chase
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[min(86vh,680px)] max-w-xl flex-col">
-        <DialogTitle>Chaser to {todo.waitingOn ?? "the person you are waiting on"}</DialogTitle>
-        <DialogDescription className="text-[12px]">
+      <DialogContent
+        className="flex max-h-full max-w-xl flex-col p-5"
+        // Opening should not select the address in the first field.
+        onOpenAutoFocus={(event) => event.preventDefault()}
+      >
+        <DialogTitle className="shrink-0">
+          Chaser to {todo.waitingOn ?? "the person you are waiting on"}
+        </DialogTitle>
+        <DialogDescription className="shrink-0 text-[12px]">
           Drafted by the local model from this to-do. Edit it, then copy it. This app
           never sends anything.
         </DialogDescription>
@@ -122,8 +134,8 @@ export function ChaserDialog({ todo, job, open, onOpenChange, onSettled }: Chase
             className="border-border text-ink-muted mt-4 flex items-center gap-2 rounded-lg border bg-neutral-50 px-3 py-3 text-[13px]"
           >
             <span className="bg-accent h-2 w-2 shrink-0 animate-pulse rounded-full" />
-            Drafting… (can take a minute on this PC). You can close this window; the
-            draft will be waiting on the to-do.
+            Drafting… (can take a minute on this PC). You can close this window; the draft
+            will be waiting on the to-do.
           </div>
         )}
 
@@ -141,38 +153,47 @@ export function ChaserDialog({ todo, job, open, onOpenChange, onSettled }: Chase
         )}
 
         {ready && (
-          <div className="mt-4 flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pr-1">
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="To (optional)">
-                <Input
-                  value={to}
-                  placeholder="name@deloitte.com"
-                  onChange={(e) => setTo(e.target.value)}
+          <>
+            <ScrollBody className="mt-4 flex flex-col gap-3 pr-2">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <Field label="To (optional)">
+                  <Input
+                    value={to}
+                    placeholder="name@deloitte.com"
+                    onChange={(e) => setTo(e.target.value)}
+                  />
+                </Field>
+                <Field label="Subject">
+                  <Input
+                    value={subject}
+                    maxLength={150}
+                    onChange={(e) => setSubject(e.target.value)}
+                  />
+                </Field>
+              </div>
+              <Field label="Message">
+                <TextArea
+                  ref={textRef}
+                  value={text}
+                  rows={9}
+                  className="min-h-44 leading-relaxed"
+                  onChange={(e) => setText(e.target.value)}
                 />
               </Field>
-              <Field label="Subject">
-                <Input
-                  value={subject}
-                  maxLength={150}
-                  onChange={(e) => setSubject(e.target.value)}
-                />
-              </Field>
-            </div>
-            <Field label="Message">
-              <TextArea
-                ref={textRef}
-                value={text}
-                rows={9}
-                className="min-h-44 leading-relaxed"
-                onChange={(e) => setText(e.target.value)}
-              />
-            </Field>
-            {error && (
-              <p role="alert" className="text-ink text-[12px] font-medium">
-                {error}
+              {error && (
+                <p role="alert" className="text-ink text-[12px] font-medium">
+                  {error}
+                </p>
+              )}
+              {!mailto.ok && (
+                <p className="text-ink-faint text-[11px]">{mailto.reason}</p>
+              )}
+              <p className="text-ink-faint text-[11px]">
+                The mail link only opens a new message in your mail program with this text
+                filled in; you still check it and press Send yourself.
               </p>
-            )}
-            <div className="flex flex-wrap items-center gap-2">
+            </ScrollBody>
+            <div className="border-border mt-3 flex shrink-0 flex-wrap items-center gap-2 border-t pt-3">
               <Button disabled={!text.trim()} onClick={() => void copy()}>
                 {copied ? <CheckIcon size={14} weight="bold" /> : <CopyIcon size={14} />}
                 {copied ? "Copied" : "Copy"}
@@ -204,14 +225,7 @@ export function ChaserDialog({ todo, job, open, onOpenChange, onSettled }: Chase
                 Discard
               </Button>
             </div>
-            {!mailto.ok && (
-              <p className="text-ink-faint text-[11px]">{mailto.reason}</p>
-            )}
-            <p className="text-ink-faint text-[11px]">
-              The mail link only opens a new message in your mail program with this text
-              filled in; you still check it and press Send yourself.
-            </p>
-          </div>
+          </>
         )}
       </DialogContent>
     </Dialog>

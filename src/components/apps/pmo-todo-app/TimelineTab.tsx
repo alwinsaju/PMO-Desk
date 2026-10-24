@@ -31,7 +31,7 @@ export function TimelineTab({ todo }: { todo: Todo }) {
   }
 
   return (
-    <ol className="flex flex-col pr-3" aria-label="Timeline">
+    <ol className="flex flex-col" aria-label="Timeline">
       {entries.map((entry, index) => {
         const opened = openId === entry.id;
         return (
@@ -71,7 +71,7 @@ export function TimelineTab({ todo }: { todo: Todo }) {
                     {opened ? "Hide message" : "Open message"}
                   </Button>
                   {opened && (
-                    <div className="border-border/60 mt-1 flex h-64 flex-col rounded-lg border p-3">
+                    <div className="border-border mt-1 flex h-64 flex-col rounded-lg border p-3">
                       <OriginalMessage
                         intakeId={entry.intakeId}
                         className="flex min-h-0 flex-1 flex-col"

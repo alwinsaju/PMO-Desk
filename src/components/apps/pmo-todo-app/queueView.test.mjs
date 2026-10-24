@@ -19,6 +19,7 @@ import {
   resendGuidance,
   sortTodos,
   statusLabel,
+  todoRowView,
 } from "./queueView.ts";
 
 const proposal = (id, status, extra = {}) => ({
@@ -431,8 +432,134 @@ describe("waiting on someone, for the row and the panel", () => {
 
   it("is null when the to-do is not waiting or is closed", () => {
     const now = ist("2026-10-23T10:00");
-    assert.equal(describeWaiting(todo({ waitingOn: null }), now, prefs, "2026-10-23"), null);
-    assert.equal(describeWaiting(todo({ waitingOn: "  " }), now, prefs, "2026-10-23"), null);
-    assert.equal(describeWaiting(todo({ status: "done" }), now, prefs, "2026-10-23"), null);
+    assert.equal(
+      describeWaiting(todo({ waitingOn: null }), now, prefs, "2026-10-23"),
+      null,
+    );
+    assert.equal(
+      describeWaiting(todo({ waitingOn: "  " }), now, prefs, "2026-10-23"),
+      null,
+    );
+    assert.equal(
+      describeWaiting(todo({ status: "done" }), now, prefs, "2026-10-23"),
+      null,
+    );
+  });
+});
+
+describe("the to-do row view", () => {
+  const now = new Date("2026-10-26T04:30:00Z"); // 10:00 IST on 26 Oct
+  const today = "2026-10-26";
+  const cp = (state) => ({ id: state, label: state, kind: "step", state });
+  const todo = (extra = {}) => ({
+    status: "open",
+    dueAt: null,
+    checkpoints: [],
+    reminders: {
+      enabled: false,
+      remindAt: null,
+      snoozedUntil: null,
+      lastRemindedAt: null,
+    },
+    ...extra,
+  });
+
+  it("shows exactly one headline, most urgent first", () => {
+    assert.deepEqual(todoRowView(todo({ dueAt: "2026-10-20" }), today, now).headline, {
+      tone: "strong",
+      label: "Overdue",
+    });
+    assert.deepEqual(todoRowView(todo({ dueAt: "2026-10-26" }), today, now).headline, {
+      tone: "outline",
+      label: "Due soon",
+    });
+    assert.deepEqual(todoRowView(todo({ dueAt: "2026-10-27" }), today, now).headline, {
+      tone: "outline",
+      label: "Due soon",
+    });
+    assert.equal(todoRowView(todo({ dueAt: "2026-11-05" }), today, now).headline, null);
+    assert.equal(todoRowView(todo(), today, now).headline, null);
+  });
+
+  it("a closed to-do shows how it closed, never as overdue", () => {
+    const done = todoRowView(todo({ status: "done", dueAt: "2026-10-01" }), today, now);
+    assert.deepEqual(done.headline, { tone: "outline", label: "Done" });
+    assert.equal(done.overdue, false);
+    assert.equal(
+      todoRowView(todo({ status: "cancelled" }), today, now).headline.label,
+      "Cancelled",
+    );
+  });
+
+  it("describes the due date in words", () => {
+    assert.equal(todoRowView(todo(), today, now).dueText, "No due date");
+    assert.equal(
+      todoRowView(todo({ dueAt: "2026-10-26" }), today, now).dueText,
+      "Due Today",
+    );
+    assert.equal(
+      todoRowView(todo({ dueAt: "2026-10-27" }), today, now).dueText,
+      "Due Tomorrow",
+    );
+    assert.equal(
+      todoRowView(todo({ dueAt: "2026-10-21" }), today, now).dueText,
+      "Due Wed 21 Oct",
+    );
+  });
+
+  it("derives stage, progress and the ready-to-close offer from the checkpoints", () => {
+    const partial = todoRowView(
+      todo({
+        checkpoints: [
+          { id: "a", label: "Draft", kind: "step", state: "done" },
+          { id: "b", label: "Review", kind: "step", state: "pending" },
+          { id: "c", label: "Send", kind: "step", state: "pending" },
+          { id: "d", label: "Close", kind: "step", state: "skipped" },
+        ],
+      }),
+      today,
+      now,
+    );
+    assert.equal(partial.stage, "Review");
+    assert.equal(partial.stageText, "Review");
+    assert.deepEqual([partial.done, partial.total, partial.percent], [2, 4, 50]);
+    assert.equal(partial.readyToClose, false);
+
+    const finished = todoRowView(
+      todo({ checkpoints: [cp("done"), cp("skipped")] }),
+      today,
+      now,
+    );
+    assert.equal(finished.readyToClose, true);
+    assert.equal(finished.stageText, "All steps done");
+    assert.equal(finished.percent, 100);
+
+    const closed = todoRowView(
+      todo({ status: "done", checkpoints: [cp("done")] }),
+      today,
+      now,
+    );
+    assert.equal(closed.readyToClose, false);
+    assert.equal(closed.stageText, "Complete");
+
+    const none = todoRowView(todo(), today, now);
+    assert.deepEqual([none.total, none.percent, none.stageText], [0, 0, ""]);
+  });
+
+  it("knows a snooze that is still running", () => {
+    const sleeping = todo({
+      reminders: {
+        enabled: false,
+        remindAt: null,
+        snoozedUntil: "2026-10-27T03:30:00Z",
+        lastRemindedAt: null,
+      },
+    });
+    assert.equal(todoRowView(sleeping, today, now).snoozed, true);
+    assert.equal(
+      todoRowView(sleeping, today, new Date("2026-10-28T00:00:00Z")).snoozed,
+      false,
+    );
+    assert.equal(todoRowView({ ...sleeping, status: "done" }, today, now).snoozed, false);
   });
 });

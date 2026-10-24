@@ -3,6 +3,7 @@
 // run points at a throwaway directory instead of real data.
 import os from "node:os";
 import path from "node:path";
+import { DEFAULT_INBOX_DIR, LEGACY_DEFAULT_INBOX_DIRS } from "../types.ts";
 
 type Env = Record<string, string | undefined>;
 
@@ -21,6 +22,28 @@ export function resolveInboxDir(configured: string, env: Env = process.env): str
   return path.resolve(override || configured);
 }
 
+/** Compare folder paths loosely: case, slash direction, repeated and trailing separators. */
+function comparablePath(value: string): string {
+  return value
+    .trim()
+    .replace(/[\\/]+/g, "\\")
+    .replace(/\\+$/, "")
+    .toLowerCase();
+}
+
+/** The one-time inbox migration: a saved inboxDir that is exactly a former
+ *  default (written into config.json on first run) is replaced by the current
+ *  default. Returns the new value, or null when nothing should change. A custom
+ *  path, the current default, and a missing/non-string value all return null. */
+export function migratedInboxDir(saved: unknown): string | null {
+  if (typeof saved !== "string") return null;
+  const wanted = comparablePath(saved);
+  if (wanted === comparablePath(DEFAULT_INBOX_DIR)) return null;
+  return LEGACY_DEFAULT_INBOX_DIRS.some((old) => comparablePath(old) === wanted)
+    ? DEFAULT_INBOX_DIR
+    : null;
+}
+
 export interface PmoPaths {
   root: string;
   config: string;
@@ -29,6 +52,8 @@ export interface PmoPaths {
   rejectedFiles: string;
   queue: string;
   todos: string;
+  /** Saved weekly reports: `<date>-<id>.md` revisions and a `.json` sidecar each. */
+  reports: string;
   seen: string;
   /** Which reminders were delivered, and who has claimed one (server/notify.ts). */
   notify: string;
@@ -46,6 +71,7 @@ export function pmoPaths(root: string): PmoPaths {
     rejectedFiles: path.join(root, "rejected-files"),
     queue: path.join(root, "queue"),
     todos: path.join(root, "todos"),
+    reports: path.join(root, "reports"),
     seen: path.join(root, "state", "seen.json"),
     notify: path.join(root, "state", "notify.json"),
     ingestLog: path.join(root, "logs", "ingest.jsonl"),

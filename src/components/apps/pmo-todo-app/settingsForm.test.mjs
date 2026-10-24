@@ -87,4 +87,27 @@ describe("settings form", () => {
     assert.match(bad({ workDays: [] }).errors["reminders.workDays"], /at least one/i);
     assert.equal(bad({ chaserDays: " 3 ", digest: true }).patch.reminders.chaserDays, 3);
   });
+  it("carries the weekly report heading and checks it", () => {
+    const base = formFromConfig(config);
+    assert.equal(base.reportTitle, "Weekly status");
+    assert.equal(base.reportProject, "");
+    const ok = buildPatch({
+      ...base,
+      reportTitle: "  Programme status ",
+      reportProject: " Atlas ",
+    });
+    assert.deepEqual(ok.patch.report, {
+      title: "Programme status",
+      projectName: "Atlas",
+    });
+    assert.equal(buildPatch(base).patch.report.title, "Weekly status");
+    assert.match(
+      buildPatch({ ...base, reportTitle: "  " }).errors["report.title"],
+      /Enter a title/,
+    );
+    assert.match(
+      buildPatch({ ...base, reportProject: "x".repeat(81) }).errors["report.projectName"],
+      /At most 80/,
+    );
+  });
 });

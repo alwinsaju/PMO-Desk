@@ -1,10 +1,125 @@
 "use client";
 
-import type { ComponentProps, ReactNode } from "react";
-import { Badge } from "@/components/ui";
+import {
+  useCallback,
+  useLayoutEffect,
+  useRef,
+  type ComponentProps,
+  type ReactNode,
+} from "react";
+import { Badge, type BadgeProps } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import type { Proposal, StructuringInfo } from "@/lib/pmo/types";
 import { SOURCE_LABEL, statusLabel } from "./queueView";
+
+/** Thin themed scrollbar for native scroll regions (same thumb colour as the
+ *  ScrollArea primitive, so the two look alike). */
+export const THIN_SCROLLBAR =
+  "[scrollbar-width:thin] [scrollbar-color:var(--color-neutral-300)_transparent]";
+
+/** Last scroll position per scroll region, so leaving a tab and coming back
+ *  (which unmounts the tab's content) does not throw the reader to the top. */
+const scrollMemory = new Map<string, number>();
+
+/**
+ * THE scrolling region of a window tab or a dialog body. A plain overflow
+ * container, not the Radix ScrollArea: that one wraps its content in a
+ * `display: table` element that grows to the widest child (so `truncate` and
+ * `min-w-0` never take effect and the right-hand edge is clipped, which is how
+ * the Approve button got cut off), and its viewport needs a definite height
+ * (so inside a dialog that only has a `max-height`, it never scrolled at all).
+ * Use it as a flex child (`min-h-0 flex-1`) of a column with a bounded height.
+ */
+export function ScrollBody({
+  className,
+  memoryKey,
+  onScroll,
+  ...props
+}: ComponentProps<"div"> & {
+  /** Remember and restore the scroll position under this key. */
+  memoryKey?: string;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (memoryKey && ref.current)
+      ref.current.scrollTop = scrollMemory.get(memoryKey) ?? 0;
+  }, [memoryKey]);
+  const remember = useCallback(
+    (event: React.UIEvent<HTMLDivElement>) => {
+      if (memoryKey) scrollMemory.set(memoryKey, event.currentTarget.scrollTop);
+      onScroll?.(event);
+    },
+    [memoryKey, onScroll],
+  );
+  return (
+    <div
+      ref={ref}
+      onScroll={remember}
+      className={cn(
+        "min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain",
+        THIN_SCROLLBAR,
+        className,
+      )}
+      {...props}
+    />
+  );
+}
+
+export type ChipTone = "neutral" | "accent" | "strong" | "outline";
+
+const CHIP_TONE: Record<ChipTone, string> = {
+  neutral: "",
+  outline: "",
+  // The accent tint is a light mint; on the dark theme it reads as a white
+  // pill, so it gets the deep end of the same ramp there.
+  accent: "dark:bg-accent-900 dark:text-accent-200",
+  strong: "bg-ink text-ink-inverse",
+};
+
+/** A small status pill. At most one `strong` chip per row: it is the thing that
+ *  must be seen first; everything else stays neutral or outlined. */
+export function Chip({
+  tone = "neutral",
+  className,
+  ...props
+}: Omit<BadgeProps, "variant"> & { tone?: ChipTone }) {
+  return (
+    <Badge
+      variant={tone === "accent" ? "accent" : tone === "outline" ? "outline" : "neutral"}
+      className={cn("whitespace-nowrap", CHIP_TONE[tone], className)}
+      {...props}
+    />
+  );
+}
+
+/** Lists stop growing at this width and centre, so a maximised window does not
+ *  stretch a row across the whole screen. */
+export const CONTENT_WIDTH = "mx-auto w-full max-w-4xl";
+
+/** A row of pills that scrolls sideways in a narrow window: it fades out at the
+ *  right edge so a half-cut pill reads as "more this way", not as a glitch. */
+export const PILL_STRIP =
+  "flex gap-1 overflow-x-auto [scrollbar-width:none] [mask-image:linear-gradient(to_right,black_calc(100%-1.5rem),transparent)] @lg:[mask-image:none]";
+
+/** A centred "nothing here" / loading message that fills a tab or panel. */
+export function PanelMessage({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div
+      className={cn(
+        "flex h-full min-h-40 items-center justify-center p-6 text-center",
+        className,
+      )}
+    >
+      <p className="text-ink-faint max-w-sm text-[13px] leading-relaxed">{children}</p>
+    </div>
+  );
+}
 
 /** Small caps label above a form control. */
 export function Field({
@@ -26,10 +141,7 @@ export function Field({
   );
 }
 
-export function TextArea({
-  className,
-  ...props
-}: ComponentProps<"textarea">) {
+export function TextArea({ className, ...props }: ComponentProps<"textarea">) {
   return (
     <textarea
       className={cn(
@@ -90,8 +202,8 @@ export function SourceBadge({ source }: { source: keyof typeof SOURCE_LABEL }) {
   return <Badge variant="outline">{SOURCE_LABEL[source]}</Badge>;
 }
 
-/** Status pill for a queue row. Accent only for the one state that is the
- *  model actively working; everything else leans on contrast. */
+/** Status pill for a queue row. Accent only for the states where the model is
+ *  working or has something ready; "failed" is outlined in full-strength ink. */
 export function ProposalStatusBadge({
   proposal,
   structuring,
@@ -100,24 +212,27 @@ export function ProposalStatusBadge({
   structuring: StructuringInfo;
 }) {
   const label = statusLabel(proposal, structuring);
-  const active = proposal.status === "structuring";
+  const active = proposal.status === "structuring" && !structuring.paused;
+  const tone: ChipTone =
+    proposal.status === "failed"
+      ? "outline"
+      : proposal.status === "ready" && proposal.isActionable !== false
+        ? "accent"
+        : active
+          ? "accent"
+          : proposal.status === "ready"
+            ? "outline"
+            : "neutral";
   return (
-    <span
+    <Chip
+      tone={tone}
       className={cn(
-        "rounded-pill inline-flex items-center gap-1.5 px-2.5 py-0.5 text-[11px] font-medium whitespace-nowrap",
-        proposal.status === "failed" && "bg-ink text-ink-inverse",
-        proposal.status === "ready" &&
-          proposal.isActionable !== false &&
-          "bg-accent-subtle text-accent-800",
-        proposal.status === "ready" &&
-          proposal.isActionable === false &&
-          "border-border text-ink-muted border",
-        active && "bg-accent-subtle text-accent-800",
-        proposal.status === "pending" && "text-ink-muted bg-neutral-100",
+        "gap-1.5",
+        proposal.status === "failed" && "border-ink text-ink font-semibold",
       )}
     >
       {active && <span className="bg-accent h-1.5 w-1.5 animate-pulse rounded-full" />}
       {label}
-    </span>
+    </Chip>
   );
 }

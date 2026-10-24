@@ -9,18 +9,20 @@ import {
   DialogDescription,
   DialogTitle,
   Input,
-  ScrollArea,
 } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import {
+  DEFAULT_REPORT_TITLE,
   DEFAULT_RETENTION_DAYS,
   MAX_CHASER_DAYS,
+  MAX_REPORT_TITLE_CHARS,
   MAX_RETENTION_DAYS,
   MIN_RETENTION_DAYS,
   type PmoState,
 } from "@/lib/pmo/types";
 import { updateConfig } from "./api";
-import { Field, TextArea } from "./parts";
+import { Field, ScrollBody, TextArea } from "./parts";
+import { NotificationStatus } from "./RemindersNotice";
 import { useRemindersStore } from "./remindersStore";
 import {
   buildPatch,
@@ -126,17 +128,17 @@ export function SettingsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[90vh] max-w-2xl flex-col">
-        <DialogTitle>PMO settings</DialogTitle>
-        <DialogDescription>
+      <DialogContent className="flex max-h-full max-w-2xl flex-col p-5">
+        <DialogTitle className="shrink-0">PMO settings</DialogTitle>
+        <DialogDescription className="shrink-0">
           One entry per line. Changes apply to the next scan; nothing already in the queue
           is re-filtered.
         </DialogDescription>
 
-        <ScrollArea className="mt-4 min-h-0 flex-1">
-          <div className="flex flex-col gap-5 pr-3">
+        <ScrollBody className="mt-4 pr-2">
+          <div className="flex flex-col gap-5">
             <Section title="About you">
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 {listBox(
                   "names",
                   "Your names and aliases",
@@ -183,7 +185,7 @@ export function SettingsDialog({
             </Section>
 
             <Section title="Always blocked">
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 {listBox(
                   "blockedDomains",
                   "Blocked domains",
@@ -222,6 +224,41 @@ export function SettingsDialog({
               </Field>
             </Section>
 
+            <Section title="Weekly report">
+              <p className="text-ink-faint text-[11px] leading-relaxed">
+                The heading of the Reports tab&apos;s weekly status. The report covers the
+                to-dos in this app only, and nothing in it is sent anywhere.
+              </p>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <Field label="Report title">
+                  <Input
+                    value={form.reportTitle}
+                    disabled={busy}
+                    maxLength={MAX_REPORT_TITLE_CHARS}
+                    placeholder={DEFAULT_REPORT_TITLE}
+                    aria-invalid={errors["report.title"] ? true : undefined}
+                    onChange={(event) => set({ reportTitle: event.target.value })}
+                  />
+                  <FieldError message={errors["report.title"]} />
+                </Field>
+                <Field label="Project name (optional)">
+                  <Input
+                    value={form.reportProject}
+                    disabled={busy}
+                    maxLength={MAX_REPORT_TITLE_CHARS}
+                    placeholder="Shown before the title"
+                    aria-invalid={errors["report.projectName"] ? true : undefined}
+                    onChange={(event) => set({ reportProject: event.target.value })}
+                  />
+                  <FieldError message={errors["report.projectName"]} />
+                </Field>
+              </div>
+              <span className="text-ink-faint text-[11px] leading-relaxed">
+                Saved reports are kept on this computer until you delete them; they are
+                never purged by the retention setting above.
+              </span>
+            </Section>
+
             <Section title="Reminders">
               <p className="text-ink-faint text-[11px] leading-relaxed">
                 Reminders are shown on this computer only; nothing is sent to anyone. A
@@ -251,7 +288,7 @@ export function SettingsDialog({
                 label="Stay quiet outside working hours"
                 hint="Held reminders appear when the working day starts."
               />
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <Field label="Day starts">
                   <Input
                     type="time"
@@ -353,11 +390,7 @@ export function SettingsDialog({
                     : "Desktop app only; it has no effect in a browser. When on, closing the window hides AI OS to the tray instead of quitting. Off by default."
                 }
               />
-              <p className="text-ink-faint text-[11px] leading-relaxed">
-                {desktop
-                  ? "The desktop app delivers reminders itself, even with the PMO window closed."
-                  : "In a browser, reminders only fire while this tab is open, and need notification permission (use Enable reminders in the PMO window). The desktop app is the reliable way to get them."}
-              </p>
+              <NotificationStatus attention={state.attention.count} />
             </Section>
 
             <Section title="Where things are (read only)">
@@ -373,19 +406,19 @@ export function SettingsDialog({
               />
             </Section>
           </div>
-        </ScrollArea>
+        </ScrollBody>
 
         {serverError && (
-          <p role="alert" className="text-ink mt-2 text-[12px] font-medium">
+          <p role="alert" className="text-ink mt-2 shrink-0 text-[12px] font-medium">
             {serverError}
           </p>
         )}
         {Object.keys(errors).length > 0 && (
-          <p role="alert" className="text-ink mt-2 text-[12px] font-medium">
+          <p role="alert" className="text-ink mt-2 shrink-0 text-[12px] font-medium">
             Fix the highlighted fields to save.
           </p>
         )}
-        <div className="mt-4 flex items-center justify-end gap-2">
+        <div className="border-border mt-3 flex shrink-0 items-center justify-end gap-2 border-t pt-3">
           {saved && <span className="text-ink-muted mr-auto text-[12px]">Saved.</span>}
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
             {saved ? "Close" : "Cancel"}
@@ -402,7 +435,7 @@ export function SettingsDialog({
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="flex flex-col gap-3">
-      <h3 className="text-ink border-border/60 border-b pb-1 text-[12px] font-semibold tracking-wide uppercase">
+      <h3 className="text-ink border-border border-b pb-1 text-[12px] font-semibold tracking-wide uppercase">
         {title}
       </h3>
       {children}
