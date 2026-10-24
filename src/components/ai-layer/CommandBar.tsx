@@ -479,7 +479,7 @@ export function CommandBar() {
           "glass ai-ring rounded-bar h-command-bar pointer-events-auto flex items-center gap-3 py-0 pr-[9px] pl-5",
           "ease-smooth w-[min(35rem,90vw)] transition-[width,box-shadow] duration-500",
           "focus-within:w-[min(41.25rem,94vw)] focus-within:shadow-[0_0_0_5px_var(--color-accent-soft),0_22px_44px_-14px_var(--sh)]",
-          !isWorking && "[--ai-ring-opacity:0]",
+          !isWorking && "[--ai-ring-opacity:0] [--ai-ring-state:paused]",
         )}
       >
         <SparkleIcon

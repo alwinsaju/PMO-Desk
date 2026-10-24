@@ -116,7 +116,7 @@ export function PresenceAvatars() {
                 "shadow-[0_8px_22px_-6px_var(--color-accent),inset_0_1px_0_rgba(255,255,255,0.35)]",
                 "ease-spring transition-[transform,opacity] duration-[400ms] hover:scale-[1.08] active:scale-[0.94]",
                 "focus-visible:ring-focus focus-visible:ring-offset-surface focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none",
-                !isActive && "[--ai-ring-opacity:0]",
+                !isActive && "[--ai-ring-opacity:0] [--ai-ring-state:paused]",
               )}
             >
               <SparkleIcon size={23} weight="duotone" aria-hidden />

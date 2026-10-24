@@ -393,8 +393,8 @@ body {
    Give it a radius yourself (`rounded-surface`, `rounded-pill`, ...). */
 @utility glass {
   background-color: var(--color-glass);
-  -webkit-backdrop-filter: blur(30px) saturate(1.7);
-  backdrop-filter: blur(30px) saturate(1.7);
+  -webkit-backdrop-filter: blur(20px) saturate(1.5);
+  backdrop-filter: blur(20px) saturate(1.5);
   border: 1px solid var(--color-glass-edge);
   box-shadow: var(--shadow-glass);
 }
@@ -404,8 +404,8 @@ body {
    (swap in `shadow-modal` for dialogs). */
 @utility glass-pop {
   background-color: var(--color-pop);
-  -webkit-backdrop-filter: blur(36px) saturate(1.7);
-  backdrop-filter: blur(36px) saturate(1.7);
+  -webkit-backdrop-filter: blur(24px) saturate(1.5);
+  backdrop-filter: blur(24px) saturate(1.5);
   border: 1px solid var(--color-glass-edge);
   box-shadow: var(--shadow-pop);
 }
@@ -414,9 +414,10 @@ body {
    shadow — put `shadow-window` / `shadow-window-focus` on the OUTER element,
    since this one is `overflow-hidden`. */
 @utility glass-win {
+  /* No backdrop-filter here: the fill is 90-97% opaque, so a 40px live blur of
+     a window-sized area was nearly invisible but re-computed whenever anything
+     behind it changed. */
   background-color: var(--color-win);
-  -webkit-backdrop-filter: blur(40px) saturate(1.5);
-  backdrop-filter: blur(40px) saturate(1.5);
   border: 1px solid var(--color-glass-edge);
 }
 
@@ -537,6 +538,9 @@ body {
     opacity: var(--ai-ring-opacity, 1);
     transition: opacity 0.4s;
     animation: ring-spin 3.2s linear infinite;
+    /* Idle rings (opacity 0) set --ai-ring-state:paused so the animated
+       custom property doesn't force style+paint every frame. */
+    animation-play-state: var(--ai-ring-state, running);
   }
   @media (prefers-reduced-motion: reduce) {
     &::after {
@@ -856,7 +860,10 @@ body {
 :root[data-theme="dark"]:not([data-brand="deloitte"]) .wp-dk .wp-blob,
 :root[data-brand="deloitte"]:not([data-theme="dark"]) .wp-dll .wp-blob,
 :root[data-brand="deloitte"][data-theme="dark"] .wp-dld .wp-blob {
-  animation-play-state: running;
+  /* Drift intentionally NOT started: a moving wallpaper makes every
+     backdrop-filter layer above it (dock, command bar, menus) re-blur each
+     frame. Change to `running` to restore the slow drift. */
+  animation-play-state: paused;
 }
 
 .wp-lt {
