@@ -2,11 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { motion } from "motion/react";
-import { ArrowSquareOutIcon, CircleNotchIcon, GlobeIcon } from "@phosphor-icons/react";
-import { Button } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { easeStandard } from "@/lib/motion";
 import { EMBEDDABLE_IFRAME_SANDBOX, useEmbeddableUrl } from "@/lib/useEmbeddableUrl";
+import { EmbedBlocked, EmbedLoading } from "../web-app/EmbedStates";
 
 /** Shared by this file's 3 mutually-exclusive return states (checking /
  *  blocked / embeddable) so each one fades in on mount instead of hard-
@@ -67,14 +66,9 @@ export function UrlPage({ url, knownEmbeddable, onEmbeddableResolved }: UrlPageP
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={STATE_TRANSITION}
-        className="flex h-full w-full items-center justify-center gap-2"
+        className="h-full w-full"
       >
-        <CircleNotchIcon
-          size={16}
-          weight="bold"
-          className="text-ink-faint animate-spin"
-        />
-        <span className="text-ink-faint text-[13px]">Loading {host}…</span>
+        <EmbedLoading label={`Loading ${host}…`} />
       </motion.div>
     );
   }
@@ -86,29 +80,12 @@ export function UrlPage({ url, knownEmbeddable, onEmbeddableResolved }: UrlPageP
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={STATE_TRANSITION}
-        className="flex h-full w-full flex-col items-center justify-center gap-4 p-8 text-center"
+        className="h-full w-full"
       >
-        <span className="text-ink-muted inline-flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-neutral-100 [&_svg]:h-7 [&_svg]:w-7">
-          <GlobeIcon size={28} />
-        </span>
-        <div className="flex max-w-sm flex-col gap-1">
-          <p className="text-ink text-[14px] font-semibold">
-            Can&apos;t embed {host} here
-          </p>
-          <p className="text-ink-muted text-[13px] leading-relaxed">
-            {host} blocks other sites from displaying it in a frame — a real, common
-            security setting, not something broken here. Open it in a regular browser tab
-            instead.
-          </p>
-        </div>
-        <Button
-          variant="solid"
-          onClick={() => window.open(url, "_blank", "noopener,noreferrer")}
-          className="gap-1.5"
-        >
-          Open in new tab
-          <ArrowSquareOutIcon size={15} weight="bold" />
-        </Button>
+        <EmbedBlocked
+          name={host}
+          onOpenInNewTab={() => window.open(url, "_blank", "noopener,noreferrer")}
+        />
       </motion.div>
     );
   }
@@ -122,14 +99,10 @@ export function UrlPage({ url, knownEmbeddable, onEmbeddableResolved }: UrlPageP
       className="relative h-full w-full"
     >
       {isFrameLoading && (
-        <div className="bg-surface-elevated absolute inset-0 flex items-center justify-center gap-2">
-          <CircleNotchIcon
-            size={16}
-            weight="bold"
-            className="text-ink-faint animate-spin"
-          />
-          <span className="text-ink-faint text-[13px]">Loading {host}…</span>
-        </div>
+        <EmbedLoading
+          label={`Loading ${host}…`}
+          className="bg-surface-elevated absolute inset-0 z-[1] h-auto w-auto"
+        />
       )}
       {/* Same conservative sandbox WebAppWindow.tsx uses — see
           EMBEDDABLE_IFRAME_SANDBOX's doc comment for why. */}

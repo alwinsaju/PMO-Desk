@@ -3,15 +3,18 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { motion } from "motion/react";
+import { SparkleIcon } from "@phosphor-icons/react";
 import { easeStandard } from "@/lib/motion";
 import { useAgentStore } from "./agentStore";
 import type { AgentAnnotation } from "./types";
 
 /**
- * A small dark-teal speech-bubble callout with a pointer tail, anchored to
- * an arbitrary screen position (the focused window's top edge — see
- * CommandBar's submit handler) rather than any specific app's DOM. Shows
- * the current task's short canned "what the AI is doing" message.
+ * A frosted-glass callout (`glass-pop`) with a small accent badge, an "AI
+ * AGENT" kicker and the message, plus a pointer tail, anchored to an arbitrary
+ * screen position (the focused window's top edge, or just above the command
+ * bar for a plain reply — see CommandBar's submit handler) rather than any
+ * specific app's DOM. Shows the current task's short "what the AI is doing"
+ * message.
  *
  * Portal-rendered to `document.body` for the same reason as AICursor: its
  * anchor point is in viewport coordinates, so it needs to escape whatever
@@ -51,14 +54,32 @@ export function AIAnnotationBubble() {
         scale: isActive ? 1 : 0.96,
       }}
       transition={{ duration: 0.18, ease: easeStandard }}
+      role="status"
+      aria-hidden={!isActive}
       className="pointer-events-none fixed z-[var(--z-overlay)] -translate-x-1/2 -translate-y-full"
       style={{ left: display.position.x, top: display.position.y - 14 }}
     >
-      <div className="bg-accent text-accent-contrast shadow-float-lg relative max-w-[16rem] rounded-2xl px-3.5 py-2 text-[13px] font-medium">
-        {display.message}
+      <div className="glass-pop rounded-card relative flex max-w-[22rem] items-start gap-3 px-4 py-3">
         <span
           aria-hidden
-          className="bg-accent absolute top-full left-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rotate-45"
+          className="bg-accent-soft text-accent-ink rounded-control grid h-[30px] w-[30px] shrink-0 place-items-center"
+        >
+          <SparkleIcon size={17} weight="duotone" />
+        </span>
+        <div className="min-w-0">
+          <b className="text-accent-ink block text-xs font-bold tracking-[0.04em] uppercase">
+            AI Agent
+          </b>
+          <p className="text-ink-soft text-[13.5px] leading-snug font-medium break-words">
+            {display.message}
+          </p>
+        </div>
+        {/* Pointer tail: a plain border triangle in the popover fill, so it
+            never double-stacks the translucent body like a rotated square
+            would. */}
+        <span
+          aria-hidden
+          className="border-t-pop absolute top-full left-1/2 h-0 w-0 -translate-x-1/2 border-x-[8px] border-t-[9px] border-x-transparent"
         />
       </div>
     </motion.div>,

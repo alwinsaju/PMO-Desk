@@ -15,7 +15,8 @@ interface MockLinkProps {
  * actual navigable URL. Every mock page (HomePage/WikiPage/AboutPage) uses
  * this for its internal "links", calling back up to BrowserApp.tsx's
  * `navigate` so back/forward stay in sync with clicks inside the page, not
- * just the address-bar chrome.
+ * just the address-bar chrome. The underline carries the "this is a link"
+ * affordance (accent text alone fails contrast in Deloitte-light).
  */
 export function MockLink({ onClick, children, className }: MockLinkProps) {
   return (
@@ -23,7 +24,8 @@ export function MockLink({ onClick, children, className }: MockLinkProps) {
       type="button"
       onClick={onClick}
       className={cn(
-        "text-accent decoration-accent/40 hover:decoration-accent ease-standard cursor-pointer underline underline-offset-2 transition-colors duration-150",
+        "text-accent-ink decoration-accent-ink/40 hover:decoration-accent-ink rounded-sm font-medium",
+        "ease-smooth cursor-pointer underline underline-offset-[3px] transition-colors duration-200",
         className,
       )}
     >

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { motion } from "motion/react";
 import { NotePencilIcon, PlusIcon, TrashIcon } from "@phosphor-icons/react";
-import { IconButton, ScrollArea } from "@/components/ui";
+import { Button, IconButton, ScrollArea } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { easeStandard } from "@/lib/motion";
 import { noteTitle, notePreview, useNotesStore } from "./notesStore";
@@ -52,33 +52,37 @@ export function NotesApp({ windowId }: { windowId: string }) {
 
   return (
     <div data-window-id={windowId} className="flex h-full w-full">
-      <div className="border-border/60 flex w-56 shrink-0 flex-col border-r">
-        <div className="border-border/60 flex items-center justify-between border-b p-2.5">
-          <span className="text-ink-muted px-1 text-[12px] font-semibold tracking-wide uppercase">
+      <div className="border-line flex w-[270px] shrink-0 flex-col border-r">
+        <div className="flex items-center justify-between px-3 pt-1 pb-2 pl-4">
+          <span className="text-ink-muted text-[12px] font-bold tracking-[0.08em] uppercase">
             Notes
           </span>
-          <IconButton
-            aria-label="New note"
-            variant="ghost"
-            size="sm"
-            onClick={handleCreate}
-          >
-            <PlusIcon size={15} />
+          <IconButton aria-label="New note" variant="ghost" onClick={handleCreate}>
+            <PlusIcon size={18} />
           </IconButton>
         </div>
         <ScrollArea className="min-h-0 flex-1">
-          <ul className="flex flex-col gap-0.5 p-1.5">
+          <ul className="flex flex-col gap-1 px-2.5 pb-3">
             {notes.map((note) => {
               const isSelected = note.id === selectedId;
               return (
-                <li key={note.id} className="group relative min-w-0">
+                // The `li` is the visual row (hover fill, accent bar), so the
+                // delete button that floats over its corner keeps the row
+                // lit while it is hovered instead of dropping the highlight.
+                <li
+                  key={note.id}
+                  data-active={isSelected}
+                  className={cn(
+                    "group row-bar rounded-control ease-smooth relative min-w-0 transition-colors duration-200",
+                    isSelected ? "bg-accent-soft" : "hover:bg-chip",
+                  )}
+                >
                   <button
                     type="button"
                     onClick={() => setSelectedId(note.id)}
                     className={cn(
-                      "rounded-control ease-standard flex w-full min-w-0 flex-col gap-0.5 px-2.5 py-2 pr-8 text-left transition-colors duration-150 outline-none",
-                      "focus-visible:ring-accent focus-visible:ring-2",
-                      isSelected ? "bg-accent-subtle" : "hover:bg-neutral-100",
+                      "rounded-control flex w-full min-w-0 flex-col gap-px px-3 py-[11px] pr-10 text-left",
+                      "focus-visible:ring-focus outline-none focus-visible:ring-2 focus-visible:ring-inset",
                     )}
                   >
                     {/* line-clamp-1 (not `truncate`) deliberately: `truncate`'s
@@ -91,32 +95,13 @@ export function NotesApp({ windowId }: { windowId: string }) {
                       no `min-w-0` upstream fixes that. `line-clamp-1` still
                       allows normal wrapping for min-content purposes, so it
                       clips to one line without the blowup. */}
-                    {/* Selected state uses text-accent-800/700 rather than
-                      text-ink/text-ink-faint — same convention every other
-                      bg-accent-subtle consumer already follows (Badge,
-                      PresenceAvatars, TaskStateBadge, Dropdown/ContextMenu).
-                      accent-subtle is one of the accent-* tokens, which are
-                      deliberately NOT redefined per-theme (see tokens.css),
-                      so it stays a light mint tint in dark mode too — pairing
-                      it with text-ink (which DOES invert to near-white in
-                      dark mode) made the selected row's title unreadable
-                      there (~1:1 contrast). accent-800/700 are themselves
-                      theme-invariant, so they stay legible against
-                      accent-subtle in both themes (~11:1 / ~9:1). */}
-                    <span
-                      className={cn(
-                        "line-clamp-1 text-[13px] font-semibold",
-                        isSelected ? "text-accent-800" : "text-ink",
-                      )}
-                    >
+                    {/* The selected fill is the translucent `accent-soft`
+                      tint, so plain ink tokens stay readable on it in every
+                      theme x brand combination. */}
+                    <span className="text-ink line-clamp-1 text-[14px] font-semibold">
                       {noteTitle(note)}
                     </span>
-                    <span
-                      className={cn(
-                        "line-clamp-1 text-[12px]",
-                        isSelected ? "text-accent-700" : "text-ink-faint",
-                      )}
-                    >
+                    <span className="text-ink-muted line-clamp-1 text-[12.5px]">
                       {note.updatedLabel} — {notePreview(note)}
                     </span>
                   </button>
@@ -124,16 +109,17 @@ export function NotesApp({ windowId }: { windowId: string }) {
                     aria-label={`Delete "${noteTitle(note)}"`}
                     variant="ghost"
                     size="sm"
+                    shape="round"
                     onClick={() => handleDelete(note.id)}
-                    className="absolute top-1.5 right-1.5 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                    className="text-ink-muted hover:bg-red-soft hover:text-red absolute top-2 right-2 h-[26px] w-[26px] opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
                   >
-                    <TrashIcon size={13} />
+                    <TrashIcon size={14} />
                   </IconButton>
                 </li>
               );
             })}
             {notes.length === 0 && (
-              <li className="text-ink-faint px-3 py-6 text-center text-[13px]">
+              <li className="text-ink-faint px-3 py-8 text-center text-[13px]">
                 No notes yet.
               </li>
             )}
@@ -156,7 +142,7 @@ export function NotesApp({ windowId }: { windowId: string }) {
             transition={{ duration: 0.12, ease: easeStandard }}
             className="flex min-h-0 flex-1 flex-col"
           >
-            <div className="border-border/60 text-ink-faint flex items-center border-b px-4 py-2 text-[12px]">
+            <div className="text-ink-muted px-gutter pt-3 pb-2 text-[12.5px]">
               {selectedNote.updatedLabel}
             </div>
             <textarea
@@ -164,20 +150,18 @@ export function NotesApp({ windowId }: { windowId: string }) {
               onChange={(event) => handleChangeContent(event.target.value)}
               placeholder="Start typing…"
               aria-label="Note content"
-              className="text-ink placeholder:text-ink-faint min-h-0 flex-1 resize-none bg-transparent p-5 text-[14px] leading-relaxed outline-none"
+              className="text-ink placeholder:text-ink-faint px-gutter min-h-0 flex-1 resize-none bg-transparent pt-1.5 pb-7 text-[16px] leading-[1.7] outline-none"
             />
           </motion.div>
         ) : (
-          <div className="text-ink-faint flex flex-1 flex-col items-center justify-center gap-3 text-center text-sm">
-            <NotePencilIcon size={28} />
-            <p>No note selected</p>
-            <button
-              type="button"
-              onClick={handleCreate}
-              className="text-accent text-[13px] font-medium hover:underline"
-            >
+          <div className="text-ink-muted flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center text-sm">
+            <span className="bg-chip text-ink-muted rounded-tile inline-flex h-14 w-14 items-center justify-center">
+              <NotePencilIcon size={26} />
+            </span>
+            <p className="text-ink font-semibold">No note selected</p>
+            <Button type="button" onClick={handleCreate}>
               Create a note
-            </button>
+            </Button>
           </div>
         )}
       </div>

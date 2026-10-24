@@ -4,7 +4,7 @@ import * as React from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { XIcon } from "@phosphor-icons/react";
 import { cn } from "@/lib/cn";
-import { overlayEnter, overlayExit } from "@/lib/motion";
+import { dialogEnter, dialogExit } from "@/lib/motion";
 
 export const Dialog = DialogPrimitive.Root;
 export const DialogTrigger = DialogPrimitive.Trigger;
@@ -17,12 +17,13 @@ export const DialogOverlay = React.forwardRef<
   <DialogPrimitive.Overlay
     ref={ref}
     className={cn(
-      // No backdrop-filter here: a full-viewport blur layer is re-evaluated on every
-      // repaint of whatever is behind it (and costs a lot on integrated GPUs) for a
-      // 2px blur nobody can see. The tint alone dims the page.
-      "bg-ink/40 fixed inset-0 z-[var(--z-overlay)]",
-      overlayEnter,
-      overlayExit,
+      // Tinted + blurred scrim (the `scrim` utility). The blur is a
+      // full-viewport backdrop-filter that repaints with whatever is behind
+      // it, so its strength is a single knob: `--scrim-blur` in tokens.css
+      // (set it to 0px on a GPU-poor machine and only the tint remains).
+      "scrim fixed inset-0 z-[var(--z-overlay)]",
+      "data-[state=open]:[animation:scrim-in_350ms_var(--ease-smooth)_forwards]",
+      "data-[state=closed]:[animation:scrim-out_250ms_var(--ease-exit)_forwards]",
       className,
     )}
     {...props}
@@ -51,10 +52,10 @@ export const DialogContent = React.forwardRef<
       <DialogPrimitive.Content
         ref={ref}
         className={cn(
-          "bg-surface-elevated shadow-float-lg relative w-full max-w-md rounded-2xl p-6",
+          "glass-pop shadow-modal rounded-surface pointer-events-auto relative w-full max-w-md p-7",
           "focus:outline-none",
-          overlayEnter,
-          overlayExit,
+          dialogEnter,
+          dialogExit,
           className,
         )}
         {...props}
@@ -64,12 +65,12 @@ export const DialogContent = React.forwardRef<
           <DialogPrimitive.Close
             aria-label="Close"
             className={cn(
-              "text-ink-faint absolute top-4 right-4 flex h-7 w-7 items-center justify-center rounded-full",
-              "ease-standard hover:text-ink transition-colors duration-150 hover:bg-neutral-100",
-              "focus-visible:ring-accent focus-visible:ring-2 focus-visible:outline-none",
+              "text-ink-muted absolute top-4 right-4 flex h-9 w-9 items-center justify-center rounded-full",
+              "transition-ui hover:text-ink hover:bg-chip-strong hover:rotate-90",
+              "focus-visible:ring-focus focus-visible:ring-2 focus-visible:outline-none",
             )}
           >
-            <XIcon size={14} weight="bold" />
+            <XIcon size={16} weight="bold" />
           </DialogPrimitive.Close>
         )}
       </DialogPrimitive.Content>
@@ -84,7 +85,10 @@ export const DialogTitle = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DialogPrimitive.Title
     ref={ref}
-    className={cn("text-ink pr-6 text-base font-semibold tracking-tight", className)}
+    className={cn(
+      "text-ink pr-9 text-[22px] leading-tight font-bold tracking-tight",
+      className,
+    )}
     {...props}
   />
 ));

@@ -17,3 +17,4 @@ export * from "./Badge";
 export * from "./ScrollArea";
 export * from "./Popover";
 export * from "./ContextMenu";
+export * from "./Progress";

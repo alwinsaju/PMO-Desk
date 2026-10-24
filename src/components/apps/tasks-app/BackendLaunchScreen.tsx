@@ -12,15 +12,11 @@ interface BackendLaunchScreenProps {
 
 /**
  * Full-panel card shown by TasksAppGate while the agent-office backend is
- * being launched (see useBackendLauncher) or if that launch failed. Same
- * frosted-chrome treatment as the dock/window overlays
- * (bg-surface-elevated/70 + backdrop-blur + shadow-float, see Dock.tsx and
- * the UI kit's Dialog) rather than a bare spinner floating on nothing, and
- * the one accent color used exactly the way ARCHITECTURE.md scopes it —
- * this IS an "AI/agent is doing something" moment. The failed state
- * deliberately reuses the same ink/neutral (never red) error language as
- * TaskStateBadge's `error` state, for the same "no second accent color"
- * reason.
+ * being launched (see useBackendLauncher) or if that launch failed. A glass
+ * surface (`glass-pop`, `rounded-surface`) rather than a bare spinner floating
+ * on nothing; the accent is used exactly the way ARCHITECTURE.md scopes it —
+ * this IS an "AI/agent is doing something" moment — and the failed state takes
+ * the status red (`red-soft` disc, `text-red` icon).
  */
 export function BackendLaunchScreen({
   state,
@@ -28,42 +24,38 @@ export function BackendLaunchScreen({
   onRetry,
 }: BackendLaunchScreenProps) {
   return (
-    <div className="border-border/60 bg-surface-elevated/70 shadow-float-lg flex w-full max-w-sm flex-col items-center gap-4 rounded-2xl border p-8 text-center backdrop-blur-xl">
+    <div className="glass-pop rounded-surface shadow-pop flex w-full max-w-sm flex-col items-center gap-4 p-8 text-center">
       {state === "launching" ? (
         <span className="relative flex h-12 w-12 shrink-0 items-center justify-center">
-          <span className="bg-accent/20 absolute inset-0 animate-ping rounded-full" />
-          <span className="bg-accent-subtle relative flex h-12 w-12 items-center justify-center rounded-full">
+          <span className="bg-accent-soft absolute inset-0 rounded-full motion-safe:animate-ping" />
+          <span className="bg-accent-soft relative flex h-12 w-12 items-center justify-center rounded-full">
             <CircleNotchIcon
               size={22}
               weight="bold"
-              className="text-accent animate-spin"
+              className="text-accent-ink motion-safe:animate-spin"
             />
           </span>
         </span>
       ) : (
-        <span className="bg-ink relative flex h-12 w-12 shrink-0 items-center justify-center rounded-full">
-          <WarningIcon size={22} weight="bold" className="text-white" />
+        <span className="bg-red-soft relative flex h-12 w-12 shrink-0 items-center justify-center rounded-full">
+          <WarningIcon size={22} weight="bold" className="text-red" />
         </span>
       )}
 
-      <div className="flex flex-col gap-1">
-        <p className="text-ink text-sm font-medium">
+      <div className="flex flex-col gap-1.5">
+        <p className="text-ink font-headline text-lg leading-tight">
           {state === "launching"
             ? "Starting the agent-office backend…"
             : "Couldn't start the agent-office backend"}
         </p>
-        <p className="text-ink-faint text-[12px] whitespace-pre-line">
+        <p className="text-ink-muted text-[13px] whitespace-pre-line">
           {state === "launching"
             ? "This usually only takes a few seconds."
             : reason || "Something went wrong while launching it."}
         </p>
       </div>
 
-      {state === "failed" && (
-        <Button size="sm" onClick={onRetry}>
-          Retry
-        </Button>
-      )}
+      {state === "failed" && <Button onClick={onRetry}>Retry</Button>}
     </div>
   );
 }

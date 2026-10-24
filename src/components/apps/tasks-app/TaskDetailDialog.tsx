@@ -3,6 +3,7 @@
 import { memo, useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/cn";
 import {
+  Badge,
   Button,
   Dialog,
   DialogContent,
@@ -129,43 +130,46 @@ export const TaskDetailDialog = memo(function TaskDetailDialog({
     <Dialog open={task !== null} onOpenChange={handleOpenChange}>
       <DialogContent
         className={cn(
-          "flex max-h-[85vh] flex-col overflow-y-auto",
-          gateType ? "max-w-3xl" : "max-w-2xl",
+          "scroll-thin flex max-h-[85vh] flex-col overflow-y-auto px-[30px] pt-7 pb-6",
+          gateType ? "max-w-3xl" : "max-w-[700px]",
         )}
       >
         {lastTask && (
           <>
-            <DialogTitle>{lastTask.displayName}</DialogTitle>
-            <DialogDescription asChild>
-              <div className="flex items-center gap-2">
-                <TaskStateBadge state={lastTask.state} />
-                <span className="line-clamp-1">
-                  {lastTask.state === "error" && lastTask.error
-                    ? lastTask.error
-                    : statusSentence(lastTask)}
-                </span>
-              </div>
+            {/* pr-10 keeps the badge clear of the dialog's close button. */}
+            <div className="flex items-center gap-3 pr-10">
+              <DialogTitle className="min-w-0 truncate pr-0 text-[23px] tracking-[-0.02em]">
+                {lastTask.displayName}
+              </DialogTitle>
+              <TaskStateBadge state={lastTask.state} className="shrink-0" />
+            </div>
+            <DialogDescription className="mt-2 line-clamp-1 text-[13.5px]">
+              {lastTask.state === "error" && lastTask.error
+                ? lastTask.error
+                : statusSentence(lastTask)}
             </DialogDescription>
 
             {confirmClose && reviewDirty && (
-              <div className="border-border mt-4 flex flex-col gap-2 rounded-lg border bg-neutral-50 p-3">
-                <p className="text-ink text-[12px]">
+              <div
+                role="alert"
+                className="border-line rounded-card bg-amber-soft mt-4 flex flex-col gap-3 border p-3.5"
+              >
+                <p className="text-ink text-[13px]">
                   {gateType === "form"
                     ? "You have answers that haven't been saved. Approve only sees saved answers."
                     : "You have Subcategory2 choices that haven't been saved. Approve only sees saved choices."}
                 </p>
                 {closeError && (
-                  <p className="text-ink-muted text-[11px]">
+                  <p className="text-red text-xs">
                     Couldn&apos;t save — check the {gateType ? "Questions" : "Review"} tab
                     for details.
                   </p>
                 )}
                 <div className="flex items-center gap-2">
-                  <Button size="sm" disabled={closeSaving} onClick={saveAndClose}>
+                  <Button disabled={closeSaving} onClick={saveAndClose}>
                     {closeSaving ? "Saving…" : "Save & close"}
                   </Button>
                   <Button
-                    size="sm"
                     variant="outline"
                     disabled={closeSaving}
                     onClick={discardAndClose}
@@ -173,7 +177,6 @@ export const TaskDetailDialog = memo(function TaskDetailDialog({
                     Discard & close
                   </Button>
                   <Button
-                    size="sm"
                     variant="ghost"
                     disabled={closeSaving}
                     onClick={() => setConfirmClose(false)}
@@ -184,29 +187,29 @@ export const TaskDetailDialog = memo(function TaskDetailDialog({
               </div>
             )}
 
-            <div className="mt-4">
+            <div className="mt-5 mb-1">
               <StepTracker task={lastTask} />
             </div>
 
             {lastTask.notifications.length > 0 && !gateType && (
               <div className="mt-4 flex flex-col gap-2">
-                <h4 className="text-ink-muted text-[11px] font-semibold tracking-wide uppercase">
+                <h4 className="text-ink-muted text-[11px] font-bold tracking-[0.08em] uppercase">
                   Recent activity
                 </h4>
-                <ul className="flex flex-col gap-1.5">
+                <ul className="flex flex-col gap-2">
                   {[...lastTask.notifications]
                     .reverse()
                     .slice(0, 5)
                     .map((notification) => (
                       <li
                         key={notification.id}
-                        className="border-border/60 flex items-start justify-between gap-3 rounded-lg border p-2.5"
+                        className="border-line bg-card rounded-card flex items-center justify-between gap-3 border px-4 py-3.5"
                       >
                         <div className="min-w-0">
-                          <p className="text-ink line-clamp-1 text-[12px] font-medium">
+                          <p className="text-ink line-clamp-1 text-[13.5px] font-semibold">
                             {notification.title}
                           </p>
-                          <p className="text-ink-faint line-clamp-2 text-[11px]">
+                          <p className="text-ink-muted line-clamp-2 text-[12.5px]">
                             {notification.body}
                           </p>
                         </div>
@@ -221,15 +224,13 @@ export const TaskDetailDialog = memo(function TaskDetailDialog({
               </div>
             )}
 
-            <Tabs
-              defaultValue="review"
-              className={cn("mt-4 flex flex-col", !gateType && "min-h-0 flex-1")}
-            >
-              <TabsList>
-                <TabsTrigger value="review">
-                  {gateType
-                    ? gateTabLabel(gateType)
-                    : `Review${pendingReviews > 0 ? ` (${pendingReviews})` : ""}`}
+            <Tabs defaultValue="review" className="mt-[18px] flex shrink-0 flex-col">
+              <TabsList className="self-start">
+                <TabsTrigger
+                  value="review"
+                  count={pendingReviews > 0 && !gateType ? pendingReviews : undefined}
+                >
+                  {gateType ? gateTabLabel(gateType) : "Review"}
                 </TabsTrigger>
                 <TabsTrigger value="log">Log</TabsTrigger>
                 <TabsTrigger value="history">History</TabsTrigger>
@@ -241,7 +242,7 @@ export const TaskDetailDialog = memo(function TaskDetailDialog({
               <TabsContent
                 value="review"
                 forceMount
-                className="mt-3 min-h-0 flex-1 outline-none data-[state=inactive]:hidden"
+                className="mt-3.5 min-h-0 flex-1 outline-none data-[state=inactive]:hidden"
               >
                 {gateType === "form" ? (
                   <FormGatePanel
@@ -271,11 +272,11 @@ export const TaskDetailDialog = memo(function TaskDetailDialog({
                 )}
               </TabsContent>
 
-              <TabsContent value="log" className="min-h-0 flex-1 outline-none">
+              <TabsContent value="log" className="mt-3.5 min-h-0 flex-1 outline-none">
                 <LogTab task={lastTask} />
               </TabsContent>
 
-              <TabsContent value="history" className="min-h-0 flex-1 outline-none">
+              <TabsContent value="history" className="mt-3.5 min-h-0 flex-1 outline-none">
                 <HistoryTab task={lastTask} />
               </TabsContent>
             </Tabs>
@@ -283,7 +284,7 @@ export const TaskDetailDialog = memo(function TaskDetailDialog({
             {task && <ClearInputFiles key={task.id} task={task} onSettled={onSettled} />}
 
             {task && gateType && (
-              <div className="border-border/60 mt-4 border-t pt-3">
+              <div className="border-line mt-5 border-t pt-4">
                 <TaskActions
                   task={task}
                   canStart={canStart}
@@ -340,17 +341,17 @@ function LogTab({ task }: { task: Task }) {
   return (
     <ScrollArea className="h-64">
       {log.length === 0 ? (
-        <p className="text-ink-faint p-3 text-[12px]">
+        <p className="text-ink-muted p-3.5 text-[13px]">
           No output yet — start a run to see step logs here.
         </p>
       ) : (
         <div className="flex flex-col gap-2 p-1">
           {log.map((entry, index) => (
             <div key={index}>
-              <span className="text-ink-faint font-mono text-[10px] uppercase">
+              <span className="text-ink-muted font-mono text-[10.5px] uppercase">
                 {stepLabel(task, entry.step)} · {entry.stream}
               </span>
-              <pre className="border-border/60 text-ink mt-1 overflow-x-auto rounded-lg border bg-neutral-50 p-2 font-mono text-[11px] whitespace-pre-wrap">
+              <pre className="rounded-card bg-chip text-ink-soft mt-1 overflow-x-auto px-4 py-3 font-mono text-[12px] leading-relaxed whitespace-pre-wrap">
                 {entry.text}
               </pre>
             </div>
@@ -388,42 +389,46 @@ function HistoryTab({ task }: { task: Task }) {
   return (
     <ScrollArea className="h-64">
       {!historyLoaded ? (
-        <p className="text-ink-faint p-3 text-[12px]">Loading…</p>
+        <p className="text-ink-muted p-3.5 text-[13px]">Loading…</p>
       ) : history.length === 0 ? (
-        <p className="text-ink-faint p-3 text-[12px]">No runs recorded yet.</p>
+        <p className="text-ink-muted p-3.5 text-[13px]">No runs recorded yet.</p>
       ) : (
         <ul className="flex flex-col gap-2 p-1">
           {history.map((run) => (
             <li
               key={run.run_id}
-              className="border-border/60 rounded-lg border p-2.5 text-[12px]"
+              className="border-line bg-card rounded-card border px-4 py-3 text-[13px]"
             >
-              <p className="text-ink font-medium">
-                {run.outcome === "completed" ? "Completed" : "Failed"}
-                {run.agent_name ? ` · ${run.agent_name}` : ""}
+              <p className="text-ink flex items-center gap-2 font-semibold">
+                <Badge variant={run.outcome === "completed" ? "success" : "danger"} dot>
+                  {run.outcome === "completed" ? "Completed" : "Failed"}
+                </Badge>
+                {run.agent_name ? (
+                  <span className="text-ink-muted font-medium">{run.agent_name}</span>
+                ) : null}
               </p>
-              <p className="text-ink-faint">
+              <p className="text-ink-muted mt-1.5">
                 {new Date(run.started_at).toLocaleString()}
               </p>
               {run.error && (
-                <p className="text-ink-faint mt-1 line-clamp-2 font-mono text-[11px]">
+                <p className="text-red mt-1 line-clamp-2 font-mono text-[11.5px]">
                   {run.error}
                 </p>
               )}
               {run.approvals && run.approvals.length > 0 && (
                 <ul
-                  className="border-border/60 mt-1.5 flex flex-col gap-0.5 border-t pt-1.5"
+                  className="border-line mt-1.5 flex flex-col gap-0.5 border-t pt-1.5"
                   aria-label="Approvals"
                 >
                   {run.approvals.map((approval, index) => (
                     <li
                       key={`${approval.step}-${approval.at}-${index}`}
-                      className="text-ink-muted flex flex-wrap items-baseline justify-between gap-x-3 text-[11px]"
+                      className="text-ink-muted flex flex-wrap items-baseline justify-between gap-x-3 text-xs"
                     >
                       <span>
                         {describeApproval(approval, stepLabel(task, approval.step))}
                       </span>
-                      <span className="text-ink-faint">
+                      <span className="text-ink-muted">
                         {approval.at ? parseUtc(approval.at).toLocaleString() : ""}
                       </span>
                     </li>

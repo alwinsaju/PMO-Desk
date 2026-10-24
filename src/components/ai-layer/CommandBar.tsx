@@ -1,9 +1,16 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FocusEvent, type FormEvent } from "react";
 import { motion } from "motion/react";
-import { CircleNotchIcon, PaperPlaneRightIcon } from "@phosphor-icons/react";
-import { IconButton } from "@/components/ui";
+import {
+  ArrowUpIcon,
+  CircleNotchIcon,
+  ClipboardTextIcon,
+  FolderIcon,
+  NotePencilIcon,
+  SparkleIcon,
+  type Icon,
+} from "@phosphor-icons/react";
 import { cn } from "@/lib/cn";
 import { easeEntrance, easeExit } from "@/lib/motion";
 import { useWindowStore, type WindowState } from "@/components/window-manager";
@@ -126,6 +133,16 @@ function messageAnnotationPoint(): { x: number; y: number } {
   return { x: point.x, y: point.y - 28 };
 }
 
+/** Starter prompts offered above the bar while it is focused and empty.
+ *  Clicking one submits it through the exact same path as typing + Enter
+ *  (`submitPrompt`), so it gets the same focused-window check, the same
+ *  `/api/ai/command` call and the same busy-gating. */
+const SUGGESTIONS: { text: string; icon: Icon }[] = [
+  { text: "Open Notes", icon: NotePencilIcon },
+  { text: "Open Files", icon: FolderIcon },
+  { text: "Open Tasks", icon: ClipboardTextIcon },
+];
+
 function placeholderFor(status: AgentTaskStatus | null): string {
   switch (status) {
     case "thinking":
@@ -135,15 +152,21 @@ function placeholderFor(status: AgentTaskStatus | null): string {
     case "completed":
       return "Done…";
     case null:
-      return "Ask something…";
+      return "Ask AI to do something…";
   }
 }
 
 /**
- * The primary AI input surface: a floating pill, bottom-center of the
- * screen, matching the dock's frosted `bg-surface-elevated/70` +
- * `backdrop-blur-xl` chrome treatment (see Dock.tsx). Sits in the same
- * `z-chrome` layer as the dock.
+ * The primary AI input surface: a floating frosted-glass pill, bottom-center
+ * of the screen, in the same `glass` chrome as the dock (see Dock.tsx) and the
+ * same `z-chrome` layer. It widens while focused, the send button turns into
+ * an accent orb once there is something to send, and a rotating `ai-ring`
+ * border runs around it while the AI is thinking or working. While focused
+ * and empty it offers a few starter-prompt chips above the bar.
+ *
+ * The full-width wrapper is `pointer-events-none` (only the bar, the chips
+ * and the notice re-enable pointer events), so the strip beside the pill no
+ * longer swallows clicks meant for windows underneath.
  *
  * This component owns the whole real agent sequence's orchestration
  * (reading the focused window, calling `/api/ai/command`, flipping
@@ -168,6 +191,9 @@ function placeholderFor(status: AgentTaskStatus | null): string {
 export function CommandBar() {
   const [value, setValue] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
+  // True while focus is anywhere in the bar or its chips — what shows the
+  // starter chips (focus moving from the input to a chip must not hide them).
+  const [focusWithin, setFocusWithin] = useState(false);
   // Remembers the last non-null notice so the pill can fade out still
   // showing its message instead of blanking the instant `notice` clears —
   // same purpose as AIAnnotationBubble.tsx's `lastAnnotationRef`.
@@ -200,6 +226,9 @@ export function CommandBar() {
   // in-flight state early (badge/presence ring flashing back to idle while
   // its cursor/annotation are still mid-flight for the new task).
   const isBusy = currentStatus !== null;
+  // The ring is for the AI actually doing something, not the brief
+  // "completed" settle window.
+  const isWorking = currentStatus === "thinking" || currentStatus === "working";
 
   // Measure this pill's on-screen center so AICursor knows where to glide
   // FROM (see agentStore's `commandBarAnchor` doc comment). Re-measured on
@@ -343,9 +372,10 @@ export function CommandBar() {
     }, ACTION_HOLD_MS);
   }
 
-  function handleSubmit(event: FormEvent) {
-    event.preventDefault();
-    const prompt = value.trim();
+  /** The one submit path: typing + Enter and the starter chips both end up
+   *  here. */
+  function submitPrompt(rawPrompt: string, clearInput: boolean) {
+    const prompt = rawPrompt.trim();
     if (!prompt || isBusy) return;
 
     // Operate purely against whatever window happens to be focused right
@@ -358,9 +388,26 @@ export function CommandBar() {
       return;
     }
 
-    setValue("");
+    if (clearInput) setValue("");
     void runAgentCommand(focused, prompt);
   }
+
+  function handleSubmit(event: FormEvent) {
+    event.preventDefault();
+    submitPrompt(value, true);
+  }
+
+  function handleFocus() {
+    setFocusWithin(true);
+  }
+
+  function handleBlur(event: FocusEvent<HTMLDivElement>) {
+    if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+    setFocusWithin(false);
+  }
+
+  const canSend = Boolean(value.trim()) && !isBusy;
+  const showSuggestions = focusWithin && !isBusy && value === "";
 
   // Nothing has ever been shown yet — nothing to fade out from either, so
   // there's genuinely nothing to mount (same reasoning as
@@ -368,7 +415,11 @@ export function CommandBar() {
   const displayNotice = notice ?? lastNoticeRef.current;
 
   return (
-    <div className="absolute inset-x-0 bottom-6 z-[var(--z-chrome)] flex flex-col items-center gap-2">
+    <div
+      onFocus={handleFocus}
+      onBlur={handleBlur}
+      className="pointer-events-none absolute inset-x-0 bottom-[26px] z-[var(--z-chrome)] flex flex-col items-center gap-2"
+    >
       {/* Stays mounted once shown and animates opacity/position rather than
           mounting/unmounting per notice via AnimatePresence's `exit`, which
           isn't reliable in this project's React 19 + motion setup — see
@@ -382,20 +433,61 @@ export function CommandBar() {
             ease: notice ? easeEntrance : easeExit,
           }}
           aria-hidden={!notice}
-          className={cn(
-            "bg-surface-elevated/90 text-ink-muted shadow-float-sm rounded-pill border-border/60 border px-3.5 py-1.5 text-[12px] font-medium backdrop-blur-xl",
-            !notice && "pointer-events-none",
-          )}
+          role="status"
+          className="glass rounded-chip text-ink-soft px-3.5 py-1.5 text-[12.5px] font-semibold"
         >
           {displayNotice}
         </motion.p>
       )}
 
+      {/* Starter chips: out of flow (absolute, above the bar) so showing
+          them never moves the bar. Always mounted; hidden + non-interactive
+          unless focused-and-empty. `onMouseDown` keeps the input focused
+          through the click. */}
+      <div
+        aria-hidden={!showSuggestions}
+        inert={!showSuggestions}
+        className={cn(
+          "absolute bottom-[calc(100%+0.5rem)] left-1/2 flex -translate-x-1/2 gap-2",
+          "ease-smooth transition-[opacity,transform] duration-[400ms]",
+          showSuggestions
+            ? "pointer-events-auto translate-y-0 opacity-100"
+            : "pointer-events-none translate-y-2.5 opacity-0",
+        )}
+      >
+        {SUGGESTIONS.map(({ text, icon: Glyph }) => (
+          <button
+            key={text}
+            type="button"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => submitPrompt(text, false)}
+            className={cn(
+              "glass sweep rounded-chip text-ink-soft inline-flex h-9 items-center gap-[7px] px-[15px] text-[13px] font-semibold whitespace-nowrap",
+              "transition-ui hover:text-accent-ink active:scale-95",
+            )}
+          >
+            <Glyph size={15} weight="bold" />
+            {text}
+          </button>
+        ))}
+      </div>
+
       <form
         ref={pillRef}
         onSubmit={handleSubmit}
-        className="border-border/60 bg-surface-elevated/70 shadow-float rounded-pill flex w-[min(34rem,90vw)] items-center gap-2 border py-2 pr-2 pl-4 backdrop-blur-xl"
+        className={cn(
+          "glass ai-ring rounded-bar h-command-bar pointer-events-auto flex items-center gap-3 py-0 pr-[9px] pl-5",
+          "ease-smooth w-[min(35rem,90vw)] transition-[width,box-shadow] duration-500",
+          "focus-within:w-[min(41.25rem,94vw)] focus-within:shadow-[0_0_0_5px_var(--color-accent-soft),0_22px_44px_-14px_var(--sh)]",
+          !isWorking && "[--ai-ring-opacity:0]",
+        )}
       >
+        <SparkleIcon
+          size={18}
+          weight="duotone"
+          aria-hidden
+          className="text-accent-ink shrink-0"
+        />
         <input
           value={value}
           onChange={(event) => setValue(event.target.value)}
@@ -403,23 +495,29 @@ export function CommandBar() {
           placeholder={placeholderFor(currentStatus)}
           aria-label="Ask the AI agent"
           className={cn(
-            "text-ink placeholder:text-ink-faint min-w-0 flex-1 bg-transparent text-sm outline-none",
+            "text-ink placeholder:text-ink-muted h-full min-w-0 flex-1 bg-transparent text-[15.5px] font-medium outline-none",
             "disabled:cursor-not-allowed",
           )}
         />
-        <IconButton
+        <button
           type="submit"
           aria-label="Send"
-          variant="solid"
-          size="md"
-          disabled={!value.trim() || isBusy}
+          disabled={!canSend}
+          className={cn(
+            "rounded-orb grid h-[42px] w-[42px] shrink-0 place-items-center",
+            "ease-spring transition-[background-color,color,transform] duration-300",
+            "focus-visible:ring-focus focus-visible:ring-2 focus-visible:outline-none",
+            canSend
+              ? "bg-accent text-accent-contrast hover:scale-[1.08] hover:-rotate-6"
+              : "bg-chip-strong text-ink-muted cursor-default",
+          )}
         >
           {isBusy ? (
-            <CircleNotchIcon size={17} weight="bold" className="animate-spin" />
+            <CircleNotchIcon size={18} weight="bold" className="animate-spin" />
           ) : (
-            <PaperPlaneRightIcon size={17} weight="fill" />
+            <ArrowUpIcon size={18} weight="bold" />
           )}
-        </IconButton>
+        </button>
       </form>
     </div>
   );

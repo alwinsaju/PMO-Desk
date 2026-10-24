@@ -87,16 +87,15 @@ export function ClearInputFiles({ task, onSettled }: ClearInputFilesProps) {
 
   return (
     <div
-      className="border-border/60 mt-4 flex flex-col gap-2 border-t pt-3"
+      className="border-line mt-5 flex flex-col gap-2 border-t pt-4"
       role="group"
       aria-label="Input files"
     >
       {offer && cleanable && !confirming && (
         <div>
           <Button
-            size="sm"
             variant="ghost"
-            className="text-ink-muted -ml-3"
+            className="text-ink-muted -ml-[17px]"
             onClick={() => setConfirming(true)}
           >
             {clearButtonLabel(cleanable)}
@@ -105,20 +104,15 @@ export function ClearInputFiles({ task, onSettled }: ClearInputFilesProps) {
       )}
 
       {offer && cleanable && confirming && (
-        <div className="border-border flex flex-col gap-2 rounded-lg border bg-neutral-50 p-3">
-          <p className="text-ink text-[12px]">
+        <div className="border-line bg-red-soft rounded-card flex flex-col gap-3 border p-3.5">
+          <p className="text-ink text-[13px]">
             {clearConfirmText(cleanable, keepsSomeInputs(task))}
           </p>
           <div className="flex items-center gap-2">
-            <Button size="sm" disabled={busy} onClick={clear}>
+            <Button disabled={busy} onClick={clear}>
               {busy ? "Deleting…" : "Delete files"}
             </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={busy}
-              onClick={() => setConfirming(false)}
-            >
+            <Button variant="ghost" disabled={busy} onClick={() => setConfirming(false)}>
               Cancel
             </Button>
           </div>
@@ -126,7 +120,10 @@ export function ClearInputFiles({ task, onSettled }: ClearInputFilesProps) {
       )}
 
       {result && (
-        <p className="text-ink-muted text-[12px]" role={result.ok ? "status" : "alert"}>
+        <p
+          className={result.ok ? "text-ink-muted text-[13px]" : "text-red text-[13px]"}
+          role={result.ok ? "status" : "alert"}
+        >
           {result.text}
         </p>
       )}

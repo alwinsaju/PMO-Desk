@@ -4,6 +4,8 @@ import * as React from "react";
 import * as SwitchPrimitive from "@radix-ui/react-switch";
 import { cn } from "@/lib/cn";
 
+/** 46x28 track, 22px thumb that springs across. Track is `chip-strong` when
+ *  off, `accent` when on (so Deloitte mode flips it to green/neon). */
 export const Switch = React.forwardRef<
   React.ElementRef<typeof SwitchPrimitive.Root>,
   React.ComponentPropsWithoutRef<typeof SwitchPrimitive.Root>
@@ -11,10 +13,10 @@ export const Switch = React.forwardRef<
   <SwitchPrimitive.Root
     ref={ref}
     className={cn(
-      "rounded-pill relative h-6 w-10 shrink-0 bg-neutral-200 outline-none",
-      "ease-standard transition-colors duration-150",
+      "rounded-pill bg-chip-strong relative h-7 w-[46px] shrink-0 outline-none",
+      "transition-[background-color] duration-[350ms]",
       "data-[state=checked]:bg-accent",
-      "focus-visible:ring-accent focus-visible:ring-offset-surface focus-visible:ring-2 focus-visible:ring-offset-2",
+      "focus-visible:ring-focus focus-visible:ring-offset-surface focus-visible:ring-2 focus-visible:ring-offset-2",
       "disabled:pointer-events-none disabled:opacity-40",
       className,
     )}
@@ -22,9 +24,10 @@ export const Switch = React.forwardRef<
   >
     <SwitchPrimitive.Thumb
       className={cn(
-        "shadow-float-sm block h-[18px] w-[18px] translate-x-[3px] rounded-full bg-white",
-        "ease-standard transition-transform duration-150",
-        "data-[state=checked]:translate-x-[19px]",
+        "block h-[22px] w-[22px] translate-x-[3px] rounded-full bg-white",
+        "shadow-[0_2px_6px_rgba(0,0,0,0.28)]",
+        "ease-spring transition-transform duration-[450ms]",
+        "data-[state=checked]:translate-x-[21px]",
       )}
     />
   </SwitchPrimitive.Root>

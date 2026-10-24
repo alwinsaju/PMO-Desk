@@ -82,13 +82,13 @@ export function TaskActionBar({
   switch (state) {
     case "resting":
       buttons = (
-        <Button size="sm" disabled={!canStart || isBusy} onClick={onStart}>
+        <Button disabled={!canStart || isBusy} onClick={onStart}>
           {pending === "start" ? "Starting…" : runLabel}
         </Button>
       );
       if (!canStart) {
         caption = (
-          <p className="text-ink-faint text-[11px]">
+          <p className="text-ink-muted text-xs">
             All agents are busy — try again when one frees up.
           </p>
         );
@@ -98,10 +98,10 @@ export function TaskActionBar({
     case "error":
       buttons = (
         <>
-          <Button size="sm" disabled={isBusy} onClick={onStart}>
+          <Button disabled={isBusy} onClick={onStart}>
             {pending === "start" ? "Retrying…" : "Retry"}
           </Button>
-          <Button size="sm" variant="outline" disabled={isBusy} onClick={onReset}>
+          <Button variant="outline" disabled={isBusy} onClick={onReset}>
             {pending === "reset" ? "Resetting…" : "Reset"}
           </Button>
         </>
@@ -113,7 +113,6 @@ export function TaskActionBar({
         <>
           {gateAction && (
             <Button
-              size="sm"
               variant={approveBlocked ? "solid" : "outline"}
               disabled={isBusy}
               onClick={gateAction.onClick}
@@ -122,25 +121,24 @@ export function TaskActionBar({
             </Button>
           )}
           <Button
-            size="sm"
             variant={gateAction && approveBlocked ? "outline" : "solid"}
             disabled={isBusy || Boolean(approveBlocked)}
             onClick={onApprove}
           >
             {pending === "approve" ? "Approving…" : "Approve"}
           </Button>
-          <Button size="sm" variant="outline" disabled={isBusy} onClick={onReject}>
+          <Button variant="outline" disabled={isBusy} onClick={onReject}>
             {pending === "reject" ? "Rejecting…" : "Reject"}
           </Button>
         </>
       );
       if (approveBlocked) {
-        caption = <p className="text-ink-muted text-[11px]">{approveBlocked}</p>;
+        caption = <p className="text-ink-muted text-xs">{approveBlocked}</p>;
       }
       if (reviewBlock) {
         const extra = reviewBlock.pending - reviewBlock.numbers.length;
         caption = (
-          <p className="text-ink-muted text-[11px]">
+          <p className="text-ink-muted text-xs">
             <strong className="text-ink font-medium">
               {reviewBlock.pending} incident{reviewBlock.pending === 1 ? "" : "s"}
             </strong>{" "}
@@ -157,7 +155,7 @@ export function TaskActionBar({
               <button
                 type="button"
                 onClick={onOpenReview}
-                className="text-accent-800 underline underline-offset-2"
+                className="text-accent-ink font-semibold underline underline-offset-2"
               >
                 Open Review
               </button>
@@ -172,7 +170,6 @@ export function TaskActionBar({
         <>
           {gateAction && (
             <Button
-              size="sm"
               variant={sendBlocked ? "solid" : "outline"}
               disabled={isBusy}
               onClick={gateAction.onClick}
@@ -181,7 +178,6 @@ export function TaskActionBar({
             </Button>
           )}
           <Button
-            size="sm"
             variant={gateAction && sendBlocked ? "outline" : "solid"}
             disabled={isBusy || Boolean(sendBlocked)}
             onClick={onSend}
@@ -195,14 +191,14 @@ export function TaskActionBar({
           {/* A blocked confirm cannot be repaired in place and the backend has no
               reject at this gate: Reset (start over) is the way out. */}
           {sendBlocked && (
-            <Button size="sm" variant="outline" disabled={isBusy} onClick={onReset}>
+            <Button variant="outline" disabled={isBusy} onClick={onReset}>
               {pending === "reset" ? "Resetting…" : "Start over"}
             </Button>
           )}
         </>
       );
       if (sendBlocked) {
-        caption = <p className="text-ink-muted text-[11px]">{sendBlocked}</p>;
+        caption = <p className="text-ink-muted text-xs">{sendBlocked}</p>;
       }
       break;
 
@@ -211,12 +207,11 @@ export function TaskActionBar({
     default:
       buttons = (
         <>
-          <span className="text-ink-faint inline-flex items-center gap-1.5 text-[12px]">
-            <span className="bg-accent h-1.5 w-1.5 animate-pulse rounded-full" />
+          <span className="text-ink-muted inline-flex items-center gap-1.5 text-[12.5px] font-semibold">
+            <span className="bg-accent motion-safe:animate-blink h-1.5 w-1.5 rounded-full" />
             In progress
           </span>
           <Button
-            size="sm"
             variant="outline"
             disabled={isBusy}
             onClick={onReset}
@@ -230,9 +225,11 @@ export function TaskActionBar({
 
   return (
     <div className="flex flex-col gap-1.5">
-      <div className="flex items-center gap-2">{buttons}</div>
+      <div className="flex flex-wrap items-center gap-2 [&>button]:shrink-0">
+        {buttons}
+      </div>
       {caption}
-      {lastFailure && <p className="text-ink-faint text-[11px]">{lastFailure}</p>}
+      {lastFailure && <p className="text-red text-xs">{lastFailure}</p>}
     </div>
   );
 }

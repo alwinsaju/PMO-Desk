@@ -2,7 +2,14 @@
 
 import { useState } from "react";
 import { MagnifyingGlassIcon } from "@phosphor-icons/react";
-import { ScrollArea, Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui";
+import {
+  Button,
+  ScrollArea,
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui";
 import { appCatalog, appCategories } from "./appCatalog";
 import { AppCategoryRow } from "./AppCategoryRow";
 import { runAppPrimaryAction } from "./appActions";
@@ -21,7 +28,7 @@ type CategoryFilter = "all" | AppCategoryId;
  * attribute so it's still visibly "used" per the contract, e.g. for
  * debugging multiple open App Store windows at once.
  *
- * Just the browse view (search + category tabs + grouped rows) — there is
+ * Just the browse view (search + category tabs + grouped cards) — there is
  * no per-app detail screen.
  */
 export function AppStoreApp({ windowId }: { windowId: string }) {
@@ -50,17 +57,23 @@ export function AppStoreApp({ windowId }: { windowId: string }) {
         onValueChange={(value) => setCategory(value as CategoryFilter)}
         className="flex h-full flex-col"
       >
-        <div className="border-border/60 flex flex-col gap-3 border-b p-4">
-          <div className="border-border bg-surface-elevated focus-within:border-accent focus-within:ring-accent/30 ease-standard rounded-control flex items-center gap-2 border px-3.5 transition-[border-color,box-shadow] duration-150 focus-within:ring-2">
-            <MagnifyingGlassIcon size={16} className="text-ink-faint shrink-0" />
+        <div className="px-gutter flex flex-col items-start gap-3.5 pt-1 pb-2">
+          <label
+            className={
+              "rounded-bar bg-field border-line-strong ease-smooth flex h-12 w-full items-center gap-3 border px-[18px] " +
+              "transition-[border-color,box-shadow] duration-200 " +
+              "focus-within:border-focus focus-within:shadow-[0_0_0_5px_var(--color-accent-soft)]"
+            }
+          >
+            <MagnifyingGlassIcon size={18} className="text-ink-muted shrink-0" />
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search apps"
               aria-label="Search apps"
-              className="text-ink placeholder:text-ink-faint h-10 min-w-0 flex-1 bg-transparent text-sm outline-none"
+              className="text-ink placeholder:text-ink-muted h-full min-w-0 flex-1 bg-transparent text-[15px] outline-none"
             />
-          </div>
+          </label>
 
           {!trimmedQuery && (
             <TabsList>
@@ -75,7 +88,9 @@ export function AppStoreApp({ windowId }: { windowId: string }) {
         </div>
 
         <ScrollArea className="min-h-0 flex-1">
-          <div className="flex flex-col gap-6 p-4">
+          {/* `@container`: the card grids switch between 1 and 2 columns on
+              THIS pane's width (the window can be resized), not the viewport. */}
+          <div className="px-gutter @container flex flex-col gap-6 pt-3 pb-6">
             {trimmedQuery ? (
               <>
                 <AppCategoryRow
@@ -85,9 +100,24 @@ export function AppStoreApp({ windowId }: { windowId: string }) {
                   onToggleInstall={runAppPrimaryAction}
                 />
                 {searchResults.length === 0 && (
-                  <p className="text-ink-faint px-1 text-[13px]">
-                    No apps found for &quot;{trimmedQuery}&quot;.
-                  </p>
+                  <div className="flex flex-col items-center gap-3 px-4 py-14 text-center">
+                    <span className="bg-chip text-ink-muted rounded-tile inline-flex h-14 w-14 items-center justify-center">
+                      <MagnifyingGlassIcon size={26} />
+                    </span>
+                    <p className="text-ink text-[15px] font-semibold">
+                      No apps found for &quot;{trimmedQuery}&quot;.
+                    </p>
+                    <p className="text-ink-muted text-[13px]">
+                      Try a different name, or browse a category instead.
+                    </p>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() => setQuery("")}
+                    >
+                      Clear search
+                    </Button>
+                  </div>
                 )}
               </>
             ) : (

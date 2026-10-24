@@ -10,9 +10,21 @@ import {
   ContextMenuItem,
   ContextMenuSeparator,
   ContextMenuTrigger,
-  IconButton,
   Tooltip,
 } from "@/components/ui";
+
+/** Whether an app has a window: `open` = at least one visible window,
+ *  `minimized` = windows exist but all are minimized, `none` = no window. */
+export type TileRunState = "none" | "open" | "minimized";
+
+/** The shared 46px dock-button look (also used by Dock.tsx's trailing
+ *  App-Menu / App-Store buttons): resting `chip` fill, the `morph` hover
+ *  (rounded square -> circle with accent glow), a press-in. */
+export const dockTileClassName = cn(
+  "morph bg-chip text-ink-soft relative grid h-[46px] w-[46px] shrink-0 place-items-center",
+  "active:scale-95 disabled:pointer-events-none disabled:opacity-40",
+  "focus-visible:ring-focus focus-visible:ring-2 focus-visible:outline-none",
+);
 
 interface DockTileProps {
   label: string;
@@ -27,6 +39,9 @@ interface DockTileProps {
   /** Disables "Reset taskbar to default" when the taskbar already IS the
    *  default (nothing to reset). */
   canReset: boolean;
+  /** Drives the little dot under the icon: open = accent dot, minimized =
+   *  grey dot, none = no dot. */
+  running?: TileRunState;
   /** A count to draw on the tile's corner (e.g. items needing attention);
    *  0 or undefined draws nothing. Purely visual: the tile behaves the same. */
   badge?: number;
@@ -40,13 +55,10 @@ interface DockTileProps {
 }
 
 /**
- * One app tile in the dock: a clean rounded-square icon chip with a hover
- * tooltip showing its name and a right-click menu to unpin/pin it or reset
- * the taskbar. `IconButton` supplies the interaction mechanics (focus ring,
- * hover/active states); the className override swaps its default
- * `rounded-full` ghost look for the square-ish, filled "chip" the dock spec
- * calls for — `cn()`'s tailwind-merge setup (see `src/lib/cn.ts`) resolves
- * that override correctly.
+ * One app tile in the dock: a 46px rounded-square icon chip that morphs into
+ * a circle with an accent glow on hover (the `morph` utility), a running-app
+ * dot, a tooltip BELOW it (the dock sits at the top of the screen) showing
+ * its name, and a right-click menu to unpin/pin it or reset the taskbar.
  *
  * The `className="contents"` trick on `ContextMenuTrigger` mirrors
  * `AppMenuEntry.tsx`: the trigger gets no box of its own, so the dock's
@@ -60,6 +72,7 @@ export function DockTile({
   onTogglePinned,
   onResetTaskbar,
   canReset,
+  running = "none",
   badge = 0,
   dragProps,
 }: DockTileProps) {
@@ -68,25 +81,41 @@ export function DockTile({
     <ContextMenu>
       <ContextMenuTrigger className="contents">
         <span className="relative inline-flex">
-          <Tooltip label={badgedLabel(label, badge)}>
-            <IconButton
+          <Tooltip label={badgedLabel(label, badge)} side="bottom" sideOffset={16}>
+            <button
+              type="button"
               aria-label={badgedLabel(label, badge)}
+              aria-description={
+                running === "open"
+                  ? "Open"
+                  : running === "minimized"
+                    ? "Minimized"
+                    : undefined
+              }
+              data-running={running}
               onClick={onClick}
-              variant="ghost"
-              size="lg"
-              className="rounded-control text-ink-muted hover:text-ink h-11 w-11 bg-neutral-100 hover:bg-neutral-200"
+              className={dockTileClassName}
               {...dragProps}
             >
-              <IconGlyph size={20} />
-            </IconButton>
+              <IconGlyph size={23} />
+            </button>
           </Tooltip>
+          <i
+            aria-hidden
+            className={cn(
+              "pointer-events-none absolute bottom-[3px] left-1/2 -ml-0.5 h-1 w-1 rounded-full not-italic",
+              "ease-spring transition-[opacity,transform,background-color] duration-300",
+              running === "none" ? "scale-0 opacity-0" : "scale-100 opacity-100",
+              running === "minimized" ? "bg-ink-faint" : "bg-accent-ink",
+            )}
+          />
           {badgeLabel && (
             <span
               aria-hidden
               data-dock-badge
               className={cn(
-                "bg-accent text-accent-contrast pointer-events-none absolute -top-1 -right-1 flex h-[18px] min-w-[18px] items-center justify-center",
-                "rounded-pill border-surface border-2 px-1 text-[10px] leading-none font-semibold",
+                "bg-accent text-accent-contrast pointer-events-none absolute -top-1 -right-1 z-[1] flex h-[18px] min-w-[18px] items-center justify-center",
+                "rounded-pill border-surface-elevated border-2 px-1 text-[10px] leading-none font-semibold",
               )}
             >
               {badgeLabel}

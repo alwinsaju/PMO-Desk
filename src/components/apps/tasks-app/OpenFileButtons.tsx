@@ -65,7 +65,6 @@ export function OpenFileButtons({
       {files.map((file) => (
         <Button
           key={file.path}
-          size="sm"
           variant="outline"
           className="shrink-0"
           onClick={() => void open(file.path)}
@@ -78,7 +77,7 @@ export function OpenFileButtons({
         </Button>
       ))}
       {failed && (
-        <p className="text-ink-muted w-full text-[11px]" role="status">
+        <p className="text-ink-muted w-full text-xs" role="status">
           Couldn&apos;t open {files.length > 1 ? "that file" : "the workbook"} — open it
           from the output folder instead.
         </p>

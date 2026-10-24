@@ -1,11 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowSquareOutIcon, CircleNotchIcon, GlobeIcon } from "@phosphor-icons/react";
-import { Button } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { useWindowStore } from "@/components/window-manager";
 import { EMBEDDABLE_IFRAME_SANDBOX, useEmbeddableUrl } from "@/lib/useEmbeddableUrl";
+import { EmbedBlocked, EmbedLoading } from "./EmbedStates";
 
 /**
  * The one generic window for every REAL web app in the App Store catalog
@@ -47,7 +46,7 @@ export function WebAppWindow({ windowId }: { windowId: string }) {
         data-window-id={windowId}
         className="flex h-full w-full items-center justify-center p-6 text-center"
       >
-        <p className="text-ink-faint text-sm">No URL configured for this window.</p>
+        <p className="text-ink-muted text-sm">No URL configured for this window.</p>
       </div>
     );
   }
@@ -59,14 +58,10 @@ export function WebAppWindow({ windowId }: { windowId: string }) {
     return (
       <div data-window-id={windowId} className="relative h-full w-full">
         {isLoading && (
-          <div className="bg-surface-elevated absolute inset-0 flex items-center justify-center gap-2">
-            <CircleNotchIcon
-              size={16}
-              weight="bold"
-              className="text-ink-faint animate-spin"
-            />
-            <span className="text-ink-faint text-[13px]">Loading {title}…</span>
-          </div>
+          <EmbedLoading
+            label={`Loading ${title}…`}
+            className="bg-surface-elevated absolute inset-0 z-[1] h-auto w-auto"
+          />
         )}
         {/* Sandbox permissions (and the reasoning behind them) live in
             EMBEDDABLE_IFRAME_SANDBOX's doc comment — shared verbatim with
@@ -91,30 +86,13 @@ export function WebAppWindow({ windowId }: { windowId: string }) {
   }
 
   return (
-    <div
-      data-window-id={windowId}
-      className="flex h-full w-full flex-col items-center justify-center gap-4 p-8 text-center"
-    >
-      <span className="text-ink-muted inline-flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-neutral-100 [&_svg]:h-7 [&_svg]:w-7">
-        {icon ?? <GlobeIcon size={28} />}
-      </span>
-      <div className="flex max-w-sm flex-col gap-1">
-        <p className="text-ink text-[14px] font-semibold">
-          Can&apos;t embed {title} here
-        </p>
-        <p className="text-ink-muted text-[13px] leading-relaxed">
-          {title} blocks other sites from displaying it in a frame — a real, common
-          security setting, not something broken here. Open it in a regular browser tab
-          instead.
-        </p>
-      </div>
-      <Button variant="solid" onClick={handleOpen} className="gap-1.5">
-        Open in new tab
-        <ArrowSquareOutIcon size={15} weight="bold" />
-      </Button>
-      {justOpened && (
-        <p className="text-ink-faint text-[12px]">Opened {title} in a new tab.</p>
-      )}
+    <div data-window-id={windowId} className="h-full w-full">
+      <EmbedBlocked
+        name={title}
+        icon={icon}
+        onOpenInNewTab={handleOpen}
+        footnote={justOpened ? `Opened ${title} in a new tab.` : undefined}
+      />
     </div>
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { ArrowsClockwiseIcon } from "@phosphor-icons/react";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -12,7 +13,8 @@ import {
  * Wraps the desktop background (the wallpaper) in a right-click menu. This
  * is a mocked shell, not a real OS, so "Refresh" exists to make the desktop
  * feel like a real surface — it's plausible, not functional (per the
- * Desktop Shell & Chrome spec). The dark-mode toggle used to live here; it
+ * Desktop Shell & Chrome spec). It uses the frosted ContextMenu primitive
+ * (`glass-pop`, spring open) like every other menu. The dark-mode toggle used to live here; it
  * now lives in the top-right settings menu (SettingsMenu.tsx), the single
  * entry point for theme switching.
  *
@@ -28,7 +30,10 @@ export function DesktopContextMenu({ children }: { children: ReactNode }) {
     <ContextMenu>
       <ContextMenuTrigger className="contents">{children}</ContextMenuTrigger>
       <ContextMenuContent>
-        <ContextMenuItem>Refresh</ContextMenuItem>
+        <ContextMenuItem>
+          <ArrowsClockwiseIcon size={16} aria-hidden className="text-ink-muted" />
+          Refresh
+        </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>
   );

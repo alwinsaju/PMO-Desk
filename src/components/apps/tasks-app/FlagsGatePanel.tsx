@@ -66,9 +66,9 @@ export function FlagsGatePanel({ task, gate }: { task: Task; gate: GateData }) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2.5">
-      <div className="border-border/60 flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-neutral-50 p-3">
-        <p className="text-ink-muted max-w-md text-[12px]">
-          <strong className="text-ink font-medium">
+      <div className="border-line bg-card rounded-card flex flex-wrap items-center justify-between gap-3 border px-4 py-3.5">
+        <p className="text-ink-muted max-w-md text-[13px]">
+          <strong className="text-ink font-semibold">
             Edit the draft in Excel, save the file, then press Approve.
           </strong>{" "}
           Your edits are compared with the plan in the next step.
@@ -76,7 +76,7 @@ export function FlagsGatePanel({ task, gate }: { task: Task; gate: GateData }) {
         {artifact ? (
           <OpenFileButtons taskId={task.id} notification={artifact} draft icon />
         ) : (
-          <span className="text-ink-faint text-[11px]">
+          <span className="text-ink-muted text-xs">
             The draft workbook&apos;s Open button appears here once it&apos;s ready.
           </span>
         )}
@@ -132,12 +132,7 @@ export function FlagsGatePanel({ task, gate }: { task: Task; gate: GateData }) {
                 </option>
               ))}
             </NativeSelect>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={copy}
-              disabled={visible.length === 0}
-            >
+            <Button variant="outline" onClick={copy} disabled={visible.length === 0}>
               <CopyIcon size={14} weight="bold" aria-hidden />
               {copied === "copied"
                 ? "Copied"
@@ -147,7 +142,7 @@ export function FlagsGatePanel({ task, gate }: { task: Task; gate: GateData }) {
             </Button>
           </div>
 
-          <ScrollArea className="border-border/60 h-[min(20rem,42vh)] rounded-lg border">
+          <ScrollArea className="border-line bg-card rounded-card h-[min(20rem,42vh)] border">
             {visible.length === 0 ? (
               <GateNote>
                 {file.flags.length === 0
@@ -155,14 +150,13 @@ export function FlagsGatePanel({ task, gate }: { task: Task; gate: GateData }) {
                   : "No flags match."}
               </GateNote>
             ) : (
-              <ul className="divide-border/60 divide-y" aria-label="Flags">
+              <ul className="divide-line divide-y" aria-label="Flags">
                 {visible.slice(0, limit).map((flag, index) => (
                   <FlagRow key={`${flag.key}-${index}`} flag={flag} />
                 ))}
                 {visible.length > limit && (
                   <li className="p-2 text-center">
                     <Button
-                      size="sm"
                       variant="ghost"
                       onClick={() => setLimit((n) => n + PAGE_SIZE)}
                     >
@@ -184,21 +178,21 @@ export function FlagsGatePanel({ task, gate }: { task: Task; gate: GateData }) {
  *  (or scrolling past hundreds of rows) only pays for the rows actually shown. */
 const FlagRow = memo(function FlagRow({ flag }: { flag: Flag }) {
   return (
-    <li className="flex flex-col gap-1 px-3 py-2 select-text [contain-intrinsic-size:auto_3.5rem] [content-visibility:auto]">
+    <li className="flex flex-col gap-1 px-4 py-2.5 select-text [contain-intrinsic-size:auto_3.5rem] [content-visibility:auto]">
       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
         <SeverityChip severity={flag.severity} />
-        <span className="text-ink-muted font-mono text-[11px]">{flag.kind}</span>
-        <span className="text-ink text-[12px] font-medium">
-          {flag.person ?? <span className="text-ink-faint">—</span>}
+        <span className="text-ink-muted font-mono text-[11.5px]">{flag.kind}</span>
+        <span className="text-ink text-[13px] font-semibold">
+          {flag.person ?? <span className="text-ink-muted">—</span>}
         </span>
-        <span className="text-ink-faint font-mono text-[11px]">{flag.date ?? "—"}</span>
+        <span className="text-ink-muted font-mono text-[11.5px]">{flag.date ?? "—"}</span>
         {(flag.team || flag.shift) && (
-          <span className="text-ink-faint text-[11px]">
+          <span className="text-ink-muted text-xs">
             {[flag.team, flag.shift].filter(Boolean).join(" · ")}
           </span>
         )}
       </div>
-      <p className="text-ink-muted text-[12px] break-words">{flag.message}</p>
+      <p className="text-ink-soft text-[13px] break-words">{flag.message}</p>
     </li>
   );
 });

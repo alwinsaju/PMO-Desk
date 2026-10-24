@@ -17,7 +17,7 @@ export const Slider = React.forwardRef<
     )}
     {...props}
   >
-    <SliderPrimitive.Track className="rounded-pill bg-neutral-150 relative h-1.5 grow data-[orientation=vertical]:w-1.5">
+    <SliderPrimitive.Track className="rounded-pill bg-chip-strong relative h-1.5 grow data-[orientation=vertical]:w-1.5">
       <SliderPrimitive.Range className="rounded-pill bg-accent absolute h-full data-[orientation=vertical]:w-full" />
     </SliderPrimitive.Track>
     {/* One Thumb per value in `value`/`defaultValue` (Radix requires the
@@ -28,8 +28,8 @@ export const Slider = React.forwardRef<
       <SliderPrimitive.Thumb
         className={cn(
           "border-accent shadow-float-sm block h-[18px] w-[18px] rounded-full border-2 bg-white",
-          "ease-standard transition-transform duration-150",
-          "focus-visible:ring-accent hover:scale-110 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none",
+          "ease-spring transition-transform duration-[350ms]",
+          "focus-visible:ring-focus hover:scale-110 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none",
           "disabled:pointer-events-none disabled:opacity-40",
         )}
       />

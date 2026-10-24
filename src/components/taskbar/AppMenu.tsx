@@ -10,13 +10,12 @@ import type { AppListing } from "@/components/app-store/types";
 import { useWindowStore } from "@/components/window-manager";
 import {
   Button,
-  IconButton,
   Popover,
   PopoverContent,
   PopoverTrigger,
-  ScrollArea,
   Tooltip,
 } from "@/components/ui";
+import { dockTileClassName } from "./DockTile";
 import { AppMenuEntry } from "./AppMenuEntry";
 import { builtInAppIds, builtInApps, type PinnedApp } from "./pinnedApps";
 import { APP_DRAG_MIME_TYPE, usePinnedAppsStore } from "./pinnedAppsStore";
@@ -40,6 +39,10 @@ import { isDefaultPinnedIds } from "./taskbarLayout";
  * exactly as it does from the App Store, and a fictional entry does
  * whatever it already does there; this component never special-cases
  * either kind of entry itself.
+ *
+ * The grid scrolls inside the popover (a plain `overflow-y-auto` box with a
+ * max height — the old ScrollArea put its max-height on the Radix Root while
+ * the Viewport kept growing, so a long list was clipped instead of scrolling).
  *
  * A Radix `Popover` anchored to the trigger button, matching this design
  * system's other flyout-style overlays (Popover/DropdownMenu/ContextMenu
@@ -91,22 +94,30 @@ export function AppMenu() {
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <Tooltip label="App Menu">
+      <Tooltip label="All apps" side="bottom" sideOffset={16}>
         <PopoverTrigger asChild>
-          <IconButton
+          <button
+            type="button"
             aria-label="Open App Menu"
-            variant="ghost"
-            size="lg"
-            className="rounded-control h-11 w-11"
+            data-active={open ? "true" : undefined}
+            className={dockTileClassName}
           >
-            <DotsNineIcon size={20} />
-          </IconButton>
+            <DotsNineIcon size={23} />
+          </button>
         </PopoverTrigger>
       </Tooltip>
 
-      <PopoverContent align="center" sideOffset={14} className="w-[26rem] p-2">
-        <ScrollArea className="max-h-[24rem]">
-          <div className="grid grid-cols-4 gap-1 p-2">
+      <PopoverContent
+        align="center"
+        sideOffset={14}
+        aria-label="All apps"
+        className="w-[min(27rem,calc(100vw-1.5rem))] p-4"
+      >
+        <p className="text-ink-muted px-3 pt-1 pb-1.5 text-[11.5px] font-bold tracking-[0.08em] uppercase">
+          All apps
+        </p>
+        <div className="scroll-thin max-h-[21.25rem] overflow-y-auto overscroll-contain">
+          <div className="grid grid-cols-[repeat(4,minmax(0,1fr))] gap-1.5">
             {builtInApps.map((app) => (
               <AppMenuEntry
                 key={app.id}
@@ -132,9 +143,9 @@ export function AppMenu() {
               Install apps from the App Store to see them here too.
             </p>
           )}
-        </ScrollArea>
+        </div>
 
-        <div className="border-border mt-1 flex justify-end border-t px-2 pt-2 pb-0.5">
+        <div className="border-line mt-2 flex justify-end border-t pt-2.5">
           <Button
             variant="ghost"
             size="sm"

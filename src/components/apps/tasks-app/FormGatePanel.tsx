@@ -185,7 +185,7 @@ export const FormGatePanel = memo(function FormGatePanel({
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-ink-muted text-[12px]" aria-live="polite">
+        <p className="text-ink-muted text-[13px]" aria-live="polite">
           {required === 0 ? (
             "No required questions."
           ) : pendingLocal.length === 0 ? (
@@ -201,18 +201,18 @@ export const FormGatePanel = memo(function FormGatePanel({
             </>
           )}
         </p>
-        <Button size="sm" onClick={save} disabled={!needsSave || saving}>
+        <Button onClick={save} disabled={!needsSave || saving}>
           {saving ? "Saving…" : needsSave ? "Save answers" : "Saved"}
         </Button>
       </div>
 
       {unsavedDefaults && (
-        <p className="text-ink-faint text-[11px]">
+        <p className="text-ink-muted text-xs">
           Preselected answers are suggestions — Save records them as your answers.
         </p>
       )}
       {saveError && (
-        <p className="text-ink text-[12px]">Couldn&apos;t save: {saveError}</p>
+        <p className="text-red text-[13px]">Couldn&apos;t save: {saveError}</p>
       )}
 
       <div className="flex flex-wrap items-center gap-2">
@@ -230,26 +230,26 @@ export const FormGatePanel = memo(function FormGatePanel({
           Needs answer {pendingLocal.length}
         </FilterChip>
         {pendingLocal.length > 0 && (
-          <Button size="sm" variant="ghost" onClick={focusNextPending}>
+          <Button variant="ghost" onClick={focusNextPending}>
             Next unanswered
           </Button>
         )}
       </div>
 
-      <ScrollArea className="border-border/60 h-[min(22rem,46vh)] rounded-lg border">
+      <ScrollArea className="border-line bg-card rounded-card h-[min(22rem,46vh)] border">
         <div ref={listRef} className="flex flex-col">
           {groups.length === 0 ? (
             <GateNote>No questions match.</GateNote>
           ) : (
             groups.map(({ group, fields }) => (
               <section key={group} aria-label={group}>
-                <h4 className="text-ink-muted border-border/60 sticky top-0 z-10 flex items-center justify-between border-b bg-neutral-50 px-3 py-1.5 text-[11px] font-semibold tracking-wide uppercase">
+                <h4 className="text-ink-muted border-line bg-pop sticky top-0 z-10 flex items-center justify-between border-b px-4 py-2 text-[11px] font-bold tracking-[0.08em] uppercase backdrop-blur-md">
                   <span>{group}</span>
-                  <span className="text-ink-faint font-normal normal-case">
+                  <span className="text-ink-muted font-normal normal-case">
                     {fields.length}
                   </span>
                 </h4>
-                <ul className="divide-border/60 divide-y">
+                <ul className="divide-line divide-y">
                   {fields.map((field) => (
                     <FieldRow
                       key={field.id}
@@ -302,26 +302,26 @@ const FieldRow = memo(function FieldRow({
   return (
     <li
       data-pending={pending}
-      className="grid grid-cols-1 items-center gap-x-4 gap-y-1.5 px-3 py-2 [contain-intrinsic-size:auto_3.5rem] [content-visibility:auto] sm:grid-cols-[minmax(0,1fr)_minmax(9rem,15rem)]"
+      className="grid grid-cols-1 items-center gap-x-4 gap-y-1.5 px-4 py-2.5 [contain-intrinsic-size:auto_3.5rem] [content-visibility:auto] sm:grid-cols-[minmax(0,1fr)_minmax(9rem,15rem)]"
     >
       <div className="min-w-0">
         <label
           htmlFor={domId}
-          className="text-ink block text-[13px] font-medium break-words"
+          className="text-ink block text-[13.5px] font-semibold break-words"
         >
           {field.label}
           {field.required && (
-            <span className="text-ink-faint ml-0.5" title="Required">
+            <span className="text-ink-muted ml-0.5" title="Required">
               <span aria-hidden>*</span>
               <span className="sr-only"> (required)</span>
             </span>
           )}
         </label>
         {field.description && (
-          <p className="text-ink-faint text-[11px] break-words">{field.description}</p>
+          <p className="text-ink-muted text-xs break-words">{field.description}</p>
         )}
         {hint && (
-          <p id={hintId} role="status" className="text-ink-muted text-[11px] break-words">
+          <p id={hintId} role="status" className="text-amber text-xs break-words">
             {hint}
           </p>
         )}
@@ -353,23 +353,23 @@ const FieldRow = memo(function FieldRow({
             spellCheck={false}
             aria-invalid={pending || hint ? true : undefined}
             aria-describedby={hint ? hintId : undefined}
-            className="rounded-control border-border bg-surface-elevated text-ink focus-visible:border-accent focus-visible:ring-accent/30 h-8 w-full border px-2 text-[12px] focus-visible:ring-2 focus-visible:outline-none"
+            className="rounded-control border-line-strong bg-field text-ink placeholder:text-ink-muted focus-visible:border-focus focus-visible:shadow-field-focus h-9 w-full border px-3.5 text-[13px] transition-[border-color,box-shadow] duration-[250ms] focus-visible:outline-none"
           />
         )}
         <span className="flex w-11 shrink-0 justify-end">
           {pending ? (
-            <Badge variant="outline" className="px-1.5 py-0 text-[10px]">
+            <Badge variant="warning" className="h-5 px-2 text-[10.5px]">
               Needs
             </Badge>
           ) : isSaved && !edited ? (
             <CheckIcon
               size={13}
               weight="bold"
-              className="text-ink-faint"
+              className="text-success"
               aria-label="Saved"
             />
           ) : edited || willSave ? (
-            <span className="bg-accent h-1.5 w-1.5 rounded-full" title="Not saved yet" />
+            <span className="bg-accent h-2 w-2 rounded-full" title="Not saved yet" />
           ) : null}
         </span>
       </div>

@@ -4,7 +4,7 @@ import * as React from "react";
 import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu";
 import { CaretRightIcon, CheckIcon } from "@phosphor-icons/react";
 import { cn } from "@/lib/cn";
-import { overlayEnter, overlayExit } from "@/lib/motion";
+import { popEnter, popExit } from "@/lib/motion";
 import { Switch } from "./Switch";
 
 export const DropdownMenu = DropdownMenuPrimitive.Root;
@@ -14,10 +14,10 @@ export const DropdownMenuRadioGroup = DropdownMenuPrimitive.RadioGroup;
 export const DropdownMenuSub = DropdownMenuPrimitive.Sub;
 
 const contentClassName = cn(
-  "z-[var(--z-overlay)] min-w-[12rem] rounded-xl border border-border bg-surface-elevated p-1.5 shadow-float-sm",
+  "glass-pop z-[var(--z-overlay)] min-w-[12rem] rounded-surface p-2",
   "origin-[var(--radix-popper-transform-origin)]",
-  overlayEnter,
-  overlayExit,
+  popEnter,
+  popExit,
 );
 
 export const DropdownMenuContent = React.forwardRef<
@@ -50,8 +50,9 @@ export const DropdownMenuSubContent = React.forwardRef<
 DropdownMenuSubContent.displayName = "DropdownMenuSubContent";
 
 const itemClassName = cn(
-  "flex cursor-default select-none items-center gap-2 rounded-control px-2.5 py-1.5 text-[13px] text-ink outline-none",
-  "data-[highlighted]:bg-accent-subtle data-[highlighted]:text-accent-800",
+  "flex cursor-default select-none items-center gap-2.5 rounded-control px-3 py-2 text-[13.5px] font-medium text-ink outline-none",
+  "transition-colors duration-200",
+  "data-[highlighted]:bg-chip",
   "data-[disabled]:pointer-events-none data-[disabled]:opacity-40",
 );
 
@@ -73,10 +74,10 @@ export const DropdownMenuCheckboxItem = React.forwardRef<
 >(({ className, children, ...props }, ref) => (
   <DropdownMenuPrimitive.CheckboxItem
     ref={ref}
-    className={cn(itemClassName, "pl-2.5", className)}
+    className={cn(itemClassName, "pl-3", className)}
     {...props}
   >
-    <span className="text-accent flex h-3.5 w-3.5 items-center justify-center">
+    <span className="text-accent-ink flex h-3.5 w-3.5 items-center justify-center">
       <DropdownMenuPrimitive.ItemIndicator>
         <CheckIcon size={13} weight="bold" />
       </DropdownMenuPrimitive.ItemIndicator>
@@ -131,12 +132,12 @@ export const DropdownMenuRadioItem = React.forwardRef<
 >(({ className, children, ...props }, ref) => (
   <DropdownMenuPrimitive.RadioItem
     ref={ref}
-    className={cn(itemClassName, "pl-2.5", className)}
+    className={cn(itemClassName, "pl-3", className)}
     {...props}
   >
     <span className="flex h-3.5 w-3.5 items-center justify-center">
       <DropdownMenuPrimitive.ItemIndicator>
-        <span className="bg-accent block h-1.5 w-1.5 rounded-full" />
+        <span className="bg-accent-ink block h-1.5 w-1.5 rounded-full" />
       </DropdownMenuPrimitive.ItemIndicator>
     </span>
     {children}
@@ -154,7 +155,7 @@ export const DropdownMenuSubTrigger = React.forwardRef<
     {...props}
   >
     {children}
-    <CaretRightIcon size={12} className="text-ink-faint" />
+    <CaretRightIcon size={12} className="text-ink-muted" />
   </DropdownMenuPrimitive.SubTrigger>
 ));
 DropdownMenuSubTrigger.displayName = "DropdownMenuSubTrigger";
@@ -166,7 +167,7 @@ export const DropdownMenuLabel = React.forwardRef<
   <DropdownMenuPrimitive.Label
     ref={ref}
     className={cn(
-      "text-ink-faint px-2.5 py-1.5 text-[11px] font-medium tracking-wide uppercase",
+      "text-ink-muted px-3 pt-2 pb-1.5 text-[11.5px] font-bold tracking-[0.08em] uppercase",
       className,
     )}
     {...props}

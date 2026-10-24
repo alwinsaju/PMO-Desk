@@ -8,11 +8,11 @@ import { useShallow } from "zustand/react/shallow";
 import { appCatalog, appIcons } from "@/components/app-store/appCatalog";
 import { runAppPrimaryAction } from "@/components/app-store/appActions";
 import { useWindowStore } from "@/components/window-manager";
-import { IconButton, Tooltip } from "@/components/ui";
+import { Tooltip } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { springSnappy } from "@/lib/motion";
 import { AppMenu } from "./AppMenu";
-import { DockTile } from "./DockTile";
+import { DockTile, dockTileClassName, type TileRunState } from "./DockTile";
 import { builtInAppIds, builtInApps } from "./pinnedApps";
 import { useDockBadgeStore } from "./dockBadgeStore";
 import { APP_DRAG_MIME_TYPE, usePinnedAppsStore } from "./pinnedAppsStore";
@@ -79,6 +79,21 @@ function focusAppWindow(appId: string) {
   else taskbarApps.get(appId)?.launch();
 }
 
+/** If `appId` has a MINIMIZED window, brings the topmost one back (restore +
+ *  focus) and returns true. A pinned tile's click uses this so it doesn't
+ *  pile a new window on top of one the user just tucked away; with no
+ *  minimized window it returns false and the click launches as before. */
+function restoreMinimizedAppWindow(appId: string): boolean {
+  const { windows, restoreWindow } = useWindowStore.getState();
+  const minimized = Object.values(windows)
+    .filter((w) => w.isMinimized && appIdForWindow(w, appIdByUrl, knownAppIds) === appId)
+    .sort((a, b) => a.zIndex - b.zIndex)
+    .at(-1);
+  if (!minimized) return false;
+  restoreWindow(minimized.id);
+  return true;
+}
+
 const subscribeNever = () => () => {};
 
 /**
@@ -86,8 +101,9 @@ const subscribeNever = () => () => {};
  * launcher only: the command bar, AI cursor, and presence avatars are a
  * separate, later workstream (the AI Agent Layer) and don't belong here.
  *
- * Frosted/translucent chrome at the `z-chrome` layer, mounted as a sibling
- * of `<WindowManager />` from Desktop.tsx. The tiles are USER-EDITABLE: one
+ * A 60px frosted-glass pill (`glass rounded-surface`) at the `z-chrome`
+ * layer, mounted as a sibling of `<WindowManager />` from Desktop.tsx, of
+ * 46px tiles that morph square -> circle on hover (see DockTile.tsx). The tiles are USER-EDITABLE: one
  * `DockTile` per id in `pinnedAppsStore`'s ordered list (a fresh taskbar is
  * every built-in app, see pinnedApps.ts; the user can unpin any of them, pin
  * any built-in or installed App Store app, drag tiles to reorder, and reset
@@ -97,6 +113,11 @@ const subscribeNever = () => () => {};
  * divider and two trailing icon buttons: the App Menu (every installed app
  * — see AppMenu.tsx) and the "+" that's always been a straight shortcut to
  * the App Store itself.
+ *
+ * Each tile shows whether its app is running: an accent dot while it has a
+ * visible window, a grey dot when every window is minimized. Clicking a PINNED
+ * tile whose app has a minimized window restores and focuses that window
+ * instead of opening another; otherwise a click opens a new window as ever.
  *
  * A tile can carry a small count badge (`dockBadgeStore`, keyed by app id): the
  * PMO reminder poller sets the "pmo-todo" one to the number of items needing
@@ -118,6 +139,17 @@ export function Dock() {
   const openAppIds = useWindowStore(
     useShallow((s) =>
       Object.values(s.windows).flatMap((w) => {
+        const id = appIdForWindow(w, appIdByUrl, knownAppIds);
+        return id ? [id] : [];
+      }),
+    ),
+  );
+  // The subset of those with at least one NON-minimized window — what
+  // separates an "open" dot from a "minimized" one.
+  const visibleAppIds = useWindowStore(
+    useShallow((s) =>
+      Object.values(s.windows).flatMap((w) => {
+        if (w.isMinimized) return [];
         const id = appIdForWindow(w, appIdByUrl, knownAppIds);
         return id ? [id] : [];
       }),
@@ -151,6 +183,11 @@ export function Dock() {
     openAppIds,
   );
   const canReset = !isDefaultPinnedIds(effectivePinnedIds, builtInAppIds);
+
+  function runStateOf(appId: string): TileRunState {
+    if (visibleAppIds.includes(appId)) return "open";
+    return openAppIds.includes(appId) ? "minimized" : "none";
+  }
 
   function clearDragState() {
     setIsDropTarget(false);
@@ -212,9 +249,9 @@ export function Dock() {
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
         className={cn(
-          "h-dock rounded-pill border-border/60 bg-surface-elevated/70 shadow-float flex items-center gap-1.5 border px-2.5 backdrop-blur-xl",
+          "glass rounded-surface h-dock flex items-center gap-1.5 px-2.5",
           "ease-standard transition-[box-shadow] duration-150",
-          isDropTarget && "ring-accent ring-offset-surface ring-2 ring-offset-2",
+          isDropTarget && "ring-focus ring-offset-surface ring-2 ring-offset-2",
         )}
       >
         {items.map(({ id, pinned }) => {
@@ -242,7 +279,14 @@ export function Dock() {
               <DockTile
                 label={app.label}
                 icon={app.icon}
-                onClick={pinned ? app.launch : () => focusAppWindow(id)}
+                onClick={
+                  pinned
+                    ? () => {
+                        if (!restoreMinimizedAppWindow(id)) app.launch();
+                      }
+                    : () => focusAppWindow(id)
+                }
+                running={runStateOf(id)}
                 pinned={pinned}
                 onTogglePinned={() => (pinned ? unpinApp(id) : pinApp(id))}
                 onResetTaskbar={resetPinnedApps}
@@ -269,7 +313,7 @@ export function Dock() {
                 <span
                   aria-hidden
                   className={cn(
-                    "bg-accent pointer-events-none absolute top-1 bottom-1 w-0.5 rounded-full",
+                    "bg-accent-ink pointer-events-none absolute top-1 bottom-1 w-0.5 rounded-full",
                     dropHint.after ? "-right-[4px]" : "-left-[4px]",
                   )}
                 />
@@ -278,20 +322,21 @@ export function Dock() {
           );
         })}
 
-        {items.length > 0 && <div aria-hidden className="bg-border mx-1 h-6 w-px" />}
+        {items.length > 0 && (
+          <div aria-hidden className="bg-line-strong mx-1 h-[26px] w-px" />
+        )}
 
         <AppMenu />
 
-        <Tooltip label="App Store">
-          <IconButton
+        <Tooltip label="App Store" side="bottom" sideOffset={16}>
+          <button
+            type="button"
             aria-label="Open App Store"
             onClick={openAppStore}
-            variant="ghost"
-            size="lg"
-            className="rounded-control h-11 w-11"
+            className={dockTileClassName}
           >
-            <PlusIcon size={20} />
-          </IconButton>
+            <PlusIcon size={23} />
+          </button>
         </Tooltip>
       </div>
     </nav>

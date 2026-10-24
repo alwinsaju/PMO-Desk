@@ -20,8 +20,9 @@ const sizeClassName: Record<AvatarSize, string> = {
 
 const presenceClassName: Record<AvatarPresence, string> = {
   none: "",
-  active: "ring-2 ring-accent ring-offset-2 ring-offset-surface",
-  idle: "ring-2 ring-neutral-300 ring-offset-2 ring-offset-surface",
+  active:
+    "ring-2 ring-accent-ink ring-offset-2 ring-offset-surface after:absolute after:right-0 after:bottom-0 after:h-2.5 after:w-2.5 after:rounded-full after:border-2 after:border-surface after:bg-success-dot",
+  idle: "ring-2 ring-line-strong ring-offset-2 ring-offset-surface",
 };
 
 export interface AvatarProps extends React.ComponentPropsWithoutRef<
@@ -43,7 +44,7 @@ export const Avatar = React.forwardRef<HTMLSpanElement, AvatarProps>(
     <AvatarPrimitive.Root
       ref={ref}
       className={cn(
-        "text-ink-muted relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-neutral-200 font-medium",
+        "text-ink-soft bg-chip-strong transition-ui relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full font-bold",
         sizeClassName[size],
         presenceClassName[presence],
         className,

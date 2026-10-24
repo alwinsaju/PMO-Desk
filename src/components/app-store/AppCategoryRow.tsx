@@ -19,12 +19,13 @@ interface AppCategoryRowProps {
 }
 
 /**
- * One labeled section of the browse view: a heading plus a bordered,
- * divided list of AppCard rows (mirrors ai-layer/TaskList.tsx's own
- * heading + divided-list shape). Used for a real category, the "Featured"
- * row, and search results alike — it doesn't care where `apps` came from,
- * and renders nothing at all when the list is empty (search results with
- * no matches, or a category with none — not expected today, but harmless).
+ * One labeled section of the browse view: a heading plus a two-column grid
+ * of AppCard cards (one column when the window is narrow — a container
+ * query on the scroll content in AppStoreApp.tsx, not a viewport one). Used
+ * for a real category, the "Featured" row, and search results alike — it
+ * doesn't care where `apps` came from, and renders nothing at all when the
+ * list is empty (search results with no matches, or a category with none —
+ * not expected today, but harmless).
  */
 export function AppCategoryRow({
   title,
@@ -36,15 +37,16 @@ export function AppCategoryRow({
 
   return (
     <section className="flex flex-col gap-3">
-      <h2 className="text-ink text-[13px] font-semibold">{title}</h2>
-      <ul className="divide-border/60 border-border/60 bg-surface-elevated divide-y overflow-hidden rounded-2xl border">
-        {apps.map((app) => (
+      <h2 className="text-ink text-[19px] font-bold tracking-[-0.02em]">{title}</h2>
+      <ul className="grid grid-cols-1 gap-3 @min-[620px]:grid-cols-2">
+        {apps.map((app, index) => (
           <AppCard
             key={app.id}
             app={app}
             icon={appIcons[app.icon]}
             isInstalled={Boolean(installedIds[app.id])}
             onToggleInstall={() => onToggleInstall(app)}
+            index={index}
           />
         ))}
       </ul>

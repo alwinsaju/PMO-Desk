@@ -1,6 +1,12 @@
 "use client";
 
-import { useEffect, useRef, type ComponentType } from "react";
+import {
+  useEffect,
+  useRef,
+  type ComponentType,
+  type HTMLAttributes,
+  type ReactNode,
+} from "react";
 import {
   ArrowsClockwiseIcon,
   CircleNotchIcon,
@@ -18,19 +24,82 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui";
 import { cn } from "@/lib/cn";
+import { useBrand } from "@/lib/useBrand";
 import { useTheme } from "@/lib/useTheme";
 import { useBackendRestart, type BackendRestartStatus } from "./useBackendRestart";
 
 /**
- * Top-right settings control: a gear pill (same frosted chrome as the dock,
- * same height) that opens a small menu of settings rows. Mounted from
- * Desktop.tsx at the `z-chrome` layer, so it stays above every window
- * (maximized or not) exactly like the dock does.
+ * Top-right settings control: a round glass button (same frosted chrome as the
+ * dock) that opens the "Quick settings" popover. Mounted from Desktop.tsx at
+ * the `z-chrome` layer, so it stays above every window (maximized or not)
+ * exactly like the dock does.
  *
  * To add a setting, write a row component (a `DropdownMenuSwitchItem`, or
- * another menu item) and append it to `settingsRows` below. Rows own their
- * own state source; this file only lays them out.
+ * another menu item built with `<RowBody>`) and append it to `settingsRows`
+ * below. Rows own their own state source; this file only lays them out.
  */
+
+/** Concentric rings — the glyph of "Deloitte mode" (matches the prototype's
+ *  `i-rings`; Phosphor has no outlined double ring). */
+function RingsGlyph({ size = 16 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.7}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <circle cx="12" cy="12" r="8.5" />
+      <circle cx="12" cy="12" r="4" />
+    </svg>
+  );
+}
+
+/** A settings row's body: an icon tile (rounded square that morphs to a
+ *  circle with the accent tint while the row is highlighted), a bold title and
+ *  a one-line hint. The row element must carry the `group` class. */
+function RowBody({
+  icon,
+  title,
+  hint,
+  hintProps,
+}: {
+  icon: ReactNode;
+  title: ReactNode;
+  hint: ReactNode;
+  hintProps?: HTMLAttributes<HTMLSpanElement>;
+}) {
+  return (
+    <>
+      <span
+        className={cn(
+          "bg-chip text-ink-soft rounded-control grid h-[34px] w-[34px] shrink-0 place-items-center",
+          "ease-spring transition-[border-radius,background-color,color] duration-500",
+          "group-data-[highlighted]:text-accent-ink group-data-[highlighted]:bg-accent-soft group-data-[highlighted]:rounded-full",
+        )}
+      >
+        {icon}
+      </span>
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="text-ink text-sm leading-tight font-semibold">{title}</span>
+        <span
+          {...hintProps}
+          className={cn(
+            "text-ink-muted mt-0.5 text-[12.5px] leading-snug break-words",
+            hintProps?.className,
+          )}
+        >
+          {hint}
+        </span>
+      </span>
+    </>
+  );
+}
 
 /** "Dark mode" — drives the same theme state as ever (`data-theme` on
  *  <html> + localStorage, via src/lib/theme.ts); this row only reads and
@@ -43,9 +112,32 @@ function DarkModeRow() {
     <DropdownMenuSwitchItem
       checked={isDark}
       onCheckedChange={(checked) => setTheme(checked ? "dark" : "light")}
+      className="group py-2.5"
     >
-      <Glyph size={16} weight="regular" aria-hidden />
-      <span>Dark mode</span>
+      <RowBody
+        icon={<Glyph size={18} weight="regular" aria-hidden />}
+        title="Dark mode"
+        hint="Easy on the eyes"
+      />
+    </DropdownMenuSwitchItem>
+  );
+}
+
+/** "Deloitte mode" — the brand palette + Open Sans, orthogonal to dark mode
+ *  (`data-brand` on <html> + localStorage, via src/lib/theme.ts). */
+function DeloitteModeRow() {
+  const { brand, setBrand } = useBrand();
+  return (
+    <DropdownMenuSwitchItem
+      checked={brand === "deloitte"}
+      onCheckedChange={(checked) => setBrand(checked ? "deloitte" : "default")}
+      className="group py-2.5"
+    >
+      <RowBody
+        icon={<RingsGlyph size={18} />}
+        title="Deloitte mode"
+        hint="Brand palette and Open Sans"
+      />
     </DropdownMenuSwitchItem>
   );
 }
@@ -84,7 +176,7 @@ function RestartBackendRow() {
     return (
       <>
         <DropdownMenuSeparator />
-        <div role="alert" className="px-2.5 py-1.5 text-[12px] leading-snug">
+        <div role="alert" className="px-3 py-1.5 text-[12px] leading-snug">
           <p className="text-ink font-medium">A task is still in progress</p>
           <ul className="text-ink-muted mt-1 max-w-[17rem] list-disc pl-4">
             {status.busy.map((task, index) => (
@@ -121,42 +213,38 @@ function RestartBackendRow() {
   const inProgress = status.kind === "checking" || status.kind === "working";
   const Glyph = inProgress ? CircleNotchIcon : ArrowsClockwiseIcon;
   return (
-    <>
-      <DropdownMenuSeparator />
-      <DropdownMenuItem
-        aria-disabled={inProgress}
-        onSelect={(event) => {
-          event.preventDefault(); // keep the menu open so progress stays visible
-          if (!inProgress) requestRestart();
+    <DropdownMenuItem
+      aria-disabled={inProgress}
+      onSelect={(event) => {
+        event.preventDefault(); // keep the menu open so progress stays visible
+        if (!inProgress) requestRestart();
+      }}
+      className="group gap-3 py-2.5"
+    >
+      <RowBody
+        icon={
+          <Glyph
+            size={18}
+            weight="regular"
+            aria-hidden
+            className={cn(inProgress && "animate-spin")}
+          />
+        }
+        title="Restart backend"
+        hint={restartHint(status)}
+        hintProps={{
+          role: "status",
+          "aria-live": "polite",
+          className: cn("max-w-[15rem]", status.kind === "error" && "text-ink"),
         }}
-        className="items-start gap-3 py-2"
-      >
-        <Glyph
-          size={16}
-          weight="regular"
-          aria-hidden
-          className={cn("mt-0.5 shrink-0", inProgress && "animate-spin")}
-        />
-        <span className="flex min-w-0 flex-col">
-          <span>Restart backend</span>
-          <span
-            role="status"
-            aria-live="polite"
-            className={cn(
-              "mt-0.5 max-w-[15rem] text-[11px] leading-snug break-words",
-              status.kind === "error" ? "text-ink" : "text-ink-faint",
-            )}
-          >
-            {restartHint(status)}
-          </span>
-        </span>
-      </DropdownMenuItem>
-    </>
+      />
+    </DropdownMenuItem>
   );
 }
 
 const settingsRows: { id: string; Row: ComponentType }[] = [
   { id: "dark-mode", Row: DarkModeRow },
+  { id: "deloitte-mode", Row: DeloitteModeRow },
   { id: "restart-backend", Row: RestartBackendRow },
 ];
 
@@ -178,11 +266,11 @@ export function SettingsMenu() {
             type="button"
             aria-label="Settings"
             className={cn(
-              "sm:h-dock sm:w-dock rounded-pill border-border/60 bg-surface-elevated/70 shadow-float text-ink-muted flex h-11 w-11 items-center justify-center border backdrop-blur-xl",
-              "ease-standard transition-colors duration-150",
-              "hover:text-ink data-[state=open]:text-ink",
-              "focus-visible:ring-accent focus-visible:ring-offset-surface focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none",
-              "[&_svg]:ease-standard [&_svg]:transition-transform [&_svg]:duration-300 data-[state=open]:[&_svg]:rotate-45",
+              "glass rounded-bar text-ink-soft flex h-11 w-11 items-center justify-center sm:h-14 sm:w-14",
+              "ease-spring transition-[transform,color] duration-500",
+              "hover:text-ink data-[state=open]:text-ink hover:scale-[1.07] motion-reduce:hover:scale-100",
+              "focus-visible:ring-focus focus-visible:ring-offset-surface focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none",
+              "[&_svg]:ease-spring [&_svg]:transition-transform [&_svg]:duration-500 data-[state=open]:[&_svg]:rotate-90",
             )}
           >
             <GearSixIcon size={22} weight="regular" />
@@ -190,11 +278,11 @@ export function SettingsMenu() {
         </DropdownMenuTrigger>
         <DropdownMenuContent
           align="end"
-          sideOffset={10}
+          sideOffset={12}
           aria-label="Settings"
-          className="border-border/60 bg-surface-elevated/70 shadow-float min-w-[14rem] backdrop-blur-xl"
+          className="w-[min(21rem,calc(100vw-2rem))] p-2.5"
         >
-          <DropdownMenuLabel>Settings</DropdownMenuLabel>
+          <DropdownMenuLabel>Quick settings</DropdownMenuLabel>
           {settingsRows.map(({ id, Row }) => (
             <Row key={id} />
           ))}

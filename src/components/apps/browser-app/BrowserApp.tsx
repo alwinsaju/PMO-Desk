@@ -14,6 +14,7 @@ import { HomePage } from "./HomePage";
 import { WikiPage } from "./WikiPage";
 import { AboutPage } from "./AboutPage";
 import { UrlPage } from "./UrlPage";
+import { LoadBar } from "../web-app/EmbedStates";
 
 /** One history entry is either one of the 3 static "Pathfinder" mock
  *  pages, or a real url the address bar (or a real page's own link)
@@ -156,36 +157,38 @@ export function BrowserApp({ windowId }: { windowId: string }) {
 
   return (
     <div data-window-id={windowId} className="flex h-full w-full flex-col">
-      <div className="border-border/60 flex items-center gap-1.5 border-b p-2">
+      <div className="px-gutter flex items-center gap-1.5 pt-1 pb-3">
         <IconButton
           aria-label="Back"
           variant="ghost"
-          size="sm"
           disabled={!canGoBack}
           onClick={goBack}
         >
-          <ArrowLeftIcon size={16} />
+          <ArrowLeftIcon size={18} />
         </IconButton>
         <IconButton
           aria-label="Forward"
           variant="ghost"
-          size="sm"
           disabled={!canGoForward}
           onClick={goForward}
         >
-          <ArrowRightIcon size={16} />
+          <ArrowRightIcon size={18} />
         </IconButton>
-        <IconButton aria-label="Reload page" variant="ghost" size="sm" onClick={reload}>
-          <ArrowClockwiseIcon size={15} className={cn(isLoading && "animate-spin")} />
+        <IconButton aria-label="Reload page" variant="ghost" onClick={reload}>
+          <ArrowClockwiseIcon size={18} className={cn(isLoading && "animate-spin")} />
         </IconButton>
         <form
           onSubmit={(event) => {
             event.preventDefault();
             navigateToAddress(addressDraft);
           }}
-          className="border-border bg-surface ml-1 flex h-8 min-w-0 flex-1 items-center gap-2 rounded-full border px-3.5"
+          className={cn(
+            "rounded-bar bg-chip ease-smooth ml-1.5 flex h-[38px] min-w-0 flex-1 items-center gap-2.5 px-4 transition-[background-color,box-shadow] duration-200",
+            "hover:shadow-[inset_0_0_0_1px_var(--color-line-strong)]",
+            "focus-within:bg-field focus-within:shadow-[inset_0_0_0_1px_var(--color-focus),0_0_0_4px_var(--color-accent-soft)]",
+          )}
         >
-          <LockSimpleIcon size={11} weight="fill" className="text-ink-faint shrink-0" />
+          <LockSimpleIcon size={14} className="text-ink-muted shrink-0" />
           <input
             value={addressDraft}
             onChange={(event) => setAddressDraft(event.target.value)}
@@ -207,34 +210,40 @@ export function BrowserApp({ windowId }: { windowId: string }) {
             aria-label="Address"
             spellCheck={false}
             autoComplete="off"
-            className="text-ink-muted min-w-0 flex-1 bg-transparent font-mono text-[12px] outline-none"
+            className="text-ink-soft placeholder:text-ink-faint min-w-0 flex-1 bg-transparent font-mono text-[12.5px] outline-none"
           />
         </form>
       </div>
 
-      {currentEntry.kind === "mock" ? (
-        <ScrollArea className="min-h-0 flex-1">
-          <div
-            className={cn(
-              "p-8 transition-opacity duration-150",
-              isLoading && "opacity-40",
-            )}
-          >
-            {currentEntry.id === "home" && <HomePage onNavigate={navigateMock} />}
-            {currentEntry.id === "wiki" && <WikiPage onNavigate={navigateMock} />}
-            {currentEntry.id === "about" && <AboutPage onNavigate={navigateMock} />}
-          </div>
-        </ScrollArea>
-      ) : (
-        <div className="min-h-0 flex-1">
+      {/* Page area. The loading bar hugs its top edge (right under the
+          toolbar): a real url's own check/iframe load draws it inside
+          UrlPage, a reload of a static mock page draws it here. */}
+      <div className="border-line relative min-h-0 flex-1 border-t">
+        {currentEntry.kind === "mock" ? (
+          <>
+            {isLoading && <LoadBar />}
+            <ScrollArea className="h-full">
+              <div
+                className={cn(
+                  "transition-opacity duration-150",
+                  isLoading && "opacity-40",
+                )}
+              >
+                {currentEntry.id === "home" && <HomePage onNavigate={navigateMock} />}
+                {currentEntry.id === "wiki" && <WikiPage onNavigate={navigateMock} />}
+                {currentEntry.id === "about" && <AboutPage onNavigate={navigateMock} />}
+              </div>
+            </ScrollArea>
+          </>
+        ) : (
           <UrlPage
             key={`${currentEntry.url}::${reloadNonce}`}
             url={currentEntry.url}
             knownEmbeddable={embedCacheRef.current.get(currentEntry.url)}
             onEmbeddableResolved={handleEmbeddableResolved}
           />
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }

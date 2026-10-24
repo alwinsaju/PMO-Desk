@@ -16,17 +16,23 @@ interface WindowControlsProps {
 }
 
 const controlButtonClassName = cn(
-  "flex h-5 w-5 items-center justify-center rounded-full text-ink-faint",
-  "opacity-0 transition-[opacity,background-color,color] duration-150 ease-standard",
-  "group-hover:opacity-100 focus-visible:opacity-100",
-  "hover:bg-neutral-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+  "rounded-orb text-ink-muted flex h-8 w-8 items-center justify-center",
+  "ease-spring transition-[opacity,background-color,color,transform] duration-300",
+  "hover:bg-chip-strong hover:text-ink hover:scale-110 active:scale-95",
+  "focus-visible:ring-focus focus-visible:ring-2 focus-visible:outline-none",
 );
+
+/** Minimize / maximize rest invisible and appear while the window is
+ *  focused, hovered, or one of them has keyboard focus. */
+const revealedOnDemand =
+  "opacity-0 group-hover/win:opacity-100 group-data-[focused=true]/win:opacity-100 focus-visible:opacity-100";
 
 /**
  * Minimize / maximize / close, in that order (left to right), matching
- * WindowTitleBar's layout. Minimize and maximize stay understated — invisible
- * until the title bar is hovered or one of them gains keyboard focus. Close
- * is always visible per the design spec.
+ * WindowTitleBar's layout. Minimize and maximize stay understated — hidden
+ * until the window is hovered, focused, or one of them gains keyboard focus
+ * (the `group/win` / `data-focused` hooks live on Window.tsx's body). Close is
+ * always visible per the design spec, and turns red on hover.
  */
 export function WindowControls({
   isMaximized,
@@ -43,9 +49,9 @@ export function WindowControls({
           e.stopPropagation();
           onMinimize();
         }}
-        className={controlButtonClassName}
+        className={cn(controlButtonClassName, revealedOnDemand)}
       >
-        <MinusIcon size={11} weight="bold" />
+        <MinusIcon size={15} weight="bold" />
       </button>
       <button
         type="button"
@@ -54,12 +60,12 @@ export function WindowControls({
           e.stopPropagation();
           onMaximizeToggle();
         }}
-        className={controlButtonClassName}
+        className={cn(controlButtonClassName, revealedOnDemand)}
       >
         {isMaximized ? (
-          <ArrowsInSimpleIcon size={11} weight="bold" />
+          <ArrowsInSimpleIcon size={15} weight="bold" />
         ) : (
-          <ArrowsOutSimpleIcon size={11} weight="bold" />
+          <ArrowsOutSimpleIcon size={15} weight="bold" />
         )}
       </button>
       <button
@@ -70,12 +76,12 @@ export function WindowControls({
           onClose();
         }}
         className={cn(
-          "text-ink-faint flex h-5 w-5 items-center justify-center rounded-full",
-          "ease-standard transition-colors duration-150",
-          "focus-visible:ring-accent hover:bg-red-500 hover:text-white focus-visible:ring-2 focus-visible:outline-none",
+          controlButtonClassName,
+          // Brand-agnostic destructive red, identical on every theme.
+          "opacity-80 hover:bg-[#e5584c] hover:text-white hover:opacity-100 focus-visible:opacity-100",
         )}
       >
-        <XIcon size={11} weight="bold" />
+        <XIcon size={15} weight="bold" />
       </button>
     </div>
   );

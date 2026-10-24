@@ -6,7 +6,10 @@
  * variable below is picked up by Tailwind automatically and turned into
  * utility classes (e.g. `--color-accent` -> `bg-accent`, `text-accent`,
  * `border-accent`, `ring-accent`, ...). See globals.css for how this file
- * is imported.
+ * is imported. The block is `@theme static` so EVERY variable is always
+ * emitted, even when no utility uses it yet — the attribute overrides further
+ * down (dark / Deloitte) and the hand-written effects in globals.css rely on
+ * those variables existing at runtime.
  *
  * JS/TS code that needs these same values OUTSIDE of className strings
  * (animation math, canvas/DOM measurements, computing a minimize-to-dock
@@ -14,44 +17,57 @@
  * trying to read computed CSS at runtime. The two files are hand-kept in
  * sync — if you change a value here, change it there too.
  *
- * Design-spec anchors (do not casually drift from these): neutrals are
- * near-white/near-black with light-gray borders; there is exactly ONE
- * accent color (a deep teal) reserved for AI/interactive moments — the
- * command-bar send button, AI annotation bubbles, presence-indicator
- * active rings, and focus states. Do not add a second accent color and do
- * not use the accent decoratively.
+ * THEMING MODEL — two orthogonal attributes on <html>:
+ *   data-theme="dark"      light/dark (absent = light)            src/lib/theme.ts
+ *   data-brand="deloitte"  brand palette mode (absent = default)  src/lib/theme.ts
+ * Components never branch in JS on either: they read tokens, and the blocks
+ * below re-define the tokens per combination. Cascade order (later wins):
+ *   @theme (default light)  <  [data-theme=dark]  <  [data-brand=deloitte]
+ *   <  [data-brand=deloitte]:not([data-theme=dark])  <  [data-brand=deloitte][data-theme=dark]
+ * See ARCHITECTURE.md "Design system / theming" for the cheat-sheet.
+ *
+ * Design-spec anchors (do not casually drift from these): frosted-glass
+ * surfaces, three radius tiers (surface / card / control + pills), ONE accent
+ * color per mode (deep teal by default; Deloitte green in brand mode). Use
+ * the accent for AI/interactive moments, not decoratively.
  */
 
-@theme {
+@theme static {
   /* ---------------------------------------------------------------------
-   * Neutrals — near-white surfaces through near-black text. Overrides
-   * Tailwind's built-in `neutral` scale so `bg-neutral-900` etc. resolve
-   * to OUR ramp, plus a couple of extra in-between stops (0, 25, 150).
+   * Neutrals — near-white surfaces through near-black text, with a faint
+   * cool tint. Overrides Tailwind's built-in `neutral` scale so
+   * `bg-neutral-900` etc. resolve to OUR ramp, plus a couple of extra
+   * in-between stops (0, 25, 150). Legacy code reads these directly; new
+   * code should prefer the semantic tokens below.
    * ------------------------------------------------------------------- */
   --color-neutral-0: #ffffff;
-  --color-neutral-25: #fafafa;
-  --color-neutral-50: #f5f5f4;
-  --color-neutral-100: #ededeb;
-  --color-neutral-150: #e8e8e6;
-  --color-neutral-200: #dadad8;
-  --color-neutral-300: #c4c4c1;
-  --color-neutral-400: #a7a7a5;
-  --color-neutral-500: #8a8a8c;
-  --color-neutral-600: #6b6b6e;
-  --color-neutral-700: #4d4d50;
-  --color-neutral-800: #2f2f32;
-  --color-neutral-900: #181818;
-  --color-neutral-950: #0e0e10;
+  --color-neutral-25: #fbfbfa;
+  --color-neutral-50: #f4f5f7;
+  --color-neutral-100: #eceef1;
+  --color-neutral-150: #e4e7ec;
+  --color-neutral-200: #d6dae1;
+  --color-neutral-300: #bfc5cf;
+  --color-neutral-400: #a4acb9;
+  --color-neutral-500: #858e9d;
+  --color-neutral-600: #626b7a;
+  --color-neutral-700: #464d5a;
+  --color-neutral-800: #2a303a;
+  --color-neutral-900: #14171c;
+  --color-neutral-950: #0b0d11;
 
   /* ---------------------------------------------------------------------
    * Semantic surface / text aliases — components should reach for these
    * instead of raw `neutral-*` steps so intent stays legible.
    * ------------------------------------------------------------------- */
   --color-surface: var(--color-neutral-25); /* desktop-level base panels */
-  --color-surface-elevated: var(--color-neutral-0); /* windows, cards, menus, dialogs */
-  --color-border: var(--color-neutral-150);
+  --color-surface-elevated: var(
+    --color-neutral-0
+  ); /* SOLID fallback for windows, menus, dialogs */
   --color-ink: var(--color-neutral-900); /* primary text */
-  --color-ink-muted: var(--color-neutral-600); /* secondary text */
+  --color-ink-soft: var(--color-neutral-700); /* body-secondary text (prototype ink2) */
+  --color-ink-muted: var(
+    --color-neutral-600
+  ); /* secondary / label text (prototype ink3) */
   --color-ink-faint: var(
     --color-neutral-500
   ); /* tertiary / placeholder / disabled text */
@@ -61,14 +77,49 @@
      near-white. (Not for the accent: that has its own `accent-contrast`.) */
   --color-ink-inverse: var(--color-surface-elevated);
 
+  /* Hairlines. `line` is a translucent ink so it reads on glass AND on solid
+     fills; `border` is the long-standing alias used by `border-border`. */
+  --color-line: rgba(20, 24, 34, 0.09);
+  --color-line-strong: rgba(
+    20,
+    24,
+    34,
+    0.12
+  ); /* input borders, outline buttons, dividers */
+  --color-border: var(--color-line);
+
   /* ---------------------------------------------------------------------
-   * Accent — the ONE accent color in the whole system (deep teal). Reserve
-   * for AI / interactive moments only: command-bar send button, AI inline
-   * annotation bubbles, presence-indicator active rings, focus states.
-   * `accent` (bare) is the default shade; `-hover`/`-active` are for
-   * interaction states; `-subtle` is a light tint for backgrounds (e.g. an
-   * annotation bubble fill); `-contrast` is the text/icon color to place
-   * on top of a solid accent fill.
+   * Glass + fills — the translucent surfaces of the redesign. Pair `bg-*`
+   * with the `glass*` utilities in globals.css (which add blur + edge +
+   * shadow) or use them alone on solid areas.
+   *   glass       dock, command bar, status pills, chrome
+   *   win         window body            pop     popovers, menus, dialogs
+   *   card        cards / list rows      field   inputs, active tab field
+   *   chip        resting fill of small controls, tiles, segmented-track
+   *   chip-strong hover state of `chip`, count bubbles, inactive switch track
+   *   glass-edge  the 1px light border of every glass surface
+   * ------------------------------------------------------------------- */
+  --color-glass: rgba(255, 255, 255, 0.62);
+  --color-glass-edge: rgba(255, 255, 255, 0.7);
+  --color-win: rgba(251, 251, 250, 0.9);
+  --color-pop: rgba(255, 255, 255, 0.86);
+  --color-card: rgba(255, 255, 255, 0.7);
+  --color-field: rgba(255, 255, 255, 0.85);
+  --color-chip: rgba(20, 24, 34, 0.05);
+  --color-chip-strong: rgba(20, 24, 34, 0.09);
+  --color-scrim: rgba(14, 16, 28, 0.32);
+
+  /* ---------------------------------------------------------------------
+   * Accent — the ONE accent color per mode (deep teal by default). Reserve
+   * for AI / interactive moments. `accent` (bare) is the FILL / ring color;
+   * `-hover`/`-active` are interaction states; `-2` is the lighter end of
+   * accent gradients; `-soft` is a translucent tint for hover fills and
+   * halos; `-subtle` is the legacy solid light tint; `-contrast` is the
+   * text/icon color ON a solid accent fill; `-ink` is the accent used AS
+   * text/icon color on glass or plain surfaces (teal by default, #282728 in
+   * Deloitte-light because green text fails contrast, neon in Deloitte-dark).
+   * Rule of thumb: green/teal FILL -> `bg-accent text-accent-contrast`;
+   * tinted icon/label -> `text-accent-ink`; never `text-accent`.
    * ------------------------------------------------------------------- */
   --color-accent-50: #eaf3f1;
   --color-accent-100: #d2e6e1;
@@ -76,21 +127,51 @@
   --color-accent-300: #79b0a4;
   --color-accent-400: #4f8f82;
   --color-accent-500: #2f7367;
-  --color-accent-600: #245c50;
+  --color-accent-600: #1f6f5e;
   --color-accent-700: #1e4b44;
   --color-accent-800: #163832;
   --color-accent-900: #0f2723;
 
   --color-accent: var(--color-accent-600);
-  --color-accent-hover: var(--color-accent-700);
-  --color-accent-active: var(--color-accent-800);
+  --color-accent-2: color-mix(in srgb, var(--color-accent) 80%, #fff);
+  --color-accent-hover: var(--color-accent-2);
+  --color-accent-active: color-mix(in srgb, var(--color-accent) 88%, #000);
+  --color-accent-soft: color-mix(in srgb, var(--color-accent) 13%, transparent);
   --color-accent-subtle: var(--color-accent-50);
   --color-accent-contrast: var(--color-neutral-0);
+  --color-accent-ink: var(--color-accent);
+  /* Keyboard focus ring / focused-field border. Equals the accent except
+     where the accent has too little contrast on the surface (Deloitte-light). */
+  --color-focus: var(--color-accent);
 
   /* ---------------------------------------------------------------------
-   * Radius — generous throughout. This overrides Tailwind's default `lg`
-   * through `3xl` steps to be softer/bigger, plus two semantic aliases for
-   * the two shapes named explicitly in the design spec.
+   * Status colors. `*` is TEXT/ICON-safe on its `*-soft` tint and on glass.
+   * `success-dot` is for bare dots/rings (not text). amber/red are the only
+   * non-palette colors allowed in Deloitte mode (supplemental status).
+   * ------------------------------------------------------------------- */
+  --color-amber: #8a5a07;
+  --color-amber-soft: rgba(201, 138, 27, 0.16);
+  --color-red: #b4372d;
+  --color-red-soft: rgba(214, 84, 74, 0.14);
+  --color-success: #17785a;
+  --color-success-soft: rgba(47, 191, 142, 0.18);
+  --color-success-dot: #2fbf8e;
+  --color-info: #2563b8; /* e.g. the Outlook source tag */
+  --color-info-soft: rgba(48, 120, 214, 0.14);
+
+  /* ---------------------------------------------------------------------
+   * Radius — THREE TIERS + pills. Use the tier names in new code:
+   *   surface  windows / dialogs / popovers / menus      24px  (Deloitte 14)
+   *   card     cards, list rows, strips, inset panels     18px  (Deloitte 10)
+   *   control  inputs, menu rows, icon buttons            12px  (Deloitte  8)
+   *   chip     buttons, badges, tags, count bubbles       pill  (Deloitte  6)
+   *   tile     dock tiles, app-icon tiles                 14px  (Deloitte  8)
+   *   bar      search bars / address bars / command bar   pill  (Deloitte 12)
+   *   orb      round icon buttons (send, AI button)        pill  (Deloitte  8)
+   *   seg / seg-item  segmented-tabs track / its items    pill  (Deloitte 10 / 7)
+   *   pill     ALWAYS fully round (avatars, dots, switches)
+   * The numeric scale (sm..3xl) is kept for legacy classNames; Deloitte mode
+   * squares it off too, so un-migrated `rounded-xl` still follows the brand.
    * ------------------------------------------------------------------- */
   --radius-sm: 0.5rem; /* 8px */
   --radius-md: 0.625rem; /* 10px */
@@ -98,149 +179,347 @@
   --radius-xl: 1rem; /* 16px */
   --radius-2xl: 1.25rem; /* 20px */
   --radius-3xl: 1.75rem; /* 28px */
-  --radius-window: 1rem; /* window / card corners (~16px) */
-  --radius-control: 0.625rem; /* buttons, inputs, menu items */
-  --radius-pill: 9999px; /* dock, command bar, pill buttons, avatars */
+  --radius-surface: 1.5rem; /* 24px */
+  --radius-card: 1.125rem; /* 18px */
+  --radius-control: 0.75rem; /* 12px */
+  --radius-chip: 9999px;
+  --radius-tile: 0.875rem; /* 14px */
+  --radius-bar: 9999px;
+  --radius-orb: 9999px;
+  --radius-seg: 9999px;
+  --radius-seg-item: 9999px;
+  --radius-window: var(--radius-surface); /* legacy alias of `surface` */
+  --radius-pill: 9999px;
 
   /* ---------------------------------------------------------------------
-   * Shadows — soft, diffused, neutral (never color-tinted). `float` is the
-   * primary shadow shared by every piece of floating chrome (dock, command
-   * bar, windows) so they all read as lifted off the wallpaper the same
-   * amount. `-sm`/`-lg` are lighter/heavier siblings for smaller floating
-   * elements (tooltips, popovers, menus) and bigger ones (dialogs).
+   * Shadows — soft, deep, neutral (tinted only by the per-mode `--sh`
+   * color defined in the plain `:root` block at the bottom). `float*` are
+   * the general-purpose lifts; the named ones match one surface each.
    * ------------------------------------------------------------------- */
-  --shadow-float-sm: 0 6px 16px rgba(0, 0, 0, 0.12), 0 2px 6px rgba(0, 0, 0, 0.06);
-  --shadow-float: 0 12px 32px rgba(0, 0, 0, 0.14), 0 4px 10px rgba(0, 0, 0, 0.08);
-  --shadow-float-lg: 0 20px 48px rgba(0, 0, 0, 0.18), 0 8px 16px rgba(0, 0, 0, 0.1);
+  --shadow-float-sm: 0 8px 20px -8px var(--sh), 0 2px 6px rgba(30, 30, 60, 0.08);
+  --shadow-float: 0 18px 40px -14px var(--sh), 0 2px 8px rgba(30, 30, 60, 0.08);
+  --shadow-float-lg: 0 30px 60px -18px var(--sh), 0 4px 14px rgba(30, 30, 60, 0.1);
+  --shadow-glass:
+    inset 0 1px 0 var(--glass-hi), 0 22px 44px -14px var(--sh),
+    0 2px 8px rgba(30, 30, 60, 0.08);
+  --shadow-pop: 0 30px 60px -18px var(--sh), 0 4px 14px rgba(30, 30, 60, 0.1);
+  --shadow-modal: 0 50px 100px -30px var(--sh);
+  --shadow-window: 0 20px 44px -18px var(--sh), 0 2px 8px rgba(30, 30, 60, 0.1);
+  --shadow-window-focus: 0 36px 80px -22px var(--sh), 0 4px 14px rgba(30, 30, 60, 0.14);
+  /* Primary-button hover halo / focused-field glow. */
+  --shadow-halo:
+    0 0 0 4px var(--color-accent-soft), 0 12px 24px -10px var(--color-accent);
+  --shadow-field-focus: 0 0 0 4px var(--color-accent-soft);
 
   /* ---------------------------------------------------------------------
    * Semantic layout sizing — named additions to Tailwind's spacing scale,
    * so `h-titlebar` etc. are self-documenting instead of a bare number.
-   * `dock` and `command-bar` are reserved now for the phases that build
-   * those (Desktop Shell & Chrome / AI Agent Layer) so every phase agrees
-   * on the same heights before either exists.
+   * `control` is THE height of buttons / inputs / icon buttons (36px).
    * ------------------------------------------------------------------- */
-  --spacing-titlebar: 2.75rem; /* 44px — window title bar height */
-  --spacing-dock: 3.5rem; /* 56px — reserved for the top floating dock */
-  --spacing-command-bar: 3.25rem; /* 52px — reserved for the bottom command bar */
+  --spacing-titlebar: 3.375rem; /* 54px — window title bar height */
+  --spacing-dock: 3.75rem; /* 60px — the top floating dock */
+  --spacing-command-bar: 3.625rem; /* 58px — the bottom command bar */
+  --spacing-control: 2.25rem; /* 36px — control height */
+  --spacing-gutter: 1.5rem; /* 24px — window content gutter */
 
   /* ---------------------------------------------------------------------
    * Easing — cubic-beziers mirrored as JS tuples in src/lib/motion.ts for
    * use with the `motion` library. Use these Tailwind utilities directly
    * for plain CSS transitions; use `var(--ease-*)` inside arbitrary
-   * `animation:` values (see the overlay-in/overlay-out keyframes in
-   * globals.css, used by the Radix-based overlay primitives).
+   * `animation:` values (see the keyframes in globals.css).
+   *   spring  overshooting settle — presses, toggles, popovers, modals
+   *   smooth  long decelerate — layout moves, fades, window geometry
    * ------------------------------------------------------------------- */
   --ease-standard: cubic-bezier(0.4, 0, 0.2, 1); /* default — most transitions */
-  --ease-entrance: cubic-bezier(
-    0.16,
-    1,
-    0.3,
-    1
-  ); /* decelerate — menus/tooltips/dialogs opening */
-  --ease-exit: cubic-bezier(
-    0.4,
-    0,
-    1,
-    1
-  ); /* accelerate — menus/tooltips/dialogs closing */
+  --ease-entrance: cubic-bezier(0.16, 1, 0.3, 1); /* decelerate — tooltips opening */
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1); /* accelerate — things closing */
+  --ease-spring: cubic-bezier(0.34, 1.5, 0.64, 1);
+  --ease-smooth: cubic-bezier(0.22, 0.9, 0.28, 1);
 
   /* ---------------------------------------------------------------------
    * Fonts — wired to the next/font/google CSS variables set in
-   * src/app/layout.tsx. Figtree (variable weight) is the sans throughout;
-   * IBM Plex Mono is reserved for technical/file-path text.
+   * src/app/layout.tsx. Figtree (variable weight) is the sans by default;
+   * Deloitte mode swaps it for Open Sans below. IBM Plex Mono is reserved
+   * for technical/file-path text.
    * ------------------------------------------------------------------- */
   --font-sans: var(--font-figtree), ui-sans-serif, system-ui, -apple-system, sans-serif;
   --font-mono: var(--font-ibm-plex-mono), ui-monospace, "SFMono-Regular", monospace;
+  /* Weight of display/headline text (`font-headline`): bold by default,
+     light (300) in Deloitte mode, per the brand typography. */
+  --font-weight-headline: 700;
 }
 
 /**
- * Dark mode — same token names, inverted neutral ramp + higher-contrast
- * shadows. This is an attribute-toggle theme with no `prefers-color-scheme`
- * fallback: the OS defaults to light and only switches when
- * `data-theme="dark"` is present on <html>, which only happens via the
- * toggle in SettingsMenu.tsx (persisted to localStorage by
- * src/lib/theme.ts). Every component already reads color exclusively
- * through these variables — directly (`bg-neutral-100`, `border-border`,
- * ...) or through the semantic aliases above — so overriding the
- * variables here is the ENTIRE mechanism; no component needs its own
- * dark-mode-aware className to repaint correctly.
+ * Variants.
  *
- * The ONE accent color (teal, `--color-accent-*` above) is deliberately
- * NOT redefined here — it stays exactly the same hue in both themes, per
- * the "ONE accent color" rule elsewhere in this file and in
- * ARCHITECTURE.md.
- *
- * `@custom-variant dark` teaches Tailwind's `dark:` prefix to key off this
- * same attribute (Tailwind v4's built-in `dark:` is `prefers-color-scheme`-
- * based by default, which this app doesn't use). Its only current consumer
- * is Wallpaper.tsx, which uses `dark:hidden`/`dark:block` to swap its light
- * and dark gradient layers with zero client-side JS.
+ * `dark:` keys off `data-theme="dark"` (Tailwind v4's built-in `dark:` is
+ * `prefers-color-scheme`-based, which this app deliberately doesn't use).
+ * `brand-dl:` keys off `data-brand="deloitte"` — use it ONLY for structural
+ * brand differences tokens can't express (an extra element, a different
+ * layout); anything expressible as a color/radius/font belongs in the token
+ * overrides below. Stack them for the four combinations:
+ * `brand-dl:dark:...` = Deloitte AND dark.
  */
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+@custom-variant brand-dl (&:where([data-brand="deloitte"], [data-brand="deloitte"] *));
 
+/**
+ * Dark mode — same token names, inverted neutral ramp + dark glass. This is
+ * an attribute-toggle theme with no `prefers-color-scheme` fallback: the OS
+ * defaults to light and only switches when `data-theme="dark"` is present on
+ * <html>, which only happens via the toggle in SettingsMenu.tsx (persisted
+ * to localStorage by src/lib/theme.ts). Every component reads color
+ * exclusively through these variables, so overriding them here is the ENTIRE
+ * mechanism; no component needs its own dark-mode className to repaint.
+ */
 :root[data-theme="dark"] {
   color-scheme: dark;
 
   /* Inverted neutral ramp — same 14 steps, same semantic role at each step
-     (0/25 is still "the surface end", 900/950 is still "the ink end"),
-     only the lightness direction flips. That keeps every direct `neutral-*`
-     consumer (e.g. DockTile's `bg-neutral-100 hover:bg-neutral-200`)
-     working unmodified: hovering still moves a step further from the
-     surface tone, it just now means "a little lighter than black" instead
-     of "a little more gray than white". `0` goes all the way to true OLED
-     black, per the design brief. */
-  --color-neutral-0: #000000;
-  --color-neutral-25: #070708;
-  --color-neutral-50: #0c0d0e;
-  --color-neutral-100: #141517;
-  --color-neutral-150: #1a1b1d;
-  --color-neutral-200: #242629;
-  --color-neutral-300: #35373b;
-  --color-neutral-400: #4c4f54;
-  --color-neutral-500: #65686e;
-  --color-neutral-600: #85888e;
-  --color-neutral-700: #a9acb1;
-  --color-neutral-800: #cdcfd2;
-  --color-neutral-900: #f1f1f2;
-  --color-neutral-950: #fbfbfc;
+     (0/25 is still "the surface end", 900/950 is still "the ink end"), only
+     the lightness direction flips. Direct `neutral-*` consumers keep working
+     unmodified: hovering still moves a step further from the surface tone. */
+  --color-neutral-0: #161924;
+  --color-neutral-25: #11141d;
+  --color-neutral-50: #1a1e2b;
+  --color-neutral-100: #212536;
+  --color-neutral-150: #292d3f;
+  --color-neutral-200: #343949;
+  --color-neutral-300: #454b5e;
+  --color-neutral-400: #586174;
+  --color-neutral-500: #727c8f;
+  --color-neutral-600: #97a1b1;
+  --color-neutral-700: #bcc4d1;
+  --color-neutral-800: #dde2ea;
+  --color-neutral-900: #f3f5f8;
+  --color-neutral-950: #fbfcfd;
 
-  /* Re-asserted rather than left to inherit through the cascade, so the
-     light<->dark mapping for each semantic alias is legible right here
-     without cross-referencing the @theme block above. Values still trace
-     back to the neutral steps redefined just above. */
   --color-surface: var(--color-neutral-25);
   --color-surface-elevated: var(--color-neutral-0);
-  --color-border: var(--color-neutral-150);
   --color-ink: var(--color-neutral-900);
+  --color-ink-soft: var(--color-neutral-700);
   --color-ink-muted: var(--color-neutral-600);
   --color-ink-faint: var(--color-neutral-500);
   --color-ink-inverse: var(--color-surface-elevated);
 
-  /* Shadows stay neutral/black (never color-tinted — same rule as light
-     mode) but need more opacity to still read as "lifted": a light-mode-
-     strength translucent black shadow all but disappears once the ambient
-     backdrop is this dark. */
-  --shadow-float-sm: 0 6px 18px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.4);
-  --shadow-float: 0 14px 36px rgba(0, 0, 0, 0.6), 0 5px 14px rgba(0, 0, 0, 0.42);
-  --shadow-float-lg: 0 24px 56px rgba(0, 0, 0, 0.65), 0 10px 20px rgba(0, 0, 0, 0.46);
+  --color-line: rgba(255, 255, 255, 0.09);
+  --color-line-strong: rgba(255, 255, 255, 0.14);
+
+  --color-glass: rgba(28, 31, 44, 0.55);
+  --color-glass-edge: rgba(255, 255, 255, 0.11);
+  --color-win: rgba(22, 25, 36, 0.9);
+  --color-pop: rgba(26, 29, 42, 0.9);
+  --color-card: rgba(255, 255, 255, 0.055);
+  --color-field: rgba(255, 255, 255, 0.07);
+  --color-chip: rgba(255, 255, 255, 0.07);
+  --color-chip-strong: rgba(255, 255, 255, 0.12);
+  --color-scrim: rgba(4, 5, 12, 0.5);
+
+  /* The accent lightens on dark glass (teal 58% + white) and its tint ramp
+     flips like the neutrals, so the legacy `bg-accent-subtle text-accent-800`
+     pairing stays readable (dark tint, light text). */
+  --color-accent-50: #0f2723;
+  --color-accent-100: #163832;
+  --color-accent-200: #1e4b44;
+  --color-accent-300: #245c50;
+  --color-accent-400: #2f7367;
+  --color-accent-500: #4f8f82;
+  --color-accent-600: #7daba1;
+  --color-accent-700: #a7ccc3;
+  --color-accent-800: #d2e6e1;
+  --color-accent-900: #eaf3f1;
+  --color-accent-contrast: #04140f;
+  --color-accent-hover: var(--color-accent-2);
+  --color-accent-active: color-mix(in srgb, var(--color-accent) 88%, #000);
+
+  --color-amber: #f2b74f;
+  --color-amber-soft: rgba(242, 183, 79, 0.16);
+  --color-red: #ff9086;
+  --color-red-soft: rgba(255, 144, 134, 0.15);
+  --color-success: #5be0b3;
+  --color-info: #8db8ff;
+  --color-info-soft: rgba(141, 184, 255, 0.14);
 }
 
 /**
- * Static z-index layers. NOT a Tailwind @theme namespace — Tailwind v4
- * ships z-index as fixed utilities (z-0, z-10, ...), not an extensible
- * scale the way color/radius/shadow/spacing are, so these are plain
- * custom properties instead. Consume them with the arbitrary-value +
- * var() pattern, e.g. `z-[var(--z-chrome)]`. Mirrored in src/lib/tokens.ts
- * as `zIndex` for JS usage (windowStore's zIndex counter starts at
- * `--z-window-base`).
+ * Deloitte mode — SHARED part (applies in light AND dark): squarer radii,
+ * Open Sans, light-weight headlines, the brand AI ring. Palette per the
+ * Deloitte brand skill: Green #86BC25, Black #000, Neon Green #86EB22,
+ * Blue #00A3E0, Light Blue #A0DCFF, Dark Blue #005587, Dark Gray #282728,
+ * Gray #E6E6E6, Bright Lime #B7E320, Green #63C631, Sky #3FC3EC.
+ */
+:root[data-brand="deloitte"] {
+  --radius-sm: 0.25rem; /* 4px */
+  --radius-md: 0.375rem; /* 6px */
+  --radius-lg: 0.5rem; /* 8px */
+  --radius-xl: 0.625rem; /* 10px */
+  --radius-2xl: 0.875rem; /* 14px */
+  --radius-3xl: 0.875rem; /* 14px */
+  --radius-surface: 0.875rem; /* 14px */
+  --radius-card: 0.625rem; /* 10px */
+  --radius-control: 0.5rem; /* 8px */
+  --radius-chip: 0.375rem; /* 6px */
+  --radius-tile: 0.5rem; /* 8px */
+  --radius-bar: 0.75rem; /* 12px */
+  --radius-orb: 0.5rem; /* 8px */
+  --radius-seg: 0.625rem; /* 10px */
+  --radius-seg-item: 0.4375rem; /* 7px */
+
+  --font-sans: var(--font-open-sans), "Open Sans", -apple-system, "Segoe UI", sans-serif;
+  --font-weight-headline: 300;
+
+  --ring-colors: #86bc25, #86eb22, #3fc3ec, #00a3e0, #86bc25;
+
+  /* Accent family: Deloitte Green fill, Neon as the lighter gradient end. */
+  --color-accent-2: #86eb22;
+  --color-accent-contrast: #000000; /* white on #86BC25 fails contrast */
+
+  /* Success reads as "brand green" rather than a second green. */
+  --color-success-dot: #86bc25;
+}
+
+/* Deloitte LIGHT: white / #F5F5F5 surfaces, #282728 text, green accent with
+   BLACK text on green fills, borders #E6E6E6. */
+:root[data-brand="deloitte"]:not([data-theme="dark"]) {
+  --color-neutral-0: #ffffff;
+  --color-neutral-25: #fafafa;
+  --color-neutral-50: #f5f5f5;
+  --color-neutral-100: #efefef;
+  --color-neutral-150: #e6e6e6;
+  --color-neutral-200: #d2d2d2;
+  --color-neutral-300: #bdbdbd;
+  --color-neutral-400: #9a9a9a;
+  --color-neutral-500: #7a7a7a;
+  --color-neutral-600: #666666;
+  --color-neutral-700: #555555;
+  --color-neutral-800: #3d3c3d;
+  --color-neutral-900: #282728;
+  --color-neutral-950: #1a1a1a;
+
+  --color-line: #e6e6e6;
+  --color-line-strong: #d2d2d2;
+  --color-glass: rgba(255, 255, 255, 0.82);
+  --color-glass-edge: rgba(255, 255, 255, 0.9);
+  --color-win: rgba(255, 255, 255, 0.97);
+  --color-pop: rgba(255, 255, 255, 0.98);
+  --color-card: #ffffff;
+  --color-field: #ffffff;
+  --color-chip: #efefef;
+  --color-chip-strong: #e4e4e4;
+  --color-scrim: rgba(40, 39, 40, 0.38);
+
+  --color-accent-50: color-mix(in srgb, #86bc25 12%, #fff);
+  --color-accent-100: color-mix(in srgb, #86bc25 22%, #fff);
+  --color-accent-200: color-mix(in srgb, #86bc25 40%, #fff);
+  --color-accent-300: color-mix(in srgb, #86bc25 60%, #fff);
+  --color-accent-400: color-mix(in srgb, #86bc25 80%, #fff);
+  --color-accent-500: #86bc25;
+  --color-accent-600: #86bc25;
+  --color-accent-700: color-mix(in srgb, #86bc25 70%, #000);
+  --color-accent-800: #282728;
+  --color-accent-900: #000000;
+  --color-accent-ink: #282728;
+  --color-focus: #005587; /* Dark Blue: green rings are < 3:1 on white */
+
+  --color-success: #282728;
+  --color-success-soft: color-mix(in srgb, #86bc25 28%, transparent);
+  --color-info: #005587;
+  --color-info-soft: rgba(0, 85, 135, 0.12);
+}
+
+/* Deloitte DARK: #282728 / #333 surfaces, #E6E6E6 text, NEON accent (plain
+   #86BC25 is never used as text on dark), borders #444. */
+:root[data-brand="deloitte"][data-theme="dark"] {
+  --color-neutral-0: #282728;
+  --color-neutral-25: #1f1e1f;
+  --color-neutral-50: #2d2c2d;
+  --color-neutral-100: #333333;
+  --color-neutral-150: #3a393a;
+  --color-neutral-200: #444444;
+  --color-neutral-300: #555555;
+  --color-neutral-400: #6a6a6a;
+  --color-neutral-500: #8a8a8a;
+  --color-neutral-600: #a0a0a0;
+  --color-neutral-700: #b8b8b8;
+  --color-neutral-800: #d4d4d4;
+  --color-neutral-900: #e6e6e6;
+  --color-neutral-950: #f5f5f5;
+
+  --color-line: #444444;
+  --color-line-strong: #555555;
+  --color-glass: rgba(40, 39, 40, 0.8);
+  --color-glass-edge: rgba(255, 255, 255, 0.1);
+  --color-win: rgba(40, 39, 40, 0.97);
+  --color-pop: rgba(40, 39, 40, 0.98);
+  --color-card: #333333;
+  --color-field: #2f2e2f;
+  --color-chip: #3a393a;
+  --color-chip-strong: #464546;
+  --color-scrim: rgba(0, 0, 0, 0.55);
+
+  --color-accent-50: color-mix(in srgb, #86eb22 10%, #282728);
+  --color-accent-100: color-mix(in srgb, #86eb22 16%, #282728);
+  --color-accent-200: color-mix(in srgb, #86eb22 24%, #282728);
+  --color-accent-300: color-mix(in srgb, #86eb22 35%, #282728);
+  --color-accent-400: color-mix(in srgb, #86eb22 50%, #282728);
+  --color-accent-500: #86bc25;
+  --color-accent-600: #86eb22;
+  --color-accent-700: #b7e320;
+  --color-accent-800: #b7e320;
+  --color-accent-900: #e6e6e6;
+  --color-accent-2: #b7e320; /* Bright Lime — gradient end on neon */
+  --color-accent-ink: #86eb22;
+  --color-focus: #86eb22;
+
+  --color-success: #86eb22;
+  --color-success-soft: color-mix(in srgb, #86eb22 16%, transparent);
+  --color-success-dot: #86eb22;
+  --color-info: #a0dcff;
+  --color-info-soft: rgba(160, 220, 255, 0.14);
+}
+
+/**
+ * Plain (non-utility) custom properties. NOT a Tailwind @theme namespace:
+ * Tailwind v4 ships z-index as fixed utilities and has no namespaces for the
+ * rest of these, so they are ordinary variables. Consume with the
+ * arbitrary-value + var() pattern, e.g. `z-[var(--z-chrome)]`,
+ * `duration-[var(--dur-base)]`. Mirrored in src/lib/tokens.ts.
  *
- *   desktop (wallpaper)  <  window-base.. (per-window, dynamic)  <  chrome
- *   (dock / command bar / presence avatars)  <  overlay (dialogs, popovers,
- *   menus, tooltips — anything portaled)
+ * Z layers:  desktop (wallpaper)  <  window-base.. (per-window, dynamic)  <
+ * chrome (dock / command bar / presence avatars)  <  overlay (dialogs,
+ * popovers, menus, tooltips — anything portaled)
  */
 :root {
   --z-window-base: 100;
   --z-chrome: 2000;
   --z-overlay: 3000;
+
+  /* Motion durations (pair with --ease-spring / --ease-smooth). */
+  --dur-fast: 0.2s; /* colors, small fades */
+  --dur-base: 0.35s; /* presses, popovers' opacity */
+  --dur-slow: 0.55s; /* windows, modals, geometry */
+
+  /* Shadow tint (per mode) and the top highlight line of glass surfaces. */
+  --sh: rgba(34, 40, 80, 0.3);
+  --glass-hi: rgba(255, 255, 255, 0.35);
+
+  /* AI glow ring colors (conic stops). See the `ai-ring` utility. */
+  --ring-colors: #4b8dff, #8a5bff, #ff5bbd, #ff6a3d, #ffc247, #3dd6a3, #4b8dff;
+
+  /* Blur of the modal scrim. Set to 0px if a GPU-poor machine struggles
+     (a full-viewport backdrop blur repaints with whatever is behind it). */
+  --scrim-blur: 8px;
+}
+
+:root[data-theme="dark"] {
+  --sh: rgba(0, 0, 10, 0.65);
+  --glass-hi: rgba(255, 255, 255, 0.1);
+}
+
+:root[data-brand="deloitte"]:not([data-theme="dark"]) {
+  --sh: rgba(0, 0, 0, 0.28);
+}
+
+:root[data-brand="deloitte"][data-theme="dark"] {
+  --sh: rgba(0, 0, 0, 0.7);
 }

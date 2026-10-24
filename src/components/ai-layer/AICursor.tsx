@@ -3,14 +3,13 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { motion } from "motion/react";
-import { CursorIcon } from "@phosphor-icons/react";
 import { springTrailing } from "@/lib/motion";
 import { useAgentStore } from "./agentStore";
 
 /**
- * The AI's on-screen cursor: a soft, filled accent-teal pointer with a
- * subtle glow and a small "AI Agent" name-tag chip, like a multiplayer
- * cursor in Docs/Figma. Portal-rendered straight to `document.body` so its
+ * The AI's on-screen cursor: an accent-filled pointer with a soft accent glow
+ * and a small "AI Agent" name-tag chip, like a multiplayer cursor in
+ * Docs/Figma. Portal-rendered straight to `document.body` so its
  * `position: fixed` coordinates are always relative to the viewport,
  * regardless of where this component happens to be mounted in the tree
  * (or what stacking/overflow context its React parent has).
@@ -53,6 +52,7 @@ export function AICursor() {
 
   return createPortal(
     <motion.div
+      aria-hidden
       initial={false}
       animate={{
         x: point.x,
@@ -68,13 +68,24 @@ export function AICursor() {
       }}
       className="pointer-events-none fixed top-0 left-0 z-[var(--z-overlay)]"
     >
-      <CursorIcon
-        size={30}
-        weight="fill"
-        className="text-accent -translate-x-1 -translate-y-1"
-        style={{ filter: "drop-shadow(0 0 10px rgba(36, 92, 80, 0.6))" }}
-      />
-      <span className="bg-accent text-accent-contrast shadow-float-sm absolute top-6 left-5 rounded-full px-2 py-0.5 text-[11px] font-medium whitespace-nowrap">
+      <svg
+        viewBox="0 0 24 24"
+        width={30}
+        height={30}
+        className="-translate-x-[5px] -translate-y-1"
+        style={{
+          filter:
+            "drop-shadow(0 6px 10px color-mix(in srgb, var(--color-accent) 55%, transparent))",
+        }}
+      >
+        <path
+          d="M4 3l6.5 17 2.6-7.1L20 10.3z"
+          className="fill-accent stroke-white"
+          strokeWidth={1.6}
+          strokeLinejoin="round"
+        />
+      </svg>
+      <span className="bg-accent text-accent-contrast rounded-pill absolute top-[22px] left-6 flex h-6 items-center px-2.5 text-xs font-bold whitespace-nowrap">
         AI Agent
       </span>
     </motion.div>,

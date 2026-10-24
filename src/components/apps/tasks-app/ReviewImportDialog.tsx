@@ -122,7 +122,7 @@ export function ReviewImportDialog({
         onOpenChange(next);
       }}
     >
-      <DialogContent className="flex max-h-[85vh] max-w-xl flex-col overflow-y-auto">
+      <DialogContent className="scroll-thin flex max-h-[85vh] max-w-xl flex-col overflow-y-auto px-[30px] pt-7 pb-6">
         <DialogTitle>Import Subcategory2 values</DialogTitle>
         <DialogDescription>
           Fill in many incidents at once. Values are checked against the category list
@@ -140,7 +140,7 @@ export function ReviewImportDialog({
           </TabsList>
 
           <TabsContent value="workbook" className="mt-3 flex flex-col gap-2">
-            <p className="text-ink-muted text-[12px]">
+            <p className="text-ink-muted text-[13px]">
               Choose the .xlsx you filled in (e.g.{" "}
               <code className="font-mono">prepared-incidents.xlsx</code>). The{" "}
               <em>Review Needed</em> sheet is read first, then <em>Incidents</em>, using
@@ -156,7 +156,6 @@ export function ReviewImportDialog({
                 onChange={(event) => handleFile(event.target.files?.[0])}
               />
               <Button
-                size="sm"
                 variant="outline"
                 disabled={reading}
                 onClick={() => fileInput.current?.click()}
@@ -168,16 +167,16 @@ export function ReviewImportDialog({
                     : "Choose workbook…"}
               </Button>
               {fileName && (
-                <span className="text-ink-faint line-clamp-1 text-[12px]">
+                <span className="text-ink-muted line-clamp-1 text-[12.5px]">
                   {fileName}
                 </span>
               )}
             </div>
-            {fileError && <p className="text-ink text-[12px]">{fileError}</p>}
+            {fileError && <p className="text-red text-[13px]">{fileError}</p>}
           </TabsContent>
 
           <TabsContent value="paste" className="mt-3 flex flex-col gap-2">
-            <p className="text-ink-muted text-[12px]">
+            <p className="text-ink-muted text-[13px]">
               Paste two columns — incident number, then Subcategory2 — straight from Excel
               (or comma-separated). A header row is optional.
             </p>
@@ -186,14 +185,14 @@ export function ReviewImportDialog({
               onChange={(event) => setPasteText(event.target.value)}
               placeholder={"INC4415807\tHardware Issue\nINC4415808\tOther"}
               spellCheck={false}
-              className="rounded-control border-border bg-surface-elevated text-ink placeholder:text-ink-faint focus-visible:border-accent focus-visible:ring-accent/30 h-32 w-full resize-y border p-3 font-mono text-[12px] focus-visible:ring-2 focus-visible:outline-none"
+              className="rounded-control border-line-strong bg-field text-ink placeholder:text-ink-muted focus-visible:border-focus focus-visible:shadow-field-focus h-32 w-full resize-y border p-3.5 font-mono text-[12.5px] transition-[border-color,box-shadow] duration-[250ms] focus-visible:outline-none"
             />
           </TabsContent>
         </Tabs>
 
         {hasInput && (
-          <div className="border-border/60 mt-4 flex flex-col gap-2 rounded-lg border p-3">
-            <p className="text-ink text-[12px]">
+          <div className="border-line bg-card rounded-card mt-4 flex flex-col gap-2 border p-4">
+            <p className="text-ink text-[13px]">
               <strong className="font-semibold">{matched}</strong> to stage (
               {matched - newCount} existing categories, {plan.newLabels.length} new label
               {plan.newLabels.length === 1 ? "" : "s"}){" · "}
@@ -202,33 +201,33 @@ export function ReviewImportDialog({
               {plan.stillBlank.length} still blank
             </p>
             {sources && mode === "workbook" && (
-              <p className="text-ink-faint text-[11px]">Read from: {sources}</p>
+              <p className="text-ink-muted text-xs">Read from: {sources}</p>
             )}
             {plan.overwrites > 0 && (
-              <p className="text-ink-faint text-[11px]">
+              <p className="text-ink-muted text-xs">
                 {plan.overwrites} already-chosen value{plan.overwrites === 1 ? "" : "s"}{" "}
                 will be replaced by this import.
               </p>
             )}
             {plan.duplicates > 0 && (
-              <p className="text-ink-faint text-[11px]">
+              <p className="text-ink-muted text-xs">
                 {plan.duplicates} incident
                 {plan.duplicates === 1 ? " appears" : "s appear"} more than once with
                 different values — the last one is used.
               </p>
             )}
-            <p className="text-ink-faint text-[11px]">
+            <p className="text-ink-muted text-xs">
               Blank cells and &ldquo;skip&rdquo; stay pending.
             </p>
 
             {plan.newLabels.length > 0 && (
-              <div className="border-accent/40 bg-accent-subtle/40 flex flex-col gap-1.5 rounded-lg border p-2.5">
-                <p className="text-ink text-[12px] font-medium">
+              <div className="bg-accent-soft rounded-card flex flex-col gap-1.5 p-3.5">
+                <p className="text-ink text-[13px] font-semibold">
                   {plan.newLabels.length} new label
                   {plan.newLabels.length === 1 ? "" : "s"} — not in the existing category
                   list
                 </p>
-                <p className="text-ink-faint text-[11px]">
+                <p className="text-ink-muted text-xs">
                   These will be saved exactly as written and appear as new categories in
                   the report. Check for typos before saving.
                 </p>
@@ -243,8 +242,8 @@ export function ReviewImportDialog({
             )}
 
             {plan.notInQueue.length > 0 && (
-              <ScrollArea className="border-border/60 h-32 rounded-lg border">
-                <div className="flex flex-col gap-0.5 p-2 text-[11px]">
+              <ScrollArea className="border-line rounded-card h-32 border">
+                <div className="flex flex-col gap-0.5 p-2.5 text-xs">
                   {plan.notInQueue.map((item) => (
                     <p key={`n-${item.number}`} className="text-ink-muted">
                       <span className="text-ink font-mono">{item.number}</span> — not in
@@ -257,20 +256,15 @@ export function ReviewImportDialog({
           </div>
         )}
 
-        <div className="mt-4 flex items-center justify-end gap-2">
+        <div className="mt-5 flex items-center justify-end gap-2">
           <Button
-            size="sm"
             variant="outline"
             disabled={matched === 0 || saving}
             onClick={() => apply(false)}
           >
             {matched ? `Stage ${matched}` : "Stage"}
           </Button>
-          <Button
-            size="sm"
-            disabled={matched === 0 || saving}
-            onClick={() => apply(true)}
-          >
+          <Button disabled={matched === 0 || saving} onClick={() => apply(true)}>
             {saving ? "Saving…" : "Import & save"}
           </Button>
         </div>

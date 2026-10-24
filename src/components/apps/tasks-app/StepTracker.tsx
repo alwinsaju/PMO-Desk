@@ -1,32 +1,12 @@
 "use client";
 
-import { CheckIcon, PauseIcon, XIcon } from "@phosphor-icons/react";
 import { Tooltip } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { computeStepStatuses, stepLabel, type StepStatus } from "./taskPresenter";
-import type { Task } from "./types";
+import type { Task, TaskState } from "./types";
 
-// Nodes communicate status via fill/border value contrast (+ a small glyph),
-// never a second accent hue — "active" is the one legitimate accent use,
-// for the same reason given in TaskStateBadge.tsx: it's the one state where
-// an agent is genuinely working right now. "gate" stays hollow like
-// "pending" rather than filled, because it's still an open question waiting
-// on a human, not a settled outcome; "done" and "failed" are both filled
-// for the opposite reason (something happened, for better or worse),
-// differing only by glyph — the same restraint TaskStateBadge's "Error"
-// state uses instead of reaching for a red accent. Shadowed states read as
-// "raised" (the same soft, neutral shadow the UI kit's Slider/Switch
-// thumbs use), reserving the flat/flush look for "pending" alone.
-const DOT_CLASS: Record<StepStatus, string> = {
-  pending: "border border-neutral-300 bg-surface-elevated",
-  gate: "border-2 border-ink bg-surface-elevated shadow-float-sm",
-  done: "bg-ink shadow-float-sm",
-  failed: "bg-ink shadow-float-sm",
-  active: "bg-accent shadow-float-sm",
-};
-
-// Trailing half of each node's tooltip label — the step id alone ("Build
-// report") doesn't say what's actually happening there right now.
+// Trailing half of each segment's tooltip / accessible name — the step id
+// alone ("Build report") doesn't say what's actually happening there now.
 const STATUS_WORD: Record<StepStatus, string> = {
   pending: "Not started",
   gate: "Waiting on you",
@@ -35,69 +15,151 @@ const STATUS_WORD: Record<StepStatus, string> = {
   active: "In progress",
 };
 
+/** `.progress[data-state]` (globals.css) per task state: the fill's color and
+ *  whether it shimmers. There is no "ok" here: the backend has no "done"
+ *  state (a finished run just returns the task to "resting"), so a
+ *  completed task reads as idle again rather than as a green full bar. */
+const PROGRESS_STATE: Record<TaskState, "idle" | "run" | "gate" | "err"> = {
+  resting: "idle",
+  working: "run",
+  finishing: "run",
+  awaiting_review: "gate",
+  awaiting_send: "gate",
+  error: "err",
+};
+
+/** How far into the active segment the fill (and its leading marker) sits.
+ *  The task data only says WHICH step is current, never how far through it
+ *  the script is, so this is a fixed, honest "somewhere in it": a bit past
+ *  the middle while running, nearly through it while finishing, and less
+ *  when parked on a gate or a failure (the step has barely begun / died). */
+const ACTIVE_FRACTION: Record<TaskState, number> = {
+  resting: 0,
+  working: 0.55,
+  finishing: 0.85,
+  awaiting_review: 0.4,
+  awaiting_send: 0.4,
+  error: 0.4,
+};
+
+/** Cuts the shared `.progress-bar` track into one segment per step (the CSS
+ *  default is a fixed eight). The bar is 3px wider than the track so every
+ *  segment, the last one included, is followed by a 3px gap that is clipped
+ *  off the end. */
+function segmentMask(count: number): string {
+  const step = 100 / count;
+  return `repeating-linear-gradient(90deg, #000 0, #000 calc(${step}% - 3px), transparent calc(${step}% - 3px), transparent ${step}%)`;
+}
+
+/** The caption above the bar. `step` is the current step's display name, or
+ *  null when the task has no current step (idle, or a step id the manifest
+ *  no longer has). */
+function captionFor(task: Task, activeIndex: number, step: string | null): string {
+  const count = task.steps.length;
+  if (step === null) {
+    switch (task.state) {
+      case "resting":
+        return `Not started · ${count} step${count === 1 ? "" : "s"}`;
+      case "error":
+        return "Failed";
+      case "awaiting_review":
+      case "awaiting_send":
+        return "Waiting on you";
+      default:
+        return "Running";
+    }
+  }
+  switch (task.state) {
+    case "finishing":
+      return `Finishing · ${step}`;
+    case "awaiting_review":
+    case "awaiting_send":
+      return `Waiting on you · ${step}`;
+    case "error":
+      return `Failed at ${step}`;
+    default:
+      return `Step ${activeIndex + 1} of ${count} · ${step}`;
+  }
+}
+
 interface StepTrackerProps {
   task: Task;
 }
 
-/** Horizontal dot-and-track pipeline tracker: one node per manifest step,
- *  styled by done/active/gate/failed/pending (see
- *  taskPresenter.computeStepStatuses). Steps are fully dynamic per task —
- *  some have as few as 3 steps and no review/send gate at all — so this
- *  never assumes a fixed shape. Mirrors agentPresenter.js's
- *  `buildStepTracker` rule exactly — only the visual treatment below is
- *  this project's own: the pill-shaped track echoes the UI kit's Slider
- *  track/range, and the node sizing/shadow echoes its Slider/Switch
- *  thumbs, so the tracker reads as this design system's own control rather
- *  than a generic progress-bar-library widget. */
+/** Segmented pipeline progress bar: one segment per manifest step, a label
+ *  row above ("Step 3 of 7 · <step>", "Waiting on you · <step>", "Failed at
+ *  <step>", "Finishing · <step>") with a percentage at the right. Built on the
+ *  UI kit's `.progress*` styles (the same markup `<Progress/>` renders, see
+ *  ui/Progress.tsx) with two additions that component can't express: a mask
+ *  with one segment per step instead of a fixed eight, and a per-segment
+ *  tooltip / focus target that keeps the old tracker's step-status semantics
+ *  (done / in progress / waiting on you / failed / not started). Steps are
+ *  fully dynamic per task — some have as few as 3 steps and no review/send
+ *  gate at all — so this never assumes a fixed shape. Status derivation
+ *  mirrors agentPresenter.js's `buildStepTracker` via
+ *  taskPresenter.computeStepStatuses. */
 export function StepTracker({ task }: StepTrackerProps) {
-  if (task.steps.length === 0) return null;
+  const count = task.steps.length;
+  if (count === 0) return null;
   const statuses = computeStepStatuses(task);
 
+  const activeIndex = statuses.findIndex((s) => s !== "done" && s !== "pending");
+  const state = PROGRESS_STATE[task.state];
+  // With no current step the bar is empty whatever the state says.
+  const pct =
+    activeIndex === -1 ? 0 : ((activeIndex + ACTIVE_FRACTION[task.state]) / count) * 100;
+  const step = activeIndex === -1 ? null : stepLabel(task, task.steps[activeIndex].id);
+  const label = captionFor(task, activeIndex, step);
+
+  const mask = segmentMask(count);
+  const labelColor =
+    state === "gate" ? "text-amber" : state === "err" ? "text-red" : "text-ink-soft";
+
   return (
-    <div className="flex items-center py-1" aria-label="Pipeline steps">
-      {task.steps.map((step, index) => {
-        const status = statuses[index];
-        const isLast = index === task.steps.length - 1;
-        return (
-          <div key={step.id} className={cn("flex items-center", !isLast && "flex-1")}>
-            <Tooltip label={`${stepLabel(task, step.id)} — ${STATUS_WORD[status]}`}>
-              <span
-                tabIndex={0}
-                className={cn(
-                  "relative flex h-5 w-5 shrink-0 items-center justify-center rounded-full outline-none",
-                  "ease-standard transition-[transform,background-color,border-color,box-shadow] duration-150 hover:scale-110",
-                  "focus-visible:ring-accent focus-visible:ring-offset-surface focus-visible:ring-2 focus-visible:ring-offset-2",
-                  DOT_CLASS[status],
-                )}
-              >
-                {status === "active" && (
-                  <span
-                    aria-hidden
-                    className="bg-accent pointer-events-none absolute inset-0 animate-ping rounded-full opacity-50"
-                  />
-                )}
-                {status === "done" && (
-                  <CheckIcon size={11} weight="bold" className="text-accent-contrast" />
-                )}
-                {status === "gate" && (
-                  <PauseIcon size={11} weight="bold" className="text-ink" />
-                )}
-                {status === "failed" && (
-                  <XIcon size={11} weight="bold" className="text-accent-contrast" />
-                )}
-              </span>
-            </Tooltip>
-            {!isLast && (
-              <span
-                className={cn(
-                  "rounded-pill ease-standard mx-1.5 h-1.5 flex-1 transition-colors duration-150",
-                  status === "done" ? "bg-ink" : "bg-neutral-150",
-                )}
-              />
-            )}
+    <div className="progress" data-state={state}>
+      <div className="text-ink-muted mb-2.5 flex items-baseline justify-between gap-2.5 text-xs font-semibold">
+        <span className={cn("truncate", labelColor)}>{label}</span>
+        <span className="text-ink-soft shrink-0 tabular-nums">{Math.round(pct)}%</span>
+      </div>
+      <div className="relative">
+        <div
+          role="progressbar"
+          aria-label="Pipeline progress"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={Math.round(pct)}
+          aria-valuetext={label}
+          className="progress-track"
+        >
+          <div
+            className="progress-bar"
+            style={{ maskImage: mask, WebkitMaskImage: mask }}
+          >
+            <i className="progress-fill" style={{ width: `${pct}%` }} />
           </div>
-        );
-      })}
+          <i className="progress-dot" style={{ left: `${pct}%` }} />
+        </div>
+        {/* One hover/focus target per segment, laid over the track (same 3px
+            overhang as the bar, so the zones line up with the segments). */}
+        <div
+          role="group"
+          aria-label="Pipeline steps"
+          className="absolute -top-2 -right-[3px] -bottom-2 left-0 flex"
+        >
+          {task.steps.map((s, index) => {
+            const text = `${stepLabel(task, s.id)} — ${STATUS_WORD[statuses[index]]}`;
+            return (
+              <Tooltip key={s.id} label={text}>
+                <span
+                  tabIndex={0}
+                  aria-label={text}
+                  className="focus-visible:ring-focus min-w-0 flex-1 rounded-sm outline-none focus-visible:ring-2"
+                />
+              </Tooltip>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }

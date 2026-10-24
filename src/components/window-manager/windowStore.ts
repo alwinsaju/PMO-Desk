@@ -8,6 +8,7 @@ import type {
   WindowSize,
   WindowState,
 } from "./types";
+import { defaultWindowGeometry } from "./windowGeometry";
 
 export interface WindowStoreState {
   windows: Record<string, WindowState>;
@@ -15,9 +16,9 @@ export interface WindowStoreState {
    *  current value and increments it. Never decreases. */
   nextZIndex: number;
   /** How many windows have ever been opened this session. Only used to
-   *  compute the cascade offset for the next open — not decremented on
-   *  close, and wraps via `windowDefaults.cascadeWrap` so cascades don't
-   *  walk new windows off-screen in a long session. */
+   *  compute the cascade offset for the next open (windowGeometry.ts) — not
+   *  decremented on close, and wraps via `windowDefaults.cascadeWrap` so
+   *  cascades don't walk new windows off-screen in a long session. */
   openCount: number;
 
   openWindow: (appId: string, options?: OpenWindowOptions) => string;
@@ -97,12 +98,17 @@ export const useWindowStore = create<WindowStoreState>()((set) => ({
         : `win-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
     set((state) => {
-      const cascadeIndex = state.openCount % windowDefaults.cascadeWrap;
-      const position: WindowPosition = options.position ?? {
-        x: windowDefaults.cascadeOrigin.x + cascadeIndex * windowDefaults.cascadeOffset,
-        y: windowDefaults.cascadeOrigin.y + cascadeIndex * windowDefaults.cascadeOffset,
-      };
-      const size: WindowSize = options.size ?? { ...windowDefaults.size };
+      // One uniform default size for every app (shrunk to fit the viewport),
+      // with a small cascade per new window. See windowGeometry.ts.
+      const geometry = defaultWindowGeometry(
+        state.openCount,
+        typeof window !== "undefined"
+          ? { width: window.innerWidth, height: window.innerHeight }
+          : null,
+        windowDefaults,
+      );
+      const position: WindowPosition = options.position ?? geometry.position;
+      const size: WindowSize = options.size ?? geometry.size;
       const zIndex = state.nextZIndex;
 
       const newWindow: WindowState = {

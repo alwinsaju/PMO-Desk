@@ -64,9 +64,9 @@ const DiffBody = memo(function DiffBody({ diff }: { diff: RosterDiff }) {
       {blocking.length > 0 && (
         <div
           role="alert"
-          className="border-ink flex flex-col gap-1.5 rounded-lg border-2 bg-neutral-50 p-3"
+          className="border-red/40 bg-red-soft rounded-card flex flex-col gap-1.5 border p-4"
         >
-          <p className="text-ink flex items-center gap-1.5 text-[13px] font-semibold">
+          <p className="text-red flex items-center gap-1.5 text-[14px] font-bold">
             <ProhibitIcon size={15} weight="bold" aria-hidden />
             Can&apos;t confirm — {blocking.length} blocking issue
             {blocking.length === 1 ? "" : "s"}
@@ -75,14 +75,14 @@ const DiffBody = memo(function DiffBody({ diff }: { diff: RosterDiff }) {
             {blocking.map((item, index) => (
               <li
                 key={`${item.kind}-${index}`}
-                className="text-ink-muted text-[12px] break-words"
+                className="text-ink-soft text-[13px] break-words"
               >
-                <span className="text-ink font-mono text-[11px]">{item.kind}</span>
+                <span className="text-ink font-mono text-[11.5px]">{item.kind}</span>
                 {item.message ? ` — ${item.message}` : ""}
               </li>
             ))}
           </ul>
-          <p className="text-ink-faint text-[11px]">
+          <p className="text-ink-muted text-xs">
             Fix this at the source and re-run the comparison; the confirm button stays
             disabled until nothing is blocking.
           </p>
@@ -106,9 +106,15 @@ const DiffBody = memo(function DiffBody({ diff }: { diff: RosterDiff }) {
 
       <Tabs defaultValue="changes" className="flex min-h-0 flex-1 flex-col">
         <TabsList className="self-start">
-          <TabsTrigger value="changes">Changed cells ({stats.cells})</TabsTrigger>
-          <TabsTrigger value="outside">Outside plan ({outside.length})</TabsTrigger>
-          <TabsTrigger value="issues">Issues ({issues.length})</TabsTrigger>
+          <TabsTrigger value="changes" count={stats.cells}>
+            Changed cells
+          </TabsTrigger>
+          <TabsTrigger value="outside" count={outside.length}>
+            Outside plan
+          </TabsTrigger>
+          <TabsTrigger value="issues" count={issues.length}>
+            Issues
+          </TabsTrigger>
           <TabsTrigger value="flags">Flag delta</TabsTrigger>
         </TabsList>
 
@@ -120,7 +126,7 @@ const DiffBody = memo(function DiffBody({ diff }: { diff: RosterDiff }) {
           />
         </TabsContent>
         <TabsContent value="outside" className="mt-2 min-h-0 flex-1">
-          <p className="text-ink-faint mb-2 text-[11px]">
+          <p className="text-ink-muted mb-2 text-xs">
             Cells you edited that the plan didn&apos;t expect to change.
           </p>
           <ChangeTable
@@ -130,20 +136,20 @@ const DiffBody = memo(function DiffBody({ diff }: { diff: RosterDiff }) {
           />
         </TabsContent>
         <TabsContent value="issues" className="mt-2 min-h-0 flex-1">
-          <ScrollArea className="border-border/60 h-[min(18rem,40vh)] rounded-lg border">
+          <ScrollArea className="border-line bg-card rounded-card h-[min(18rem,40vh)] border">
             {issues.length === 0 ? (
               <GateNote>No issues found.</GateNote>
             ) : (
-              <ul className="divide-border/60 divide-y">
+              <ul className="divide-line divide-y">
                 {issues.map((issue, index) => (
-                  <li key={index} className="flex flex-col gap-1 px-3 py-2 select-text">
+                  <li key={index} className="flex flex-col gap-1 px-4 py-2.5 select-text">
                     <div className="flex items-center gap-2">
                       <SeverityChip severity={issue.severity} />
-                      <span className="text-ink-muted font-mono text-[11px]">
+                      <span className="text-ink-muted font-mono text-[11.5px]">
                         {issue.kind}
                       </span>
                     </div>
-                    <p className="text-ink-muted text-[12px] break-words">
+                    <p className="text-ink-soft text-[13px] break-words">
                       {issue.message}
                     </p>
                   </li>
@@ -153,9 +159,9 @@ const DiffBody = memo(function DiffBody({ diff }: { diff: RosterDiff }) {
           </ScrollArea>
         </TabsContent>
         <TabsContent value="flags" className="mt-2 min-h-0 flex-1">
-          <ScrollArea className="border-border/60 h-[min(18rem,40vh)] rounded-lg border">
+          <ScrollArea className="border-line bg-card rounded-card h-[min(18rem,40vh)] border">
             <div className="flex flex-col gap-3 p-3">
-              <p className="text-ink-muted text-[12px]">
+              <p className="text-ink-muted text-[13px]">
                 <strong className="text-ink font-semibold">{delta.added}</strong> new ·{" "}
                 <strong className="text-ink font-semibold">{delta.resolved}</strong>{" "}
                 resolved ·{" "}
@@ -182,12 +188,14 @@ function Stat({
   hint?: string;
 }) {
   return (
-    <div className="border-border/60 rounded-lg border px-3 py-2">
-      <dt className="text-ink-faint text-[10px] font-semibold tracking-wide uppercase">
+    <div className="border-line bg-card rounded-card border px-4 py-3">
+      <dt className="text-ink-muted text-[10.5px] font-bold tracking-[0.08em] uppercase">
         {label}
       </dt>
-      <dd className="text-ink text-[16px] leading-tight font-semibold">{value}</dd>
-      {hint && <p className="text-ink-faint text-[11px]">{hint}</p>}
+      <dd className="text-ink text-[18px] leading-tight font-bold tracking-tight">
+        {value}
+      </dd>
+      {hint && <p className="text-ink-muted text-xs">{hint}</p>}
     </div>
   );
 }
@@ -195,11 +203,11 @@ function Stat({
 function FlagList({ title, flags }: { title: string; flags: Flag[] }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <p className="text-ink-muted text-[11px] font-semibold tracking-wide uppercase">
+      <p className="text-ink-muted text-[11px] font-bold tracking-[0.08em] uppercase">
         {title} ({flags.length})
       </p>
       {flags.length === 0 ? (
-        <p className="text-ink-faint text-[12px]">None.</p>
+        <p className="text-ink-muted text-[13px]">None.</p>
       ) : (
         <ul className="flex flex-col gap-1.5">
           {flags.map((flag, index) => (
@@ -209,20 +217,22 @@ function FlagList({ title, flags }: { title: string; flags: Flag[] }) {
             >
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                 <SeverityChip severity={flag.severity} />
-                <span className="text-ink-muted font-mono text-[11px]">{flag.kind}</span>
-                <span className="text-ink text-[12px] font-medium">
-                  {flag.person ?? <span className="text-ink-faint">—</span>}
+                <span className="text-ink-muted font-mono text-[11.5px]">
+                  {flag.kind}
                 </span>
-                <span className="text-ink-faint font-mono text-[11px]">
+                <span className="text-ink text-[13px] font-semibold">
+                  {flag.person ?? <span className="text-ink-muted">—</span>}
+                </span>
+                <span className="text-ink-muted font-mono text-[11.5px]">
                   {flag.date ?? "—"}
                 </span>
                 {(flag.team || flag.shift) && (
-                  <span className="text-ink-faint text-[11px]">
+                  <span className="text-ink-muted text-[11px]">
                     {[flag.team, flag.shift].filter(Boolean).join(" · ")}
                   </span>
                 )}
               </div>
-              <p className="text-ink-muted text-[12px] break-words">{flag.message}</p>
+              <p className="text-ink-soft text-[13px] break-words">{flag.message}</p>
             </li>
           ))}
         </ul>
@@ -280,24 +290,24 @@ const ChangeTable = memo(function ChangeTable({
           label={`Search ${label.toLowerCase()}`}
           className="flex-1"
         />
-        <span className="text-ink-faint text-[11px] whitespace-nowrap" aria-live="polite">
+        <span className="text-ink-muted text-xs whitespace-nowrap" aria-live="polite">
           {rows.length === changes.length
             ? `${rows.length} rows`
             : `${rows.length} of ${changes.length}`}
         </span>
       </div>
 
-      <ScrollArea className="border-border/60 h-[min(18rem,40vh)] rounded-lg border">
+      <ScrollArea className="border-line bg-card rounded-card h-[min(18rem,40vh)] border">
         {changes.length === 0 ? (
           <GateNote>{empty}</GateNote>
         ) : rows.length === 0 ? (
           <GateNote>No changes match.</GateNote>
         ) : (
           <table
-            className="w-full border-collapse text-left text-[12px]"
+            className="w-full border-collapse text-left text-[13px]"
             aria-label={label}
           >
-            <thead className="border-border/60 sticky top-0 z-10 border-b bg-neutral-50">
+            <thead className="border-line bg-pop sticky top-0 z-10 border-b backdrop-blur-md">
               <tr>
                 {COLUMNS.slice(0, 2).map((column) => (
                   <SortHeader
@@ -310,7 +320,7 @@ const ChangeTable = memo(function ChangeTable({
                 ))}
                 <th
                   scope="col"
-                  className="text-ink-muted px-3 py-1.5 text-[11px] font-semibold tracking-wide uppercase"
+                  className="text-ink-muted px-4 py-2 text-[11px] font-bold tracking-[0.08em] uppercase"
                 >
                   <span className="inline-flex items-center gap-2">
                     {COLUMNS.slice(2).map((column, index) => (
@@ -330,7 +340,7 @@ const ChangeTable = memo(function ChangeTable({
                 </th>
               </tr>
             </thead>
-            <tbody className="divide-border/60 divide-y">
+            <tbody className="divide-line divide-y">
               {rows.slice(0, limit).map((row, index) => (
                 <ChangeRow key={`${row.person}|${row.date}|${index}`} row={row} />
               ))}
@@ -339,11 +349,7 @@ const ChangeTable = memo(function ChangeTable({
         )}
         {rows.length > limit && (
           <div className="p-2 text-center">
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => setLimit((n) => n + PAGE_SIZE)}
-            >
+            <Button variant="ghost" onClick={() => setLimit((n) => n + PAGE_SIZE)}>
               Show {Math.min(PAGE_SIZE, rows.length - limit)} more of{" "}
               {rows.length - limit}
             </Button>
@@ -357,19 +363,19 @@ const ChangeTable = memo(function ChangeTable({
 const ChangeRow = memo(function ChangeRow({ row }: { row: CellChange }) {
   return (
     <tr className="select-text">
-      <td className="text-ink px-3 py-1.5 font-medium break-words">
-        {row.person ?? <span className="text-ink-faint">—</span>}
+      <td className="text-ink px-4 py-2 font-semibold break-words">
+        {row.person ?? <span className="text-ink-muted">—</span>}
       </td>
-      <td className="text-ink-muted px-3 py-1.5 font-mono text-[11px] whitespace-nowrap">
+      <td className="text-ink-muted px-4 py-2 font-mono text-[11.5px] whitespace-nowrap">
         {row.date ?? "—"}
       </td>
-      <td className="px-3 py-1.5">
+      <td className="px-4 py-2">
         <span className="inline-flex flex-wrap items-center gap-1.5">
           <Cell value={row.before} />
           <ArrowRightIcon
             size={11}
             weight="bold"
-            className="text-ink-faint"
+            className="text-ink-muted"
             aria-label="changed to"
           />
           <Cell value={row.after} strong />
@@ -381,15 +387,15 @@ const ChangeRow = memo(function ChangeRow({ row }: { row: CellChange }) {
 
 function Cell({ value, strong = false }: { value: string | null; strong?: boolean }) {
   if (value === null || value === "") {
-    return <span className="text-ink-faint text-[11px] italic">(empty)</span>;
+    return <span className="text-ink-muted text-[11.5px] italic">(empty)</span>;
   }
   return (
     <span
       className={cn(
-        "rounded-control px-1.5 py-0.5 font-mono text-[11px]",
+        "rounded-control px-2 py-0.5 font-mono text-[11.5px]",
         strong
-          ? "bg-accent-subtle text-accent-800 font-medium"
-          : "text-ink-muted bg-neutral-100",
+          ? "bg-accent-soft text-accent-ink font-semibold"
+          : "text-ink-muted bg-chip",
       )}
     >
       {value}
@@ -413,7 +419,7 @@ function SortButton({
       type="button"
       onClick={() => onSort(column.key)}
       className={cn(
-        "focus-visible:ring-accent hover:text-ink inline-flex items-center gap-1 rounded uppercase outline-none focus-visible:ring-2",
+        "focus-visible:ring-focus hover:text-ink inline-flex items-center gap-1 rounded uppercase outline-none focus-visible:ring-2",
         active && "text-ink",
       )}
     >
@@ -440,7 +446,7 @@ function SortHeader(props: {
       aria-sort={
         props.active ? (props.direction === "asc" ? "ascending" : "descending") : "none"
       }
-      className="text-ink-muted px-3 py-1.5 text-[11px] font-semibold tracking-wide uppercase"
+      className="text-ink-muted px-4 py-2 text-[11px] font-bold tracking-[0.08em] uppercase"
     >
       <SortButton {...props} />
     </th>

@@ -81,10 +81,11 @@ moveWindow(id, position)               setWindowControlledBy(id, controlledBy, a
 resizeWindow(id, size)                 // clamps to minSize
 ```
 
-Defaults: 900×600 open size, 360×240 minimum, +32px cascade offset per newly
-opened window (wraps after 10 so a long session doesn't walk new windows off
-the edge of the screen). All of these numbers live in `src/lib/tokens.ts`'s
-`windowDefaults`, not hardcoded in the store.
+Defaults: ONE 1120×680 open size for every app (shrunk to fit a small viewport),
+360×240 minimum, and a ~24px cascade per newly opened window (centered as a
+group, wraps after 8 so a long session doesn't walk new windows off the edge of
+the screen). The numbers live in `src/lib/tokens.ts`'s `windowDefaults`; the
+placement maths is the pure `window-manager/windowGeometry.ts` (unit-tested).
 
 **Selectors**: prefer `useWindowStore((s) => s.windows[id])` (a per-window
 selector) over subscribing to the whole store. The store's internal actions
@@ -270,11 +271,15 @@ AI Agent Layer's corner presence avatars later.
 
 ## The ONE accent color
 
+(The accent is now per-mode — deep teal by default, Deloitte green/neon in
+Deloitte mode — and `text-accent-ink` is the text/icon form of it; see
+"Design system / theming" below. The one-accent rule itself is unchanged.)
+
 The design spec is explicit that there is exactly one accent color (a deep
 teal), reserved for AI/interactive moments — not decorative use. In this
 pass it shows up in: focus rings across the whole UI kit, `Button`/`IconButton`'s
 `solid` variant, `Switch`/`Slider`'s checked/filled state, and an animated
-glow (`AIGlowBorder.tsx`) Window.tsx draws around a window when
+ring (`AIGlowBorder.tsx`; since the redesign the design system's `ai-ring` conic border, the older `.ai-glow-*` globals.css classes are unused) Window.tsx draws around a window when
 `controlledBy === "ai"` (not explicitly listed in the original spec's
 examples, but squarely in the same category — it's arguably the single most
 important "this is AI-driven" signal in the whole product). It started as a
@@ -290,6 +295,133 @@ one-off exception scoped to that single effect, not a precedent — don't add
 a second accent color anywhere else, and don't reach for `bg-accent` just
 because something needs visual emphasis — that's what the neutral scale's
 contrast is for.
+
+## Design system / theming
+
+The look is a frosted-glass redesign with two independent switches on
+`<html>`. Components never branch on either in JS: they read tokens, and
+`src/styles/tokens.css` re-defines the tokens per combination.
+
+| Attribute    | Values              | Persisted in  | Helpers                          |
+| ------------ | ------------------- | ------------- | -------------------------------- |
+| `data-theme` | `dark` / absent     | `ai-os:theme` | `src/lib/theme.ts`, `useTheme()` |
+| `data-brand` | `deloitte` / absent | `ai-os:brand` | `src/lib/theme.ts`, `useBrand()` |
+
+`getThemeInitScript()` (a `beforeInteractive` script in `layout.tsx`) sets
+both attributes before hydration, so there is no flash. The single source of
+truth is the attribute; the hooks are `useSyncExternalStore` over it. The
+toggles live in the Settings popover (`SettingsMenu.tsx`: "Dark mode" and
+"Deloitte mode"). Cascade order in tokens.css (later wins): default light,
+`[data-theme=dark]`, `[data-brand=deloitte]` (shared: radii, font, ring),
+`[data-brand=deloitte]:not([data-theme=dark])`,
+`[data-brand=deloitte][data-theme=dark]`.
+
+**Deloitte mode** uses only the brand palette (Green #86BC25, Neon #86EB22,
+Blue #00A3E0, Light Blue #A0DCFF, Dark Blue #005587, Dark Gray #282728, Gray
+#E6E6E6, Bright Lime #B7E320, Green #63C631, Sky #3FC3EC, Black) plus the
+supplemental status amber/red. Light = white / #F5F5F5 surfaces, #282728 text,
+green fills with BLACK text; dark = #282728 / #333 surfaces, #E6E6E6 text and
+NEON (never plain #86BC25) as the accent. Open Sans (`--font-open-sans`,
+loaded in `layout.tsx`), light-weight headlines, squarer radii, a 4px
+green/neon/sky bar on every window, a grey/near-black wallpaper with drifting
+glows and concentric ring outlines. No logo or tagline lockup.
+
+### Token cheat-sheet (Tailwind utilities derive from these)
+
+- **Text**: `text-ink` (primary), `text-ink-soft` (body-secondary),
+  `text-ink-muted` (labels), `text-ink-faint` (placeholder/disabled),
+  `text-ink-inverse` (on `bg-ink`).
+- **Accent**: `bg-accent text-accent-contrast` for a solid fill (contrast is
+  black in Deloitte mode); `hover:bg-accent-hover`; `bg-accent-soft` tint;
+  `bg-accent-2` gradient end. **`text-accent-ink`** is the accent used AS text
+  or icon color (teal by default, #282728 in Deloitte-light, neon in
+  Deloitte-dark). Never use `text-accent` for text: green on white fails
+  contrast. `ring-focus` / `border-focus` is the keyboard-focus color (Dark Blue
+  in Deloitte-light, otherwise the accent).
+- **Fills**: `bg-glass` / `bg-win` / `bg-pop` (translucent surfaces), `bg-card`,
+  `bg-field` (inputs, active tab plate), `bg-chip` (resting small controls) and
+  `bg-chip-strong` (their hover), `border-line` / `border-line-strong`,
+  `border-glass-edge`, `bg-scrim`. `bg-surface-elevated` and `neutral-*` still
+  work as solid fallbacks and flip with the theme.
+- **Status**: `text-amber bg-amber-soft`, `text-red bg-red-soft`,
+  `text-success bg-success-soft` (`bg-success-dot` for bare dots),
+  `text-info bg-info-soft`.
+- **Radius tiers**: `rounded-surface` (windows, dialogs, popovers: 24px),
+  `rounded-card` (cards and rows: 18px), `rounded-control` (inputs, icon
+  buttons, menu rows: 12px), `rounded-chip` (buttons, badges, tags: pill),
+  plus `rounded-tile` (icon tiles), `rounded-bar` (search/command bars),
+  `rounded-orb` (round icon buttons), `rounded-seg` / `rounded-seg-item`
+  (segmented tabs). `rounded-pill` is always a full pill. Deloitte mode squares
+  every tier (14 / 10 / 8 / 6) and also the legacy `rounded-xl` scale.
+- **Height / spacing**: `h-control` (36px), `h-titlebar` (54px), `h-dock`
+  (60px), `p-gutter` (24px).
+- **Shadows**: `shadow-glass`, `shadow-pop`, `shadow-modal`, `shadow-window`,
+  `shadow-window-focus`, `shadow-halo` (primary hover), `shadow-field-focus`,
+  and the older `shadow-float-sm|float|float-lg`. All tint from `--sh`.
+- **Easing / motion**: `ease-spring` `cubic-bezier(.34,1.5,.64,1)` (presses,
+  toggles, popovers), `ease-smooth` `cubic-bezier(.22,.9,.28,1)` (fades,
+  geometry); `--dur-fast|base|slow` (.2s/.35s/.55s). JS twins in
+  `src/lib/motion.ts` (`easeSpring`, `easeSmooth`, `popEnter`/`dialogEnter`)
+  and `src/lib/tokens.ts`.
+- **Type**: `font-sans` follows the mode; `font-headline` is weight 700
+  (300 in Deloitte).
+- **Variants**: `dark:` and `brand-dl:` (use `brand-dl:` only for structural
+  brand differences; anything a token can express belongs in tokens.css).
+
+### Effects (utilities in `globals.css`; each has a usage comment there)
+
+| Class                               | Use                                                                                                                     |
+| ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `glass` / `glass-pop` / `glass-win` | Frosted fill + blur + 1px light edge. Chrome (dock, command bar, pills) / popovers, menus, dialogs / window body.       |
+| `spot`                              | Cursor-following card spotlight. Just add the class; `GlobalSpotlight` (mounted in layout) feeds `--mx/--my`.           |
+| `sweep`                             | Diagonal light sweep on hover (buttons). Override `--sweep-color` for solid fills.                                      |
+| `ai-ring`                           | Rotating conic AI border from `--ring-colors` (brand gradient in Deloitte). Hide with `[--ai-ring-opacity:0]`.          |
+| `row-bar`                           | Accent bar sliding in on a list row on hover / `data-active="true"` / `aria-selected` / `aria-current`.                 |
+| `morph`                             | Rounded square becomes a circle with accent glow on hover (dock tiles, menu icons). `morph-host` on a parent drives it. |
+| `transition-ui`                     | The standard spring-press transition list.                                                                              |
+| `scrim`                             | Blurred, tinted dialog backdrop (blur strength = `--scrim-blur`).                                                       |
+| `accent-word`                       | One headline word: italic + green underline (Deloitte-light) / neon (Deloitte-dark).                                    |
+| `brand-bar`                         | Deloitte-only 4px gradient bar across the top of a window (put on the clipped `relative overflow-hidden` body).         |
+| `scroll-thin`                       | Slim token-tinted scrollbar for hand-rolled overflow.                                                                   |
+| `animate-rise`, `animate-blink`     | Entrance for cards/rows; status-dot blink.                                                                              |
+| `.progress*` / `<Progress/>`        | Segmented progress bar with `data-state` idle / run / gate / err / ok.                                                  |
+| `.wp-*`                             | The four cross-fading wallpaper layers (`Wallpaper.tsx`).                                                               |
+
+Pseudo-element budget (never stack two users of the same one): `spot` uses
+`::before` + `::after`; `sweep`, `row-bar`, `ai-ring` use `::after`;
+`brand-bar` uses `::before`. All motion effects switch off under
+`prefers-reduced-motion`; overlays degrade to a plain fade.
+
+Focus: a base-layer `:focus-visible` outline in `--color-focus` covers any
+interactive element that does not bring its own ring; `focus-visible:ring-*`
+and `outline-none` utilities still win.
+
+### Using it in a component
+
+```tsx
+<section className="spot rounded-card bg-card border-line border p-5">
+  <h2 className="font-headline text-3xl">
+    Your <span className="accent-word">tasks</span>
+  </h2>
+  <Button>Run</Button> {/* 36px, accent fill, halo + light sweep */}
+  <Badge variant="warning" dot pulse fixedWidth>
+    Needs you
+  </Badge>
+  <Tabs>
+    <TabsList>
+      <TabsTrigger value="a" count={3}>
+        Mine
+      </TabsTrigger>
+    </TabsList>
+  </Tabs>
+</section>
+```
+
+When adding or changing a token, update `tokens.css`, the mirror in
+`src/lib/tokens.ts`, and the className-merge list in `src/lib/cn.ts` (so
+`cn("rounded-chip", "rounded-lg")` still resolves the conflict). To eyeball a
+primitive in all four theme x brand combinations open `/design` (dev only; a
+gallery on the real wallpaper).
 
 ## Z-index layers
 
@@ -480,7 +612,7 @@ extensionless sibling imports, which is what lets plain Node import it.
 A built-in app (`"pmo-todo"`, the sixth dock entry) for the PMO lead. Raw
 Teams messages and Outlook emails arrive as JSON files in an inbox folder; the
 **local** model (through `src/lib/ai-runtime`, never a cloud API) turns each
-into a to-do *proposal*; proposals wait in a **Review Queue**, and only a human
+into a to-do _proposal_; proposals wait in a **Review Queue**, and only a human
 **Approve** creates a to-do. **The app sends nothing anywhere** (no email, no
 Teams post; the only notifications are local reminders on this computer, see
 "Phase 3" below) and never calls agent-office: no code under
@@ -598,7 +730,7 @@ are skipped; the app deletes each file it has dealt with, and its only write
 into the folder is the Paste button's file (one more producer, same atomic
 hand-off). **Teams is filtered by default** until a tenant ID or chat is
 allowlisted (the tenant GUID ships empty): the status bar says so, a filtered
-Teams item has an *Allow this tenant* button, and the tenant goes in Settings
+Teams item has an _Allow this tenant_ button, and the tenant goes in Settings
 too (see PMO-INTAKE-CONTRACT.md).
 
 **Producers** (all write the same `pmo-intake/1` file): Power Automate flows
@@ -614,14 +746,14 @@ the mapping and the script's control flow against fake Outlook objects under
 the blocked-domain/term rules (and a blocked domain anywhere in the pasted text
 counts) but not the Teams default-deny.
 
-**UI additions**: the status bar has *Paste* and a gear. *Paste*
+**UI additions**: the status bar has _Paste_ and a gear. _Paste_
 (`PasteIntakeDialog`) validates with the same zod schema as the server;
-*Settings* (`SettingsDialog`, form logic in `settingsForm.ts`) edits
+_Settings_ (`SettingsDialog`, form logic in `settingsForm.ts`) edits
 `config.json` through GET/PUT `/api/pmo/config`, validated by the same
 `PmoConfigPatchSchema` (GUID tenant ids, domains, emails, retention bounds) with
 inline per-line errors, and shows the inbox and data paths read-only. The
 Filtered tab filters by reason and, per item, offers the one-click rule change
-(*Allow this tenant* / *Allow \<domain\>*) and the steps to resend. It cannot
+(_Allow this tenant_ / _Allow \<domain\>_) and the steps to resend. It cannot
 "move to review": the text of a filtered message is discarded at filter time on
 purpose, and the tab says so.
 
@@ -640,8 +772,8 @@ model's `draft` untouched; the reviewer's changes are `edits`. Local model
 failures are local state only: `runtime-down` / `model-missing` pause the queue
 and leave items `pending` (banner in the UI; every scan retries), a timeout is
 retried once then `failed`, `invalid-output` is `failed` after the runtime's own
-repair, at most 3 model attempts per item, and failed items offer *Retry* and
-*Create manually from original*. `gemma4:12b` (think off) on this CPU takes
+repair, at most 3 model attempts per item, and failed items offer _Retry_ and
+_Create manually from original_. `gemma4:12b` (think off) on this CPU takes
 roughly 50-100 s per message, and the first one after a cold start 1-2 minutes
 more (the status bar says so while the model is not yet warm), so structuring
 is strictly background work.
@@ -655,7 +787,7 @@ Tomorrow / Next Monday chips), priority, waiting-on; action items with an
 optional owner and due date (add, edit inline, tick, remove); checkpoints (add,
 rename, move up/down, remove, skip, complete, reopen). The stage and the progress
 bar are derived from the checkpoints on every read, never stored. Completing the
-last checkpoint only *offers* "Mark done" (a banner in the dialog and a button on
+last checkpoint only _offers_ "Mark done" (a banner in the dialog and a button on
 the list row); the to-do is never closed by itself. The list has Open / Overdue /
 Due soon / Waiting / Snoozed / Done filters with counts and four sorts
 (`queueView.ts`): "overdue" is due before today (IST), "due soon" is due today or
@@ -664,11 +796,11 @@ tomorrow. Limits: 50 action items and 20 checkpoints per to-do.
 **Reminders** (`src/lib/pmo/due.ts`, pure, unit-tested with a fake clock).
 `computeDue(todos, now, prefs)` returns `{ todoId, kind, key, title, body }`:
 
-- `due-soon`: once per due date, while the due date (the *start* of that day) is
+- `due-soon`: once per due date, while the due date (the _start_ of that day) is
   less than 24 h away, so the heads-up lands on the day before.
 - `overdue`: from the start of the working day (09:00) on the due day, then once
   per working day (Saturday and Sunday skipped by default).
-- `chaser`: a to-do with *waiting on* set and no reply for N working days,
+- `chaser`: a to-do with _waiting on_ set and no reply for N working days,
   repeating after each further N. The clock starts at `waitingSince` (phase 4; a
   to-do from before it falls back to its last update); N is the to-do's own
   `chaserDays`, else the global default (2). Editing the to-do does not restart
@@ -689,7 +821,7 @@ tomorrow. Limits: 50 action items and 20 checkpoints per to-do.
   shows the title (or a short list). The server builds the toast, so every client
   shows identical text. Reminders stay on this computer; nothing is sent anywhere.
 
-**Delivery and claim semantics** (`server/notify.ts`). A client *claims* the
+**Delivery and claim semantics** (`server/notify.ts`). A client _claims_ the
 reminders not yet delivered (`POST /api/pmo/due/claim { client }`). Under the
 store lock the server runs `computeDue`, drops keys already delivered or held by a
 fresh claim, records the claim in `state/notify.json` and returns
@@ -752,11 +884,11 @@ COM, no Graph, no agent-office. The one hand-off to the outside is a `mailto:` l
 (below).
 
 **Waiting on.** A to-do has `waitingOn`, `waitingSince` (ISO; the chaser clock) and
-an optional `chaserDays` (null = the global default). *Mark waiting* (a name, with
-quick picks from the requester and the source sender) and *Got a reply (clear
-waiting)* are one click in the detail panel (`WaitingPanel`); the list row shows
+an optional `chaserDays` (null = the global default). _Mark waiting_ (a name, with
+quick picks from the requester and the source sender) and _Got a reply (clear
+waiting)_ are one click in the detail panel (`WaitingPanel`); the list row shows
 "Waiting on X since Mon 19 Oct (7 days)", a "Time to chase" badge once the
-cadence is reached, and a *Got a reply* button. The since-date can be backdated
+cadence is reached, and a _Got a reply_ button. The since-date can be backdated
 and the cadence set per to-do (1-10 working days, or the default). Approve carries
 the AI proposal's `waitingOn` (trimmed) with `waitingSince` = the approval time,
 unless the draft carries its own `waitingSince`. `due.ts` has one definition
@@ -764,14 +896,14 @@ unless the draft carries its own `waitingSince`. `due.ts` has one definition
 
 **Timeline.** `todo.history` (cap 60, the first entry always kept): created, linked
 messages, waiting set/cleared, due-date and status changes, "chaser drafted"
-(never the draft text). Shown newest first in the *Timeline* tab; an entry that
-links a message has *Open message* (the immutable `raw/<intakeId>.json`, shown as
+(never the draft text). Shown newest first in the _Timeline_ tab; an entry that
+links a message has _Open message_ (the immutable `raw/<intakeId>.json`, shown as
 it arrived). Retention keeps those messages while the to-do is open, like its
 source message.
 
 **Thread-aware intake** (`thread.ts`, `ingest.ts`, `updateLogic.ts`). After
 dedupe and the Deloitte-only filter, an intake whose key equals the key of an
-*open* to-do's source becomes an **update proposal** (`proposal.update`, `draft`
+_open_ to-do's source becomes an **update proposal** (`proposal.update`, `draft`
 stays null) instead of a duplicate proposal. The key is built only from fields the
 producer gave, and includes the source, so nothing matches across sources,
 tenants or mailboxes: Outlook `outlook|<mailbox>|<conversationId>`; Teams
@@ -792,10 +924,10 @@ automatically (audited `update-separate`). The model never writes the patch:
 item the to-do has, clearing waiting on a to-do that is not waiting). The Review
 Queue shows a distinct **Update to existing to-do** card: the to-do, the model's
 sentence, each change as before -> after with a checkbox, the new message (quote
-highlighted). *Approve* (`POST /api/pmo/queue/[id]/apply { include }`, the only
+highlighted). _Approve_ (`POST /api/pmo/queue/[id]/apply { include }`, the only
 door) applies the ticked changes with the audit line `update-apply` and links the
-message into the timeline; *Reject* discards it; *Create as separate to-do
-instead* (`.../separate`) turns it into a normal proposal. The ordinary approve and
+message into the timeline; _Reject_ discards it; _Create as separate to-do
+instead_ (`.../separate`) turns it into a normal proposal. The ordinary approve and
 the manual create refuse an update proposal. A failed update card offers Retry,
 Separate and Dismiss.
 
@@ -806,7 +938,7 @@ from X: clear waiting?" as the waiting change. It is ticked only when the model 
 says the message answers it; otherwise it is offered unticked. Still needs Approve.
 
 **Chaser drafts** (`chaser.ts`, `server/chaserDrafts.ts`, `ChaserDialog`).
-*Draft a chaser* on a waiting to-do starts an in-memory job (one per to-do; a second
+_Draft a chaser_ on a waiting to-do starts an in-memory job (one per to-do; a second
 click shares it) and returns at once; the state document carries `chasers`, so the
 dialog shows "Drafting... (can take a minute on this PC)" and then the text. The call
 (`generateText`, `think: false`, temperature 0.4) goes through the same
@@ -814,17 +946,17 @@ concurrency-1 runtime queue as structuring. The prompt carries the title,
 description, who it waits on, how long (calendar and working days) and the original
 message excerpt (delimited, untrusted: a hostile message cannot close its tag), and
 asks for a 2-5 sentence polite body with no invented facts. The result is plain text
-in an editable textarea (never rendered as HTML) with *Copy*, an optional To (a
+in an editable textarea (never rendered as HTML) with _Copy_, an optional To (a
 recipient of the original message that matches "waiting on", only when exactly one
-does), a subject, *Draft again* and *Discard*. A failure (runtime down, timeout,
-unusable output) is a local message with *Try again*. Jobs are forgotten on restart
+does), a subject, _Draft again_ and _Discard_. A failure (runtime down, timeout,
+unusable output) is a local message with _Try again_. Jobs are forgotten on restart
 or after 12 h; only a one-line timeline note is stored.
 
-*Open as unsent mail draft* is a plain `<a href="mailto:...">` (`buildMailto`:
+_Open as unsent mail draft_ is a plain `<a href="mailto:...">` (`buildMailto`:
 recipient used only if it is a bare address, subject and body URL-encoded with CRLF,
 the whole link refused above 1800 characters, where the button is disabled and the
 dialog says to copy instead). The browser or OS hands it to the user's own mail
-program, which opens an *unsent* compose window; the person checks it and presses
+program, which opens an _unsent_ compose window; the person checks it and presses
 Send. No Outlook COM, no code that can send. `desktop/main.cjs`'s window-open
 handler passes only http(s) and mailto: to `shell.openExternal` now (it passed
 any scheme before).

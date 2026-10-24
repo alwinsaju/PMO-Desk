@@ -72,6 +72,24 @@ export const overlayExit =
   "data-[state=closed]:[animation:overlay-out_120ms_var(--ease-exit)_forwards]";
 
 /**
+ * Spring-in / quick-out pair for the "weighty" overlays — Popover, DropdownMenu,
+ * ContextMenu (`pop-in`/`pop-out`: scale .92 + 8px drop, 450ms spring) and
+ * Dialog content (`dialog-in`/`dialog-out`: scale .94 + 16px rise, 550ms
+ * spring). Same Radix `data-state` contract as `overlayEnter`/`overlayExit`
+ * (a real `@keyframes`, so Radix delays unmount until the close finishes).
+ * Tooltips keep the calmer `overlayEnter`. Under `prefers-reduced-motion`
+ * globals.css redefines these keyframes as a plain fade.
+ */
+export const popEnter =
+  "data-[state=open]:[animation:pop-in_450ms_var(--ease-spring)_forwards]";
+export const popExit =
+  "data-[state=closed]:[animation:pop-out_140ms_var(--ease-exit)_forwards]";
+export const dialogEnter =
+  "data-[state=open]:[animation:dialog-in_550ms_var(--ease-spring)_forwards]";
+export const dialogExit =
+  "data-[state=closed]:[animation:dialog-out_160ms_var(--ease-exit)_forwards]";
+
+/**
  * Entrance-only counterpart to `overlayEnter`, for the one Radix part that
  * keys its Presence-driven mount off `data-state="active"|"inactive"`
  * instead of `"open"|"closed"` — Tabs' `Content` (see

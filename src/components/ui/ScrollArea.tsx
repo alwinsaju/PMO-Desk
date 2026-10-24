@@ -30,17 +30,17 @@ export const ScrollArea = React.forwardRef<
       {(orientation === "vertical" || orientation === "both") && (
         <ScrollAreaPrimitive.Scrollbar
           orientation="vertical"
-          className="ease-standard flex w-2.5 touch-none p-0.5 transition-colors duration-150 select-none"
+          className="flex w-2.5 touch-none p-0.5 select-none"
         >
-          <ScrollAreaPrimitive.Thumb className="rounded-pill relative flex-1 bg-neutral-300 hover:bg-neutral-400" />
+          <ScrollAreaPrimitive.Thumb className="rounded-pill bg-ink-faint/45 hover:bg-ink-faint/70 relative flex-1 transition-colors duration-200" />
         </ScrollAreaPrimitive.Scrollbar>
       )}
       {(orientation === "horizontal" || orientation === "both") && (
         <ScrollAreaPrimitive.Scrollbar
           orientation="horizontal"
-          className="ease-standard flex h-2.5 touch-none p-0.5 transition-colors duration-150 select-none"
+          className="flex h-2.5 touch-none p-0.5 select-none"
         >
-          <ScrollAreaPrimitive.Thumb className="rounded-pill relative flex-1 bg-neutral-300 hover:bg-neutral-400" />
+          <ScrollAreaPrimitive.Thumb className="rounded-pill bg-ink-faint/45 hover:bg-ink-faint/70 relative flex-1 transition-colors duration-200" />
         </ScrollAreaPrimitive.Scrollbar>
       )}
       <ScrollAreaPrimitive.Corner />

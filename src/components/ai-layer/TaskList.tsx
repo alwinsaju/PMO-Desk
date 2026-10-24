@@ -1,24 +1,27 @@
 "use client";
 
 import { motion } from "motion/react";
-import { ScrollArea } from "@/components/ui";
 import { cn } from "@/lib/cn";
-import { easeEntrance, easeExit } from "@/lib/motion";
+import { easeExit } from "@/lib/motion";
 import { useAgentStore } from "./agentStore";
 import { TaskListItem } from "./TaskListItem";
 
+/** `--ease-spring` as a motion tuple — the panel pops open with the same
+ *  overshoot as every other popover (src/lib/motion.ts has no twin yet). */
+const easeSpring = [0.34, 1.5, 0.64, 1] as const;
+
 interface TaskListProps {
-  /** Toggled by clicking the AI's presence avatar (PresenceAvatars.tsx).
-   *  Collapsed by default, per the reference product's clean default
-   *  screen. */
+  /** Toggled by clicking the AI orb (PresenceAvatars.tsx). Collapsed by
+   *  default, per the reference product's clean default screen. */
   isExpanded: boolean;
 }
 
 /**
- * Collapsible task history, anchored just above the presence avatar row
- * (PresenceAvatars.tsx positions this absolutely via `bottom-full`).
- * Reads `taskHistory` (most-recent-first) straight from agentStore;
- * there's no separate fetch/loading state since this is a mocked shell.
+ * The "AI activity" panel: a frosted-glass popover (`glass-pop`) anchored just
+ * above the AI orb row (PresenceAvatars.tsx positions this absolutely via
+ * `bottom-full`), listing the task history (most-recent-first) as check /
+ * spinner rows. Reads `taskHistory` straight from agentStore; there's no
+ * separate fetch/loading state since this is a mocked shell.
  *
  * Always mounted — collapse/expand animates opacity/scale/position on this
  * one persistent node rather than mounting/unmounting the panel via
@@ -27,9 +30,11 @@ interface TaskListProps {
  * `initial={false}` so it never plays an unwanted pop-in on first mount —
  * it should just silently start in whatever state `isExpanded` already is
  * (collapsed, in practice, since that's the default). The transition
- * mirrors the UI kit's Popover/DropdownMenu open/close treatment
- * (`overlayEnter`/`overlayExit` in src/lib/motion.ts) since this panel is
- * conceptually the same kind of flyout, just not Radix-portaled.
+ * mirrors the UI kit's Popover open/close treatment (`popEnter`/`popExit` in
+ * src/lib/motion.ts: spring in, quick out) since this panel is conceptually
+ * the same kind of flyout, just not Radix-portaled. The list scrolls inside
+ * a plain `overflow-y-auto` box (the old ScrollArea had its max-height on the
+ * Radix Root, so a long history could never scroll).
  */
 export function TaskList({ isExpanded }: TaskListProps) {
   const tasks = useAgentStore((s) => s.taskHistory);
@@ -39,34 +44,39 @@ export function TaskList({ isExpanded }: TaskListProps) {
       initial={false}
       animate={{
         opacity: isExpanded ? 1 : 0,
-        scale: isExpanded ? 1 : 0.96,
-        y: isExpanded ? 0 : 4,
+        scale: isExpanded ? 1 : 0.92,
+        y: isExpanded ? 0 : 8,
       }}
-      transition={{
-        duration: isExpanded ? 0.16 : 0.12,
-        ease: isExpanded ? easeEntrance : easeExit,
-      }}
+      transition={
+        isExpanded
+          ? {
+              opacity: { duration: 0.25 },
+              scale: { duration: 0.45, ease: easeSpring },
+              y: { duration: 0.45, ease: easeSpring },
+            }
+          : { duration: 0.14, ease: easeExit }
+      }
       aria-hidden={!isExpanded}
+      inert={!isExpanded}
+      style={{ transformOrigin: "100% 100%" }}
       className={cn(
-        "border-border/60 bg-surface-elevated/95 shadow-float-lg absolute right-0 bottom-full mb-3 w-72 overflow-hidden rounded-2xl border backdrop-blur-xl",
+        "glass-pop rounded-surface absolute right-0 bottom-full mb-3 w-[min(21.25rem,calc(100vw-3rem))] p-3.5",
         !isExpanded && "pointer-events-none",
       )}
     >
-      <div className="border-border/60 border-b px-3.5 py-2.5">
-        <span className="text-ink text-[13px] font-semibold">Task history</span>
-      </div>
+      <p className="text-ink-muted px-2 pt-0.5 pb-1.5 text-[11.5px] font-bold tracking-[0.08em] uppercase">
+        AI activity
+      </p>
       {tasks.length === 0 ? (
-        <p className="text-ink-faint px-3.5 py-6 text-center text-[12px]">
+        <p className="text-ink-muted px-2 py-5 text-center text-[13px]">
           No tasks yet — ask the AI something to get started.
         </p>
       ) : (
-        <ScrollArea className="max-h-72">
-          <ul className="divide-border/60 divide-y">
-            {tasks.map((task) => (
-              <TaskListItem key={task.id} task={task} />
-            ))}
-          </ul>
-        </ScrollArea>
+        <ul className="scroll-thin max-h-72 overflow-y-auto overscroll-contain">
+          {tasks.map((task) => (
+            <TaskListItem key={task.id} task={task} />
+          ))}
+        </ul>
       )}
     </motion.div>
   );

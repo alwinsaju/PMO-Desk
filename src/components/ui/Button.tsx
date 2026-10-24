@@ -4,7 +4,10 @@ import * as React from "react";
 import { Slot } from "@radix-ui/react-slot";
 import { cn } from "@/lib/cn";
 
-export type ButtonVariant = "solid" | "secondary" | "ghost" | "outline";
+/** `primary` is an alias of `solid` and `line` of `outline` (the redesign's
+ *  names for the same looks), so either spelling works. */
+export type ButtonVariant =
+  "solid" | "primary" | "secondary" | "ghost" | "outline" | "line";
 export type ButtonSize = "sm" | "md" | "lg";
 
 export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
@@ -16,25 +19,37 @@ export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElemen
 }
 
 const base = cn(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-pill font-medium",
-  "transition-colors duration-150 ease-standard",
-  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface",
-  "disabled:pointer-events-none disabled:opacity-40",
+  "sweep transition-ui inline-flex items-center justify-center gap-2 font-semibold whitespace-nowrap",
+  "rounded-chip active:scale-[0.96]",
+  "focus-visible:ring-focus focus-visible:ring-offset-surface focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none",
+  "disabled:pointer-events-none disabled:opacity-40 [&_svg]:shrink-0",
+);
+
+const solid = cn(
+  "bg-accent text-accent-contrast shadow-[0_8px_18px_-8px_var(--color-accent)]",
+  "hover:bg-accent-hover hover:shadow-halo active:bg-accent-active",
+  // The light sweep reads white on a solid accent fill.
+  "[--sweep-color:rgba(255,255,255,0.42)]",
+);
+const outline = cn(
+  "text-ink bg-transparent shadow-[inset_0_0_0_1px_var(--color-line-strong)]",
+  "hover:bg-chip active:bg-chip-strong",
 );
 
 const variantClassName: Record<ButtonVariant, string> = {
-  solid: "bg-accent text-accent-contrast hover:bg-accent-hover active:bg-accent-active",
-  secondary:
-    "bg-surface-elevated text-ink border border-border shadow-float-sm hover:bg-neutral-50 active:bg-neutral-100",
-  ghost: "bg-transparent text-ink hover:bg-neutral-100 active:bg-neutral-150",
-  outline:
-    "bg-transparent text-ink border border-border hover:bg-neutral-50 active:bg-neutral-100",
+  solid,
+  primary: solid,
+  secondary: "bg-chip text-ink hover:bg-chip-strong active:bg-chip-strong",
+  ghost:
+    "text-ink-soft hover:bg-chip hover:text-ink active:bg-chip-strong bg-transparent",
+  outline,
+  line: outline,
 };
 
 const sizeClassName: Record<ButtonSize, string> = {
-  sm: "h-8 px-3 text-[13px]",
-  md: "h-10 px-4 text-sm",
-  lg: "h-12 px-6 text-[15px]",
+  sm: "h-8 px-3.5 text-[13px]",
+  md: "h-9 px-[17px] text-[13.5px]",
+  lg: "h-11 px-6 text-[15px]",
 };
 
 export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(

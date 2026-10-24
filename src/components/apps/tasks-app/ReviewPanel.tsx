@@ -165,11 +165,11 @@ export function ReviewPanel({
   }, [saveRef, handleSave]);
 
   if (!loaded) {
-    return <p className="text-ink-faint p-3 text-[12px]">Loading review queue…</p>;
+    return <p className="text-ink-muted p-3.5 text-[13px]">Loading review queue…</p>;
   }
   if (queue.count === 0) {
     return (
-      <p className="text-ink-faint p-3 text-[12px]">
+      <p className="text-ink-muted p-3.5 text-[13px]">
         No incidents need review — the next run&apos;s queue will appear here.
       </p>
     );
@@ -177,31 +177,26 @@ export function ReviewPanel({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="mb-2 flex items-center justify-between gap-3">
-        <p className="text-ink-muted text-[12px]">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <p className="text-ink-muted text-[13px]">
           <span className="text-ink font-semibold">{queue.pending}</span> of {queue.count}{" "}
           still need a Subcategory2
         </p>
         <div className="flex shrink-0 items-center gap-2">
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => setImportOpen(true)}
-            disabled={saving}
-          >
+          <Button variant="outline" onClick={() => setImportOpen(true)} disabled={saving}>
             Import…
           </Button>
-          <Button size="sm" onClick={handleSave} disabled={!dirty || saving}>
+          <Button onClick={handleSave} disabled={!dirty || saving}>
             {saving ? "Saving…" : dirty ? "Save resolutions" : "Saved"}
           </Button>
         </div>
       </div>
       {saveError && (
-        <p className="text-ink mb-2 text-[12px]">Couldn&apos;t save: {saveError}</p>
+        <p className="text-red mb-2 text-[13px]">Couldn&apos;t save: {saveError}</p>
       )}
 
-      <ScrollArea className="border-border/60 h-64 rounded-lg border">
-        <div className="flex flex-col gap-1.5 p-2">
+      <ScrollArea className="border-line bg-card rounded-card h-64 border">
+        <div className="flex flex-col gap-2 p-2.5">
           {sortedIncidents.map((incident) => (
             <IncidentRow
               key={incident.number}
@@ -245,11 +240,13 @@ function IncidentRow({
     <button
       type="button"
       onClick={onClick}
-      className="border-border/60 hover:border-accent/40 hover:bg-accent-subtle/40 ease-standard flex items-center justify-between gap-3 rounded-lg border p-2.5 text-left transition-colors duration-100"
+      className="row-bar border-line bg-card hover:bg-field rounded-control flex items-center justify-between gap-3 border px-4 py-3 text-left transition-colors duration-200"
     >
       <div className="min-w-0">
-        <p className="text-ink font-mono text-[12px] font-medium">{incident.number}</p>
-        <p className="text-ink-faint line-clamp-1 text-[11px]">
+        <p className="text-ink font-mono text-[12.5px] font-semibold">
+          {incident.number}
+        </p>
+        <p className="text-ink-muted line-clamp-1 text-xs">
           {incident.short_description ?? "(no description)"}
         </p>
       </div>
@@ -258,7 +255,7 @@ function IncidentRow({
           {incident.resolved_subcategory2}
         </Badge>
       ) : (
-        <Badge variant="neutral" className="shrink-0">
+        <Badge variant="warning" className="shrink-0">
           Needs review
         </Badge>
       )}

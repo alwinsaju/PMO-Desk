@@ -11,6 +11,7 @@ import { useWindowStore } from "./windowStore";
 import { WindowTitleBar } from "./WindowTitleBar";
 import { ResizeHandles } from "./ResizeHandles";
 import { AIGlowBorder } from "./AIGlowBorder";
+import { sizes } from "@/lib/tokens";
 import type { WindowState } from "./types";
 
 interface WindowProps {
@@ -31,6 +32,18 @@ interface Rect {
  *  describes the CSS end state, not a set of numbers `motion` can animate. */
 const MAXIMIZE_INSET = 12;
 
+/** `--ease-smooth` as a motion tuple (src/lib/motion.ts has no twin yet). */
+const easeSmooth = [0.22, 0.9, 0.28, 1] as const;
+
+/** Window open: a soft spring with a slight overshoot (the prototype's
+ *  `--ease-spring` feel). Close/minimize use smooth tweens instead. */
+const windowOpenSpring = {
+  type: "spring",
+  stiffness: 300,
+  damping: 24,
+  mass: 0.9,
+} as const;
+
 function rectFromElement(el: HTMLElement): Rect {
   const box = el.getBoundingClientRect();
   return { x: box.left, y: box.top, width: box.width, height: box.height };
@@ -47,17 +60,19 @@ function computeMaximizedRect(): Rect {
 
 /**
  * Renders one window's chrome (title bar, resize handles, drop shadow,
- * rounded/clipped body) and resolves + mounts its app content via the app
+ * frosted rounded/clipped body, the Deloitte brand bar) and resolves + mounts its app content via the app
  * registry. `WindowManager` decides WHICH ids to render; this component
  * owns everything about rendering ONE of them.
  *
  * DOM shape is deliberate:
  *   OUTER (plain div, position:absolute, ref-mutated by drag/resize)
- *     AIGlowBorder (sibling, `controlledBy === "ai"` only — see that file)
- *     INNER (motion.div — owns ONLY the open/close pop animation;
- *            overflow-hidden + rounded corners + shadow live here)
+ *     INNER (motion.div — owns ONLY the open/close/minimize animation;
+ *            frosted glass body + overflow-hidden + rounded corners +
+ *            focused/unfocused shadow live here)
  *       WindowTitleBar
  *       app content
+ *     AIGlowBorder (sibling AFTER INNER, `controlledBy === "ai"` only — the
+ *                   rotating conic ring, see that file)
  *     ResizeHandles (siblings of INNER, so they aren't clipped by its
  *                    overflow-hidden and can straddle the visual edge)
  *
@@ -98,6 +113,7 @@ export function Window({ id }: WindowProps) {
   // for the rest of the animation. See `exitIntent` below.
   const [snapshot, setSnapshot] = useState<WindowState | null>(null);
   const [exitIntent, setExitIntent] = useState<"none" | "closing" | "minimizing">("none");
+  const [minimizeOrigin, setMinimizeOrigin] = useState<string | null>(null);
 
   // Non-null only while `handleMaximizeToggle`'s imperative spring is
   // mid-flight. Holding the actual rect (not just a boolean) matters: every
@@ -153,6 +169,17 @@ export function Window({ id }: WindowProps) {
 
   function requestMinimize() {
     if (liveWindow) setSnapshot(liveWindow);
+    // Shrink toward the dock (top-center of the screen): the transform
+    // origin is the dock's anchor point in this window's own coordinates.
+    const el = outerRef.current;
+    if (el) {
+      const box = el.getBoundingClientRect();
+      setMinimizeOrigin(
+        `${Math.round(window.innerWidth / 2 - box.left)}px ${Math.round(
+          sizes.dockHeight / 2 + 16 - box.top,
+        )}px`,
+      );
+    }
     setExitIntent("minimizing");
   }
 
@@ -252,9 +279,21 @@ export function Window({ id }: WindowProps) {
           transform: `translate3d(${data.position.x}px, ${data.position.y}px, 0)`,
         };
 
+  const exitAnimation =
+    exitIntent === "minimizing"
+      ? { opacity: 0, scale: 0.08 }
+      : { opacity: 0, scale: 0.94, y: 8 };
+  const exitTransition =
+    exitIntent === "minimizing"
+      ? { duration: 0.42, ease: easeSmooth }
+      : { duration: 0.26, ease: easeSmooth };
+
   return (
     <div
       ref={outerRef}
+      data-window-chrome={id}
+      data-focused={data.isFocused}
+      data-controlled-by={data.controlledBy}
       style={outerStyle}
       className={cn(
         "pointer-events-auto absolute",
@@ -262,13 +301,26 @@ export function Window({ id }: WindowProps) {
       )}
       onPointerDown={() => focusWindow(id)}
     >
-      {data.controlledBy === "ai" && <AIGlowBorder />}
       <motion.div
-        initial={{ opacity: 0, scale: 0.96 }}
-        animate={isExiting ? { opacity: 0, scale: 0.96 } : { opacity: 1, scale: 1 }}
-        transition={springWindow}
+        initial={{ opacity: 0, scale: 0.9, y: 14 }}
+        animate={
+          isExiting
+            ? exitAnimation
+            : { opacity: 1, scale: 1, y: 0, transition: windowOpenSpring }
+        }
+        transition={exitTransition}
+        style={
+          exitIntent === "minimizing" && minimizeOrigin
+            ? { transformOrigin: minimizeOrigin }
+            : undefined
+        }
         onAnimationComplete={handleExitAnimationComplete}
-        className="rounded-window bg-surface-elevated shadow-float flex h-full w-full flex-col overflow-hidden"
+        data-focused={data.isFocused}
+        className={cn(
+          "group/win glass-win brand-bar rounded-surface flex h-full w-full flex-col overflow-hidden",
+          "transition-shadow duration-[400ms]",
+          data.isFocused ? "shadow-window-focus" : "shadow-window",
+        )}
       >
         <WindowTitleBar
           id={id}
@@ -292,6 +344,7 @@ export function Window({ id }: WindowProps) {
           )}
         </div>
       </motion.div>
+      {data.controlledBy === "ai" && <AIGlowBorder />}
       {!data.isMaximized && !isExiting && !transitionRect && (
         <ResizeHandles id={id} rootRef={outerRef} />
       )}
@@ -313,7 +366,7 @@ function UnregisteredAppNotice({ appId }: { appId: string }) {
     <div className="flex h-full w-full items-center justify-center p-6 text-center">
       <p className="text-ink-faint text-sm">
         No app is registered for{" "}
-        <code className="text-ink-muted rounded-sm bg-neutral-100 px-1.5 py-0.5 font-mono text-[12px]">
+        <code className="text-ink-muted bg-chip rounded-sm px-1.5 py-0.5 font-mono text-[12px]">
           {appId}
         </code>
         .

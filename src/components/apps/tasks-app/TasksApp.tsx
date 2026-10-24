@@ -1,11 +1,33 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { ScrollArea } from "@/components/ui";
+import { ScrollArea, Tabs, TabsList, TabsTrigger } from "@/components/ui";
 import { AGENT_OFFICE_API_URL } from "./api";
 import { TaskCard } from "./TaskCard";
 import { TaskDetailDialog } from "./TaskDetailDialog";
 import { useAgentOfficeData } from "./useAgentOfficeData";
+import type { Task } from "./types";
+
+/** The header's filter tabs, derived purely from each task's own `state`
+ *  (no extra data): "Needs you" = waiting at a human gate or failed,
+ *  "Running" = working/finishing, "Idle" = resting. */
+type TaskFilter = "all" | "needs" | "running" | "idle";
+
+const NEEDS_YOU = new Set<Task["state"]>(["awaiting_review", "awaiting_send", "error"]);
+const RUNNING = new Set<Task["state"]>(["working", "finishing"]);
+
+function matchesFilter(task: Task, filter: TaskFilter): boolean {
+  switch (filter) {
+    case "needs":
+      return NEEDS_YOU.has(task.state);
+    case "running":
+      return RUNNING.has(task.state);
+    case "idle":
+      return task.state === "resting";
+    default:
+      return true;
+  }
+}
 
 /**
  * Root Tasks window — matches the `AppComponent` contract
@@ -22,11 +44,25 @@ import { useAgentOfficeData } from "./useAgentOfficeData";
 export function TasksApp({ windowId }: { windowId: string }) {
   const { tasks, canStart, connection, hasLoadedOnce, refetch } = useAgentOfficeData();
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [filter, setFilter] = useState<TaskFilter>("all");
 
   const selectedTask = useMemo(
     () =>
       selectedTaskId ? (tasks.find((task) => task.id === selectedTaskId) ?? null) : null,
     [tasks, selectedTaskId],
+  );
+  const counts = useMemo(
+    () => ({
+      all: tasks.length,
+      needs: tasks.filter((t) => matchesFilter(t, "needs")).length,
+      running: tasks.filter((t) => matchesFilter(t, "running")).length,
+      idle: tasks.filter((t) => matchesFilter(t, "idle")).length,
+    }),
+    [tasks],
+  );
+  const visibleTasks = useMemo(
+    () => tasks.filter((t) => matchesFilter(t, filter)),
+    [tasks, filter],
   );
   const handleDetailOpenChange = useCallback((open: boolean) => {
     if (!open) setSelectedTaskId(null);
@@ -45,7 +81,7 @@ export function TasksApp({ windowId }: { windowId: string }) {
         {connection === "offline" ? (
           <BackendUnreachableNotice />
         ) : (
-          <p className="text-ink-faint text-sm">Loading tasks…</p>
+          <p className="text-ink-muted text-sm">Loading tasks…</p>
         )}
       </div>
     );
@@ -54,7 +90,10 @@ export function TasksApp({ windowId }: { windowId: string }) {
   return (
     <div data-window-id={windowId} className="flex h-full w-full flex-col">
       {connection === "offline" && (
-        <div className="border-border/60 text-ink-muted border-b bg-neutral-50 px-4 py-2 text-center text-[12px]">
+        <div
+          role="status"
+          className="rounded-card bg-amber-soft text-amber mx-6 mb-2 px-3.5 py-2.5 text-center text-[13px]"
+        >
           Can&apos;t reach the agent-office backend right now — showing the last known
           state.
         </div>
@@ -68,17 +107,46 @@ export function TasksApp({ windowId }: { windowId: string }) {
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-4 p-4">
-            {tasks.map((task) => (
-              <TaskCard
-                key={task.id}
-                task={task}
-                canStart={canStart}
-                onSettled={refetch}
-                onOpenDetail={setSelectedTaskId}
-              />
-            ))}
-          </div>
+          <>
+            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3 px-6 pt-2 pb-[18px]">
+              <p className="text-ink-muted text-sm" aria-live="polite">
+                {counts.needs} need you · {counts.running} running · {counts.all} workflow
+                {counts.all === 1 ? "" : "s"}
+              </p>
+              <Tabs value={filter} onValueChange={(v) => setFilter(v as TaskFilter)}>
+                <TabsList aria-label="Filter workflows">
+                  <TabsTrigger value="all">All</TabsTrigger>
+                  <TabsTrigger value="needs" count={counts.needs}>
+                    Needs you
+                  </TabsTrigger>
+                  <TabsTrigger value="running" count={counts.running}>
+                    Running
+                  </TabsTrigger>
+                  <TabsTrigger value="idle" count={counts.idle}>
+                    Idle
+                  </TabsTrigger>
+                </TabsList>
+              </Tabs>
+            </div>
+            {visibleTasks.length === 0 ? (
+              <p className="text-ink-faint px-6 py-10 text-center text-sm">
+                Nothing here right now.
+              </p>
+            ) : (
+              <div className="grid auto-rows-[1fr] grid-cols-[repeat(auto-fill,minmax(300px,1fr))] content-start gap-4 px-6 pb-6">
+                {visibleTasks.map((task, index) => (
+                  <TaskCard
+                    key={task.id}
+                    task={task}
+                    canStart={canStart}
+                    onSettled={refetch}
+                    onOpenDetail={setSelectedTaskId}
+                    index={index}
+                  />
+                ))}
+              </div>
+            )}
+          </>
         )}
       </ScrollArea>
 
@@ -95,12 +163,12 @@ export function TasksApp({ windowId }: { windowId: string }) {
 function BackendUnreachableNotice() {
   return (
     <div className="flex max-w-sm flex-col items-center gap-2 text-center">
-      <p className="text-ink text-sm font-medium">
+      <p className="text-ink font-headline text-lg">
         Can&apos;t reach the agent-office backend
       </p>
-      <p className="text-ink-faint text-[13px]">
+      <p className="text-ink-muted text-[13.5px]">
         Make sure it&apos;s running on{" "}
-        <code className="text-ink-muted font-mono text-[12px]">
+        <code className="text-ink-soft font-mono text-[12px]">
           {AGENT_OFFICE_API_URL}
         </code>
         . This will connect automatically once it&apos;s available.

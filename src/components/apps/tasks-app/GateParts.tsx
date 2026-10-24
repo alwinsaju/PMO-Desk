@@ -10,15 +10,13 @@ import {
 import { Input } from "@/components/ui";
 import { cn } from "@/lib/cn";
 
-// Severity is communicated with value contrast + a glyph, never a second hue
-// (this product has exactly one accent — the same restraint TaskStateBadge
-// and StepTracker apply): error is the inverted "ink" pill, warning a filled
-// neutral, info an outline. Every chip also spells the word out, so nothing
-// depends on color perception.
+// Severity takes the status tones (red / amber / info), each with its own
+// glyph, and every chip also spells the word out, so nothing depends on
+// color perception.
 const CHIP_CLASS: Record<string, string> = {
-  error: "bg-ink text-surface-elevated",
-  warning: "bg-neutral-150 text-ink",
-  info: "border border-border text-ink-muted",
+  error: "bg-red-soft text-red",
+  warning: "bg-amber-soft text-amber",
+  info: "bg-info-soft text-info",
 };
 
 export function SeverityChip({
@@ -43,8 +41,8 @@ export function SeverityChip({
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 text-[11px] leading-normal font-medium whitespace-nowrap",
-        !bare && "rounded-pill px-2 py-0.5",
+        "inline-flex items-center gap-1 text-[11.5px] leading-normal font-semibold whitespace-nowrap",
+        !bare && "rounded-chip px-2.5 py-0.5",
         !bare && (CHIP_CLASS[severity] ?? CHIP_CLASS.info),
         className,
       )}
@@ -66,9 +64,9 @@ export function NativeSelect({
   return (
     <select
       className={cn(
-        "rounded-control border-border bg-surface-elevated text-ink h-8 w-full border px-2 text-[12px]",
-        "ease-standard transition-[border-color,box-shadow] duration-150",
-        "focus-visible:border-accent focus-visible:ring-accent/30 focus-visible:ring-2 focus-visible:outline-none",
+        "rounded-control border-line-strong bg-field text-ink h-9 w-full border px-3 text-[13px]",
+        "transition-[border-color,box-shadow] duration-[250ms]",
+        "focus-visible:border-focus focus-visible:shadow-field-focus focus-visible:outline-none",
         "disabled:pointer-events-none disabled:opacity-40",
         className,
       )}
@@ -99,7 +97,7 @@ export function SearchField({
         size={13}
         weight="bold"
         aria-hidden
-        className="text-ink-faint pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2"
+        className="text-ink-muted pointer-events-none absolute top-1/2 left-3 -translate-y-1/2"
       />
       <Input
         type="search"
@@ -107,7 +105,7 @@ export function SearchField({
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
         aria-label={label}
-        className="h-8 pl-8 text-[12px]"
+        className="pl-9 text-[13px]"
       />
     </div>
   );
@@ -129,11 +127,11 @@ export function FilterChip({
       aria-pressed={active}
       onClick={onClick}
       className={cn(
-        "rounded-pill ease-standard inline-flex h-7 items-center gap-1 px-2.5 text-[12px] font-medium whitespace-nowrap transition-colors duration-100",
-        "focus-visible:ring-accent focus-visible:ring-offset-surface focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:outline-none",
+        "rounded-chip inline-flex h-8 items-center gap-1.5 px-3.5 text-[13px] font-semibold whitespace-nowrap transition-[color,background-color] duration-200",
+        "focus-visible:ring-focus focus-visible:ring-2 focus-visible:outline-none",
         active
-          ? "bg-accent-subtle text-accent-800"
-          : "text-ink-muted border-border border hover:bg-neutral-100",
+          ? "bg-accent-soft text-accent-ink"
+          : "bg-chip text-ink-muted hover:bg-chip-strong hover:text-ink",
       )}
     >
       {children}
@@ -143,12 +141,12 @@ export function FilterChip({
 
 /** Quiet notice used for loading / unavailable / empty gate data. */
 export function GateNote({ children }: { children: ReactNode }) {
-  return <p className="text-ink-faint p-3 text-[12px]">{children}</p>;
+  return <p className="text-ink-muted p-3.5 text-[13px]">{children}</p>;
 }
 
 export function SectionLabel({ children }: { children: ReactNode }) {
   return (
-    <h4 className="text-ink-muted text-[11px] font-semibold tracking-wide uppercase">
+    <h4 className="text-ink-muted text-[11px] font-bold tracking-[0.08em] uppercase">
       {children}
     </h4>
   );

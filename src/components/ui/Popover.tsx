@@ -3,7 +3,7 @@
 import * as React from "react";
 import * as PopoverPrimitive from "@radix-ui/react-popover";
 import { cn } from "@/lib/cn";
-import { overlayEnter, overlayExit } from "@/lib/motion";
+import { popEnter, popExit } from "@/lib/motion";
 
 export const Popover = PopoverPrimitive.Root;
 export const PopoverTrigger = PopoverPrimitive.Trigger;
@@ -20,11 +20,11 @@ export const PopoverContent = React.forwardRef<
       sideOffset={sideOffset}
       align={align}
       className={cn(
-        "border-border bg-surface-elevated shadow-float-sm z-[var(--z-overlay)] w-72 rounded-xl border p-4",
+        "glass-pop rounded-surface z-[var(--z-overlay)] w-72 p-4",
         "origin-[var(--radix-popper-transform-origin)]",
         "outline-none",
-        overlayEnter,
-        overlayExit,
+        popEnter,
+        popExit,
         className,
       )}
       {...props}

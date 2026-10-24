@@ -1,7 +1,6 @@
 "use client";
 
-import { CheckCircleIcon, CircleIcon, CircleNotchIcon } from "@phosphor-icons/react";
-import { Badge } from "@/components/ui";
+import { cn } from "@/lib/cn";
 import { useAgentStore } from "./agentStore";
 import type { AgentTaskStatus } from "./types";
 
@@ -15,34 +14,39 @@ const STATUS_LABEL: Record<BadgeStatus, string> = {
 };
 
 /** "thinking" (awaiting the model's decision) and "working" (applying a
- *  validated action) both read as "in progress" here — same spinner, only
- *  the label text differs — see types.ts's AgentTaskStatus doc comment for
- *  what actually distinguishes the two phases. */
+ *  validated action) both read as "in progress" here — the dot blinks in the
+ *  accent color; only the label text differs — see types.ts's AgentTaskStatus
+ *  doc comment for what actually distinguishes the two phases. */
 const IN_PROGRESS: ReadonlySet<BadgeStatus> = new Set(["thinking", "working"]);
 
 /**
- * Idle / Thinking / Working / Completed status pill for the AI agent,
- * driven entirely by agentStore's `currentTask`. Mirrors the UI kit
- * Avatar's active/idle convention (accent = active, neutral = settled)
- * instead of introducing a second accent color for "completed" — see
- * ARCHITECTURE.md's "ONE accent color" section.
+ * Idle / Thinking / Working / Completed status pill for the AI agent: a
+ * frosted-glass pill (`glass`) with a status dot — grey while idle, accent and
+ * pulsing while thinking/working, green once completed — driven entirely by
+ * agentStore's `currentTask`. Mirrors the one-accent rule (accent = in
+ * progress, neutral = settled); "completed" uses the shared success dot
+ * rather than a second accent color — see ARCHITECTURE.md's "ONE accent
+ * color" section.
  */
 export function AgentStatusBadge() {
   const status: BadgeStatus = useAgentStore((s) => s.currentTask?.status ?? "idle");
   const inProgress = IN_PROGRESS.has(status);
 
   return (
-    <Badge variant={inProgress ? "accent" : "neutral"} className="gap-1.5 py-1 pl-1.5">
-      {status === "idle" && (
-        <CircleIcon size={8} weight="fill" className="text-ink-faint" />
-      )}
-      {inProgress && (
-        <CircleNotchIcon size={11} weight="bold" className="text-accent animate-spin" />
-      )}
-      {status === "completed" && (
-        <CheckCircleIcon size={11} weight="fill" className="text-ink-muted" />
-      )}
+    <span
+      role="status"
+      className="glass rounded-chip text-ink-soft inline-flex h-[30px] items-center gap-2 px-[13px] text-[12.5px] font-semibold"
+    >
+      <i
+        aria-hidden
+        className={cn(
+          "h-[7px] w-[7px] rounded-full not-italic transition-colors duration-300",
+          status === "idle" && "bg-ink-faint",
+          inProgress && "bg-accent-ink motion-safe:animate-blink",
+          status === "completed" && "bg-success-dot",
+        )}
+      />
       {STATUS_LABEL[status]}
-    </Badge>
+    </span>
   );
 }

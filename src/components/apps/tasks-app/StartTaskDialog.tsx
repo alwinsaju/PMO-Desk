@@ -248,23 +248,23 @@ export function StartTaskDialog({
 
   return (
     <Dialog open={open} onOpenChange={(next) => !starting && onOpenChange(next)}>
-      <DialogContent className="flex max-h-[85vh] max-w-xl flex-col overflow-y-auto">
+      <DialogContent className="scroll-thin flex max-h-[85vh] max-w-xl flex-col overflow-y-auto px-[30px] pt-7 pb-6">
         <DialogTitle>Run {task.displayName}</DialogTitle>
         <DialogDescription>{startDescription(task)}</DialogDescription>
 
         {loadState === "loading" && (
-          <p className="text-ink-faint mt-4 text-[12px]">
+          <p className="text-ink-muted mt-4 text-[13px]">
             Reading what&apos;s already uploaded…
           </p>
         )}
         {loadState === "failed" && (
-          <p className="text-ink-muted border-border mt-4 rounded-lg border bg-neutral-50 p-3 text-[12px]">
+          <p className="text-red bg-red-soft rounded-control mt-4 px-3.5 py-2.5 text-[13px]">
             {loadError}
           </p>
         )}
 
         {loadState === "ready" && (
-          <div className="mt-4 flex flex-col gap-5">
+          <div className="mt-5 flex flex-col gap-5">
             <section className="flex flex-col gap-2" aria-label="Files">
               <SectionLabel>Files</SectionLabel>
               {files.map((input) => (
@@ -285,7 +285,6 @@ export function StartTaskDialog({
                 <div className="flex items-center justify-between gap-3">
                   <SectionLabel>Check</SectionLabel>
                   <Button
-                    size="sm"
                     variant={check === "done" ? "outline" : "solid"}
                     disabled={!ready || check === "checking" || uploading || starting}
                     onClick={runCheck}
@@ -297,7 +296,7 @@ export function StartTaskDialog({
                         : "Check inputs"}
                   </Button>
                 </div>
-                <p className="text-ink-faint text-[12px]" aria-live="polite">
+                <p className="text-ink-muted text-[13px]" aria-live="polite">
                   {check === "checking"
                     ? "Reading the files — this can take up to a minute."
                     : check === "done"
@@ -310,19 +309,17 @@ export function StartTaskDialog({
                             .join(" and ")} first.`}
                 </p>
                 {check === "failed" && checkError && (
-                  <pre className="border-border text-ink-muted rounded-lg border bg-neutral-50 p-2 font-mono text-[11px] whitespace-pre-wrap">
+                  <pre className="rounded-control bg-red-soft text-red px-3.5 py-2.5 font-mono text-[11.5px] whitespace-pre-wrap">
                     {checkError}
                   </pre>
                 )}
-                {sourceLine && (
-                  <p className="text-ink-faint text-[11px]">{sourceLine}</p>
-                )}
+                {sourceLine && <p className="text-ink-muted text-xs">{sourceLine}</p>}
                 {problems.length > 0 && (
                   <ul className="flex flex-col gap-1.5" aria-label="Problems found">
                     {problems.map((problem, index) => (
                       <li key={index} className="flex items-start gap-2">
                         <SeverityChip severity={problem.severity} />
-                        <span className="text-ink text-[12px] break-words">
+                        <span className="text-ink text-[13px] break-words">
                           {problem.message}
                         </span>
                       </li>
@@ -346,34 +343,33 @@ export function StartTaskDialog({
         )}
 
         {loadState === "ready" && cleanupNote(task) && (
-          <p className="text-ink-faint mt-4 text-[11px]">{cleanupNote(task)}</p>
+          <p className="text-ink-muted mt-4 text-xs">{cleanupNote(task)}</p>
         )}
 
         {startError && (
           <p
-            className="text-ink border-border mt-4 rounded-lg border bg-neutral-50 p-2.5 text-[12px]"
+            className="text-red bg-red-soft rounded-control mt-4 px-3.5 py-2.5 text-[13px]"
             role="alert"
           >
             Couldn&apos;t start: {startError}
           </p>
         )}
 
-        <div className="mt-5 flex items-center justify-between gap-3">
-          <p className="text-ink-faint min-w-0 text-[11px]" aria-live="polite">
+        <div className="mt-6 flex items-center justify-between gap-3">
+          <p className="text-ink-muted min-w-0 text-xs" aria-live="polite">
             {loadState === "ready" && missing.length > 0
               ? `Still needed: ${missing.join(", ")}`
               : ""}
           </p>
           <div className="flex shrink-0 items-center gap-2">
             <Button
-              size="sm"
               variant="ghost"
               disabled={starting}
               onClick={() => onOpenChange(false)}
             >
               Cancel
             </Button>
-            <Button size="sm" disabled={!canStart} onClick={start}>
+            <Button disabled={!canStart} onClick={start}>
               {starting ? "Starting…" : "Start"}
             </Button>
           </div>
@@ -429,19 +425,19 @@ function FileInput({
           if (!disabled && !busy) take(event.dataTransfer.files);
         }}
         className={cn(
-          "ease-standard flex items-center gap-3 rounded-lg border transition-colors duration-100",
-          kept ? "p-2.5" : "p-3",
+          "rounded-card flex items-center gap-3 border transition-colors duration-200",
+          kept ? "px-4 py-3" : "px-4 py-3.5",
           dragging
-            ? "border-accent border-solid bg-neutral-100"
+            ? "border-focus bg-accent-soft border-solid"
             : present
-              ? "border-border/60 border-solid"
-              : "border-border border-dashed",
+              ? "border-line bg-card border-solid"
+              : "border-line-strong border-dashed",
         )}
       >
         <span
           className={cn(
             "flex h-8 w-8 shrink-0 items-center justify-center rounded-full",
-            present ? "bg-ink text-surface-elevated" : "text-ink-faint bg-neutral-100",
+            present ? "bg-success-soft text-success" : "text-ink-muted bg-chip",
           )}
         >
           {present ? (
@@ -451,44 +447,44 @@ function FileInput({
           )}
         </span>
         <div className="min-w-0 flex-1">
-          <p className="text-ink text-[13px] font-medium">
+          <p className="text-ink text-[13.5px] font-semibold">
             {input.label}
-            <span className="text-ink-faint ml-1.5 text-[11px] font-normal">
+            <span className="text-ink-muted ml-1.5 text-[11.5px] font-normal">
               {input.required ? "Required" : null}
               {accept ? `${input.required ? " · " : ""}${accept}` : ""}
             </span>
             {isOptionalFile(input) && (
-              <span className="border-border text-ink-muted rounded-pill ml-2 border px-1.5 py-px align-[1px] text-[10px] font-medium">
+              <span className="bg-chip text-ink-muted rounded-chip ml-2 px-2 py-0.5 align-[1px] text-[10.5px] font-semibold">
                 Optional
               </span>
             )}
             {kept && (
-              <span className="border-border text-ink-muted rounded-pill ml-2 border px-1.5 py-px align-[1px] text-[10px] font-medium">
+              <span className="bg-success-soft text-success rounded-chip ml-2 px-2 py-0.5 align-[1px] text-[10.5px] font-semibold">
                 On file
               </span>
             )}
           </p>
           {busy ? (
-            <p className="text-ink-muted text-[12px]">Uploading…</p>
+            <p className="text-ink-muted text-[12.5px]">Uploading…</p>
           ) : present ? (
-            <p className="text-ink-muted flex items-center gap-1.5 text-[12px]">
+            <p className="text-ink-muted flex items-center gap-1.5 text-[12.5px]">
               <FileXlsIcon size={13} weight="bold" aria-hidden className="shrink-0" />
               <span className="min-w-0 truncate">{status?.filename ?? "Uploaded"}</span>
               {status?.size != null && (
-                <span className="text-ink-faint shrink-0">
+                <span className="text-ink-muted shrink-0">
                   {formatBytes(status.size)}
                 </span>
               )}
-              <span className="text-ink-faint shrink-0">
+              <span className="text-ink-muted shrink-0">
                 · uploaded{uploaded ? ` ${uploaded}` : ""}
               </span>
             </p>
           ) : (
             <>
-              <p className="text-ink-faint text-[12px]">
+              <p className="text-ink-muted text-[12.5px]">
                 Drop the file here, or choose it.
               </p>
-              {emptyHint && <p className="text-ink-faint text-[11px]">{emptyHint}</p>}
+              {emptyHint && <p className="text-ink-muted text-xs">{emptyHint}</p>}
             </>
           )}
         </div>
@@ -501,7 +497,6 @@ function FileInput({
           onChange={(event) => take(event.target.files)}
         />
         <Button
-          size="sm"
           variant="outline"
           disabled={disabled || busy}
           onClick={() => picker.current?.click()}
@@ -512,7 +507,7 @@ function FileInput({
         </Button>
       </div>
       {error && (
-        <p className="text-ink text-[12px]" role="alert">
+        <p className="text-red text-[12.5px]" role="alert">
           {error}
         </p>
       )}
@@ -561,7 +556,7 @@ function ChoiceGroup({
     <section className="flex flex-col gap-2" aria-label={input.label}>
       <SectionLabel>{input.label}</SectionLabel>
       {choices.length === 0 ? (
-        <p className="text-ink-faint text-[12px]">
+        <p className="text-ink-muted text-[13px]">
           {checked
             ? "Nothing can be built from these files."
             : "Appears after the inputs have been checked."}
@@ -586,41 +581,41 @@ function ChoiceGroup({
                 tabIndex={choice.id === tabbable ? 0 : -1}
                 onClick={() => choice.enabled && onChange(choice.id)}
                 className={cn(
-                  "ease-standard flex w-full items-start gap-3 rounded-lg border p-2.5 text-left transition-colors duration-100",
-                  "focus-visible:ring-accent focus-visible:ring-offset-surface-elevated focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none",
+                  "rounded-card flex w-full items-start gap-3 border px-4 py-3 text-left transition-[background-color,border-color] duration-200",
+                  "focus-visible:ring-focus focus-visible:ring-2 focus-visible:outline-none",
                   selected
-                    ? "border-accent bg-neutral-100"
+                    ? "border-focus bg-accent-soft"
                     : choice.enabled
-                      ? "border-border/60 hover:border-accent/40 hover:bg-neutral-50"
-                      : "border-border/60 cursor-not-allowed bg-neutral-50",
+                      ? "border-line bg-card hover:bg-chip"
+                      : "border-line bg-chip cursor-not-allowed",
                 )}
               >
                 <span
                   aria-hidden
                   className={cn(
                     "mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border",
-                    selected ? "border-accent" : "border-neutral-300",
+                    selected ? "border-accent-ink" : "border-line-strong",
                     !choice.enabled && "opacity-50",
                   )}
                 >
-                  {selected && <span className="bg-accent h-2 w-2 rounded-full" />}
+                  {selected && <span className="bg-accent-ink h-2 w-2 rounded-full" />}
                 </span>
                 <span className="min-w-0 flex-1">
                   <span
                     className={cn(
-                      "block text-[13px] font-medium",
-                      choice.enabled ? "text-ink" : "text-ink-faint",
+                      "block text-[13.5px] font-semibold",
+                      choice.enabled ? "text-ink" : "text-ink-muted",
                     )}
                   >
                     {choice.label}
                     {!choice.enabled && (
-                      <span className="text-ink-faint ml-1.5 text-[11px] font-normal">
+                      <span className="text-ink-muted ml-1.5 text-[11.5px] font-normal">
                         Unavailable
                       </span>
                     )}
                   </span>
                   {choice.reason && (
-                    <span className="text-ink-faint block text-[11px] break-words">
+                    <span className="text-ink-muted block text-xs break-words">
                       {choice.reason}
                     </span>
                   )}

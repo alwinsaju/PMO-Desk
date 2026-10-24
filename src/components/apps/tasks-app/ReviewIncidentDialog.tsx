@@ -82,21 +82,23 @@ export function ReviewIncidentDialog({
 
   return (
     <Dialog open={incident !== null} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[85vh] max-w-2xl flex-col">
+      <DialogContent className="flex max-h-[85vh] max-w-2xl flex-col px-[30px] pt-7 pb-6">
         {lastIncident && (
           <>
-            <DialogTitle className="font-mono">{lastIncident.number}</DialogTitle>
+            <DialogTitle className="font-mono text-[21px]">
+              {lastIncident.number}
+            </DialogTitle>
             <DialogDescription asChild>
               <div className="flex flex-wrap items-center gap-1.5">
                 {lastIncident.review_reasons.map((reason) => (
-                  <Badge key={reason} variant="accent">
+                  <Badge key={reason} variant="warning">
                     {reason}
                   </Badge>
                 ))}
               </div>
             </DialogDescription>
 
-            <div className="border-border/60 mt-4 grid grid-cols-1 gap-x-6 gap-y-2 rounded-lg border p-3 sm:grid-cols-2">
+            <div className="border-line bg-card rounded-card mt-5 grid grid-cols-1 gap-x-6 gap-y-3 border p-4 sm:grid-cols-2">
               {fields.map(([label, value]) => {
                 const expandable =
                   (label === "Short description" || label === "Resolution notes") &&
@@ -107,7 +109,7 @@ export function ReviewIncidentDialog({
                     key={label}
                     className={"min-w-0 " + (isExpanded ? "sm:col-span-2" : "")}
                   >
-                    <p className="text-ink-faint text-[10px] font-semibold tracking-wide uppercase">
+                    <p className="text-ink-muted text-[10.5px] font-bold tracking-[0.08em] uppercase">
                       {label}
                     </p>
                     {expandable ? (
@@ -115,18 +117,18 @@ export function ReviewIncidentDialog({
                         type="button"
                         onClick={() => toggleExpand(label)}
                         title={isExpanded ? "Click to collapse" : "Click to read in full"}
-                        className="text-ink hover:text-accent-800 w-full text-left text-[12px] break-words whitespace-pre-wrap"
+                        className="text-ink hover:text-accent-ink w-full text-left text-[13px] break-words whitespace-pre-wrap"
                       >
                         <span className={isExpanded ? "" : "line-clamp-3 block"}>
                           {value}
                         </span>
-                        <span className="text-ink-faint text-[10px]">
+                        <span className="text-ink-muted text-[11px]">
                           {isExpanded ? " (show less)" : " (more)"}
                         </span>
                       </button>
                     ) : (
-                      <p className="text-ink line-clamp-3 text-[12px] break-words">
-                        {value ?? <span className="text-ink-faint">—</span>}
+                      <p className="text-ink line-clamp-3 text-[13px] break-words">
+                        {value ?? <span className="text-ink-muted">—</span>}
                       </p>
                     )}
                   </div>
@@ -135,19 +137,21 @@ export function ReviewIncidentDialog({
             </div>
 
             <div className="mt-4 flex min-h-0 flex-1 flex-col">
-              <p className="text-ink-muted mb-2 text-[11px] font-semibold tracking-wide uppercase">
+              <p className="text-ink-muted mb-2 text-[11px] font-bold tracking-[0.08em] uppercase">
                 Subcategory2
               </p>
               <Input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder="Search categories…"
-                className="mb-2 h-9"
+                className="mb-2"
               />
-              <ScrollArea className="border-border/60 h-48 rounded-lg border">
+              <ScrollArea className="border-line bg-card rounded-card h-48 border">
                 <div className="flex flex-col p-1">
                   {filtered.length === 0 ? (
-                    <p className="text-ink-faint p-3 text-[12px]">No categories match.</p>
+                    <p className="text-ink-muted p-3.5 text-[13px]">
+                      No categories match.
+                    </p>
                   ) : (
                     filtered.map((option) => {
                       const active = option === selected;
@@ -157,10 +161,10 @@ export function ReviewIncidentDialog({
                           type="button"
                           onClick={() => setSelected(option)}
                           className={
-                            "ease-standard rounded-control px-2.5 py-1.5 text-left text-[13px] transition-colors duration-100 " +
+                            "rounded-control px-3 py-2 text-left text-[13.5px] transition-colors duration-200 " +
                             (active
-                              ? "bg-accent-subtle text-accent-800 font-medium"
-                              : "text-ink hover:bg-neutral-100")
+                              ? "bg-accent-soft text-accent-ink font-semibold"
+                              : "text-ink hover:bg-chip")
                           }
                         >
                           {option}
@@ -172,8 +176,8 @@ export function ReviewIncidentDialog({
               </ScrollArea>
             </div>
 
-            <div className="mt-4 flex items-center justify-between gap-3">
-              <p className="text-ink-faint text-[11px]">
+            <div className="mt-5 flex items-center justify-between gap-3">
+              <p className="text-ink-muted text-xs">
                 {selected ? (
                   <>
                     Will save as <span className="text-ink font-medium">{selected}</span>
