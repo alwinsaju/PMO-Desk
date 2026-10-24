@@ -12,7 +12,7 @@
     "desktop:package": "pnpm build && electron-builder --win nsis",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "test": "node --no-warnings --test \"src/**/*.test.mjs\"",
+    "test": "node --no-warnings --test \"src/**/*.test.mjs\" \"desktop/*.test.cjs\"",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },

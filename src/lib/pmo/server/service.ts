@@ -6,6 +6,7 @@
 import { createRuntimeGenerator, runtimeSummary } from "./aiGenerator.ts";
 import type { Pmo } from "./actions.ts";
 import { createPmo } from "./create.ts";
+import { syncDesktopPrefs } from "./desktopPrefs.ts";
 import type { Ingestor } from "./ingest.ts";
 import { resolveDataDir } from "./paths.ts";
 import { PURGE_INTERVAL_MS, purgeExpired } from "./retention.ts";
@@ -45,6 +46,12 @@ async function startService(): Promise<PmoService> {
     await pmo.worker.kick();
     return report;
   };
+
+  // Mirror the tray preference for the Electron shell (no-op outside it).
+  void pmo.store
+    .loadConfig()
+    .then((config) => syncDesktopPrefs(config))
+    .catch(() => undefined);
 
   await pmo.worker.start();
   const timer = setInterval(() => {

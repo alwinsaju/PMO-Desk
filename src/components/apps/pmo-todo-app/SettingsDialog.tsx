@@ -11,20 +11,34 @@ import {
   Input,
   ScrollArea,
 } from "@/components/ui";
+import { cn } from "@/lib/cn";
 import {
   DEFAULT_RETENTION_DAYS,
+  MAX_CHASER_DAYS,
   MAX_RETENTION_DAYS,
   MIN_RETENTION_DAYS,
   type PmoState,
 } from "@/lib/pmo/types";
 import { updateConfig } from "./api";
 import { Field, TextArea } from "./parts";
+import { useRemindersStore } from "./remindersStore";
 import {
   buildPatch,
   formFromConfig,
   type FormText,
   type ListField,
+  type RemindersForm,
 } from "./settingsForm";
+
+const WEEKDAYS = [
+  { day: 1, label: "Mon" },
+  { day: 2, label: "Tue" },
+  { day: 3, label: "Wed" },
+  { day: 4, label: "Thu" },
+  { day: 5, label: "Fri" },
+  { day: 6, label: "Sat" },
+  { day: 0, label: "Sun" },
+];
 
 interface SettingsDialogProps {
   state: PmoState;
@@ -47,6 +61,7 @@ export function SettingsDialog({
   const [serverError, setServerError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
+  const desktop = useRemindersStore((s) => s.desktop);
   const configRef = useRef(state.config);
   configRef.current = state.config;
 
@@ -63,6 +78,8 @@ export function SettingsDialog({
     setForm((current) => ({ ...current, ...patch }));
     setSaved(false);
   };
+  const setReminders = (patch: Partial<RemindersForm>) =>
+    set({ reminders: { ...form.reminders, ...patch } });
   const dirty = JSON.stringify(form) !== JSON.stringify(formFromConfig(state.config));
 
   async function save() {
@@ -205,6 +222,144 @@ export function SettingsDialog({
               </Field>
             </Section>
 
+            <Section title="Reminders">
+              <p className="text-ink-faint text-[11px] leading-relaxed">
+                Reminders are shown on this computer only; nothing is sent to anyone. A
+                to-do is reminded when it is due tomorrow (once), overdue (at the start of
+                the working day, then every working day), or when you are waiting on
+                someone and nothing has changed for a few working days.
+              </p>
+              <CheckRow
+                checked={form.reminders.enabled}
+                disabled={busy}
+                onChange={(enabled) => setReminders({ enabled })}
+                label="Remind me about to-dos that need attention"
+              />
+              <CheckRow
+                checked={form.reminders.hideDetails}
+                disabled={busy}
+                onChange={(hideDetails) => setReminders({ hideDetails })}
+                label="Hide task details in notifications"
+                hint={
+                  'On (recommended): a notification only says "PMO To-Do: N items need attention", so a title never shows on a shared screen or in the notification centre. Off: it shows the task title.'
+                }
+              />
+              <CheckRow
+                checked={form.reminders.quietOutsideHours}
+                disabled={busy}
+                onChange={(quietOutsideHours) => setReminders({ quietOutsideHours })}
+                label="Stay quiet outside working hours"
+                hint="Held reminders appear when the working day starts."
+              />
+              <div className="grid grid-cols-3 gap-3">
+                <Field label="Day starts">
+                  <Input
+                    type="time"
+                    value={form.reminders.workStart}
+                    disabled={busy}
+                    aria-invalid={errors["reminders.workStart"] ? true : undefined}
+                    onChange={(event) => setReminders({ workStart: event.target.value })}
+                  />
+                  <FieldError message={errors["reminders.workStart"]} />
+                </Field>
+                <Field label="Day ends">
+                  <Input
+                    type="time"
+                    value={form.reminders.workEnd}
+                    disabled={busy}
+                    aria-invalid={errors["reminders.workEnd"] ? true : undefined}
+                    onChange={(event) => setReminders({ workEnd: event.target.value })}
+                  />
+                  <FieldError message={errors["reminders.workEnd"]} />
+                </Field>
+                <Field label="Time zone">
+                  <Input
+                    value={form.reminders.timeZone}
+                    disabled={busy}
+                    spellCheck={false}
+                    aria-invalid={errors["reminders.timeZone"] ? true : undefined}
+                    onChange={(event) => setReminders({ timeZone: event.target.value })}
+                  />
+                  <FieldError message={errors["reminders.timeZone"]} />
+                </Field>
+              </div>
+              <Field label="Working days">
+                <div
+                  className="flex flex-wrap gap-1.5"
+                  role="group"
+                  aria-label="Working days"
+                >
+                  {WEEKDAYS.map(({ day, label }) => {
+                    const on = form.reminders.workDays.includes(day);
+                    return (
+                      <button
+                        key={day}
+                        type="button"
+                        aria-pressed={on}
+                        disabled={busy}
+                        onClick={() =>
+                          setReminders({
+                            workDays: on
+                              ? form.reminders.workDays.filter((d) => d !== day)
+                              : [...form.reminders.workDays, day],
+                          })
+                        }
+                        className={cn(
+                          "rounded-pill ease-standard border px-3 py-1 text-[12px] font-medium transition-colors duration-150",
+                          "focus-visible:ring-accent focus-visible:ring-2 focus-visible:outline-none disabled:opacity-40",
+                          on
+                            ? "border-ink bg-ink text-ink-inverse"
+                            : "border-border text-ink-muted hover:bg-neutral-100",
+                        )}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <FieldError message={errors["reminders.workDays"]} />
+              </Field>
+              <Field label="Chase after (working days without an update)">
+                <Input
+                  inputMode="numeric"
+                  value={form.reminders.chaserDays}
+                  disabled={busy}
+                  className="w-32"
+                  aria-invalid={errors["reminders.chaserDays"] ? true : undefined}
+                  onChange={(event) => setReminders({ chaserDays: event.target.value })}
+                />
+                <span className="text-ink-faint text-[11px] leading-relaxed">
+                  1 to {MAX_CHASER_DAYS}. Only to-dos with &quot;waiting on&quot; filled
+                  in get a chaser, and again after each further stretch of the same
+                  length.
+                </span>
+                <FieldError message={errors["reminders.chaserDays"]} />
+              </Field>
+              <CheckRow
+                checked={form.reminders.digest}
+                disabled={busy}
+                onChange={(digest) => setReminders({ digest })}
+                label="Morning digest of all open to-dos"
+                hint="One summary when the working day starts. Off by default."
+              />
+              <CheckRow
+                checked={form.reminders.keepRunningInTray}
+                disabled={busy}
+                onChange={(keepRunningInTray) => setReminders({ keepRunningInTray })}
+                label="Keep running in the tray so reminders still fire"
+                hint={
+                  desktop
+                    ? "Desktop app: closing the window hides AI OS to the system tray instead of quitting. Use the tray icon's Quit to exit completely. Off by default."
+                    : "Desktop app only; it has no effect in a browser. When on, closing the window hides AI OS to the tray instead of quitting. Off by default."
+                }
+              />
+              <p className="text-ink-faint text-[11px] leading-relaxed">
+                {desktop
+                  ? "The desktop app delivers reminders itself, even with the PMO window closed."
+                  : "In a browser, reminders only fire while this tab is open, and need notification permission (use Enable reminders in the PMO window). The desktop app is the reliable way to get them."}
+              </p>
+            </Section>
+
             <Section title="Where things are (read only)">
               <PathRow
                 label="Inbox folder"
@@ -252,6 +407,38 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
       </h3>
       {children}
     </section>
+  );
+}
+
+function CheckRow({
+  checked,
+  onChange,
+  label,
+  hint,
+  disabled,
+}: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  label: string;
+  hint?: string;
+  disabled?: boolean;
+}) {
+  return (
+    <label className="flex items-start gap-2.5">
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.checked)}
+        className="accent-accent mt-0.5 h-3.5 w-3.5 shrink-0"
+      />
+      <span className="flex min-w-0 flex-col gap-0.5">
+        <span className="text-ink text-[13px]">{label}</span>
+        {hint && (
+          <span className="text-ink-faint text-[11px] leading-relaxed">{hint}</span>
+        )}
+      </span>
+    </label>
   );
 }
 

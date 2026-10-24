@@ -3,7 +3,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  TODO_FILTERS,
   WHY_NO_BODY,
+  countByFilter,
+  filterTodos,
+  sortTodosBy,
   filterByReason,
   formatDay,
   groupQueue,
@@ -217,5 +221,119 @@ describe("Filtered tab helpers", () => {
       /tenant ID/,
     );
     assert.match(WHY_NO_BODY, /thrown away when it is filtered/);
+  });
+});
+
+describe("to-do filters and sorting", () => {
+  const today = "2026-10-26";
+  const now = new Date("2026-10-26T04:30:00Z"); // 10:00 IST
+  let n = 0;
+  const todo = (patch = {}) => ({
+    id: `td_${++n}`,
+    title: `t${n}`,
+    status: "open",
+    dueAt: null,
+    priority: "normal",
+    waitingOn: null,
+    checkpoints: [],
+    createdAt: `2026-10-${String(10 + n).padStart(2, "0")}T00:00:00Z`,
+    reminders: {
+      enabled: false,
+      remindAt: null,
+      snoozedUntil: null,
+      lastRemindedAt: null,
+    },
+    ...patch,
+  });
+  const cp = (...states) => states.map((state, i) => ({ id: `c${i}`, state }));
+  const ids = (list) => list.map((t) => t.title);
+
+  const all = [
+    todo({ title: "late", dueAt: "2026-10-20" }),
+    todo({ title: "today", dueAt: "2026-10-26" }),
+    todo({ title: "tomorrow", dueAt: "2026-10-27" }),
+    todo({ title: "later", dueAt: "2026-11-05" }),
+    todo({ title: "waiting", waitingOn: "Sam" }),
+    todo({
+      title: "snoozed",
+      dueAt: "2026-10-20",
+      reminders: {
+        enabled: false,
+        remindAt: null,
+        snoozedUntil: "2026-10-27T03:30:00Z",
+        lastRemindedAt: null,
+      },
+    }),
+    todo({ title: "done", status: "done", dueAt: "2026-10-20" }),
+    todo({ title: "cancelled", status: "cancelled", waitingOn: "Sam" }),
+  ];
+
+  it("offers open, overdue, due soon, waiting, snoozed and done", () => {
+    assert.deepEqual(
+      TODO_FILTERS.map((f) => f.id),
+      ["open", "overdue", "due-soon", "waiting", "snoozed", "done"],
+    );
+  });
+
+  it("filters by the same windows the dock badge uses", () => {
+    const run = (filter) => ids(filterTodos(all, filter, today, now));
+    assert.deepEqual(run("open"), [
+      "late",
+      "today",
+      "tomorrow",
+      "later",
+      "waiting",
+      "snoozed",
+    ]);
+    assert.deepEqual(run("overdue"), ["late", "snoozed"]);
+    assert.deepEqual(run("due-soon"), ["today", "tomorrow"]);
+    assert.deepEqual(run("waiting"), ["waiting"]); // a cancelled to-do is not waiting
+    assert.deepEqual(run("snoozed"), ["snoozed"]);
+    assert.deepEqual(run("done"), ["done", "cancelled"]);
+  });
+
+  it("stops listing a to-do as snoozed once the snooze has passed", () => {
+    const later = new Date("2026-10-27T04:00:00Z");
+    assert.deepEqual(ids(filterTodos(all, "snoozed", "2026-10-27", later)), []);
+  });
+
+  it("counts every filter", () => {
+    assert.deepEqual(countByFilter(all, today, now), {
+      open: 6,
+      overdue: 2,
+      "due-soon": 2,
+      waiting: 1,
+      snoozed: 1,
+      done: 2,
+    });
+  });
+
+  it("sorts by due date (default), priority, least progress and newest, ties by due order", () => {
+    const list = [
+      todo({
+        title: "a",
+        dueAt: "2026-10-30",
+        priority: "low",
+        checkpoints: cp("done", "done"),
+      }),
+      todo({
+        title: "b",
+        dueAt: "2026-10-28",
+        priority: "high",
+        checkpoints: cp("pending", "pending"),
+      }),
+      todo({
+        title: "c",
+        dueAt: "2026-10-29",
+        priority: "high",
+        checkpoints: cp("done", "pending"),
+      }),
+    ];
+    assert.deepEqual(ids(sortTodosBy(list, "due", today)), ["b", "c", "a"]);
+    assert.deepEqual(ids(sortTodosBy(list, "priority", today)), ["b", "c", "a"]);
+    assert.deepEqual(ids(sortTodosBy(list, "progress", today)), ["b", "c", "a"]);
+    const newest = sortTodosBy(list, "newest", today);
+    assert.deepEqual(ids(newest), ["c", "b", "a"]);
+    assert.deepEqual(ids(sortTodosBy([list[0], list[2]], "priority", today)), ["c", "a"]);
   });
 });

@@ -3,6 +3,7 @@
 // a business failure is a value here and only a network failure throws.
 import type {
   PmoConfig,
+  ReminderPrefs,
   PmoConfigPatch,
   PmoState,
   RawRecord,
@@ -10,6 +11,7 @@ import type {
   TodoDraft,
 } from "@/lib/pmo/types";
 import type { ManualPasteInput } from "@/lib/pmo/manualIntake";
+import type { Attention, DueNotification, Toast } from "@/lib/pmo/due";
 import type { TodoPatch } from "@/lib/pmo/todoLogic";
 
 const BASE = "/api/pmo";
@@ -76,3 +78,32 @@ export const submitPaste = (paste: ManualPasteInput) =>
     "POST",
     paste,
   );
+
+// --- reminders (see src/lib/pmo/due.ts and server/notify.ts) -----------------
+
+/** Read-only: the attention counts behind the dock badge. Records nothing. */
+export const fetchDue = () =>
+  call<{
+    now: string;
+    today: string;
+    pending: DueNotification[];
+    attention: Attention;
+    prefs: ReminderPrefs;
+  }>("/due");
+
+export interface ClaimReply {
+  claimId: string | null;
+  notifications: DueNotification[];
+  toast: Toast | null;
+  attention: Attention;
+  prefs: ReminderPrefs;
+}
+
+/** Claim the reminders nobody has shown yet; `desktopOwns` comes back when the
+ *  server belongs to the Electron shell, which delivers them itself. */
+export const claimReminders = (client: string) =>
+  call<ClaimReply>("/due/claim", "POST", { client }) as Promise<
+    ({ ok: true } & ClaimReply) | { ok: false; reason: string; desktopOwns?: boolean }
+  >;
+export const acknowledgeReminders = (claimId: string) =>
+  call<{ acknowledged: number }>("/due/ack", "POST", { claimId });

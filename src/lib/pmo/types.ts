@@ -2,6 +2,8 @@
 // Pure: only imports zod, so both the server modules and the client UI can
 // import it, and `pnpm test` can load it under plain Node.
 import { z } from "zod";
+import type { Attention } from "./due.ts";
+import { isValidTimeZone } from "./time.ts";
 
 export const INTAKE_SCHEMA_ID = "pmo-intake/1";
 export const SOURCES = ["outlook", "teams", "manual"] as const;
@@ -198,7 +200,9 @@ export const TodoSourceSchema = z.object({
 });
 export type TodoSource = z.infer<typeof TodoSourceSchema>;
 
-/** Stored but unused in phase 1 (no notifications yet). */
+/** Per-to-do reminder state. Only `snoozedUntil` is read (src/lib/pmo/due.ts);
+ *  `enabled`, `remindAt` and `lastRemindedAt` were reserved in phase 1 and are
+ *  still ignored (what has been delivered lives in state/notify.json). */
 export const RemindersSchema = z.object({
   enabled: z.boolean(),
   remindAt: z.string().nullable(),
@@ -372,6 +376,38 @@ export const MAX_RETENTION_DAYS = 3650;
 
 const stringList = (fallback: string[]) => z.array(z.string()).default(fallback);
 
+// --- reminder preferences (src/lib/pmo/due.ts reads these) ----------------------
+
+export const DEFAULT_TIME_ZONE = "Asia/Kolkata";
+export const DEFAULT_WORK_DAYS = [1, 2, 3, 4, 5]; // Mon-Fri; 0 = Sunday
+export const DEFAULT_CHASER_DAYS = 2;
+export const MAX_CHASER_DAYS = 30;
+
+const clockTime = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use a time like 09:00.");
+
+export const ReminderPrefsSchema = z.object({
+  /** Master switch: off means no reminder is ever produced. */
+  enabled: z.boolean().default(true),
+  timeZone: z.string().default(DEFAULT_TIME_ZONE),
+  workStart: clockTime.default("09:00"),
+  workEnd: clockTime.default("18:00"),
+  /** 0 = Sunday ... 6 = Saturday. */
+  workDays: z.array(z.number().int().min(0).max(6)).default(DEFAULT_WORK_DAYS),
+  /** Hold reminders until working hours instead of firing at night/weekends. */
+  quietOutsideHours: z.boolean().default(true),
+  /** A to-do with "waiting on" set and untouched this many working days gets a chaser. */
+  chaserDays: z.number().int().min(1).max(MAX_CHASER_DAYS).default(DEFAULT_CHASER_DAYS),
+  /** One 09:00 summary of the open items. */
+  digest: z.boolean().default(false),
+  /** Privacy: a notification says only "N items need attention", never a title. */
+  hideDetails: z.boolean().default(true),
+  /** Desktop app only: closing the window hides it to the tray so reminders keep firing. */
+  keepRunningInTray: z.boolean().default(false),
+});
+export type ReminderPrefs = z.output<typeof ReminderPrefsSchema>;
+
+export const defaultReminderPrefs = (): ReminderPrefs => ReminderPrefsSchema.parse({});
+
 export const PmoConfigSchema = z.object({
   inboxDir: z.string().default(DEFAULT_INBOX_DIR),
   /** Teams is default-deny: an item passes only if its tenant or chat is listed. */
@@ -392,6 +428,11 @@ export const PmoConfigSchema = z.object({
   /** Logs, and the raw text of closed to-dos and rejected proposals, are
    *  deleted after this many days (server/retention.ts). Open to-dos keep theirs. */
   retentionDays: z.number().int().default(DEFAULT_RETENTION_DAYS),
+  /** Reminder engine preferences. A bad hand-edit falls back to the defaults
+   *  for this block only, never for the whole config. */
+  reminders: ReminderPrefsSchema.catch(() => defaultReminderPrefs()).default(() =>
+    defaultReminderPrefs(),
+  ),
 });
 export type PmoConfig = z.output<typeof PmoConfigSchema>;
 
@@ -416,6 +457,35 @@ const emailEntry = trimmed(254).refine((v) => v === "" || EMAIL.test(v), {
   message: "Not an email address.",
 });
 
+/** The Settings form always sends the whole reminders block, so this one is
+ *  strict and complete rather than partial. */
+export const ReminderPrefsEditSchema = z
+  .object({
+    enabled: z.boolean(),
+    timeZone: trimmed(64).refine(isValidTimeZone, {
+      message: "Not a time zone name (for example Asia/Kolkata).",
+    }),
+    workStart: clockTime,
+    workEnd: clockTime,
+    workDays: z
+      .array(z.number().int().min(0).max(6))
+      .min(1, "Pick at least one working day.")
+      .max(7),
+    quietOutsideHours: z.boolean(),
+    chaserDays: z
+      .number("Enter a number of working days.")
+      .int("Whole days only.")
+      .min(1, "At least 1 working day.")
+      .max(MAX_CHASER_DAYS, `At most ${MAX_CHASER_DAYS} working days.`),
+    digest: z.boolean(),
+    hideDetails: z.boolean(),
+    keepRunningInTray: z.boolean(),
+  })
+  .refine((value) => value.workStart < value.workEnd, {
+    path: ["workEnd"],
+    message: "Working hours must end after they start.",
+  });
+
 /** What PUT /api/pmo/config may change (the inbox path stays file/env only).
  *  Spelled out rather than `.partial()` of the schema above: a defaulted
  *  field would silently reset to its default whenever a patch omits it. The
@@ -439,6 +509,7 @@ export const PmoConfigPatchSchema = z.object({
     .min(MIN_RETENTION_DAYS, `At least ${MIN_RETENTION_DAYS} days.`)
     .max(MAX_RETENTION_DAYS, `At most ${MAX_RETENTION_DAYS} days.`)
     .optional(),
+  reminders: ReminderPrefsEditSchema.optional(),
 });
 export type PmoConfigPatch = z.infer<typeof PmoConfigPatchSchema>;
 
@@ -493,6 +564,8 @@ export interface PmoState {
   today: string;
   queue: Proposal[];
   todos: Todo[];
+  /** What needs a look right now (the dock badge number), per the reminder prefs. */
+  attention: Attention;
   filtered: QuarantineRecord[];
   ingest: IngestStatus;
   structuring: StructuringInfo;

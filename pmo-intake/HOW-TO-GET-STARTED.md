@@ -194,3 +194,42 @@ with `-IgnoreSeen` to send it again.
 | `rejected-files` banner                                   | A producer wrote something that is not valid; the reason is in `rejected-files\...reason.txt` in the data folder.                          |
 | Script says "New Outlook is running"                      | Turn the **New Outlook** toggle off and restart Outlook.                                                                                   |
 | Nothing structured, "Local model not running"             | The app starts its own local model; wait a minute and press **Scan now**; items stay pending and are retried.                              |
+
+## 10. Turn on reminders (5 minutes)
+
+Reminders tell you when a to-do is **due tomorrow**, **overdue** (every working
+day from 09:00 on the due day), or when you are **waiting on someone** and
+nothing has changed for 2 working days. They are shown on this computer only;
+nothing is sent to anyone.
+
+1. **Desktop app (the reliable way).** Nothing to switch on: while AI OS is
+   running it checks every minute and shows a Windows notification, even with
+   the PMO window closed. Click it to open the PMO app on that to-do. The dock
+   icon for PMO To-Do shows a number badge, and the taskbar icon shows the same
+   count.
+2. **Keep it running when you close the window.** PMO window, gear (Settings),
+   **Reminders**, tick *Keep running in the tray so reminders still fire*, then
+   **Save settings**. Closing the window now hides AI OS to the system tray
+   (bottom right, maybe under the ^ arrow). Right-click the tray icon for **Open
+   AI OS** or **Quit**; Quit closes everything. Untick it and closing the window
+   quits again, as before.
+3. **In a browser tab (only while the tab is open).** Open PMO To-Do, click
+   **Enable reminders** in the grey strip under the status bar and allow
+   notifications. If you refuse, you still get the badge on the dock icon and a
+   count in the tab title, such as `(3) AI OS`. Browser reminders stop when the
+   tab closes, so use the desktop app for anything you must not miss.
+4. **What the notification says.** By default only "PMO To-Do: 3 items need
+   attention", never a task name, so nothing shows on a shared screen or in the
+   notification centre. To see the title, untick *Hide task details in
+   notifications* in Settings, Reminders.
+5. **Tune it.** Settings, Reminders: working hours and days (default 09:00 to
+   18:00, Mon to Fri; reminders wait for the start of the day), time zone
+   (Asia/Kolkata), how many working days before a chaser (2), an optional morning
+   digest, and a master switch. To silence one to-do for a while use **Snooze** on
+   its row or in its window (1 hour, tomorrow 09:00, next Monday, or a date and
+   time).
+
+If no notification appears in the desktop app, check Windows **Focus assist / Do
+not disturb** and Settings, System, Notifications, **AI OS**. The log
+`desktop.log` (Developer menu, Open logs folder) says whether a notification was
+shown or failed.

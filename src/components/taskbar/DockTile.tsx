@@ -2,6 +2,8 @@
 
 import type { ButtonHTMLAttributes } from "react";
 import type { Icon } from "@phosphor-icons/react";
+import { badgeText, badgedLabel } from "./dockBadge";
+import { cn } from "@/lib/cn";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -25,6 +27,9 @@ interface DockTileProps {
   /** Disables "Reset taskbar to default" when the taskbar already IS the
    *  default (nothing to reset). */
   canReset: boolean;
+  /** A count to draw on the tile's corner (e.g. items needing attention);
+   *  0 or undefined draws nothing. Purely visual: the tile behaves the same. */
+  badge?: number;
   /** `draggable`/`onDragStart`/`onDragEnd` for a tile that can be dragged to
    *  reorder — Dock.tsx passes these only for pinned tiles. The drop side
    *  (where it lands) is Dock.tsx's wrapper around this tile. */
@@ -55,23 +60,39 @@ export function DockTile({
   onTogglePinned,
   onResetTaskbar,
   canReset,
+  badge = 0,
   dragProps,
 }: DockTileProps) {
+  const badgeLabel = badgeText(badge);
   return (
     <ContextMenu>
       <ContextMenuTrigger className="contents">
-        <Tooltip label={label}>
-          <IconButton
-            aria-label={label}
-            onClick={onClick}
-            variant="ghost"
-            size="lg"
-            className="rounded-control text-ink-muted hover:text-ink h-11 w-11 bg-neutral-100 hover:bg-neutral-200"
-            {...dragProps}
-          >
-            <IconGlyph size={20} />
-          </IconButton>
-        </Tooltip>
+        <span className="relative inline-flex">
+          <Tooltip label={badgedLabel(label, badge)}>
+            <IconButton
+              aria-label={badgedLabel(label, badge)}
+              onClick={onClick}
+              variant="ghost"
+              size="lg"
+              className="rounded-control text-ink-muted hover:text-ink h-11 w-11 bg-neutral-100 hover:bg-neutral-200"
+              {...dragProps}
+            >
+              <IconGlyph size={20} />
+            </IconButton>
+          </Tooltip>
+          {badgeLabel && (
+            <span
+              aria-hidden
+              data-dock-badge
+              className={cn(
+                "bg-accent text-accent-contrast pointer-events-none absolute -top-1 -right-1 flex h-[18px] min-w-[18px] items-center justify-center",
+                "rounded-pill border-surface border-2 px-1 text-[10px] leading-none font-semibold",
+              )}
+            >
+              {badgeLabel}
+            </span>
+          )}
+        </span>
       </ContextMenuTrigger>
       <ContextMenuContent>
         <ContextMenuItem onSelect={onTogglePinned}>

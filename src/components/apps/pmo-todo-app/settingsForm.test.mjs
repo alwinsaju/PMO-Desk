@@ -62,4 +62,29 @@ describe("settings form", () => {
       30,
     );
   });
+
+  it("carries the reminder preferences, with defaults that match the engine", () => {
+    const form = formFromConfig(config);
+    assert.equal(form.reminders.chaserDays, "2");
+    assert.equal(form.reminders.hideDetails, true);
+    assert.equal(form.reminders.keepRunningInTray, false);
+    const built = buildPatch(form);
+    assert.equal(built.errors, null);
+    assert.deepEqual(built.patch.reminders, config.reminders);
+  });
+
+  it("validates the reminder fields next to the field", () => {
+    const base = formFromConfig(config);
+    const bad = (patch) =>
+      buildPatch({ ...base, reminders: { ...base.reminders, ...patch } });
+    assert.match(
+      bad({ timeZone: "Mars/Olympus" }).errors["reminders.timeZone"],
+      /time zone/i,
+    );
+    assert.match(bad({ workStart: "20:00" }).errors["reminders.workEnd"], /end after/i);
+    assert.match(bad({ chaserDays: "" }).errors["reminders.chaserDays"], /number/i);
+    assert.match(bad({ chaserDays: "0" }).errors["reminders.chaserDays"], /At least 1/);
+    assert.match(bad({ workDays: [] }).errors["reminders.workDays"], /at least one/i);
+    assert.equal(bad({ chaserDays: " 3 ", digest: true }).patch.reminders.chaserDays, 3);
+  });
 });

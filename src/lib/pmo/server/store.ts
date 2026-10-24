@@ -3,6 +3,7 @@
 // reads, decides and writes back goes through `withLock`, which serialises
 // those sequences in this process.
 import os from "node:os";
+import { z } from "zod";
 import { mkdir, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
@@ -43,7 +44,37 @@ export type AuditAction =
   | "create-manual"
   | "retry"
   | "paste"
+  | "snooze"
   | "config";
+
+/** state/notify.json: reminders already delivered (by key) and the claims that
+ *  are out with a client but not yet acknowledged. */
+export const NotifyStateSchema = z.object({
+  delivered: z
+    .record(
+      z.string(),
+      z.object({
+        at: z.string(),
+        kind: z.string(),
+        todoId: z.string().nullable(),
+        client: z.string(),
+      }),
+    )
+    .default({}),
+  claims: z
+    .record(
+      z.string(),
+      z.object({
+        at: z.string(),
+        client: z.string(),
+        keys: z.array(
+          z.object({ key: z.string(), kind: z.string(), todoId: z.string().nullable() }),
+        ),
+      }),
+    )
+    .default({}),
+});
+export type NotifyState = z.output<typeof NotifyStateSchema>;
 
 export class Store {
   readonly paths: PmoPaths;
@@ -91,6 +122,21 @@ export class Store {
 
   async saveConfig(config: PmoConfig): Promise<void> {
     await writeJsonAtomic(this.paths.config, config);
+  }
+
+  // --- reminder delivery state --------------------------------------------------
+
+  async loadNotify(): Promise<NotifyState> {
+    try {
+      return NotifyStateSchema.parse((await readJson(this.paths.notify)) ?? {});
+    } catch {
+      // Unreadable: start clean. The worst case is one repeated reminder.
+      return NotifyStateSchema.parse({});
+    }
+  }
+
+  async saveNotify(state: NotifyState): Promise<void> {
+    await writeJsonAtomic(this.paths.notify, state);
   }
 
   // --- generic record dirs ----------------------------------------------------

@@ -1,7 +1,9 @@
 // Pure list/formatting helpers for the PMO To-Do window. No React, and
 // relative imports with the .ts extension, so `pnpm test` can load this file
 // under plain Node (see queueView.test.mjs).
+import { isDueSoon, isSnoozed, isWaiting } from "../../../lib/pmo/due.ts";
 import { domainMatches, domainOf } from "../../../lib/pmo/filter.ts";
+import { checkpointProgress } from "../../../lib/pmo/todoLogic.ts";
 import type {
   PmoConfig,
   Priority,
@@ -83,6 +85,92 @@ export function sortTodos(todos: Todo[], today: string): Todo[] {
     }
     return b.createdAt.localeCompare(a.createdAt);
   });
+}
+
+// --- filtering and sorting the to-do list -------------------------------------
+
+export const TODO_FILTERS = [
+  { id: "open", label: "Open" },
+  { id: "overdue", label: "Overdue" },
+  { id: "due-soon", label: "Due soon" },
+  { id: "waiting", label: "Waiting" },
+  { id: "snoozed", label: "Snoozed" },
+  { id: "done", label: "Done" },
+] as const;
+export type TodoFilter = (typeof TODO_FILTERS)[number]["id"];
+
+/** Overdue = due before today; due soon = due today or tomorrow (the same
+ *  windows the dock badge uses); waiting = "waiting on" is set; snoozed =
+ *  silenced until later; done = done or cancelled. Snoozed and waiting items
+ *  also stay in "Open". `today` is the IST date the server reports. */
+export function matchesFilter(todo: Todo, filter: TodoFilter, today: string, now: Date) {
+  const open = todo.status === "open";
+  switch (filter) {
+    case "open":
+      return open;
+    case "overdue":
+      return open && todo.dueAt !== null && todo.dueAt < today;
+    case "due-soon":
+      return isDueSoon(todo, today);
+    case "waiting":
+      return isWaiting(todo);
+    case "snoozed":
+      return open && isSnoozed(todo, now);
+    case "done":
+      return !open;
+  }
+}
+
+export function filterTodos(
+  todos: Todo[],
+  filter: TodoFilter,
+  today: string,
+  now: Date,
+): Todo[] {
+  return todos.filter((todo) => matchesFilter(todo, filter, today, now));
+}
+
+export function countByFilter(
+  todos: Todo[],
+  today: string,
+  now: Date,
+): Record<TodoFilter, number> {
+  return Object.fromEntries(
+    TODO_FILTERS.map(({ id }) => [id, filterTodos(todos, id, today, now).length]),
+  ) as Record<TodoFilter, number>;
+}
+
+export const TODO_SORTS = [
+  { id: "due", label: "Due date" },
+  { id: "priority", label: "Priority" },
+  { id: "progress", label: "Least progress" },
+  { id: "newest", label: "Newest" },
+] as const;
+export type TodoSort = (typeof TODO_SORTS)[number]["id"];
+
+/** "due" is the default order of sortTodos; the others break ties by it. */
+export function sortTodosBy(todos: Todo[], sort: TodoSort, today: string): Todo[] {
+  const base = sortTodos(todos, today);
+  const position = new Map(base.map((todo, index) => [todo.id, index]));
+  const byBase = (a: Todo, b: Todo) => position.get(a.id)! - position.get(b.id)!;
+  const share = (todo: Todo) => {
+    const { done, total } = checkpointProgress(todo);
+    return total === 0 ? 0 : done / total;
+  };
+  switch (sort) {
+    case "due":
+      return base;
+    case "priority":
+      return [...base].sort(
+        (a, b) => PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority] || byBase(a, b),
+      );
+    case "progress":
+      return [...base].sort((a, b) => share(a) - share(b) || byBase(a, b));
+    case "newest":
+      return [...base].sort(
+        (a, b) => b.createdAt.localeCompare(a.createdAt) || byBase(a, b),
+      );
+  }
 }
 
 const DAY_MS = 86_400_000;

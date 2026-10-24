@@ -482,12 +482,14 @@ Teams messages and Outlook emails arrive as JSON files in an inbox folder; the
 **local** model (through `src/lib/ai-runtime`, never a cloud API) turns each
 into a to-do *proposal*; proposals wait in a **Review Queue**, and only a human
 **Approve** creates a to-do. **The app sends nothing anywhere** (no email, no
-Teams post, no notification) and never calls agent-office: no code under
+Teams post; the only notifications are local reminders on this computer, see
+"Phase 3" below) and never calls agent-office: no code under
 `src/lib/pmo`, `src/app/api/pmo` or the app imports
 `src/app/api/agent-office/*`. Phase 1 was the inbox, filter, model and review
 queue; phase 2 added the read-only Outlook COM producer, the Paste dialog, the
-Settings dialog, the Filtered-tab guidance and the retention purge (below). The
-notification phase is not built.
+Settings dialog, the Filtered-tab guidance and the retention purge (below).
+Phase 3 added full to-do editing, the reminder engine, the desktop and browser
+notification paths and the dock badge ("Phase 3" at the end of this section).
 
 **Runs inside the existing Next server.** No new process and no cloud store.
 `ensureIngest()` (`server/service.ts`) starts the inbox poller and the
@@ -526,8 +528,13 @@ src/lib/pmo/            Pure logic, one co-located *.test.mjs per area
                           (received day + next 14 days as `Mon 2026-10-26`, IST,
                           from time.ts) so the model copies dates instead of
                           counting; it sits outside the untrusted delimiters.
-  todoLogic.ts            Draft -> Todo, derived stage/progress, patches.
-                          Client-safe (no node imports).
+  todoLogic.ts            Draft -> Todo, derived stage/progress, patches (fields,
+                          action items with owner/due, checkpoint add/rename/
+                          reorder/remove/skip/complete, snooze). Client-safe.
+  due.ts                  The reminder engine: computeDue(todos, now, prefs),
+                          toastFor (privacy default), attentionSummary (the
+                          badge), snooze presets, time-zone maths. Pure.
+  desktopBridge.ts        Typing for window.aiOsDesktop (the Electron preload).
   checkpointTemplates.ts  The fixed catalog: simple, deliverable, approval, followup.
   server/                 Server only; never import from client code.
     store.ts, fsx.ts      Per-record JSON files, atomic temp-then-rename writes,
@@ -541,6 +548,9 @@ src/lib/pmo/            Pure logic, one co-located *.test.mjs per area
                           inbox (temp, then rename; sourceId = content hash;
                           a duplicate writes nothing). manualIntake.ts (client-
                           safe, one level up) holds the zod schema and builder.
+    notify.ts             Reminder delivery: previewDue, claimDue, acknowledgeDue
+                          (state/notify.json), remindersOwnedByDesktop.
+    desktopPrefs.ts       Mirrors the tray setting into the shell's userData.
     retention.ts          The purge (see Retention below), run from service.ts
                           once at start and every 24 h; injectable clock.
     bodyCap.ts            Size-capped request body reader (512 KB for a paste).
@@ -551,7 +561,8 @@ src/lib/pmo/            Pure logic, one co-located *.test.mjs per area
     stubGenerator.ts      Fake model for tests / `PMO_AI_STUB=1`.
 src/app/api/pmo/        state, ingest/scan, intake/manual (POST, the Paste
                         dialog), queue/[id] (PATCH) + approve|reject|retry,
-                        raw/[intakeId], todos, todos/[id], config. Each route
+                        raw/[intakeId], todos, todos/[id], config, due (GET),
+                        due/claim and due/ack (POST). Each route
                         checks Origin/Host first (raw message text is served),
                         touches only local files, replies HTTP 200 with
                         { ok, reason? }.
@@ -563,7 +574,7 @@ repo). Layout: `config.json`, `raw/<intakeId>.json` (immutable snapshot incl. th
 original text), `quarantine/` (filtered items: metadata and reason, body
 dropped), `rejected-files/` (unparsable producer files + `.reason.txt`),
 `queue/<proposalId>.json`, `todos/<todoId>.json`, `state/seen.json` (dedupe
-index), `logs/ingest.jsonl`, `logs/ai-calls.jsonl` (no message text),
+index), `state/notify.json` (reminders delivered / claimed), `logs/ingest.jsonl`, `logs/ai-calls.jsonl` (no message text),
 `audit.jsonl` (approve/reject/edit/complete with the OS user).
 
 **Inbox**: `config.inboxDir`, default
@@ -622,3 +633,100 @@ repair, at most 3 model attempts per item, and failed items offer *Retry* and
 roughly 50-100 s per message, and the first one after a cold start 1-2 minutes
 more (the status bar says so while the model is not yet warm), so structuring
 is strictly background work.
+
+### Phase 3: editing, reminders, badge
+
+**Editing** (`TodoDetailDialog`, `TodoEditors`; everything goes through the one
+PATCH route, validated by `TodoPatchSchema`, and every real edit is audit-logged
+with the OS user and time): title, description, owner, due date (with Today /
+Tomorrow / Next Monday chips), priority, waiting-on; action items with an
+optional owner and due date (add, edit inline, tick, remove); checkpoints (add,
+rename, move up/down, remove, skip, complete, reopen). The stage and the progress
+bar are derived from the checkpoints on every read, never stored. Completing the
+last checkpoint only *offers* "Mark done" (a banner in the dialog and a button on
+the list row); the to-do is never closed by itself. The list has Open / Overdue /
+Due soon / Waiting / Snoozed / Done filters with counts and four sorts
+(`queueView.ts`): "overdue" is due before today (IST), "due soon" is due today or
+tomorrow. Limits: 50 action items and 20 checkpoints per to-do.
+
+**Reminders** (`src/lib/pmo/due.ts`, pure, unit-tested with a fake clock).
+`computeDue(todos, now, prefs)` returns `{ todoId, kind, key, title, body }`:
+
+- `due-soon`: once per due date, while the due date (the *start* of that day) is
+  less than 24 h away, so the heads-up lands on the day before.
+- `overdue`: from the start of the working day (09:00) on the due day, then once
+  per working day (Saturday and Sunday skipped by default).
+- `chaser`: a to-do with *waiting on* set and no update for N working days
+  (default 2), repeating after each further N. A snooze alone does not count as an
+  update (it keeps `updatedAt`), so it does not restart that clock.
+- `digest`: optional (off), one summary per working day.
+- Quiet hours (default on): nothing is produced outside the working window
+  (09:00-18:00 Mon-Fri). A held reminder is simply not yet delivered, so it
+  appears when the window opens. Snooze: `todo.reminders.snoozedUntil` silences
+  that to-do (not the digest) until then; presets are 1 h, tomorrow 09:00, next
+  Monday 09:00, or a custom date and time, all read in the prefs' time zone.
+- Prefs live in `config.json` under `reminders` (`ReminderPrefsSchema`: master
+  switch, `timeZone` Asia/Kolkata, `workStart`, `workEnd`, `workDays`,
+  `quietOutsideHours`, `chaserDays`, `digest`, `hideDetails`,
+  `keepRunningInTray`) and are edited in the Settings dialog. A malformed block
+  falls back to the defaults for that block only, not the whole config.
+- **Privacy default**: `hideDetails` is on, so the notification text is only
+  "PMO To-Do: N items need attention" (`toastFor`): no title, no name. Off, it
+  shows the title (or a short list). The server builds the toast, so every client
+  shows identical text. Reminders stay on this computer; nothing is sent anywhere.
+
+**Delivery and claim semantics** (`server/notify.ts`). A client *claims* the
+reminders not yet delivered (`POST /api/pmo/due/claim { client }`). Under the
+store lock the server runs `computeDue`, drops keys already delivered or held by a
+fresh claim, records the claim in `state/notify.json` and returns
+`{ claimId, notifications, toast, attention }`. After showing it the client calls
+`POST /api/pmo/due/ack { claimId }` and the keys become delivered for good. An
+unacknowledged claim expires after 3 minutes and its reminders are claimable
+again, so a crashed client or a failed toast delays a reminder and never loses it
+(worst case it repeats once). Two clients asking at the same moment get disjoint
+sets. `GET /api/pmo/due` is the read-only preview (pending, attention counts,
+prefs). All three are origin-checked like every `/api/pmo` route. When the server
+belongs to the Electron shell (`AI_OS_DESKTOP_MODE=1`) only the shell may claim or
+ack: it sends `x-ai-os-desktop: 1`, the same marker the AI-runtime stop route
+requires (a custom header forces a CORS preflight, which a web page cannot get
+through). A browser tab pointed at that server gets `desktopOwns: true` and just
+reads the badge count.
+
+**Electron** (`desktop/main.cjs`, `pmo-notifier.cjs`, `preload.cjs`). The main
+process sets the AppUserModelID to `build.appId` (`com.aios.desktop`) and, every
+60 s while the Next server is up (not starting, restarting or quitting), claims
+reminders, shows one Electron `Notification` for the batch and then acks.
+Clicking it shows and focuses the window (restoring it from the tray) and sends
+`pmo:open-todo` to the page; if the page has not registered yet the request is
+held and delivered when it does. `preload.cjs` (sandbox and context isolation stay
+on; it requires only `electron`) exposes just
+`window.aiOsDesktop = { isDesktop, onOpenTodo(cb), setBadge(n) }`, and the IPC
+handlers accept only the main window's own page. `setBadge` draws a taskbar
+overlay (a generated bitmap, no image file) and sets the tray tooltip. The
+**tray option** "Keep running in the tray so reminders still fire" (Settings,
+default OFF): when on, closing the window hides it and shows a tray icon (Open,
+Quit). Quit is a normal `app.quit()`, so `before-quit` runs the usual shutdown,
+including stopping the Ollama this app started. When off, closing quits as before
+(`window-all-closed`). The main process reads the setting from
+`<userData>\desktop-prefs.json`, which the Next server writes when the setting is
+saved and at start (`AI_OS_DESKTOP_PREFS_FILE`, set by main.cjs); a missing or
+unreadable file means off. `AI_OS_SKIP_AGENT_OFFICE=1` makes the shell skip its
+Agent Office start/stop calls (for testing the shell without touching the real
+backend). Because reminders need the data layer, the first claim also starts the
+PMO service (inbox poller, structuring worker) shortly after launch instead of
+when the PMO window is first opened.
+
+**Browser mode** (`usePmoReminders`, mounted by `desktop/PmoReminders.tsx` from
+`Desktop.tsx`, so it runs with the PMO window closed). Outside the shell it claims
+every 60 s, shows a web `Notification` (if permission was granted) plus an in-app
+toast, then acks. The PMO window shows an **Enable reminders** button (the
+permission request needs a click) and says plainly that web reminders only fire
+while the tab is open and that the desktop app is the reliable path. Without
+permission the fallbacks are the count badge on the dock tile (a small generic
+`dockBadgeStore`, display only, never touching the pinned layout) and a "(N)"
+prefix on the tab title. Inside the shell the hook never claims; it only refreshes
+the badge. The badge number is `attentionSummary`: open, un-snoozed to-dos that
+are overdue, due today or tomorrow, or waiting past the chaser days.
+
+Turning reminders on, and a manual check of the real notification path:
+`pmo-intake/HOW-TO-GET-STARTED.md`, section 10.

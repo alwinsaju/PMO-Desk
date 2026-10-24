@@ -3,7 +3,12 @@
 // { ok, reason? } envelope the routes send back (HTTP 200 either way, the
 // repo convention). Approve is the one door into todos/: nothing else ever
 // builds a Todo from a proposal.
-import { applyTodoPatch, buildTodo, TodoPatchSchema } from "../todoLogic.ts";
+import {
+  applyTodoPatch,
+  buildTodo,
+  todoLimitProblem,
+  TodoPatchSchema,
+} from "../todoLogic.ts";
 import {
   PmoConfigPatchSchema,
   TodoDraftSchema,
@@ -13,6 +18,7 @@ import {
   type TodoDraft,
   type TodoSource,
 } from "../types.ts";
+import { syncDesktopPrefs } from "./desktopPrefs.ts";
 import type { Ingestor } from "./ingest.ts";
 import { osUser, type Store } from "./store.ts";
 import type { StructuringWorker } from "./structure.ts";
@@ -261,6 +267,8 @@ export function patchTodo(
       offerDone,
       kinds,
     } = applyTodoPatch(todo, parsed.data, pmo.now().toISOString());
+    const tooMuch = todoLimitProblem(next);
+    if (tooMuch) return fail(tooMuch);
     await pmo.store.putTodo(next);
     for (const kind of kinds) {
       // Ticking boxes is progress, not an edit worth an audit line.
@@ -312,10 +320,14 @@ export function updateConfig(
         ? { names: cleanList(patch.me.names, false), emails: cleanList(patch.me.emails) }
         : current.me,
       retentionDays: patch.retentionDays ?? current.retentionDays,
+      reminders: patch.reminders
+        ? { ...patch.reminders, timeZone: patch.reminders.timeZone.trim() }
+        : current.reminders,
     };
     if (next.me.names.length === 0)
       return fail("Invalid config: me.names: Add at least one name.");
     await pmo.store.saveConfig(next);
+    if (patch.reminders) await syncDesktopPrefs(next);
     await pmo.store.audit("config", { changed: Object.keys(patch) });
     return { ok: true as const, config: next };
   });

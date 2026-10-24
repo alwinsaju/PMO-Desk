@@ -159,6 +159,12 @@ export function isOverdue(todo: Pick<Todo, "dueAt" | "status">, today: string): 
 
 const isoDay = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
+/** Bounds on what a person can pile onto one to-do. */
+export const MAX_ACTION_ITEMS = 50;
+export const MAX_CHECKPOINTS = 20;
+
+const actionOwner = z.string().trim().max(120).nullable();
+
 export const TodoPatchSchema = z.object({
   title: z.string().trim().min(1).max(200).optional(),
   description: z.string().max(4000).optional(),
@@ -177,16 +183,62 @@ export const TodoPatchSchema = z.object({
   waitingOn: z.string().nullable().optional(),
   tags: z.array(z.string()).max(10).optional(),
   status: TodoStatusSchema.optional(),
+  /** Silence this to-do's reminders until this instant (ISO); null un-snoozes. */
+  snoozedUntil: z
+    .string()
+    .refine((value) => !Number.isNaN(Date.parse(value)), {
+      message: "snoozedUntil must be an ISO 8601 date-time",
+    })
+    .nullable()
+    .optional(),
   /** Check / uncheck existing action items. */
   actionItems: z.array(z.object({ id: z.string(), done: z.boolean() })).optional(),
   addActionItems: z
-    .array(z.object({ text: z.string().trim().min(1).max(200) }))
+    .array(
+      z.object({
+        text: z.string().trim().min(1).max(200),
+        owner: actionOwner.optional(),
+        dueAt: isoDay.nullable().optional(),
+      }),
+    )
     .max(20)
     .optional(),
+  /** Change the text, owner or due date of existing action items. */
+  editActionItems: z
+    .array(
+      z.object({
+        id: z.string(),
+        text: z.string().trim().min(1).max(200).optional(),
+        owner: actionOwner.optional(),
+        dueAt: isoDay.nullable().optional(),
+      }),
+    )
+    .max(50)
+    .optional(),
   removeActionItemIds: z.array(z.string()).optional(),
+  /** Mark checkpoints done / skipped / pending again. */
   checkpoints: z
     .array(z.object({ id: z.string(), state: z.enum(["pending", "done", "skipped"]) }))
     .optional(),
+  /** New checkpoints, appended unless `at` (a 0-based position) is given. */
+  addCheckpoints: z
+    .array(
+      z.object({
+        label: z.string().trim().min(1).max(80),
+        kind: z.enum(["step", "approval"]).optional(),
+        at: z.number().int().min(0).optional(),
+      }),
+    )
+    .max(10)
+    .optional(),
+  renameCheckpoints: z
+    .array(z.object({ id: z.string(), label: z.string().trim().min(1).max(80) }))
+    .max(MAX_CHECKPOINTS)
+    .optional(),
+  removeCheckpointIds: z.array(z.string()).optional(),
+  /** The full new order of checkpoint ids (ids left out keep their relative
+   *  order after the listed ones; unknown ids are ignored). */
+  checkpointOrder: z.array(z.string()).max(MAX_CHECKPOINTS).optional(),
 });
 export type TodoPatch = z.infer<typeof TodoPatchSchema>;
 
@@ -196,7 +248,7 @@ export interface PatchResult {
    *  asks the human whether to mark it done. Never done automatically. */
   offerDone: boolean;
   /** For the audit log. */
-  kinds: Array<"edit" | "complete" | "cancel" | "reopen" | "progress">;
+  kinds: Array<"edit" | "complete" | "cancel" | "reopen" | "progress" | "snooze">;
 }
 
 const FIELD_KEYS = [
@@ -209,8 +261,24 @@ const FIELD_KEYS = [
   "waitingOn",
   "tags",
   "addActionItems",
+  "editActionItems",
   "removeActionItemIds",
+  "addCheckpoints",
+  "renameCheckpoints",
+  "removeCheckpointIds",
+  "checkpointOrder",
 ] as const;
+
+/** Null when the to-do is within bounds, else what is too long. */
+export function todoLimitProblem(
+  todo: Pick<Todo, "actionItems" | "checkpoints">,
+): string | null {
+  if (todo.actionItems.length > MAX_ACTION_ITEMS)
+    return `A to-do can have at most ${MAX_ACTION_ITEMS} action items.`;
+  if (todo.checkpoints.length > MAX_CHECKPOINTS)
+    return `A to-do can have at most ${MAX_CHECKPOINTS} checkpoints.`;
+  return null;
+}
 
 export function applyTodoPatch(todo: Todo, patch: TodoPatch, now: string): PatchResult {
   const next: Todo = { ...todo, updatedAt: now };
@@ -231,6 +299,19 @@ export function applyTodoPatch(todo: Todo, patch: TodoPatch, now: string): Patch
     const drop = new Set(patch.removeActionItemIds);
     items = items.filter((item) => !drop.has(item.id));
   }
+  if (patch.editActionItems?.length) {
+    const edits = new Map(patch.editActionItems.map((edit) => [edit.id, edit]));
+    items = items.map((item) => {
+      const edit = edits.get(item.id);
+      if (!edit) return item;
+      return {
+        ...item,
+        text: edit.text ?? item.text,
+        owner: edit.owner === undefined ? item.owner : edit.owner || null,
+        dueAt: edit.dueAt === undefined ? item.dueAt : edit.dueAt,
+      };
+    });
+  }
   if (patch.addActionItems?.length) {
     items = [
       ...items,
@@ -238,6 +319,8 @@ export function applyTodoPatch(todo: Todo, patch: TodoPatch, now: string): Patch
         id: newId("ai"),
         text: item.text,
         done: false,
+        owner: item.owner || null,
+        dueAt: item.dueAt ?? null,
       })),
     ];
   }
@@ -251,14 +334,54 @@ export function applyTodoPatch(todo: Todo, patch: TodoPatch, now: string): Patch
   }
   next.actionItems = items;
 
+  let checkpoints = next.checkpoints;
+  if (patch.removeCheckpointIds?.length) {
+    const drop = new Set(patch.removeCheckpointIds);
+    checkpoints = checkpoints.filter((checkpoint) => !drop.has(checkpoint.id));
+  }
+  if (patch.renameCheckpoints?.length) {
+    const labels = new Map(patch.renameCheckpoints.map((c) => [c.id, c.label]));
+    checkpoints = checkpoints.map((checkpoint) => {
+      const label = labels.get(checkpoint.id);
+      return label === undefined ? checkpoint : { ...checkpoint, label };
+    });
+  }
+  for (const added of patch.addCheckpoints ?? []) {
+    const created: Checkpoint = {
+      id: newId("cp"),
+      label: added.label,
+      kind: added.kind ?? "step",
+      state: "pending",
+    };
+    const at = Math.min(added.at ?? checkpoints.length, checkpoints.length);
+    checkpoints = [...checkpoints.slice(0, at), created, ...checkpoints.slice(at)];
+  }
+  if (patch.checkpointOrder?.length) {
+    const byId = new Map(checkpoints.map((checkpoint) => [checkpoint.id, checkpoint]));
+    const ordered: Checkpoint[] = [];
+    for (const id of patch.checkpointOrder) {
+      const checkpoint = byId.get(id);
+      if (checkpoint) {
+        ordered.push(checkpoint);
+        byId.delete(id);
+      }
+    }
+    checkpoints = [...ordered, ...checkpoints.filter((c) => byId.has(c.id))];
+  }
   if (patch.checkpoints?.length) {
     const wanted = new Map(patch.checkpoints.map((c) => [c.id, c.state]));
-    next.checkpoints = next.checkpoints.map((checkpoint) => {
+    checkpoints = checkpoints.map((checkpoint) => {
       const state = wanted.get(checkpoint.id);
       if (state === undefined || state === checkpoint.state) return checkpoint;
       return { ...checkpoint, state, doneAt: state === "pending" ? null : now };
     });
     kinds.push("progress");
+  }
+  next.checkpoints = checkpoints;
+
+  if (patch.snoozedUntil !== undefined) {
+    next.reminders = { ...next.reminders, snoozedUntil: patch.snoozedUntil };
+    kinds.push("snooze");
   }
 
   if (patch.status !== undefined && patch.status !== next.status) {
@@ -271,6 +394,12 @@ export function applyTodoPatch(todo: Todo, patch: TodoPatch, now: string): Patch
           ? "cancel"
           : "reopen",
     );
+  }
+
+  // A snooze alone is not "an update": it must not restart the chaser clock
+  // (the working days a to-do has gone quiet), so keep the old timestamp.
+  if (kinds.length > 0 && kinds.every((kind) => kind === "snooze")) {
+    next.updatedAt = todo.updatedAt;
   }
 
   return { todo: next, offerDone: allCheckpointsComplete(next), kinds };

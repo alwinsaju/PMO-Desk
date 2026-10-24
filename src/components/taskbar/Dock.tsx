@@ -14,6 +14,7 @@ import { springSnappy } from "@/lib/motion";
 import { AppMenu } from "./AppMenu";
 import { DockTile } from "./DockTile";
 import { builtInAppIds, builtInApps } from "./pinnedApps";
+import { useDockBadgeStore } from "./dockBadgeStore";
 import { APP_DRAG_MIME_TYPE, usePinnedAppsStore } from "./pinnedAppsStore";
 import {
   appIdForWindow,
@@ -97,6 +98,10 @@ const subscribeNever = () => () => {};
  * — see AppMenu.tsx) and the "+" that's always been a straight shortcut to
  * the App Store itself.
  *
+ * A tile can carry a small count badge (`dockBadgeStore`, keyed by app id): the
+ * PMO reminder poller sets the "pmo-todo" one to the number of items needing
+ * attention. Badges are display-only and never touch the pinned layout.
+ *
  * Also a drop target for app-id drags (see pinnedAppsStore.ts's
  * `APP_DRAG_MIME_TYPE`): dragging an `AppMenuEntry` or one of this dock's own
  * tiles onto another pinned tile drops it before/after that tile (an accent
@@ -118,6 +123,7 @@ export function Dock() {
       }),
     ),
   );
+  const badges = useDockBadgeStore((s) => s.badges);
   const [isDropTarget, setIsDropTarget] = useState(false);
   const [dropHint, setDropHint] = useState<{ id: string; after: boolean } | null>(null);
   const draggingTileId = useRef<string | null>(null);
@@ -241,6 +247,7 @@ export function Dock() {
                 onTogglePinned={() => (pinned ? unpinApp(id) : pinApp(id))}
                 onResetTaskbar={resetPinnedApps}
                 canReset={canReset}
+                badge={badges[id]}
                 dragProps={
                   pinned
                     ? {

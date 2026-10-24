@@ -32,6 +32,20 @@
         "AI_OS_PMO_INBOX_DIR": "C:\\Users\\alsaju\\AppData\\Local\\Temp\\claude\\C--Projects-AI-OS\\396d21f6-e23b-4999-8502-ccaa0cd823ea\\scratchpad\\pmo-real\\inbox",
         "AI_OS_PMO_SCAN_MS": "5000"
       }
+    },
+    {
+      "name": "ai-os-pmo-reminders",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["dev", "-p", "3077"],
+      "port": 3077,
+      "env": {
+        "AI_OS_PMO_DATA_DIR": "C:\\Users\\alsaju\\AppData\\Local\\Temp\\claude\\C--Projects-AI-OS\\396d21f6-e23b-4999-8502-ccaa0cd823ea\\scratchpad\\p3\\data",
+        "AI_OS_PMO_INBOX_DIR": "C:\\Users\\alsaju\\AppData\\Local\\Temp\\claude\\C--Projects-AI-OS\\396d21f6-e23b-4999-8502-ccaa0cd823ea\\scratchpad\\p3\\inbox",
+        "PMO_AI_STUB": "1",
+        "AI_OS_PMO_SCAN_MS": "5000",
+        "AI_OS_AI_AUTOSTART": "0",
+        "AI_OS_AI_PREWARM": "0"
+      }
     }
   ]
 }

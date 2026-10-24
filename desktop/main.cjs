@@ -1,9 +1,25 @@
-const { app, BrowserWindow, Menu, dialog, shell } = require("electron");
+const {
+  app,
+  BrowserWindow,
+  Menu,
+  Notification,
+  Tray,
+  dialog,
+  ipcMain,
+  nativeImage,
+  shell,
+} = require("electron");
 const { spawn } = require("node:child_process");
 const { appendFileSync, existsSync } = require("node:fs");
 const net = require("node:net");
 const path = require("node:path");
 const launchConfig = require("./launch-config.cjs");
+const pmoNotifier = require("./pmo-notifier.cjs");
+
+// Windows toasts and the taskbar group are keyed by this id; it must match
+// build.appId in package.json (the installer registers the same one).
+const APP_USER_MODEL_ID = "com.aios.desktop";
+app.setAppUserModelId(APP_USER_MODEL_ID);
 
 const HOST = "127.0.0.1";
 const PREFERRED_PORT = 3100;
@@ -20,6 +36,20 @@ let splashWindow;
 let isQuitting = false;
 let port;
 let appUrl;
+
+// PMO reminders (see pmo-notifier.cjs): the poller, the optional tray icon, and
+// the "open this to-do" request a clicked notification leaves for the page.
+let reminderPoller;
+let tray;
+let attentionCount = 0;
+/** The page has registered its window.aiOsDesktop.onOpenTodo listener. */
+let rendererReady = false;
+let pendingOpen = null;
+/** Skip the Agent Office start/stop calls (they would touch the real backend):
+ *  for testing the shell on its own, e.g. AI_OS_SKIP_AGENT_OFFICE=1. */
+const skipAgentOffice = process.env.AI_OS_SKIP_AGENT_OFFICE === "1";
+/** Where the Next server mirrors the "keep running in the tray" setting. */
+const desktopPrefsFile = () => path.join(app.getPath("userData"), "desktop-prefs.json");
 
 /**
  * How the UI server is launched (see launch-config.cjs): live-dev / live-build
@@ -55,6 +85,8 @@ if (!app.requestSingleInstanceLock()) {
     if (mainWindow.isMinimized()) {
       mainWindow.restore();
     }
+    // Hidden to the tray: launching AI OS again brings it back.
+    mainWindow.show();
     mainWindow.focus();
   });
 
@@ -86,6 +118,7 @@ async function startDesktopApp() {
   buildMenu();
   createWindow();
   closeSplash();
+  startReminders();
 }
 
 // ---------------------------------------------------------------------------
@@ -140,6 +173,8 @@ async function startUiServer(mode) {
       AI_OS_DESKTOP_MODE: "1",
       // PMO To-Do keeps its records here: outside the install dir and OneDrive.
       AI_OS_PMO_DATA_DIR: path.join(app.getPath("userData"), "pmo"),
+      // The server mirrors the tray setting here for this shell to read.
+      AI_OS_DESKTOP_PREFS_FILE: desktopPrefsFile(),
       ELECTRON_RUN_AS_NODE: "1",
       NODE_ENV: mode === "live-dev" ? "development" : "production",
     },
@@ -353,6 +388,10 @@ async function listBusyTasks() {
 // ---------------------------------------------------------------------------
 
 async function startAgentOffice() {
+  if (skipAgentOffice) {
+    desktopLog("AI_OS_SKIP_AGENT_OFFICE=1: not starting Agent Office.");
+    return;
+  }
   desktopLog("Starting Agent Office.");
   const response = await fetch(`${appUrl}/api/agent-office/start`, {
     method: "POST",
@@ -385,6 +424,8 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      // window.aiOsDesktop: reminders click-through and badge (preload.cjs).
+      preload: path.join(__dirname, "preload.cjs"),
     },
   });
 
@@ -402,11 +443,155 @@ function createWindow() {
     return { action: "deny" };
   });
   mainWindow.once("ready-to-show", () => mainWindow.show());
+  // "Keep running in the tray" (a setting, off by default): closing the window
+  // hides it so reminders keep firing. Off, closing behaves as it always did
+  // (window-all-closed quits the app).
+  mainWindow.on("close", (event) => {
+    if (
+      isQuitting ||
+      !pmoNotifier.readDesktopPrefs(desktopPrefsFile()).keepRunningInTray
+    ) {
+      return;
+    }
+    event.preventDefault();
+    mainWindow.hide();
+    ensureTray();
+  });
   mainWindow.on("closed", () => {
     mainWindow = undefined;
+    rendererReady = false;
   });
+  // A new page load has not registered its listener yet.
+  mainWindow.webContents.on(
+    "did-start-navigation",
+    (_event, _url, _inPlace, isMainFrame) => {
+      if (isMainFrame) rendererReady = false;
+    },
+  );
   void mainWindow.loadURL(appUrl);
 }
+
+// ---------------------------------------------------------------------------
+// PMO reminders: poller, notification click, badge, optional tray
+// ---------------------------------------------------------------------------
+
+function startReminders() {
+  reminderPoller = pmoNotifier.createReminderPoller({
+    getBaseUrl: () => appUrl,
+    isReady: () => Boolean(appUrl) && ui.ready && !ui.restarting && !isQuitting,
+    Notification,
+    onOpenTodo: openTodoFromNotification,
+    onAttention: applyBadge,
+    log: desktopLog,
+  });
+  reminderPoller.start({
+    firstDelayMs: Number(process.env.AI_OS_REMINDER_FIRST_MS) || undefined,
+    intervalMs: Number(process.env.AI_OS_REMINDER_POLL_MS) || undefined,
+  });
+}
+
+/** Bring the window back (from minimised, or hidden in the tray). */
+function showMainWindow() {
+  if (!mainWindow) {
+    createWindow();
+    return;
+  }
+  if (mainWindow.isMinimized()) {
+    mainWindow.restore();
+  }
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+/** A clicked reminder: show the window and have the page open the PMO app. If
+ *  the page has not registered yet, the request waits for it. */
+function openTodoFromNotification(todoId) {
+  showMainWindow();
+  if (rendererReady && mainWindow) {
+    mainWindow.webContents.send("pmo:open-todo", todoId);
+  } else {
+    pendingOpen = { todoId };
+  }
+}
+
+/** Taskbar overlay badge (Windows) and the tray tooltip. */
+function applyBadge(count) {
+  attentionCount = Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0;
+  const label = pmoNotifier.attentionLabel(attentionCount);
+  try {
+    if (mainWindow && typeof mainWindow.setOverlayIcon === "function") {
+      const overlay =
+        attentionCount > 0
+          ? nativeImage.createFromBitmap(
+              pmoNotifier.renderBadgeBitmap(attentionCount).buffer,
+              { width: 32, height: 32 },
+            )
+          : null;
+      mainWindow.setOverlayIcon(overlay, label);
+    }
+    if (tray) {
+      tray.setToolTip(label ? `AI OS - ${label}` : "AI OS");
+    }
+  } catch (error) {
+    desktopLog(`Could not update the badge: ${error && error.message}`, "error");
+  }
+}
+
+function ensureTray() {
+  if (tray) {
+    return;
+  }
+  try {
+    const icon = nativeImage
+      .createFromPath(path.join(__dirname, "icon.png"))
+      .resize({ width: 16, height: 16 });
+    tray = new Tray(icon);
+    tray.setToolTip("AI OS");
+    tray.setContextMenu(
+      Menu.buildFromTemplate([
+        { label: "Open AI OS", click: showMainWindow },
+        { type: "separator" },
+        // A full quit: before-quit stops the servers, including the Ollama
+        // runtime this app started (stopAiRuntime), exactly like File > Quit.
+        { label: "Quit", click: () => app.quit() },
+      ]),
+    );
+    tray.on("click", showMainWindow);
+    applyBadge(attentionCount);
+    desktopLog("Tray icon created (keep running in the tray is on).");
+  } catch (error) {
+    // Without a tray there is no way back to a hidden window: show it again
+    // rather than leave AI OS running invisibly.
+    desktopLog(`Could not create the tray icon: ${error && error.message}`, "error");
+    tray = undefined;
+    if (mainWindow) mainWindow.show();
+  }
+}
+
+/** Only our own window may talk to these handlers. */
+function isFromMainWindow(event) {
+  return Boolean(
+    mainWindow &&
+    event.sender === mainWindow.webContents &&
+    event.sender.getURL().startsWith(appUrl),
+  );
+}
+
+ipcMain.on("pmo:set-badge", (event, count) => {
+  if (isFromMainWindow(event) && typeof count === "number") {
+    applyBadge(count);
+  }
+});
+
+ipcMain.handle("pmo:renderer-ready", (event) => {
+  if (!isFromMainWindow(event)) {
+    return null;
+  }
+  rendererReady = true;
+  const pending = pendingOpen;
+  pendingOpen = null;
+  return pending;
+});
 
 function updateWindowTitle() {
   if (mainWindow) {
@@ -527,6 +712,13 @@ app.on("before-quit", (event) => {
 
   event.preventDefault();
   isQuitting = true;
+  if (reminderPoller) {
+    reminderPoller.stop();
+  }
+  if (tray) {
+    tray.destroy();
+    tray = undefined;
+  }
   void stopServices().finally(() => app.exit(0));
 });
 
@@ -545,12 +737,14 @@ async function requestServiceShutdown() {
   // A dev server may need to compile these routes on first use.
   const timeout = ui.mode === "live-dev" ? 20_000 : 5_000;
   try {
-    const response = await fetch(`${appUrl}/api/agent-office/stop`, {
-      method: "POST",
-      signal: AbortSignal.timeout(timeout),
-    });
-    if (!response.ok) {
-      throw new Error(`Agent Office stop request failed: ${response.status}.`);
+    if (!skipAgentOffice) {
+      const response = await fetch(`${appUrl}/api/agent-office/stop`, {
+        method: "POST",
+        signal: AbortSignal.timeout(timeout),
+      });
+      if (!response.ok) {
+        throw new Error(`Agent Office stop request failed: ${response.status}.`);
+      }
     }
   } catch (error) {
     desktopLog(

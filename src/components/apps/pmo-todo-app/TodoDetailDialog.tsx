@@ -1,14 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { XIcon } from "@phosphor-icons/react";
 import {
   Button,
   Dialog,
   DialogContent,
   DialogDescription,
   DialogTitle,
-  IconButton,
   Input,
   ScrollArea,
   Tabs,
@@ -16,23 +14,28 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui";
-import { cn } from "@/lib/cn";
+import { addDays, describeInstant, isSnoozed, nextMondayAfter } from "@/lib/pmo/due";
 import {
   allCheckpointsComplete,
   checkpointProgress,
   deriveStage,
   type TodoPatch,
 } from "@/lib/pmo/todoLogic";
-import { PRIORITIES, type Todo } from "@/lib/pmo/types";
+import { PRIORITIES, type ReminderPrefs, type Todo } from "@/lib/pmo/types";
 import { patchTodo } from "./api";
 import { OriginalMessage } from "./OriginalMessage";
+import { SnoozeMenu } from "./SnoozeMenu";
 import { Field, Segmented, SourceBadge, TextArea } from "./parts";
 import { formatDay } from "./queueView";
+import { ActionItemsEditor, CheckpointsEditor } from "./TodoEditors";
 
 interface TodoDetailDialogProps {
   /** null closes the dialog. */
   todo: Todo | null;
   today: string;
+  /** Reminder preferences and the server's clock, for the snooze presets. */
+  reminders: ReminderPrefs;
+  nowIso: string;
   onSettled: () => void;
   onOpenChange: (open: boolean) => void;
 }
@@ -59,9 +62,17 @@ const fieldsOf = (todo: Todo): Fields => ({
   waitingOn: todo.waitingOn ?? "",
 });
 
+/** Changes only when a checkpoint's id or state does, so a dismissed "mark it
+ *  done?" offer comes back after the set of checkpoints changes and completes
+ *  again, but not on every poll. */
+const checkpointSignature = (todo: Todo) =>
+  `${todo.id}:${todo.checkpoints.map((c) => `${c.id}=${c.state}`).join(",")}`;
+
 export function TodoDetailDialog({
   todo,
   today,
+  reminders,
+  nowIso,
   onSettled,
   onOpenChange,
 }: TodoDetailDialogProps) {
@@ -71,7 +82,6 @@ export function TodoDetailDialog({
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [newItem, setNewItem] = useState("");
   const [dismissedOffer, setDismissedOffer] = useState<string | null>(null);
 
   if (todo && todo !== last) setLast(todo);
@@ -80,7 +90,6 @@ export function TodoDetailDialog({
     setFields(fieldsOf(todo));
     setDirty(false);
     setError(null);
-    setNewItem("");
   }
   const shown = todo ?? last;
   if (!shown || !fields) return null;
@@ -132,26 +141,67 @@ export function TodoDetailDialog({
 
   const open = shown.status === "open";
   const progress = checkpointProgress(shown);
+  const percent = progress.total ? Math.round((progress.done / progress.total) * 100) : 0;
   const stage = deriveStage(shown);
-  const offer = allCheckpointsComplete(shown) && dismissedOffer !== shown.id;
+  const signature = checkpointSignature(shown);
+  const offer = allCheckpointsComplete(shown) && dismissedOffer !== signature;
+  const snoozed = open && isSnoozed(shown, new Date(nowIso));
+
+  const dueChips: { label: string; value: string }[] = [
+    { label: "Today", value: today },
+    { label: "Tomorrow", value: addDays(today, 1) },
+    { label: "Next Monday", value: nextMondayAfter(today) },
+    { label: "Clear", value: "" },
+  ];
 
   return (
     <Dialog open={todo !== null} onOpenChange={onOpenChange}>
-      <DialogContent className="flex h-[min(82vh,700px)] max-w-3xl flex-col">
+      <DialogContent className="flex h-[min(86vh,760px)] max-w-3xl flex-col">
         <div className="flex items-center gap-2 pr-8">
           <SourceBadge source={shown.source.source} />
           <DialogTitle className="min-w-0 flex-1 truncate">{shown.title}</DialogTitle>
         </div>
-        <DialogDescription className="text-[12px]">
-          {open
-            ? stage
-              ? `Stage: ${stage}`
-              : "All checkpoints complete"
-            : `Marked ${shown.status}`}
-          {" · "}
-          {progress.done}/{progress.total} checkpoints
-          {shown.dueAt ? ` · Due ${formatDay(shown.dueAt, today)}` : ""}
-        </DialogDescription>
+        <div className="flex items-center justify-between gap-3">
+          <DialogDescription className="text-[12px]">
+            {open
+              ? stage
+                ? `Stage: ${stage}`
+                : progress.total > 0
+                  ? "All checkpoints complete"
+                  : "No checkpoints"
+              : `Marked ${shown.status}`}
+            {" · "}
+            {progress.done}/{progress.total} checkpoints
+            {shown.dueAt ? ` · Due ${formatDay(shown.dueAt, today)}` : ""}
+            {snoozed
+              ? ` · Snoozed until ${describeInstant(shown.reminders.snoozedUntil!, reminders.timeZone)}`
+              : ""}
+          </DialogDescription>
+          {open && (
+            <SnoozeMenu
+              todo={shown}
+              prefs={reminders}
+              nowIso={nowIso}
+              disabled={busy}
+              onSnooze={(until) => void apply({ snoozedUntil: until })}
+            />
+          )}
+        </div>
+        {progress.total > 0 && (
+          <div
+            className="bg-neutral-150 mt-2 h-2 overflow-hidden rounded-full"
+            role="progressbar"
+            aria-valuemin={0}
+            aria-valuemax={progress.total}
+            aria-valuenow={progress.done}
+            aria-label="Checkpoint progress"
+          >
+            <div
+              className="bg-ink ease-standard h-full rounded-full transition-[width] duration-300"
+              style={{ width: `${percent}%` }}
+            />
+          </div>
+        )}
 
         {offer && open && (
           <div className="border-border mt-3 flex items-center justify-between gap-3 rounded-lg border bg-neutral-50 px-3 py-2">
@@ -162,7 +212,7 @@ export function TodoDetailDialog({
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => setDismissedOffer(shown.id)}
+                onClick={() => setDismissedOffer(signature)}
               >
                 Not yet
               </Button>
@@ -183,7 +233,9 @@ export function TodoDetailDialog({
             <TabsTrigger value="items">
               Action items ({shown.actionItems.length})
             </TabsTrigger>
-            <TabsTrigger value="checkpoints">Checkpoints</TabsTrigger>
+            <TabsTrigger value="checkpoints">
+              Checkpoints ({progress.done}/{progress.total})
+            </TabsTrigger>
             <TabsTrigger value="original">Original message</TabsTrigger>
           </TabsList>
 
@@ -232,6 +284,18 @@ export function TodoDetailDialog({
                       value={fields.dueAt}
                       onChange={(e) => edit({ dueAt: e.target.value })}
                     />
+                    <span className="mt-1 flex flex-wrap gap-1.5">
+                      {dueChips.map((chip) => (
+                        <button
+                          key={chip.label}
+                          type="button"
+                          onClick={() => edit({ dueAt: chip.value })}
+                          className="text-ink-muted hover:text-ink rounded-pill border-border focus-visible:ring-accent border px-2 py-0.5 text-[11px] outline-none hover:bg-neutral-100 focus-visible:ring-2"
+                        >
+                          {chip.label}
+                        </button>
+                      ))}
+                    </span>
                   </Field>
                   <Field label="Waiting on">
                     <Input
@@ -239,6 +303,10 @@ export function TodoDetailDialog({
                       placeholder="Nobody"
                       onChange={(e) => edit({ waitingOn: e.target.value })}
                     />
+                    <span className="text-ink-faint text-[11px] leading-relaxed">
+                      Set this to get a chaser if nothing changes for{" "}
+                      {reminders.chaserDays} working days.
+                    </span>
                   </Field>
                 </div>
                 <Field label="Priority">
@@ -266,172 +334,19 @@ export function TodoDetailDialog({
 
           <TabsContent value="items" className="mt-3 min-h-0 flex-1">
             <ScrollArea className="h-full">
-              <ul className="flex flex-col gap-1.5 pr-3">
-                {shown.actionItems.length === 0 && (
-                  <li className="text-ink-faint text-[13px]">No action items yet.</li>
-                )}
-                {shown.actionItems.map((item) => (
-                  <li key={item.id} className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={item.done}
-                      disabled={busy || !open}
-                      onChange={(e) =>
-                        void apply({
-                          actionItems: [{ id: item.id, done: e.target.checked }],
-                        })
-                      }
-                      aria-label={item.text}
-                      className="accent-accent h-4 w-4 shrink-0"
-                    />
-                    <span
-                      className={cn(
-                        "min-w-0 flex-1 text-[13px]",
-                        item.done ? "text-ink-faint line-through" : "text-ink",
-                      )}
-                    >
-                      {item.text}
-                    </span>
-                    <IconButton
-                      aria-label="Remove action item"
-                      size="sm"
-                      disabled={busy || !open}
-                      onClick={() => void apply({ removeActionItemIds: [item.id] })}
-                    >
-                      <XIcon size={14} />
-                    </IconButton>
-                  </li>
-                ))}
-              </ul>
-              {open && (
-                <form
-                  className="mt-3 flex gap-2 pr-3"
-                  onSubmit={async (event) => {
-                    event.preventDefault();
-                    if (!newItem.trim()) return;
-                    if (await apply({ addActionItems: [{ text: newItem.trim() }] }))
-                      setNewItem("");
-                  }}
-                >
-                  <Input
-                    value={newItem}
-                    placeholder="Add an action item"
-                    onChange={(e) => setNewItem(e.target.value)}
-                    className="h-9"
-                  />
-                  <Button
-                    type="submit"
-                    variant="secondary"
-                    size="sm"
-                    disabled={busy || !newItem.trim()}
-                  >
-                    Add
-                  </Button>
-                </form>
-              )}
+              <ActionItemsEditor todo={shown} open={open} busy={busy} apply={apply} />
             </ScrollArea>
           </TabsContent>
 
           <TabsContent value="checkpoints" className="mt-3 min-h-0 flex-1">
             <ScrollArea className="h-full">
-              <ol className="flex flex-col gap-2 pr-3">
-                {shown.checkpoints.map((checkpoint) => {
-                  const isCurrent = open && checkpoint.label === stage;
-                  return (
-                    <li
-                      key={checkpoint.id}
-                      className={cn(
-                        "border-border/60 flex items-center gap-3 rounded-xl border px-3 py-2",
-                        isCurrent && "border-ink",
-                      )}
-                    >
-                      <span
-                        className={cn(
-                          "h-2.5 w-2.5 shrink-0 rounded-full border",
-                          checkpoint.state === "done" && "border-ink bg-ink",
-                          checkpoint.state === "skipped" &&
-                            "border-ink-faint bg-neutral-300",
-                          checkpoint.state === "pending" && "border-ink-faint",
-                        )}
-                      />
-                      <div className="min-w-0 flex-1">
-                        <p
-                          className={cn(
-                            "text-[13px]",
-                            checkpoint.state === "pending"
-                              ? "text-ink font-medium"
-                              : "text-ink-muted",
-                          )}
-                        >
-                          {checkpoint.label}
-                          {checkpoint.kind === "approval" && (
-                            <span className="text-ink-faint ml-2 text-[11px]">
-                              sign-off
-                            </span>
-                          )}
-                        </p>
-                        {checkpoint.doneAt && (
-                          <p className="text-ink-faint text-[11px]">
-                            {checkpoint.state}{" "}
-                            {new Date(checkpoint.doneAt).toLocaleDateString("en-GB", {
-                              day: "numeric",
-                              month: "short",
-                              timeZone: "Asia/Kolkata",
-                            })}
-                          </p>
-                        )}
-                      </div>
-                      {open && (
-                        <div className="flex shrink-0 gap-1.5">
-                          {checkpoint.state === "pending" ? (
-                            <>
-                              <Button
-                                size="sm"
-                                variant="secondary"
-                                disabled={busy}
-                                onClick={() =>
-                                  void apply({
-                                    checkpoints: [{ id: checkpoint.id, state: "done" }],
-                                  })
-                                }
-                              >
-                                Done
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                disabled={busy}
-                                onClick={() =>
-                                  void apply({
-                                    checkpoints: [
-                                      { id: checkpoint.id, state: "skipped" },
-                                    ],
-                                  })
-                                }
-                              >
-                                Skip
-                              </Button>
-                            </>
-                          ) : (
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              disabled={busy}
-                              onClick={() =>
-                                void apply({
-                                  checkpoints: [{ id: checkpoint.id, state: "pending" }],
-                                })
-                              }
-                            >
-                              Reopen
-                            </Button>
-                          )}
-                        </div>
-                      )}
-                    </li>
-                  );
-                })}
-              </ol>
+              <CheckpointsEditor
+                todo={shown}
+                open={open}
+                busy={busy}
+                apply={apply}
+                stage={stage}
+              />
             </ScrollArea>
           </TabsContent>
 

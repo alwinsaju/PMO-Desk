@@ -1,4 +1,5 @@
 // Assembles the one document the UI polls (GET /api/pmo/state).
+import { attentionSummary } from "../due.ts";
 import { istDate } from "../time.ts";
 import { teamsIsFiltering } from "../filter.ts";
 import type { PmoState, RuntimeSummary } from "../types.ts";
@@ -46,6 +47,7 @@ export async function buildState(
       ["pending", "structuring", "ready", "failed"].includes(p.status),
     ),
     todos: [...open, ...closed],
+    attention: attentionSummary(open, now, config.reminders),
     filtered: quarantine.slice(0, MAX_FILTERED_SHOWN),
     ingest: {
       inboxDir: last?.inboxDir ?? resolveInboxDir(config.inboxDir),

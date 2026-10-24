@@ -2,6 +2,17 @@
 // ("by Friday") are resolved against it. IST has no daylight saving.
 export const PMO_TIME_ZONE = "Asia/Kolkata";
 
+/** Is `timeZone` a name Intl knows (an IANA zone such as "Asia/Kolkata")? */
+export function isValidTimeZone(timeZone: string): boolean {
+  if (!timeZone.trim()) return false;
+  try {
+    new Intl.DateTimeFormat("en-CA", { timeZone });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** YYYY-MM-DD of an instant, as seen in IST. */
 export function istDate(instant: Date | string | number): string {
   return new Intl.DateTimeFormat("en-CA", {

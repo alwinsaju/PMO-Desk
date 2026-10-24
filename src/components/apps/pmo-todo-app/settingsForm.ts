@@ -18,7 +18,24 @@ export const LIST_FIELDS = [
   "blockedTerms",
 ] as const;
 export type ListField = (typeof LIST_FIELDS)[number];
-export type FormText = Record<ListField, string> & { retentionDays: string };
+/** The Reminders section: switches and times as the form holds them. */
+export interface RemindersForm {
+  enabled: boolean;
+  hideDetails: boolean;
+  quietOutsideHours: boolean;
+  digest: boolean;
+  keepRunningInTray: boolean;
+  timeZone: string;
+  workStart: string;
+  workEnd: string;
+  chaserDays: string;
+  /** 0 = Sunday. */
+  workDays: number[];
+}
+export type FormText = Record<ListField, string> & {
+  retentionDays: string;
+  reminders: RemindersForm;
+};
 
 export function formFromConfig(config: PmoConfig): FormText {
   const join = (values: string[]) => values.join("\n");
@@ -31,6 +48,11 @@ export function formFromConfig(config: PmoConfig): FormText {
     blockedDomains: join(config.blockedDomains),
     blockedTerms: join(config.blockedTerms),
     retentionDays: String(config.retentionDays),
+    reminders: {
+      ...config.reminders,
+      chaserDays: String(config.reminders.chaserDays),
+      workDays: [...config.reminders.workDays],
+    },
   };
 }
 
@@ -64,6 +86,15 @@ export function buildPatch(
     blockedDomains: lists.blockedDomains.map((entry) => entry.value),
     blockedTerms: lists.blockedTerms.map((entry) => entry.value),
     retentionDays: retention,
+    reminders: {
+      ...form.reminders,
+      timeZone: form.reminders.timeZone.trim(),
+      chaserDays:
+        form.reminders.chaserDays.trim() === ""
+          ? Number.NaN
+          : Number(form.reminders.chaserDays),
+      workDays: [...form.reminders.workDays].sort(),
+    },
   };
   const parsed = PmoConfigPatchSchema.safeParse(candidate);
   if (parsed.success) return { patch: parsed.data, errors: null };
@@ -71,6 +102,10 @@ export function buildPatch(
   const errors: Record<string, string> = {};
   for (const issue of parsed.error.issues) {
     const [head, second, third] = issue.path;
+    if (head === "reminders") {
+      errors[`reminders.${String(second)}`] ??= issue.message;
+      continue;
+    }
     const field: string =
       head === "me" ? (second === "names" ? "names" : "emails") : String(head);
     const index =

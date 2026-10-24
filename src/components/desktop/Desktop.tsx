@@ -7,6 +7,7 @@ import {
   PresenceAvatars,
 } from "@/components/ai-layer";
 import { DesktopContextMenu } from "./DesktopContextMenu";
+import { PmoReminders } from "./PmoReminders";
 import { SettingsMenu } from "./SettingsMenu";
 import { Wallpaper } from "./Wallpaper";
 
@@ -34,6 +35,7 @@ export function Desktop() {
       <WindowManager />
       <Dock />
       <SettingsMenu />
+      <PmoReminders />
 
       <CommandBar />
       <AICursor />
