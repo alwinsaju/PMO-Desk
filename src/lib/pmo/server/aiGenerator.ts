@@ -1,18 +1,33 @@
 // The real structuring model: the local AI runtime (src/lib/ai-runtime),
 // which talks only to Ollama on 127.0.0.1. No cloud model, no claude CLI.
-import { generateJson, getAiRuntimeConfig, getRuntimeStatus } from "@/lib/ai-runtime";
+import {
+  clampTimeoutMs,
+  generateJson,
+  getAiRuntimeConfig,
+  getRuntimeStatus,
+} from "@/lib/ai-runtime";
 import { AiStructuredSchema, type RuntimeSummary } from "../types.ts";
 import type { Generator } from "./structure.ts";
 
-/** A 7B model on CPU reading a 12k-character message can take minutes; the
- *  queue is background work, so this is generous on purpose. */
-const TIMEOUT_MS = Number(process.env.AI_OS_PMO_AI_TIMEOUT_MS) || 240_000;
+/** A 12B model on CPU reading a 12k-character message can take minutes; the
+ *  queue is background work, so this is generous on purpose. Clamped below
+ *  Node fetch's 300 s silence limit (see MAX_REQUEST_TIMEOUT_MS). */
+const TIMEOUT_MS = clampTimeoutMs(Number(process.env.AI_OS_PMO_AI_TIMEOUT_MS) || 240_000);
 
 export function createRuntimeGenerator(): Generator {
   return {
     model: () => getAiRuntimeConfig().defaultModel,
+    // think: false always. Reasoning makes a call 3-10x slower on this CPU and
+    // it then truncates or times out; the structured output needs no
+    // chain of thought.
     generate: ({ system, prompt }) =>
-      generateJson({ system, prompt, schema: AiStructuredSchema, timeoutMs: TIMEOUT_MS }),
+      generateJson({
+        system,
+        prompt,
+        schema: AiStructuredSchema,
+        timeoutMs: TIMEOUT_MS,
+        think: false,
+      }),
   };
 }
 
@@ -36,11 +51,13 @@ export async function runtimeSummary(): Promise<RuntimeSummary> {
       };
     } else {
       value = {
-        state: status.modelLoaded ? "ready" : "cold",
+        state: status.modelWarm ? "ready" : "cold",
         model,
-        message: status.modelLoaded
+        message: status.modelWarm
           ? null
-          : "Model not loaded yet; the first message takes longer.",
+          : status.modelLoaded
+            ? "Model is loading into memory; the first message can take 1-2 minutes extra."
+            : "Model not loaded yet; the first message can take 1-2 minutes extra.",
       };
     }
   } catch {

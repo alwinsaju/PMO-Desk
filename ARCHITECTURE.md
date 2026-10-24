@@ -401,8 +401,8 @@ URL. Import from server code only (route handlers, server modules).
 import { generateJson, generateText, getRuntimeStatus } from "@/lib/ai-runtime";
 
 const todo = await generateJson({ system, prompt: rawMessage, schema: todoZodSchema });
-// -> z.output<typeof todoZodSchema>; optional: model, timeoutMs
-const text = await generateText({ system, prompt }); // optional: model, timeoutMs, temperature
+// -> z.output<typeof todoZodSchema>; optional: model, timeoutMs, think
+const text = await generateText({ system, prompt }); // optional: model, timeoutMs, temperature, think
 ```
 
 `generateJson` sends the zod schema as Ollama's structured-output `format`,
@@ -413,11 +413,25 @@ Failures reject with `AiRuntimeError` whose `code` is `"runtime-down"`,
 All calls go through one FIFO queue with concurrency 1. Inference is CPU-only
 here (a cold load is ~15-20s, a warm short extraction ~3-5s, long inputs
 minutes), so call it from background work, not a blocking UI path. The default
-timeout is 5 minutes per attempt and does not count time spent waiting in
-the queue.
+timeout is 280 s per attempt and does not count time spent waiting in the
+queue. It is also the ceiling: every per-call `timeoutMs` (and
+`AI_OS_AI_TIMEOUT_MS`) is clamped to `MAX_REQUEST_TIMEOUT_MS` (280 s), because
+Node's fetch (undici) aborts a non-streaming request after 300 s without
+response headers and that would otherwise look like a dead server. If it
+happens anyway (a `UND_ERR_HEADERS_TIMEOUT` / `UND_ERR_BODY_TIMEOUT` cause) it
+is mapped to `"timeout"`, not `"runtime-down"`; only a failure to connect is
+`"runtime-down"`.
+
+**Thinking is off for background work.** `think: false` goes to Ollama on
+every PMO call (and on the warm-up and `/api/ai/command`). Reasoning models
+(gemma4, qwen3.5) otherwise spend minutes thinking on this CPU, then truncate
+or time out; do not enable it. `think` is left unset when a caller does not
+pass it, and `false` is accepted by non-thinking models too.
 
 Config (all optional env vars; defaults in `core.ts`): `OLLAMA_MODEL`
-(default `qwen2.5:7b-instruct-q4_K_M`), `OLLAMA_BASE_URL` (default
+(default `gemma4:12b`; fallback `qwen3.5:9b`, also think off. Both model
+choices come from a local bake-off on fictional messages: qwen2.5:7b obeyed
+prompt injection and got weekday dates wrong), `OLLAMA_BASE_URL` (default
 `http://127.0.0.1:11434`), `AI_OS_OLLAMA_EXE`, `AI_OS_AI_AUTOSTART=0` (never
 spawn Ollama), `AI_OS_AI_PREWARM=0`, `AI_OS_AI_KEEP_ALIVE`,
 `AI_OS_AI_TIMEOUT_MS`, `AI_OS_AI_NUM_CTX` (default 8192, sent on every call:
@@ -434,7 +448,12 @@ then PATH, then `%LOCALAPPDATA%\Programs\Ollama`; fixed args, `shell: false`,
 `windowsHide`, log in the OS temp dir) and owns it. `generateJson` also
 re-runs this check before every call, so an Ollama that died is restarted
 transparently. The default model is pre-warmed in the background (through the
-queue). On quit, an owned server has its models unloaded (`keep_alive: 0`) and
+queue) with a tiny real chat (one short message, a few tokens, `think: false`),
+not an empty `/api/generate`: that only allocates the model and the first real
+call still paid 60-90 s to page the weights in. `AI_OS_AI_PREWARM=0` turns it
+off. `getRuntimeStatus().modelWarm` is true only when the model is loaded and a
+real chat has run on it since (`modelLoaded` alone can still mean a slow first
+call). On quit, an owned server has its models unloaded (`keep_alive: 0`) and
 its process tree killed (`taskkill /T`): `desktop/main.cjs` calls
 `POST /api/ai/runtime/stop` (desktop mode only) next to the Agent Office stop,
 and a `process.on("exit")` hook covers dev-server exits. The Ollama child is
@@ -447,9 +466,11 @@ instrumentation and each route into separate module graphs.
 
 `GET /api/ai/runtime` is a read-only status snapshot (`running`, `ownedByUs`,
 `modelLoaded`, `queue.waiting`/`active`, ...); it never starts or stops
-anything. There is no UI indicator yet. `/api/ai/command` shares the config
-but still calls Ollama itself, because it needs `/api/chat` tool calling and
-should not queue behind long background jobs. Tests (`core.test.mjs`) cover
+anything. The PMO status bar is the only UI indicator. `/api/ai/command` shares
+the config (so it also runs `gemma4:12b`, which advertises the `tools`
+capability and was checked to make correct tool calls with `think: false`) but
+still calls Ollama itself, because it needs `/api/chat` tool calling and
+should not queue behind long background jobs. It sends `think: false` too. Tests (`core.test.mjs`) cover
 the queue, JSON repair/validation, exe resolution and the client against a
 fake `fetch`; none need a real Ollama. Pure logic lives in `core.ts` with no
 extensionless sibling imports, which is what lets plain Node import it.
@@ -484,13 +505,20 @@ src/lib/pmo/            Pure logic, one co-located *.test.mjs per area
   types.ts                zod: Intake, Proposal, Todo, TodoDraft, the model's
                           AiStructuredSchema (length limits live in the JSON
                           Schema via .meta(), clamping in transforms), config.
+                          `confidence` stays in the schema as a rough model
+                          estimate but the UI no longer shows it.
   filter.ts               The Deloitte-only filter (pure, first reject wins).
   dedupe.ts               source + sha256(sourceId), with the documented fallback.
   preprocess.ts           HTML -> text, strip quoted reply chains, drop base64 and
                           tracking links, truncate to ~12k chars. Client-safe.
   quote.ts                Hallucination guard: is `quote` really in the message?
   structurePrompt.ts      System/user prompts (message in <message> delimiters,
-                          marked as untrusted data).
+                          marked as untrusted data). `PROMPT_VERSION` is bumped
+                          on every wording change and logged with each AI call.
+                          The user turn ends with a computed "Date hints" block
+                          (received day + next 14 days as `Mon 2026-10-26`, IST,
+                          from time.ts) so the model copies dates instead of
+                          counting; it sits outside the untrusted delimiters.
   todoLogic.ts            Draft -> Todo, derived stage/progress, patches.
                           Client-safe (no node imports).
   checkpointTemplates.ts  The fixed catalog: simple, deliverable, approval, followup.
@@ -502,7 +530,9 @@ src/lib/pmo/            Pure logic, one co-located *.test.mjs per area
     actions.ts            The ONLY code that creates/changes to-dos: approve,
                           reject, retry, manual create, patch, config.
     originCheck.ts, http.ts  Origin/Host guard + { ok, reason? } envelope.
-    aiGenerator.ts        The real model (src/lib/ai-runtime generateJson).
+    aiGenerator.ts        The real model (src/lib/ai-runtime generateJson,
+                          `think: false`, 240 s timeout, clamped below 280 s)
+                          and the runtime summary for the status bar.
     stubGenerator.ts      Fake model for tests / `PMO_AI_STUB=1`.
 src/app/api/pmo/        state, ingest/scan, queue/[id] (PATCH) + approve|reject|retry,
                         raw/[intakeId], todos, todos/[id], config. Each route
@@ -538,5 +568,7 @@ failures are local state only: `runtime-down` / `model-missing` pause the queue
 and leave items `pending` (banner in the UI; every scan retries), a timeout is
 retried once then `failed`, `invalid-output` is `failed` after the runtime's own
 repair, at most 3 model attempts per item, and failed items offer *Retry* and
-*Create manually from original*. A 7B model on this CPU takes roughly a minute
-per message, so structuring is strictly background work.
+*Create manually from original*. `gemma4:12b` (think off) on this CPU takes
+roughly 50-100 s per message, and the first one after a cold start 1-2 minutes
+more (the status bar says so while the model is not yet warm), so structuring
+is strictly background work.

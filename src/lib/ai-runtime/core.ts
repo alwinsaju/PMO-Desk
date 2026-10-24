@@ -38,14 +38,31 @@ export interface AiRuntimeConfig {
   startTimeoutMs: number;
 }
 
+/**
+ * Node's fetch (undici) aborts a non-streaming request after 300 s without
+ * response headers, and that failure looks like a dead server. Every call is
+ * therefore capped just below it, so our own timeout always fires first and is
+ * reported as "timeout" rather than "runtime-down".
+ */
+export const MAX_REQUEST_TIMEOUT_MS = 280_000;
+
+export function clampTimeoutMs(timeoutMs: number): number {
+  return Math.min(MAX_REQUEST_TIMEOUT_MS, Math.max(1, Math.floor(timeoutMs)));
+}
+
 export const DEFAULT_AI_RUNTIME_CONFIG: AiRuntimeConfig = {
   baseUrl: "http://127.0.0.1:11434",
-  defaultModel: "qwen2.5:7b-instruct-q4_K_M",
+  // Chosen by a local bake-off (PMO structuring): best date/owner accuracy and
+  // prompt-injection resistance of the models that fit this CPU. Run it with
+  // `think: false`; reasoning makes calls several times slower. Fallback:
+  // qwen3.5:9b (also think off). Both support /api/chat tool calling.
+  defaultModel: "gemma4:12b",
   keepAlive: "30m",
   externalKeepAlive: "5m",
-  // CPU-only inference: a cold load is ~15s and a long extraction can take
+  // CPU-only inference: a cold load is ~20s and a long extraction can take
   // minutes. Generous on purpose; callers are expected to run in background.
-  requestTimeoutMs: 300_000,
+  // Per-call values are capped at MAX_REQUEST_TIMEOUT_MS.
+  requestTimeoutMs: MAX_REQUEST_TIMEOUT_MS,
   numCtx: 8192,
   maxOutputTokens: 2048,
   autoStart: true,
@@ -81,7 +98,7 @@ export function loadAiRuntimeConfig(
     ollamaExe: env.AI_OS_OLLAMA_EXE?.trim() || undefined,
     keepAlive: env.AI_OS_AI_KEEP_ALIVE?.trim() || d.keepAlive,
     externalKeepAlive: d.externalKeepAlive,
-    requestTimeoutMs: positiveInt(env.AI_OS_AI_TIMEOUT_MS, d.requestTimeoutMs),
+    requestTimeoutMs: clampTimeoutMs(positiveInt(env.AI_OS_AI_TIMEOUT_MS, d.requestTimeoutMs)),
     numCtx: positiveInt(env.AI_OS_AI_NUM_CTX, d.numCtx),
     maxOutputTokens: positiveInt(env.AI_OS_AI_MAX_OUTPUT_TOKENS, d.maxOutputTokens),
     autoStart: flag(env.AI_OS_AI_AUTOSTART, d.autoStart),
@@ -402,6 +419,21 @@ export function buildRepairPrompt(issues: string[]): string {
   return `That reply was rejected: ${issues.join("; ")}. Reply again with ONLY the corrected JSON that matches the schema — no prose, no code fences.`;
 }
 
+/** Did fetch give up because the server stayed silent (undici's headers/body
+ *  timeout, `TypeError: fetch failed` with that cause)? Ollama was busy
+ *  generating then, not gone, so it must not be reported as runtime-down.
+ *  Matches the cause's error code, not its message; a connect timeout is a
+ *  different code and stays runtime-down. */
+export function isFetchSilenceTimeout(error: unknown): boolean {
+  let current: unknown = error;
+  for (let depth = 0; depth < 4 && current instanceof Error; depth++) {
+    const code = (current as { code?: unknown }).code;
+    if (code === "UND_ERR_HEADERS_TIMEOUT" || code === "UND_ERR_BODY_TIMEOUT") return true;
+    current = current.cause;
+  }
+  return false;
+}
+
 function truncate(text: string, max = 400): string {
   return text.length > max ? `${text.slice(0, max)}…` : text;
 }
@@ -414,6 +446,9 @@ export interface ChatMessage {
   role: "system" | "user" | "assistant";
   content: string;
 }
+
+const WARM_PROMPT = "Reply with the single word: ready";
+const WARM_NUM_PREDICT = 8;
 
 export interface OllamaClientDeps {
   config: AiRuntimeConfig;
@@ -459,6 +494,8 @@ interface ChatRequest {
   temperature: number;
   timeoutMs: number;
   think?: boolean;
+  /** Overrides config.maxOutputTokens (the warm-up asks for a few tokens). */
+  numPredict?: number;
 }
 
 interface ChatReply {
@@ -479,20 +516,21 @@ export function createOllamaClient(deps: OllamaClientDeps) {
     route: string,
     init: { method?: string; body?: unknown; timeoutMs: number; model?: string },
   ): Promise<unknown> {
+    const timeoutMs = clampTimeoutMs(init.timeoutMs);
     let response: Response;
     try {
       response = await doFetch(`${config.baseUrl}${route}`, {
         method: init.method ?? "POST",
         headers: { "Content-Type": "application/json" },
         body: init.body === undefined ? undefined : JSON.stringify(init.body),
-        signal: AbortSignal.timeout(init.timeoutMs),
+        signal: AbortSignal.timeout(timeoutMs),
       });
     } catch (error) {
       const name = error instanceof Error ? error.name : "";
-      if (name === "TimeoutError" || name === "AbortError") {
+      if (name === "TimeoutError" || name === "AbortError" || isFetchSilenceTimeout(error)) {
         throw new AiRuntimeError(
           "timeout",
-          `The local AI model did not answer within ${Math.round(init.timeoutMs / 1000)}s.`,
+          `The local AI model did not answer within ${Math.round(timeoutMs / 1000)}s.`,
           { cause: error },
         );
       }
@@ -553,7 +591,7 @@ export function createOllamaClient(deps: OllamaClientDeps) {
         options: {
           temperature: req.temperature,
           num_ctx: config.numCtx,
-          num_predict: config.maxOutputTokens,
+          num_predict: req.numPredict ?? config.maxOutputTokens,
         },
       },
     })) as { message?: { content?: unknown }; done_reason?: unknown } | null;
@@ -668,19 +706,19 @@ export function createOllamaClient(deps: OllamaClientDeps) {
     });
   }
 
-  /** Load a model into memory (empty generate) with the standard keep_alive
-   *  and num_ctx, through the queue so it never races a real call. */
+  /** Make a model resident with the standard keep_alive and num_ctx, through
+   *  the queue so it never races a real call. An empty /api/generate only
+   *  allocates the model: the first real call then still spent 60-90 s paging
+   *  the weights in. A tiny real chat touches them, so this is one. */
   function warm(model: string = config.defaultModel): Promise<void> {
     return enqueue(async () => {
-      await request("/api/generate", {
+      await chat({
         model,
+        messages: [{ role: "user", content: WARM_PROMPT }],
+        temperature: 0,
         timeoutMs: config.requestTimeoutMs,
-        body: {
-          model,
-          stream: false,
-          keep_alive: keepAlive(),
-          options: { num_ctx: config.numCtx },
-        },
+        think: false,
+        numPredict: WARM_NUM_PREDICT,
       });
     });
   }

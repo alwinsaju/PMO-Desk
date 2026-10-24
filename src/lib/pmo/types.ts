@@ -277,6 +277,8 @@ export const AiOwnerSchema = z.object({
 export const AiStructuredSchema = z.object({
   reason: clip(200),
   isActionable: z.boolean(),
+  // A rough self-estimate from a small model: kept in the schema and on the
+  // proposal for the record, but the UI does not show it (it is not calibrated).
   confidence: z
     .number()
     .transform((value) => Math.min(1, Math.max(0, Number.isFinite(value) ? value : 0))),

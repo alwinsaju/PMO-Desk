@@ -91,6 +91,12 @@ export function IngestStatusBar({
             )}
           />
           {modelText}
+          {runtime.state === "cold" && !paused && runtime.message && (
+            <span className="text-ink-faint">
+              {" · "}
+              {runtime.message}
+            </span>
+          )}
           {structuring.total > 0 && !paused && (
             <span className="text-ink-faint">
               {" · structuring "}

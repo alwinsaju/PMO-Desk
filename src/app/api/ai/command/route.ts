@@ -277,6 +277,11 @@ export async function POST(request: Request) {
   const ollamaRequest = {
     model: OLLAMA_MODEL,
     stream: false,
+    // The shared default (gemma4:12b) is a reasoning model that thinks unless
+    // told not to. A short command only adds a few hundred characters of
+    // thinking, but it is unbounded and REQUEST_TIMEOUT_MS leaves no slack on
+    // this CPU. Tool calling works with it off (checked against gemma4:12b).
+    think: false,
     // Favor consistent tool-use/argument formatting over creative
     // conversational variety — this is a command surface, not a chat
     // companion, and a lower temperature measurably helped this 7B model

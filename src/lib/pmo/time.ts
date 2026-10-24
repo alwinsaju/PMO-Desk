@@ -12,6 +12,34 @@ export function istDate(instant: Date | string | number): string {
   }).format(new Date(instant));
 }
 
+const WEEKDAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+/** "Mon 2026-10-26" for a YYYY-MM-DD moved by `offsetDays`. Plain calendar
+ *  arithmetic in UTC, so month, year and leap-day rollover are exact. */
+function labelledDay(isoDay: string, offsetDays: number): string {
+  const [year, month, day] = isoDay.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day + offsetDays));
+  return `${WEEKDAY_SHORT[date.getUTCDay()]} ${date.toISOString().slice(0, 10)}`;
+}
+
+/**
+ * The received day and the following `days` days as `Mon 2026-10-26` labels,
+ * seen in IST, so the model copies a weekday's date instead of counting.
+ * null when the instant is not a valid date.
+ */
+export function istDayLabels(
+  instant: Date | string | number,
+  days = 14,
+): { received: string; upcoming: string[] } | null {
+  const date = new Date(instant);
+  if (Number.isNaN(date.getTime())) return null;
+  const today = istDate(date);
+  return {
+    received: labelledDay(today, 0),
+    upcoming: Array.from({ length: days }, (_, i) => labelledDay(today, i + 1)),
+  };
+}
+
 /** "2026-10-22T09:14 IST (Thursday 22 October 2026)" for the model's context. */
 export function istStamp(instant: Date | string | number): string {
   const date = new Date(instant);

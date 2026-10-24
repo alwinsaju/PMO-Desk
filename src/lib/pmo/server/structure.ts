@@ -4,7 +4,7 @@
 // in service.ts. Failures here are local state only: nothing is sent anywhere.
 import { prepareForModel, displayText } from "../preprocess.ts";
 import { groundQuote } from "../quote.ts";
-import { buildSystemPrompt, buildUserPrompt } from "../structurePrompt.ts";
+import { PROMPT_VERSION, buildSystemPrompt, buildUserPrompt } from "../structurePrompt.ts";
 import { MAX_AI_ATTEMPTS, type AiStructured, type Proposal } from "../types.ts";
 import type { Store } from "./store.ts";
 
@@ -212,6 +212,7 @@ export class StructuringWorker {
           intakeId: claimed.intakeId,
           model: this.generator.model(),
           bytes,
+          promptVersion: PROMPT_VERSION,
           durationMs,
           outcome: "ok",
         });
@@ -233,6 +234,7 @@ export class StructuringWorker {
           intakeId: claimed.intakeId,
           model: this.generator.model(),
           bytes,
+          promptVersion: PROMPT_VERSION,
           durationMs,
           outcome: kind,
         });

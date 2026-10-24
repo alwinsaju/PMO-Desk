@@ -223,9 +223,6 @@ export function ProposalDialog({
             {shown.ai.model && shown.ai.durationMs !== null
               ? `${shown.ai.model} · ${(shown.ai.durationMs / 1000).toFixed(1)} s`
               : ""}
-            {shown.confidence !== null
-              ? ` · confidence ${Math.round(shown.confidence * 100)}%`
-              : ""}
           </p>
           <div className="flex shrink-0 gap-2">
             {isFailed && !manual && shown.ai.attempts < MAX_AI_ATTEMPTS && (

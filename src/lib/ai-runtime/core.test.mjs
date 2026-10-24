@@ -8,9 +8,12 @@ import {
   AiRuntimeError,
   DEFAULT_AI_RUNTIME_CONFIG,
   FifoQueue,
+  MAX_REQUEST_TIMEOUT_MS,
   buildRepairPrompt,
+  clampTimeoutMs,
   createOllamaClient,
   extractJsonText,
+  isFetchSilenceTimeout,
   isLocalBaseUrl,
   isOllamaImageName,
   loadAiRuntimeConfig,
@@ -162,9 +165,9 @@ describe("JSON extraction, repair and validation", () => {
 });
 
 describe("config", () => {
-  it("defaults to qwen on the standard port", () => {
+  it("defaults to gemma4 on the standard port", () => {
     const config = loadAiRuntimeConfig({});
-    assert.equal(config.defaultModel, "qwen2.5:7b-instruct-q4_K_M");
+    assert.equal(config.defaultModel, "gemma4:12b");
     assert.equal(config.baseUrl, "http://127.0.0.1:11434");
     assert.equal(config.autoStart, true);
     assert.deepEqual(config, { ...DEFAULT_AI_RUNTIME_CONFIG, ollamaExe: undefined });
@@ -187,6 +190,19 @@ describe("config", () => {
     assert.equal(config.prewarm, false);
     assert.equal(config.requestTimeoutMs, 1234);
     assert.equal(config.numCtx, DEFAULT_AI_RUNTIME_CONFIG.numCtx);
+  });
+
+  it("never lets the timeout reach fetch's own 300 s limit", () => {
+    assert.ok(MAX_REQUEST_TIMEOUT_MS <= 280_000);
+    assert.equal(DEFAULT_AI_RUNTIME_CONFIG.requestTimeoutMs, MAX_REQUEST_TIMEOUT_MS);
+    assert.equal(
+      loadAiRuntimeConfig({ AI_OS_AI_TIMEOUT_MS: "900000" }).requestTimeoutMs,
+      MAX_REQUEST_TIMEOUT_MS,
+    );
+    assert.equal(clampTimeoutMs(240_000), 240_000);
+    assert.equal(clampTimeoutMs(300_000), MAX_REQUEST_TIMEOUT_MS);
+    assert.equal(clampTimeoutMs(Number.MAX_SAFE_INTEGER), MAX_REQUEST_TIMEOUT_MS);
+    assert.equal(clampTimeoutMs(0), 1);
   });
 
   it("only treats loopback URLs as local", () => {
@@ -475,6 +491,57 @@ describe("generateJson", () => {
     );
   });
 
+  it("clamps a longer per-call timeout and reports the clamped value", async () => {
+    const { client } = makeClient(() => {
+      throw new DOMException("The operation was aborted due to timeout", "TimeoutError");
+    });
+    await assert.rejects(
+      client.generateText({ prompt: "x", timeoutMs: 600_000 }),
+      (error) => error.code === "timeout" && /within 280s/.test(error.message),
+    );
+  });
+
+  it("maps fetch's 300 s silence abort to timeout, not runtime-down", async () => {
+    // What Node's fetch really throws: TypeError "fetch failed" whose cause
+    // carries the undici code (checked against undici 7).
+    const undiciError = (code, name) =>
+      Object.assign(new TypeError("fetch failed"), {
+        cause: Object.assign(new Error(name), { name, code }),
+      });
+    for (const [code, name] of [
+      ["UND_ERR_HEADERS_TIMEOUT", "HeadersTimeoutError"],
+      ["UND_ERR_BODY_TIMEOUT", "BodyTimeoutError"],
+    ]) {
+      const { client } = makeClient(() => {
+        throw undiciError(code, name);
+      });
+      await assert.rejects(
+        client.generateJson({ prompt: "x", schema: todoSchema }),
+        (error) => error.code === "timeout",
+      );
+    }
+
+    // Not being able to connect at all is still a dead server.
+    const refused = makeClient(() => {
+      throw undiciError("UND_ERR_CONNECT_TIMEOUT", "ConnectTimeoutError");
+    });
+    await assert.rejects(
+      refused.client.generateText({ prompt: "x" }),
+      (error) => error.code === "runtime-down",
+    );
+  });
+
+  it("recognizes the undici silence timeouts only by their code", () => {
+    const wrap = (cause) => Object.assign(new TypeError("fetch failed"), { cause });
+    const coded = (code) => Object.assign(new Error("x"), { code });
+    assert.equal(isFetchSilenceTimeout(wrap(coded("UND_ERR_HEADERS_TIMEOUT"))), true);
+    assert.equal(isFetchSilenceTimeout(wrap(wrap(coded("UND_ERR_BODY_TIMEOUT")))), true);
+    assert.equal(isFetchSilenceTimeout(wrap(coded("ECONNREFUSED"))), false);
+    assert.equal(isFetchSilenceTimeout(new Error("Headers Timeout Error")), false);
+    assert.equal(isFetchSilenceTimeout("UND_ERR_HEADERS_TIMEOUT"), false);
+    assert.equal(isFetchSilenceTimeout(undefined), false);
+  });
+
   it("runs the ensure hook inside the queue slot before each call", async () => {
     const order = [];
     const queue = new FifoQueue();
@@ -579,15 +646,41 @@ describe("generateText and model control", () => {
     assert.equal(calls[0].keep_alive, "5m");
   });
 
-  it("warm loads the model with the standard num_ctx; unload sends keep_alive 0", async () => {
-    const { client, calls } = makeClient(() => json({ done: true }));
+  it("warm is a tiny real chat (weights paged in); unload sends keep_alive 0", async () => {
+    const { client, calls } = makeClient((call) =>
+      call.route === "/api/chat" ? chatReply("ready") : json({ done: true }),
+    );
     await client.warm();
-    await client.unload("qwen2.5:7b-instruct-q4_K_M");
-    assert.equal(calls[0].route, "/api/generate");
+    await client.unload("gemma4:12b");
+    assert.equal(calls[0].route, "/api/chat");
+    assert.equal(calls[0].body.model, DEFAULT_AI_RUNTIME_CONFIG.defaultModel);
+    assert.equal(calls[0].body.messages.length, 1);
+    assert.equal(calls[0].body.messages[0].role, "user");
+    assert.equal(calls[0].body.think, false);
+    assert.equal(calls[0].body.stream, false);
+    assert.ok(calls[0].body.options.num_predict <= 16, "only a few tokens");
     assert.equal(calls[0].body.options.num_ctx, DEFAULT_AI_RUNTIME_CONFIG.numCtx);
     assert.equal(calls[0].body.keep_alive, DEFAULT_AI_RUNTIME_CONFIG.keepAlive);
-    assert.equal(calls[0].body.prompt, undefined);
+    assert.equal(calls[1].route, "/api/generate");
     assert.equal(calls[1].body.keep_alive, 0);
+  });
+
+  it("warm goes through the queue behind a running job", async () => {
+    let release;
+    const order = [];
+    const { client } = makeClient(async (call) => {
+      order.push(call.body.messages[0].content);
+      if (order.length === 1) await new Promise((resolve) => (release = resolve));
+      return chatReply("ok");
+    });
+    const first = client.generateText({ prompt: "real job" });
+    const warming = client.warm();
+    await tick();
+    await tick();
+    assert.deepEqual(order, ["real job"]);
+    release();
+    await Promise.all([first, warming]);
+    assert.equal(order.length, 2);
   });
 
   it("probe and model listings never throw / map names", async () => {

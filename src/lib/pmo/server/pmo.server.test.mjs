@@ -286,6 +286,8 @@ describe("structuring", () => {
     assert.equal(log.length, 1);
     assert.equal(log[0].outcome, "ok");
     assert.equal(log[0].intakeId, proposal.intakeId);
+    assert.equal(log[0].promptVersion, 2);
+    assert.ok(prompt.includes("Date hints (computed"));
     assert.ok(
       log[0].bytes > 100 &&
         typeof log[0].durationMs === "number" &&

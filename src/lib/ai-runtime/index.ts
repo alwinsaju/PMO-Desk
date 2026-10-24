@@ -26,7 +26,12 @@ import {
 } from "./lifecycle";
 import type { z } from "zod";
 
-export { AiRuntimeError, isAiRuntimeError } from "./core";
+export {
+  AiRuntimeError,
+  MAX_REQUEST_TIMEOUT_MS,
+  clampTimeoutMs,
+  isAiRuntimeError,
+} from "./core";
 export type {
   AiRuntimeConfig,
   AiRuntimeErrorCode,
@@ -50,6 +55,10 @@ export interface AiRuntimeStatus {
   modelInstalled: boolean | null;
   /** Is the default model resident in memory right now? */
   modelLoaded: boolean;
+  /** Loaded AND a real chat has run on it since (the pre-warm or any call), so
+   *  the weights are paged in and the next call is not slow. A model that is
+   *  merely "loaded" can still make the first call take 1-2 minutes extra. */
+  modelWarm: boolean;
   loadedModels: string[];
   queue: { waiting: number; active: boolean };
   /** May AI OS start Ollama on its own if it is down? */
@@ -61,6 +70,9 @@ export interface AiRuntimeStatus {
 interface SharedRuntimeState {
   queue: FifoQueue;
   prewarmStarted: boolean;
+  /** Normalized name of a model a real chat has completed on since it was
+   *  last loaded; cleared once /api/ps no longer lists it. */
+  warmModel: string | null;
 }
 
 declare global {
@@ -74,7 +86,11 @@ declare global {
 // error classes stay per instance, so the AiRuntimeError a caller gets is
 // the one from the module it imported.
 function shared(): SharedRuntimeState {
-  globalThis.aiOsAiRuntime ??= { queue: new FifoQueue(), prewarmStarted: false };
+  globalThis.aiOsAiRuntime ??= {
+    queue: new FifoQueue(),
+    prewarmStarted: false,
+    warmModel: null,
+  };
   return globalThis.aiOsAiRuntime;
 }
 
@@ -118,15 +134,25 @@ export function getAiRuntimeConfig(): AiRuntimeConfig {
  * a blocking UI path. Rejects with AiRuntimeError (code: "runtime-down" |
  * "model-missing" | "timeout" | "invalid-output").
  */
-export function generateJson<S extends z.ZodType>(
+export async function generateJson<S extends z.ZodType>(
   options: GenerateJsonOptions<S>,
 ): Promise<z.output<S>> {
-  return runtime().client.generateJson(options);
+  const { client, config } = runtime();
+  const result = await client.generateJson(options);
+  markWarm(options.model ?? config.defaultModel);
+  return result;
 }
 
 /** Plain text completion through the same queue. Rejects with AiRuntimeError. */
-export function generateText(options: GenerateTextOptions): Promise<string> {
-  return runtime().client.generateText(options);
+export async function generateText(options: GenerateTextOptions): Promise<string> {
+  const { client, config } = runtime();
+  const result = await client.generateText(options);
+  markWarm(options.model ?? config.defaultModel);
+  return result;
+}
+
+function markWarm(model: string): void {
+  shared().warmModel = normalizeModelName(model);
 }
 
 /**
@@ -143,7 +169,11 @@ export async function ensureRuntime(
 
   const state = shared();
   const wantPrewarm = options.prewarm ?? rt.config.prewarm;
-  if (result.started) state.prewarmStarted = false; // fresh server: nothing loaded
+  if (result.started) {
+    // Fresh server: nothing loaded, nothing warm.
+    state.prewarmStarted = false;
+    state.warmModel = null;
+  }
   if (wantPrewarm && !state.prewarmStarted) {
     state.prewarmStarted = true;
     void prewarm(rt);
@@ -154,11 +184,12 @@ export async function ensureRuntime(
 async function prewarm(rt: AiRuntime): Promise<void> {
   const { client, config } = rt;
   try {
-    const wanted = normalizeModelName(config.defaultModel);
-    const loaded = (await client.listLoaded()).map(normalizeModelName);
-    if (loaded.includes(wanted)) return;
+    // Always a real (tiny) chat, even if /api/ps already lists the model:
+    // "loaded" does not mean the weights are paged in, and on a resident
+    // model the chat costs about a second.
     await client.warm(config.defaultModel);
-    console.log(`[ai-runtime] model ${config.defaultModel} loaded`);
+    markWarm(config.defaultModel);
+    console.log(`[ai-runtime] model ${config.defaultModel} loaded and warm`);
   } catch (error) {
     // Pre-warming is an optimization; a missing model etc. surfaces on the
     // first real call with its proper typed error.
@@ -183,7 +214,8 @@ export async function stopRuntime(): Promise<{ stopped: boolean }> {
 /** Read-only snapshot for /api/ai/runtime. Never starts or stops anything. */
 export async function getRuntimeStatus(): Promise<AiRuntimeStatus> {
   const { config, client } = runtime();
-  const { queue } = shared();
+  const runtimeState = shared();
+  const { queue } = runtimeState;
   const state = getProcessState();
   const base = {
     ownedByUs: state.owned,
@@ -201,6 +233,7 @@ export async function getRuntimeStatus(): Promise<AiRuntimeStatus> {
       running: false,
       modelInstalled: null,
       modelLoaded: false,
+      modelWarm: false,
       loadedModels: [],
     };
   }
@@ -213,15 +246,23 @@ export async function getRuntimeStatus(): Promise<AiRuntimeStatus> {
     ),
     client.listLoaded().then(
       (names) => names,
-      () => [] as string[],
+      () => null,
     ),
   ]);
+  const modelLoaded = (loaded ?? []).map(normalizeModelName).includes(wanted);
+  // Unloaded (keep_alive expired, server restarted): whatever was warm is gone.
+  if (loaded !== null && !modelLoaded && runtimeState.warmModel === wanted) {
+    runtimeState.warmModel = null;
+  }
   return {
     ...base,
     running: true,
     version: probe.version,
     modelInstalled: installed === null ? null : installed.includes(wanted),
-    modelLoaded: loaded.map(normalizeModelName).includes(wanted),
-    loadedModels: loaded,
+    modelLoaded,
+    // With the pre-warm off nothing here ever marks it warm before a real
+    // call, so a loaded model is taken at its word.
+    modelWarm: modelLoaded && (runtimeState.warmModel === wanted || !config.prewarm),
+    loadedModels: loaded ?? [],
   };
 }
