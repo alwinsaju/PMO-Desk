@@ -13,6 +13,7 @@ const { spawn } = require("node:child_process");
 const { appendFileSync, existsSync } = require("node:fs");
 const net = require("node:net");
 const path = require("node:path");
+const displaySettings = require("./display-settings.cjs");
 const launchConfig = require("./launch-config.cjs");
 const pmoNotifier = require("./pmo-notifier.cjs");
 
@@ -20,6 +21,16 @@ const pmoNotifier = require("./pmo-notifier.cjs");
 // build.appId in package.json (the installer registers the same one).
 const APP_USER_MODEL_ID = "com.aios.desktop";
 app.setAppUserModelId(APP_USER_MODEL_ID);
+
+// Hardware acceleration is a process-start decision in Chromium, so the saved
+// choice (display-settings.cjs; written by the Settings toggle) is read here,
+// synchronously, before the app is ready. OFF (the default) disables it.
+const displayFile = displaySettings.settingsFilePath(app.getPath("userData"));
+/** What this process was started with; the toggle only takes effect on restart. */
+const launchedDisplay = displaySettings.readDisplaySettings(displayFile);
+if (displaySettings.shouldDisableHardwareAcceleration(launchedDisplay)) {
+  app.disableHardwareAcceleration();
+}
 
 const HOST = "127.0.0.1";
 const PREFERRED_PORT = 3100;
@@ -595,6 +606,86 @@ ipcMain.handle("pmo:renderer-ready", (event) => {
   const pending = pendingOpen;
   pendingOpen = null;
   return pending;
+});
+
+// ---------------------------------------------------------------------------
+// Display settings: hardware acceleration (needs a restart) + rich/lean effects
+// ---------------------------------------------------------------------------
+
+/** The page's visual mode follows the saved setting right away (CSS), while the
+ *  GPU choice only applies after a restart. Sender identity only: the preload
+ *  asks while the page is still loading, and this reveals nothing sensitive. */
+ipcMain.on("display:get-mode", (event) => {
+  event.returnValue =
+    mainWindow && event.sender === mainWindow.webContents
+      ? displaySettings.fxModeFor(displaySettings.readDisplaySettings(displayFile))
+      : "lean";
+});
+
+function displayState() {
+  return {
+    saved: displaySettings.readDisplaySettings(displayFile).hardwareAcceleration,
+    ...displaySettings.describeGpu({
+      featureStatus: app.getGPUFeatureStatus(),
+      launchedWithGpu:
+        !displaySettings.shouldDisableHardwareAcceleration(launchedDisplay),
+    }),
+  };
+}
+
+ipcMain.handle("display:get-state", (event) =>
+  isFromMainWindow(event) ? displayState() : null,
+);
+
+ipcMain.handle("display:set-hardware-acceleration", (event, enabled) => {
+  if (!isFromMainWindow(event) || typeof enabled !== "boolean") {
+    return null;
+  }
+  try {
+    displaySettings.writeDisplaySettings(displayFile, { hardwareAcceleration: enabled });
+    desktopLog(
+      `Hardware acceleration set to ${enabled ? "ON" : "OFF"} (applies after a restart).`,
+    );
+  } catch (error) {
+    desktopLog(
+      `Could not save the hardware acceleration setting: ${error && error.message}`,
+      "error",
+    );
+    return { ...displayState(), error: "Could not save the setting." };
+  }
+  return displayState();
+});
+
+/** "Restart to apply": relaunch the app. The normal quit path runs first (it
+ *  stops the UI server, the Agent Office backend this app owns and the AI
+ *  runtime), then the new instance starts. Warns first if a task is running. */
+ipcMain.handle("display:relaunch", async (event) => {
+  if (!isFromMainWindow(event) || isQuitting) {
+    return false;
+  }
+  const busy = skipAgentOffice ? [] : await listBusyTasks();
+  if (busy.length) {
+    const { response } = await showMessage({
+      type: "warning",
+      title: "Restart AI OS",
+      message: "Restart AI OS to apply the display setting?",
+      detail: `WARNING: ${busy.length} task(s) are not idle (${busy.join(", ")}). Restarting STOPS those runs.`,
+      buttons: ["Cancel", "Restart and stop runs"],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+    });
+    if (response !== 1) {
+      return false;
+    }
+  }
+  desktopLog("Relaunching AI OS to apply the display setting.");
+  // Without this the new instance can lose the single-instance race against
+  // this one while it is still shutting down.
+  app.releaseSingleInstanceLock();
+  app.relaunch();
+  app.quit();
+  return true;
 });
 
 function updateWindowTitle() {

@@ -11,6 +11,7 @@ import {
   ArrowsClockwiseIcon,
   CircleNotchIcon,
   GearSixIcon,
+  LightningIcon,
   MoonIcon,
   SunIcon,
 } from "@phosphor-icons/react";
@@ -27,6 +28,7 @@ import { cn } from "@/lib/cn";
 import { useBrand } from "@/lib/useBrand";
 import { useTheme } from "@/lib/useTheme";
 import { useBackendRestart, type BackendRestartStatus } from "./useBackendRestart";
+import { useHardwareAcceleration } from "./useHardwareAcceleration";
 
 /**
  * Top-right settings control: a round glass button (same frosted chrome as the
@@ -142,6 +144,62 @@ function DeloitteModeRow() {
   );
 }
 
+/** "Hardware acceleration" - rich visual effects (live blur wallpaper + drift,
+ *  heavy glass blurs) and, in the desktop app, letting Chromium use the GPU.
+ *  The effects switch instantly (`data-fx` on <html>, src/lib/displayFx.ts);
+ *  the GPU choice is saved by the desktop shell and applies after a restart,
+ *  so a "Restart now" row appears when the two differ. In a plain browser only
+ *  the effects exist. */
+function HardwareAccelerationRow() {
+  const { view, relaunching, toggle, relaunch } = useHardwareAcceleration();
+  return (
+    <>
+      <DropdownMenuSwitchItem
+        checked={view.checked}
+        onCheckedChange={toggle}
+        className="group py-2.5"
+      >
+        <RowBody
+          icon={<LightningIcon size={18} weight="regular" aria-hidden />}
+          title="Hardware acceleration"
+          hint={
+            <>
+              {view.hint}
+              {view.warning ? (
+                <span role="status" className="text-ink mt-0.5 block font-medium">
+                  {view.warning}
+                </span>
+              ) : null}
+            </>
+          }
+        />
+      </DropdownMenuSwitchItem>
+      {view.restartNeeded ? (
+        <DropdownMenuItem
+          aria-disabled={relaunching}
+          onSelect={(event) => {
+            event.preventDefault();
+            if (!relaunching) relaunch();
+          }}
+          className="group gap-3 py-2.5"
+        >
+          <RowBody
+            icon={
+              relaunching ? (
+                <CircleNotchIcon size={18} aria-hidden className="animate-spin" />
+              ) : (
+                <ArrowsClockwiseIcon size={18} weight="regular" aria-hidden />
+              )
+            }
+            title={relaunching ? "Restarting..." : "Restart to apply"}
+            hint="AI OS closes and reopens"
+          />
+        </DropdownMenuItem>
+      ) : null}
+    </>
+  );
+}
+
 const RESTART_HINT = "Loads backend and task changes";
 
 function restartHint(status: BackendRestartStatus): string {
@@ -245,6 +303,7 @@ function RestartBackendRow() {
 const settingsRows: { id: string; Row: ComponentType }[] = [
   { id: "dark-mode", Row: DarkModeRow },
   { id: "deloitte-mode", Row: DeloitteModeRow },
+  { id: "hardware-acceleration", Row: HardwareAccelerationRow },
   { id: "restart-backend", Row: RestartBackendRow },
 ];
 

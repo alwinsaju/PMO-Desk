@@ -262,6 +262,10 @@
  */
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 @custom-variant brand-dl (&:where([data-brand="deloitte"], [data-brand="deloitte"] *));
+/* `fx-rich:` keys off `data-fx="rich"` (Settings > Hardware acceleration ON,
+ * src/lib/displayFx.ts): effects that are too slow on a software compositor
+ * and so exist only in the rich mode, e.g. `fx-rich:backdrop-blur-2xl`. */
+@custom-variant fx-rich (&:where([data-fx="rich"], [data-fx="rich"] *));
 
 /**
  * Dark mode — same token names, inverted neutral ramp + dark glass. This is

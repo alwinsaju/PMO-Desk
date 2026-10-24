@@ -429,6 +429,29 @@ body {
   backdrop-filter: blur(var(--scrim-blur));
 }
 
+/* RICH EFFECTS (Settings > Hardware acceleration ON => <html data-fx="rich">,
+   src/lib/displayFx.ts). The lean values above are the default; with a working
+   GPU these restore the heavier frosted look that was cut for software
+   rendering (commits ac7820f, f077446). The wallpaper's rich half is next to
+   the wallpaper rules below. */
+:root[data-fx="rich"] .glass {
+  -webkit-backdrop-filter: blur(30px) saturate(1.7);
+  backdrop-filter: blur(30px) saturate(1.7);
+}
+:root[data-fx="rich"] .glass-pop {
+  -webkit-backdrop-filter: blur(36px) saturate(1.7);
+  backdrop-filter: blur(36px) saturate(1.7);
+}
+:root[data-fx="rich"] .glass-win {
+  -webkit-backdrop-filter: blur(40px) saturate(1.5);
+  backdrop-filter: blur(40px) saturate(1.5);
+}
+/* The idle ring spins again (it is invisible at opacity 0, but the GPU
+   compositor handles it for free). */
+:root[data-fx="rich"] .ai-ring::after {
+  animation-play-state: running;
+}
+
 /* Cursor-following spotlight: a soft accent glow plus a lit edge that track
    the pointer while it hovers the element. Add `spot` to a card/row; nothing
    else to wire (GlobalSpotlight sets `--mx/--my`). Needs the element to
@@ -902,6 +925,24 @@ body {
 :root[data-brand="deloitte"]:not([data-theme="dark"]) .wp-dll .wp-blob,
 :root[data-brand="deloitte"][data-theme="dark"] .wp-dld .wp-blob {
   animation-play-state: running;
+}
+
+/* RICH wallpaper: the original live look. Each blob is a solid disc under a real
+   `filter: blur(80px)` instead of the baked ::before gradient, and the slow
+   drift runs. `:where()` keeps this at the old `.wp-blob` specificity, so the
+   per-blob durations/delays below still win. Needs a GPU: on a software
+   compositor this re-blurs the wallpaper every frame. */
+:where(:root[data-fx="rich"]) .wp-blob {
+  animation: wp-drift 34s ease-in-out infinite alternate;
+}
+:root[data-fx="rich"] .wp-blob {
+  border-radius: 50%;
+  background: var(--c);
+  filter: blur(80px);
+  will-change: transform;
+}
+:root[data-fx="rich"] .wp-blob::before {
+  display: none;
 }
 
 .wp-lt {

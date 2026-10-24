@@ -4,6 +4,7 @@ import Script from "next/script";
 import { ServiceWorkerRegistration } from "@/components/pwa/ServiceWorkerRegistration";
 import { GlobalSpotlight } from "@/components/ui/GlobalSpotlight";
 import { TooltipProvider } from "@/components/ui/Tooltip";
+import { getFxInitScript } from "@/lib/displayFx";
 import { getThemeInitScript } from "@/lib/theme";
 import "./globals.css";
 
@@ -85,7 +86,7 @@ export default function RootLayout({
             it's placed; next/script requires an `id` for inline scripts
             using that strategy. */}
         <Script id="theme-init" strategy="beforeInteractive">
-          {getThemeInitScript()}
+          {getThemeInitScript() + getFxInitScript()}
         </Script>
         <ServiceWorkerRegistration />
         {/* One document-level listener that feeds the cursor position to any

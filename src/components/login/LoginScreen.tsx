@@ -172,6 +172,9 @@ export function LoginScreen({ isUnlocking, onUnlock, onExitComplete }: LoginScre
         aria-hidden
         className={cn(
           "absolute inset-0 backdrop-saturate-150",
+          // Rich effects mode (Settings > Hardware acceleration): the original
+          // full-screen blur, too slow without a GPU.
+          "fx-rich:backdrop-blur-[46px]",
           "bg-[linear-gradient(180deg,rgba(38,44,96,0.42),rgba(80,44,92,0.5))]",
           "dark:bg-[rgba(10,10,28,0.42)]",
           "brand-dl:bg-[linear-gradient(180deg,rgba(40,39,40,0.55),rgba(0,0,0,0.6))]",
@@ -204,7 +207,7 @@ export function LoginScreen({ isUnlocking, onUnlock, onExitComplete }: LoginScre
           onSubmit={handleSubmit}
           className={cn(
             "rounded-surface flex w-[min(22.5rem,88vw)] flex-col items-center gap-4 px-7 py-8 text-white",
-            "border border-white/25 bg-white/10",
+            "fx-rich:backdrop-blur-2xl border border-white/25 bg-white/10",
             "shadow-[inset_0_1px_0_rgba(255,255,255,0.3),0_30px_60px_-24px_rgba(10,10,30,0.55)]",
           )}
         >

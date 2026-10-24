@@ -42,12 +42,26 @@ describe("desktop packaging", () => {
     assert.match(main, /readDesktopPrefs\(desktopPrefsFile\(\)\)\.keepRunningInTray/);
   });
 
-  it("the preload exposes only the three documented members", () => {
+  it("the preload exposes only the documented members", () => {
     const preload = readFileSync(path.join(__dirname, "preload.cjs"), "utf8");
     assert.match(preload, /exposeInMainWorld\("aiOsDesktop"/);
     assert.match(preload, /isDesktop: true/);
     assert.match(preload, /onOpenTodo\(callback\)/);
     assert.match(preload, /setBadge\(count\)/);
+    assert.match(preload, /displayMode/);
+    assert.match(preload, /display: \{/);
     assert.doesNotMatch(preload, /require\((?!"electron")/);
+  });
+
+  it("reads the hardware-acceleration setting before ready and disables the GPU when OFF", () => {
+    const disable = main.indexOf("app.disableHardwareAcceleration()");
+    const ready = main.indexOf("app.whenReady()");
+    assert.ok(
+      disable > 0 && ready > 0 && disable < ready,
+      "disabled before the app is ready",
+    );
+    assert.match(main, /shouldDisableHardwareAcceleration\(launchedDisplay\)/);
+    assert.match(main, /app\.relaunch\(\)/);
+    assert.match(main, /app\.releaseSingleInstanceLock\(\)/);
   });
 });
