@@ -56,6 +56,9 @@ Outlook, not both.
 1. Go to <https://make.powerautomate.com>, signed in with your Deloitte account.
 2. **Create**, **Automated cloud flow**, name it `PMO intake - flagged email`,
    trigger **When an email is flagged (V3)** (Office 365 Outlook), **Create**.
+   Leave the trigger's fields empty: its **Folder** parameter is optional (hidden
+   under **Advanced parameters**) and, unset, it watches the Inbox. Add it via
+   **Advanced parameters** only if you want a specific folder.
 3. Follow Recipe A in [`PA-FLOW-RECIPES.md`](./PA-FLOW-RECIPES.md), steps 2 to 5
    (Compose BodyText, two Selects, Compose Intake, OneDrive **Create file**).
    While building, point **Create file** at a folder `PMO-Inbox-test` (create it

@@ -83,9 +83,21 @@ file.
    flagged (V3)** (Office 365 Outlook). A **V4** variant may be offered; it is
    also standard and exposes the same fields under the same names, use it if
    V3 is missing. -> **Create**.
-5. Click the trigger card. **Folder**: `Inbox`. Leave the other fields empty.
-   (Flag an email in Outlook = star/flag icon; only flagged mail is picked up,
-   so _you_ decide what enters the system.)
+5. Click the trigger card. You do not need to set anything: leave all fields
+   empty. The **Folder** parameter (key `folderPath`) is optional and hidden under
+   **Advanced parameters** in the new designer; with it unset the trigger watches
+   the Inbox. If you want a specific folder instead, click **Advanced
+   parameters**, tick **Folder**, and pick the folder. (Flag an email in Outlook =
+   star/flag icon; only flagged mail is picked up, so _you_ decide what enters the
+   system.)
+
+   The field names in this recipe were checked against Microsoft's Office 365
+   Outlook connector reference (schema `GraphClientReceiveMessage`: `id`,
+   `internetMessageId`, `conversationId`, `receivedDateTime`, `from`,
+   `toRecipients`, `ccRecipients`, `subject`, `body`, `bodyPreview`, `importance`
+   as low/normal/high, `hasAttachments`, `isHtml`, `attachments`). The trigger
+   fires again if an already-flagged email is modified; the app dedupes on the
+   message id, so that is harmless.
 
 ### 2. Compose the body text
 
@@ -100,11 +112,13 @@ The trigger gives To and Cc as semicolon-separated address strings. The intake
 wants objects, and the filter needs them to catch a blocked domain.
 
 1. **+** -> **Select** (Data operation). Rename `Select_To`.
-   - **From** (expression): `split(coalesce(triggerOutputs()?['body/to'], ''), ';')`
+   - **From** (expression): `split(coalesce(triggerOutputs()?['body/toRecipients'], ''), ';')`
    - **Map**: switch to the text-mode map (the `T` icon at the right of the Map
      field) and enter:
      `{ "address": "@{trim(item())}", "role": "to" }`
-2. Another **Select**, rename `Select_Cc`: same, with `body/cc` and `"role": "cc"`.
+2. Another **Select**, rename `Select_Cc`: same, with **From** (expression)
+   `split(coalesce(triggerOutputs()?['body/ccRecipients'], ''), ';')` and
+   `"role": "cc"` in the Map.
 
 (An empty To/Cc leaves one entry with an empty address; the app ignores it.)
 
@@ -151,8 +165,9 @@ _To_, _Cc_, _Subject_, _Body_, _Is HTML_, _Conversation Id_, _Importance_):
 
 - `From` is just an address in this trigger, so `sender.name` repeats it. The
   filter needs the address; the name is cosmetic.
-- `context.mailbox` is optional; delete that line if `body/toRecipients` is not
-  offered in your tenant.
+- `context.mailbox` is optional and informational. It holds the To-recipients
+  string (`body/toRecipients`), not a mailbox address; delete that line if
+  `body/toRecipients` is not offered in your tenant.
 - Attachments are left empty on purpose (the app only stores references and
   never opens them). Do not put attachment _content_ in the file.
 - If a dynamic-content name differs in your tenant, delete that expression and
