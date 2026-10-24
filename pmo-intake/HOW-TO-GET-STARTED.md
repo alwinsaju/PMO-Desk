@@ -67,38 +67,57 @@ Outlook, not both.
    is an email address. Then edit the flow's **Create file** folder to `PMO-Inbox`
    and Save.
 
-## 4. Flow 2: Teams, "For a selected message" (15 minutes)
+## 4. Flow 2: Teams, "For a selected message (V2)" (15 minutes)
 
-You have already confirmed that this trigger fires and gives a **tenant id**, a
-**LinkToMessage** link and a **messagePayload** (with the message id). What is not
-yet confirmed is the names of the message text and sender name inside
-`messagePayload`, so the first version of this flow only **captures** one real
-output.
+You have confirmed that this trigger fires, and a real capture of its output
+gave the exact field paths, so this flow is built straight from Recipe B. The
+trigger gives the message text (as plain text), the sender's **display name**
+(no email address), the chat's name and **Conversation ID**, a link, and your
+**tenant id**. It has **no created-time field**: the app derives the time from
+the message id (and you check it once).
 
 1. Power Automate, **Create**, **Instant cloud flow**, name `Send to PMO To-Do`,
-   trigger **For a selected message** (Microsoft Teams). Make sure the
-   environment at the top right is your **default environment**.
-2. Add **Compose**, rename it `Raw`, click in its box, open the **Expression**
-   tab and paste `string(triggerOutputs())`, then **Add**.
-3. Add **Create file** (OneDrive for Business): Folder `/PMO-Debug`, File Name
-   expression `concat('teams-raw-', utcNow('yyyyMMddTHHmmss'), '.json')`, File
-   Content = the `Raw` step's output. **Save**.
-4. In Teams, open a chat with yourself, write `Test: please send the RAID log to
-Pat by Friday`, hover it, **...**, **More actions**, **Send to PMO To-Do**,
-   **Run**.
-5. Open `PMO-Debug` and open the new `teams-raw-....json` in Notepad (Format,
-   Word wrap). Find, inside `messagePayload`: the text of your message (probably
-   under `body` then `content`), the sender's name (probably `from`, `user`,
-   `displayName`) and the created time (probably `createdDateTime`). Also note
-   the top-level `tenantId` (a GUID like `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`).
-   **Copy that GUID somewhere; you need it in step 6.**
-6. Replace the `Raw` and capture steps by the `Intake` Compose and Create file
-   from Recipe B in [`PA-FLOW-RECIPES.md`](./PA-FLOW-RECIPES.md), using the real
-   names you found, writing first to `PMO-Inbox-test`. Run it on the same Teams
-   message and check the file: the text is in `body.text`, the tenant GUID is in
-   `context.tenantId`. Then point it at `PMO-Inbox`.
-7. **Delete the capture file** from `PMO-Debug`: it can hold your real message
-   text and request headers. Do not share it.
+   trigger **For a selected message (V2)** (Microsoft Teams), **Create**. Make
+   sure the environment at the top right is your **default environment**.
+2. Click **+** under the trigger, **Add an action**, search `Compose`, pick
+   **Compose** (Data operation). Click its title, **...**, **Rename**, call it
+   `Intake`.
+3. Open [`PA-FLOW-RECIPES.md`](./PA-FLOW-RECIPES.md), Recipe B, step 2. Copy the
+   whole JSON block, click in the **Inputs** box of `Intake` and paste it. (Prefer
+   clicking? The same step has a dynamic-content-picker version: paste the empty
+   skeleton, put the cursor between the quotes of each value and pick the field
+   named in the table.) If the `@{...}` parts show as plain text, click **...**
+   on the card, **Peek code**, and paste the block there instead.
+4. **+**, **Add an action**, search `Create file`, pick **Create file**
+   (**OneDrive for Business**). **Folder Path**: click the folder icon and pick
+   `PMO-Inbox-test` (create that folder first, next to `PMO-Inbox`, so nothing
+   reaches the app while you test). **File Name**: click in the box, the
+   **Expression** tab, enter `concat('teams-', guid(), '.json')`, **Add**. **File
+   Content**: **Expression** tab, `string(outputs('Intake'))`, **Add**.
+5. **Save** (top right). Open **Flow checker**: no errors, and no card has a
+   **Premium** badge.
+6. In Teams, open a chat with yourself, write `Test: please send the RAID log to
+Pat by Friday`, hover the message, **...**, **More actions**, **Send to PMO
+   To-Do**, **Run**.
+7. Power Automate, **My flows**, the flow, **28-day run history**, the newest run:
+   green ticks. Click the `Intake` card and check its output: `body.text` holds
+   your test message, `sender.name` is `Last, First`, `context.chatId` starts
+   with `19:`, and **`receivedAt` is today's date and about the time you
+   clicked**. If `receivedAt` is wrong or that card failed, replace its value in
+   the box with `@{utcNow()}` (the moment you clicked) and run it again.
+8. Open `PMO-Inbox-test` in File Explorer and open the file in Notepad to see the
+   same thing. Then edit the flow's **Create file** folder to `PMO-Inbox` and
+   **Save**. Delete the `PMO-Inbox-test` folder when you are done.
+
+Nothing was captured to `PMO-Debug`, so there is nothing to clean up. If a value
+ever comes out empty, Recipe B step 6 explains how to capture the raw output once
+more. **That capture contains a signed trigger URL (`sig=...`)**: do not share it,
+and delete the file, the capture actions and any capture flow afterwards.
+
+Note for sign-off: a Teams message has no email address, so a reply from Teams is
+matched to the approver **by display name only**. Enter the approver as a plain
+name (`Priya Nair`) rather than an email address if you expect the answer on
+Teams.
 
 ## 5. Teams "Share to Outlook" (optional alternative)
 
@@ -106,15 +125,32 @@ On a Teams message, **...**, **Share to Outlook** (if your Teams has it) puts th
 message in an email you send to yourself. Flag it and it arrives like any other
 flagged mail, with a real sender address, with no tenant list involved.
 
-## 6. Add your Teams tenant ID in Settings (2 minutes)
+## 6. Allow your Teams tenant or chat in the app (2 minutes)
 
-1. In the app click the **gear**.
-2. Under **Who is allowed in**, in **Allowed Teams tenant IDs**, paste the GUID
-   from step 4. One per line; it is checked for the right shape as you save.
-3. **Save settings**. The grey Teams banner disappears.
-4. Run the Teams flow on a message again. (A Teams message that arrived before
-   the tenant was allowed sits under **Filtered**; its text was discarded on
-   purpose, so it has to be sent again.)
+Until you do this, the app **filters every Teams item** (grey banner **Teams items
+are being filtered**). Choose one way:
+
+**A. Allow the whole tenant** (the flow sends your tenant id, so this is the
+simplest):
+
+1. Run the flow once on a message, as in step 4.
+2. In the app open **Filtered**. The item says the tenant is not on the allowed
+   list and shows the tenant id with an **Allow this tenant** button. Click it.
+   (Or: click the **gear**, and under **Who is allowed in**, **Allowed Teams
+   tenant IDs**, paste the tenant id, **Save settings**.)
+
+**B. Allow one chat at a time** (nothing else from Teams gets in):
+
+1. Run the flow on a message in that chat.
+2. In **Filtered**, the item shows its **Conversation ID** (for example
+   `19:...@thread.v2`) with an **Allow this chat** button. Click it. (Or paste
+   the Conversation ID under **Allowed Teams chat IDs** in Settings, one per
+   line.) Every other chat stays filtered until you allow it too.
+
+Then run the flow on the message again: a Teams message that arrived before the
+chat or tenant was allowed sits under **Filtered** and its text was discarded on
+purpose, so it has to be sent again. The grey banner disappears once either list
+has an entry.
 
 While you are in Settings, check **Your names and aliases** (how the model
 recognises a request addressed to you), **Blocked domains** and **Blocked terms**,
@@ -180,7 +216,7 @@ with `-IgnoreSeen` to send it again.
   Deloitte sender, a blocked domain or term, a Teams tenant that is not allowed).
   Filter the list by reason with the pills at the top. A filtered message's
   **text is not kept**, so it cannot be moved into the queue; allow the sender,
-  tenant or domain with one click and send it again.
+  tenant, chat or domain with one click and send it again.
 - **Paste.** Pasted text is trusted as yours (the Teams tenant rule does not
   apply) but still obeys your blocked domains and terms, including an address
   inside the pasted text. Pasting the same text twice counts once.
@@ -193,7 +229,7 @@ with `-IgnoreSeen` to send it again.
 | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
 | Banner "Inbox folder not found"                           | Step 1: the folder path in the status bar must exist.                                                                                      |
 | File in OneDrive but nothing in the app                   | The file must end in `.json` and be fully on this PC (Always keep on this device); press **Scan now**; look in **Filtered**.               |
-| Everything from Teams is under Filtered                   | Step 6: the tenant ID.                                                                                                                     |
+| Everything from Teams is under Filtered                   | Step 6: allow the tenant, or the chat (**Allow this chat** shows the Conversation ID).                                                    |
 | Outlook mail under Filtered, "no readable sender address" | The Outlook script could not turn an Exchange address into an email address: re-run it with Outlook open and answer the prompt with Allow. |
 | `rejected-files` banner                                   | A producer wrote something that is not valid; the reason is in `rejected-files\...reason.txt` in the data folder.                          |
 | Script says "New Outlook is running"                      | Turn the **New Outlook** toggle off and restart Outlook.                                                                                   |

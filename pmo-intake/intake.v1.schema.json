@@ -15,7 +15,7 @@
     },
     "source": { "enum": ["outlook", "teams", "manual"] },
     "sourceId": {
-      "description": "Stable id of the message in its source system. Used for de-duplication: the same sourceId is only ever turned into one proposal. Outlook: the message id. Teams: the message id (messagePayload id), or a value derived from the deep link.",
+      "description": "Stable id of the message in its source system. Used for de-duplication: the same sourceId is only ever turned into one proposal. Outlook: the message id. Teams flow: Conversation ID + '/' + message id, or the bare message id, or a value derived from the deep link.",
       "type": "string",
       "minLength": 1
     },
@@ -59,7 +59,10 @@
       "type": ["object", "null"],
       "properties": {
         "conversationId": { "type": ["string", "null"] },
-        "parentId": { "type": ["string", "null"] }
+        "parentId": {
+          "description": "Teams: the id of the message replied to; null or empty when not a reply.",
+          "type": ["string", "null"]
+        }
       }
     },
     "context": {
@@ -74,8 +77,14 @@
           "description": "Microsoft Entra tenant of the Teams message. The Deloitte-only filter checks it against config.allowedTenantIds. If absent it is read from the Teams deep link in `link`.",
           "type": ["string", "null"]
         },
-        "chatId": { "type": ["string", "null"] },
-        "chatType": { "type": ["string", "null"] },
+        "chatId": {
+          "description": "Teams: the Conversation ID (19:...@thread.v2, 19:...@unq.gbl.spaces, ...@thread.tacv2). Checked against config.teamsChatAllowlist; wins over a chat id read from `link`.",
+          "type": ["string", "null"]
+        },
+        "chatType": {
+          "description": "Free text, informational. The flow sends group or oneOnOne.",
+          "type": ["string", "null"]
+        },
         "teamName": { "type": ["string", "null"] },
         "channelName": { "type": ["string", "null"] },
         "mailbox": { "type": ["string", "null"] },

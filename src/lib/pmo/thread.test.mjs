@@ -96,10 +96,88 @@ describe("threadKeyOf", () => {
     assert.equal(threadKeyOf(post("101", "100")), root, "a reply carries the root id");
     assert.notEqual(threadKeyOf(post("200")), root, "another post in the channel");
     assert.equal(
-      threadKeyOf(teams({ link: undefined, context: { tenantId: TENANT, chatId: channel } })),
+      threadKeyOf(
+        teams({ link: undefined, context: { tenantId: TENANT, chatId: channel } }),
+      ),
       null,
       "no root message id: no key rather than a channel-wide one",
     );
+  });
+
+  it("keys a flow-built Teams item by its Conversation ID, with or without a tenant ID", () => {
+    const conv = "19:7f3c1a2b4d5e4f60a1b2c3d4e5f60718@unq.gbl.spaces";
+    const v2 = (patch = {}) =>
+      teams({
+        thread: { conversationId: conv },
+        context: { chatId: conv, chatType: "group" },
+        link: `https://teams.microsoft.com/l/message/${conv}/1729761600000?context=%7B%7D`,
+        ...patch,
+      });
+    const key = threadKeyOf(v2());
+    assert.equal(
+      key,
+      `teams|conv||${conv.toLowerCase()}`,
+      "no tenant id: an empty tenant slot",
+    );
+    // A later message in the same chat shares it; another chat does not.
+    assert.equal(threadKeyOf(v2({ sourceId: "later" })), key);
+    assert.notEqual(
+      threadKeyOf(v2({ thread: { conversationId: "19:other@unq.gbl.spaces" } })),
+      key,
+    );
+    // The explicit id wins over a different chat in the deep link.
+    assert.equal(
+      threadKeyOf(
+        v2({
+          link: `https://teams.microsoft.com/l/message/19:elsewhere@thread.v2/5?tenantId=${TENANT}`,
+        }),
+      ),
+      `teams|conv|${TENANT}|${conv.toLowerCase()}`,
+    );
+    // Only context.chatId (no thread.conversationId) gives the chat key.
+    assert.equal(
+      threadKeyOf(v2({ thread: {}, link: undefined })),
+      `teams|chat||${conv.toLowerCase()}`,
+    );
+  });
+
+  it("treats a channel Conversation ID like a channel: one post and its replies, not the whole channel", () => {
+    const channel = "19:chan@thread.tacv2";
+    const post = (patch = {}) =>
+      teams({
+        thread: { conversationId: channel },
+        context: { tenantId: TENANT, chatId: channel },
+        link: `https://teams.microsoft.com/l/message/${channel}/100?context=%7B%7D`,
+        ...patch,
+      });
+    const root = threadKeyOf(post());
+    assert.equal(root, `teams|chat|${TENANT}|${channel}|100`);
+    // A reply names its parent (Reply to Message ID) rather than its own id.
+    assert.equal(
+      threadKeyOf(
+        post({
+          thread: { conversationId: channel, parentId: "100" },
+          link: `https://teams.microsoft.com/l/message/${channel}/101?context=%7B%7D`,
+        }),
+      ),
+      root,
+    );
+    assert.notEqual(
+      threadKeyOf(
+        post({
+          link: `https://teams.microsoft.com/l/message/${channel}/200?context=%7B%7D`,
+        }),
+      ),
+      root,
+    );
+    assert.equal(threadKeyOf(post({ link: undefined })), null, "no root: no key");
+    // A top-level post sends no parent: null and "" both mean "none".
+    for (const parentId of [null, ""]) {
+      assert.equal(
+        threadKeyOf(post({ thread: { conversationId: channel, parentId } })),
+        root,
+      );
+    }
   });
 
   it("never matches an Outlook and a Teams message even with the same id", () => {
@@ -131,7 +209,10 @@ describe("pickMatchingTodo", () => {
     const newer = todo("td_b", "2026-10-22T00:00:00Z");
     const tie = todo("td_c", "2026-10-22T00:00:00Z");
     assert.equal(
-      pickMatchingTodo("k", [older, tie, newer].map((t) => ({ todo: t, key: "k" }))),
+      pickMatchingTodo(
+        "k",
+        [older, tie, newer].map((t) => ({ todo: t, key: "k" })),
+      ),
       newer,
     );
   });
@@ -140,7 +221,10 @@ describe("pickMatchingTodo", () => {
 describe("looksLikeReplyFrom", () => {
   it("matches a person by name tokens, not by a shared first name", () => {
     assert.equal(looksLikeReplyFrom("Priya Nair", { name: "Priya Nair" }), true);
-    assert.equal(looksLikeReplyFrom("Priya Nair (Finance)", { name: "Nair, Priya" }), true);
+    assert.equal(
+      looksLikeReplyFrom("Priya Nair (Finance)", { name: "Nair, Priya" }),
+      true,
+    );
     assert.equal(looksLikeReplyFrom("Priya", { name: "Priya Nair" }), true);
     assert.equal(looksLikeReplyFrom("Priya Nair", { name: "Priya Menon" }), false);
     assert.equal(looksLikeReplyFrom("Sam Example", { name: "Jordan Sample" }), false);
@@ -148,7 +232,9 @@ describe("looksLikeReplyFrom", () => {
 
   it("uses the address when the waiting-on names one, or the local part", () => {
     assert.equal(
-      looksLikeReplyFrom("sam.example@deloitte.com", { address: "Sam.Example@Deloitte.com" }),
+      looksLikeReplyFrom("sam.example@deloitte.com", {
+        address: "Sam.Example@Deloitte.com",
+      }),
       true,
     );
     assert.equal(
@@ -181,7 +267,10 @@ describe("addressForWaitingOn", () => {
       addressForWaitingOn("Jordan Sample", people),
       "jordan.sample@deloitte.com",
     );
-    assert.equal(addressForWaitingOn("Alwin Saju", people, ["alsaju@deloitte.com"]), null);
+    assert.equal(
+      addressForWaitingOn("Alwin Saju", people, ["alsaju@deloitte.com"]),
+      null,
+    );
     assert.equal(addressForWaitingOn("Sample", people), null, "two Samples: ambiguous");
     assert.equal(addressForWaitingOn("Nobody Here", people), null);
   });

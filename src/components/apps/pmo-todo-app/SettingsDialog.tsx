@@ -20,14 +20,7 @@ import {
   type PmoState,
 } from "@/lib/pmo/types";
 import { updateConfig } from "./api";
-import {
-  ErrorLine,
-  Field,
-  FieldError,
-  FilterPill,
-  ScrollBody,
-  TextArea,
-} from "./parts";
+import { ErrorLine, Field, FieldError, FilterPill, ScrollBody, TextArea } from "./parts";
 import { NotificationStatus } from "./RemindersNotice";
 import { useRemindersStore } from "./remindersStore";
 import {
@@ -172,13 +165,12 @@ export function SettingsDialog({
                 <>
                   Teams is blocked until a tenant or chat is listed.{" "}
                   <strong className="text-ink-soft">How to find your tenant ID:</strong>{" "}
-                  in Power Automate open your Teams flow, then <em>My flows</em>, the
-                  flow, its run history and a run; open the trigger card (For a selected
-                  message) and copy the value of{" "}
-                  <code className="font-mono">tenantId</code> from its outputs. The same
-                  GUID appears in a Teams message link after{" "}
-                  <code className="font-mono">?tenantId=</code>. Or use{" "}
-                  <em>Allow this tenant</em> on a filtered Teams item.
+                  the Teams flow sends it (Recipe B), so the easiest way is{" "}
+                  <em>Allow this tenant</em> on a filtered Teams item. It is also in a
+                  Teams message link after <code className="font-mono">?tenantId=</code>,
+                  and in the flow&apos;s run history (the trigger card, under{" "}
+                  <code className="font-mono">ChannelData</code>, <em>Tenant</em>,{" "}
+                  <code className="font-mono">Id</code>).
                 </>,
               )}
               {listBox(
@@ -186,7 +178,16 @@ export function SettingsDialog({
                 "Allowed Teams chat IDs (optional)",
                 "19:xxxxxxxx@thread.v2",
                 2,
-                "Lets one chat in without allowing the whole tenant. The chat ID is the first part of a message link after /l/message/.",
+                <>
+                  Lets one chat in without allowing the whole tenant (useful when the flow
+                  cannot supply a tenant ID). The value is the{" "}
+                  <strong className="text-ink-soft">Conversation ID</strong> the flow
+                  sends, something like{" "}
+                  <code className="font-mono">19:...@thread.v2</code> or{" "}
+                  <code className="font-mono">19:...@unq.gbl.spaces</code>. It is shown on
+                  a filtered Teams item in the Filtered tab, next to{" "}
+                  <em>Allow this chat</em>. Each chat is listed on its own.
+                </>,
               )}
             </Section>
 
@@ -408,7 +409,9 @@ export function SettingsDialog({
 
         {serverError && <ErrorLine className="mt-3 shrink-0">{serverError}</ErrorLine>}
         {Object.keys(errors).length > 0 && (
-          <ErrorLine className="mt-3 shrink-0">Fix the highlighted fields to save.</ErrorLine>
+          <ErrorLine className="mt-3 shrink-0">
+            Fix the highlighted fields to save.
+          </ErrorLine>
         )}
         <div className="border-line mt-4 flex shrink-0 items-center justify-end gap-2.5 border-t pt-4">
           {saved && (

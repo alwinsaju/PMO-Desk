@@ -399,6 +399,8 @@ export const WHY_NO_BODY =
 export interface ResendGuidance {
   /** One click that makes the rule let the message through next time. */
   allowTenantId: string | null;
+  /** Teams only: allow just this one chat (the Conversation ID), not the tenant. */
+  allowChatId: string | null;
   allowDomain: string | null;
   /** What to do after that, in words. */
   steps: string;
@@ -407,33 +409,51 @@ export interface ResendGuidance {
 /** What a person can do about one filtered item (never a way to get the body back). */
 export function resendGuidance(
   record: QuarantineRecord,
-  config: Pick<PmoConfig, "allowedTenantIds" | "allowedSenderDomains">,
+  config: Pick<
+    PmoConfig,
+    "allowedTenantIds" | "allowedSenderDomains" | "teamsChatAllowlist"
+  >,
 ): ResendGuidance {
   const { summary } = record;
   const tenant = record.tenantId?.trim().toLowerCase() ?? null;
+  const chat = record.chatId?.trim() || null;
+  const chatAlready =
+    chat !== null &&
+    config.teamsChatAllowlist.some(
+      (listed) => listed.trim().toLowerCase() === chat.toLowerCase(),
+    );
+  const allowChatId = chat && !chatAlready ? chat : null;
   const domain = domainOf(summary.senderAddress);
   switch (record.code) {
     case "tenant-not-allowed": {
       const already = tenant !== null && config.allowedTenantIds.includes(tenant);
       return {
         allowTenantId: tenant && !already ? tenant : null,
+        allowChatId,
         allowDomain: null,
         steps: already
           ? "This tenant is allowed now. Run the Teams flow on the message again."
-          : "Allow this tenant, then run the Teams flow on the message again (select it, ... , More actions, your flow).",
+          : allowChatId
+            ? "Allow this tenant (every chat in it), or only this chat, then run the Teams flow on the message again (select it, ... , More actions, your flow)."
+            : "Allow this tenant, then run the Teams flow on the message again (select it, ... , More actions, your flow).",
       };
     }
     case "teams-not-allowlisted":
       return {
         allowTenantId: null,
+        allowChatId,
         allowDomain: null,
-        steps:
-          "The message carried no tenant ID. Open Settings, add your tenant ID under Teams (the How-to there says where to find it), then run the Teams flow on the message again.",
+        steps: chatAlready
+          ? "This chat is allowed now. Run the Teams flow on the message again."
+          : allowChatId
+            ? "The message carried no tenant ID. Allow this chat (its Conversation ID is shown here), then run the Teams flow on the message again (select it, ... , More actions, your flow). Other chats stay filtered until you allow them too."
+            : "The message carried no tenant ID. Open Settings, add your tenant ID under Teams (the How-to there says where to find it), then run the Teams flow on the message again.",
       };
     case "sender-domain-not-allowed": {
       if (!domain) {
         return {
           allowTenantId: null,
+          allowChatId: null,
           allowDomain: null,
           steps:
             "No sender address could be read from this email, so there is nothing to allow. Re-export it; for the Outlook script, check its warnings for the sender.",
@@ -444,6 +464,7 @@ export function resendGuidance(
       );
       return {
         allowTenantId: null,
+        allowChatId: null,
         allowDomain: already ? null : domain,
         steps: already
           ? `${domain} is allowed now. Send the email again: flag it again, or run the Outlook export with -IgnoreSeen.`
@@ -454,6 +475,7 @@ export function resendGuidance(
     case "blocked-term":
       return {
         allowTenantId: null,
+        allowChatId: null,
         allowDomain: null,
         steps:
           "This matched your block list. If that was a mistake, remove the entry in Settings, then send the message again.",
@@ -461,6 +483,7 @@ export function resendGuidance(
     default:
       return {
         allowTenantId: null,
+        allowChatId: null,
         allowDomain: null,
         steps: "Send the message again once the rule is fixed.",
       };

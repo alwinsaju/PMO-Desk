@@ -221,6 +221,79 @@ describe("Deloitte-only filter", () => {
     assert.equal(filterIntake(chat, config).code, "tenant-not-allowed");
   });
 
+  it("passes a Teams item with a Conversation ID as chatId, no tenant ID, when that chat is allowlisted", () => {
+    const full = intakeOf("teams-v2-selected-message.json");
+    // The same message as a flow without a tenant id would send it.
+    const v2 = {
+      ...full,
+      context: { chatId: full.context.chatId, chatType: full.context.chatType },
+    };
+    assert.equal(teamsIdsOf(v2).tenantId, undefined);
+    const chatId = "19:7f3c1a2b4d5e4f60a1b2c3d4e5f60718@unq.gbl.spaces";
+    v2.context.chatId = chatId;
+    v2.thread = { conversationId: chatId };
+    assert.match(chatId, /^19:.+@unq\.gbl\.spaces$/);
+    // Default-deny, and the reason says so (no tenant to name).
+    assert.equal(filterIntake(v2, config).code, "teams-not-allowlisted");
+    const allowChat = { ...config, teamsChatAllowlist: [chatId.toUpperCase()] };
+    assert.equal(filterIntake(v2, allowChat).pass, true, "case-insensitive match");
+    assert.equal(teamsIsFiltering(allowChat), false);
+    // Another chat stays filtered.
+    const other = {
+      ...v2,
+      context: {
+        ...v2.context,
+        chatId: "19:00000000000000000000000000000000@unq.gbl.spaces",
+      },
+    };
+    assert.equal(filterIntake(other, allowChat).code, "teams-not-allowlisted");
+    // A classic @thread.v2 group-chat id works the same way.
+    const classic = { ...v2, context: { chatId: "19:abc123def@thread.v2" } };
+    assert.equal(
+      filterIntake(classic, { ...config, teamsChatAllowlist: ["19:abc123def@thread.v2"] })
+        .pass,
+      true,
+    );
+  });
+
+  it("accepts the flow's own Teams example: tenant, chat, no sender address, parentId null", () => {
+    const v2 = intakeOf("teams-v2-selected-message.json");
+    assert.equal(v2.sender.address, undefined);
+    assert.equal(v2.thread.parentId, undefined);
+    assert.equal(v2.context.tenantId, "00000000-0000-0000-0000-000000000000");
+    assert.match(v2.context.chatId, /^19:[0-9a-f]{32}@thread\.v2$/);
+    assert.equal(
+      filterIntake(v2, { ...config, allowedTenantIds: [v2.context.tenantId] }).pass,
+      true,
+    );
+    // Null and empty text both mean "no parent".
+    for (const parentId of [null, "", undefined]) {
+      const parsed = IntakeSchema.parse({
+        ...example("teams-v2-selected-message.json"),
+        thread: { conversationId: "19:x@thread.v2", parentId },
+      });
+      assert.ok(parsed.thread.parentId === undefined || parsed.thread.parentId === "");
+    }
+    // The text format keeps the leading mention name as plain text.
+    assert.equal(v2.body.format, "text");
+    assert.match(displayText(v2), /^Alex Sample can you send/);
+  });
+
+  it("an explicit context.chatId wins over the chat id in the deep link", () => {
+    const intake = intakeOf("teams-v2-selected-message.json", {
+      context: { chatId: "19:7f3c1a2b4d5e4f60a1b2c3d4e5f60718@thread.v2" },
+      link: "https://teams.microsoft.com/l/message/19%3Alinkchat%40thread.v2/1729?tenantId=AAAA-BBBB",
+    });
+    assert.equal(teamsIdsOf(intake).chatId, intake.context.chatId);
+    assert.equal(
+      teamsIdsOf(intake).tenantId,
+      "AAAA-BBBB",
+      "tenant still read from the link",
+    );
+    const linkOnly = { ...config, teamsChatAllowlist: ["19:linkchat@thread.v2"] };
+    assert.equal(filterIntake(intake, linkOnly).code, "tenant-not-allowed");
+  });
+
   it("reads the tenant and chat ids from the Teams deep link when the flow omits them", () => {
     const intake = intakeOf("teams-selected-message.json", {
       context: {},

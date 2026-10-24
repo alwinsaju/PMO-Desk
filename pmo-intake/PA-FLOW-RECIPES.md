@@ -7,7 +7,8 @@ where the PMO To-Do app picks the files up. For the whole set-up in order, start
 with [`HOW-TO-GET-STARTED.md`](./HOW-TO-GET-STARTED.md).
 
 - **Recipe A**: Outlook, when you flag an email.
-- **Recipe B**: Teams, when you pick "your flow" from a message's **...** menu.
+- **Recipe B**: Teams, when you pick "your flow" from a message's **...** menu
+  (trigger **For a selected message (V2)**).
 
 (Two more ways in need no flow: the **Paste** button in the app, and the Outlook
 script [`scripts/Export-OutlookToInbox.ps1`](./scripts/Export-OutlookToInbox.ps1).)
@@ -22,18 +23,16 @@ we deliberately do not.)
 
 ### What you have already confirmed in your own tenant
 
-| Thing                                                                                                   | Result                                                             |
-| ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| Cloud flows (no premium licence)                                                                        | work                                                               |
-| OneDrive for Business **Create file**                                                                   | standard connector; the file reaches the laptop in about 2 seconds |
-| Outlook **When an email is flagged (V3)**                                                               | triggers                                                           |
-| Teams **For a selected message**                                                                        | triggers                                                           |
-| Teams trigger output: **tenant id**, **LinkToMessage**, **messagePayload** (it contains the message id) | present                                                            |
-| Teams trigger output: a plain **chat id**, the sender's **email address**                               | **not present**                                                    |
+| Thing                                                                | Result                                                                                                   |
+| -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Cloud flows (no premium licence)                                     | work                                                                                                     |
+| OneDrive for Business **Create file**                                | standard connector; the file reaches the laptop in about 2 seconds                                       |
+| Outlook **When an email is flagged (V3)**                            | triggers                                                                                                 |
+| Teams **For a selected message (V2)**                                | triggers; a real capture of its output gives every field Recipe B uses, **including the tenant id**      |
+| Teams trigger: sender email address, created-time field              | **not present** (the created time is derived from the message id; the sender is a display name only)    |
 
-Everything below follows from that table. Names of fields **inside**
-`messagePayload` (the message body, the sender's display name, the created
-time) are **not confirmed**: that is what the capture step in Recipe B is for.
+Everything below follows from that table. The exact Teams property paths are
+listed in Recipe B.
 
 Before you start, create two folders in the root of your OneDrive for Business:
 
@@ -191,7 +190,7 @@ _To_, _Cc_, _Subject_, _Body_, _Is HTML_, _Conversation Id_, _Importance_):
 
 ---
 
-## Recipe B: Teams, "For a selected message" -> OneDrive file
+## Recipe B: Teams, "For a selected message (V2)" -> OneDrive file
 
 ### Limits of this trigger (from Microsoft's documentation)
 
@@ -204,68 +203,61 @@ _To_, _Cc_, _Subject_, _Body_, _Is HTML_, _Conversation Id_, _Importance_):
 - It does not work for guest or external users in a team, and is not available
   in sovereign clouds.
 
-### What the trigger gives us
+### What the trigger gives us (confirmed from a real capture of your trigger)
 
-Confirmed in your tenant (see the table at the top):
+`string(triggerOutputs())` of this trigger has the shape
+`{ "headers": { ... }, "body": { "teamsFlowRunContext": { ... }, "cardOutputs": {} } }`,
+so `triggerBody()` is the `body`. **Property names are PascalCase and
+case-sensitive.** Everything useful is under
+`triggerBody()?['teamsFlowRunContext']`:
 
-| Intake field       | Source in the trigger                                                                  | Status                                            |
-| ------------------ | -------------------------------------------------------------------------------------- | ------------------------------------------------- |
-| `source`           | constant `teams`                                                                       | n/a                                               |
-| `context.tenantId` | picker: _Tenant Id_ (`triggerBody()?['tenantId']`)                                     | **confirmed** (present in the output)             |
-| `link`             | picker: _Link to message_ (`LinkToMessage`)                                            | **confirmed**                                     |
-| `sourceId`         | message id: `messagePayload` -> `id`                                                   | **confirmed**; fallback: last segment of the link |
-| `receivedAt`       | created time inside `messagePayload` (likely `createdDateTime`)                        | **unconfirmed**; fallback `utcNow()`              |
-| `sender.name`      | sender display name inside `messagePayload` (likely `from` -> `user` -> `displayName`) | **unconfirmed**                                   |
-| `body.text`        | message content inside `messagePayload` (likely `body` -> `content`, HTML)             | **unconfirmed**                                   |
-| `sender.address`   | not available in this trigger; leave it out                                            | n/a                                               |
-| `context.chatId`   | not available as a field; the app reads it from the link                               | n/a                                               |
-| `subject`          | not available; use a constant such as `Teams message`                                  | n/a                                               |
+| Path under `teamsFlowRunContext`        | What it holds                                                                                         |
+| --------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `MessagePayload.Id`                     | Message id: 13 digits, the message's **creation time in epoch milliseconds**                          |
+| `MessagePayload.From.User.DisplayName`  | Sender's display name, in the form `Last, First`                                                      |
+| `MessagePayload.From.User.Id`           | The sender's Entra (AAD) object id. **No email address anywhere.**                                    |
+| `MessagePayload.Body.PlainText`         | The message as plain text (a mention shows as the person's name)                                      |
+| `MessagePayload.Body.Content`           | The same as HTML (a mention is `<at id="0">Name</at>`); `Body.ContentType` is `html`. Not used.       |
+| `MessagePayload.Subject`                | `null` for chat messages                                                                              |
+| `MessagePayload.LinkToMessage`          | `https://teams.microsoft.com/l/message/<conversationId>/<messageId>?context=...`                      |
+| `MessagePayload.ReplyToId`              | `null` unless the message is a reply                                                                  |
+| `Conversation.Id`                       | The chat id, for example `19:<32 hex>@thread.v2` for a group chat                                     |
+| `Conversation.Name`                     | The chat's name                                                                                       |
+| `Conversation.IsGroup`                  | `true` or `false`                                                                                     |
+| `ChannelData.Tenant.Id`                 | **The tenant GUID.** (Also in the header: `triggerOutputs()?['headers']?['x-ms-tenant-id']`.)         |
+| `ChannelData.Team`, `ChannelData.Channel` | `null` for chats                                                                                    |
+| `From.AadObjectId`                      | The user who ran the flow (you); not used                                                             |
 
-Microsoft's own page describes outputs such as the message content, a plain-text
-version, the sender's display name and id, but the Teams connector reference
-does not list this trigger's exact property names, so the "likely" names above
-are guesses from the Graph message shape. **Do not rely on any unconfirmed name
-until you have captured one real output (next section).** Until the body path is
-right, a flow writes an empty `body.text`, which would flood the queue with
-empty items, so keep the flow pointed at `PMO-Inbox-test` until a captured file
-shows the message in the field you used.
+There is **no separate created-time field**, but the message id is the creation
+time, so `receivedAt` can be derived from it (below), with `utcNow()` as the
+documented fallback.
 
-The tenant ID is what lets a Teams item through the filter (Teams is
-default-deny until a tenant or chat is allowlisted): it comes from
-`context.tenantId`, or, if that is empty, from `?tenantId=` in the link.
+The same information appears in the dynamic-content picker under friendlier names
+(Message ID, Sender User Display Name, Plain Text Message Content, Link to
+message, Reply to Message ID, Conversation ID, Conversation Name, Is Group, ...;
+the picker has no tenant id and no created time). Both ways are given below.
 
-### Capture one raw trigger output first (do this once)
+### How the trigger fills the intake
 
-The goal is to see the real field names. This capture writes the **whole**
-trigger output to a file in `/PMO-Debug`, **never** to `/PMO-Inbox`, so it
-cannot reach the queue.
+| Intake field            | Typed expression (path under `triggerBody()?['teamsFlowRunContext']`)                  | Picker alternative                      | Notes                                                                                                                                       |
+| ----------------------- | -------------------------------------------------------------------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `source`                | constant `teams`                                                                       | (typed)                                 | Teams is default-deny until a chat or tenant is allowed (step 5).                                                                           |
+| `sourceId`              | `Conversation.Id` + `/` + `MessagePayload.Id`                                          | **Message ID**                          | The de-duplication key: running the flow twice on one message gives one item. Do not mix the two ways: they build different keys.            |
+| `receivedAt`            | derived from `MessagePayload.Id` (below)                                               | `utcNow()` (no created time in picker)  | The first derived date should be sanity-checked (step 4). Fallback `utcNow()` is when you clicked, which is fine; only an old message's age is lost. |
+| `sender.name`           | `MessagePayload.From.User.DisplayName`                                                 | **Sender User Display Name**            | `Last, First`. No address: leave `sender.address` out.                                                                                      |
+| `subject`               | `Conversation.Name`, else `Teams message`                                              | Conversation Name / Message Subject     | The chat's name is the title the app shows. An unnamed chat gets `Teams message`.                                                           |
+| `body.text`, `format`   | `MessagePayload.Body.PlainText`; `format` is `text`                                    | **Plain Text Message Content**          | Plain text, so there is no HTML to clean. A mention keeps the person's name, so the text can start with it.                                 |
+| `link`                  | `MessagePayload.LinkToMessage`                                                         | **Link to message**                     | "Open in Teams" in the app.                                                                                                                 |
+| `thread.conversationId` | `Conversation.Id`                                                                      | **Conversation ID**                     | Messages with the same id are one conversation, which is how a reply is tied to the to-do it is about.                                      |
+| `thread.parentId`       | `MessagePayload.ReplyToId`                                                             | **Reply to Message ID**                 | `null` unless a reply. The app treats `null` and empty text as "no parent".                                                                 |
+| `context.chatId`        | `Conversation.Id`                                                                      | **Conversation ID**                     | What the app's **chat allowlist** compares. An explicit value here wins over the chat id inside the link.                                   |
+| `context.chatType`      | `group` if `Conversation.IsGroup` is true, else `oneOnOne`                             | Is Group                                | Free text, informational (nothing in the app depends on it). Channel messages would need a third value; add one if you ever use channels.   |
+| `context.tenantId`      | `ChannelData.Tenant.Id`                                                                | (not in the picker)                     | Lets the whole tenant through the filter. Optional if you allow chats instead.                                                              |
 
-1. Create the flow (steps below) with only the trigger and these two actions:
-   1. **Compose**, rename `Raw`. Click in **Inputs**, open the _Expression_ tab
-      (fx), paste this and press **Add**:
-      ```
-      string(triggerOutputs())
-      ```
-   2. **Create file** (OneDrive for Business):
-      - **Folder Path**: `/PMO-Debug` (pick it with the folder icon)
-      - **File Name** (expression): `concat('teams-raw-', utcNow('yyyyMMddTHHmmss'), '.json')`
-      - **File Content**: pick `Outputs` of the `Raw` step from the dynamic
-        content panel (or expression `outputs('Raw')`).
-2. In Teams, open a **test** chat (a chat with yourself works), type a message
-   such as `Test: please send the RAID log to Pat by Friday`, hover it ->
-   **...** -> **More actions** -> your flow -> **Run**.
-3. Open `PMO-Debug` in OneDrive (or File Explorer), open the new
-   `teams-raw-....json` in a text editor (VS Code, or Notepad then Format ->
-   Word wrap). You can also copy it from Power Automate -> **My flows** -> the
-   flow -> **28-day run history** -> the run -> the _Raw_ card -> **Outputs**.
-4. Find, inside `messagePayload`: the message id (confirmed), the created time,
-   the sender's display name, the body (HTML and/or text), and the top-level
-   `tenantId` and `LinkToMessage`. Write down the real property names.
-5. Use those names in the expressions in "Compose the intake" below.
-6. **Delete the capture file** from `PMO-Debug` (and the _Raw_ steps once you
-   are done). The file can include request headers and your real message text:
-   do not share it, and do not commit it anywhere. If you want a fixture in the
-   PMO To-Do repo, replace names, ids and text with fictional values first.
+The flow **sends nothing**: no email, no Teams post, no approval. Its only
+output is one file in your OneDrive. It uses only the Microsoft Teams trigger,
+the built-in _Data operation_ **Compose**, and OneDrive for Business **Create
+file**: all standard connectors, no Premium badge.
 
 ### 1. Create the flow
 
@@ -273,77 +265,187 @@ cannot reach the queue.
    **your default environment** -> **Create** -> **Instant cloud flow**.
 2. **Flow name**: `Send to PMO To-Do` (this name is what you will click in
    Teams, so keep it short and clear).
-3. Trigger: **For a selected message** (Microsoft Teams) -> **Create**.
+3. Trigger: **For a selected message (V2)** (Microsoft Teams) -> **Create**.
    Do not add the adaptive-card input; we do not need it.
 
-### 2. Compose the intake
+### 2. Compose the intake (typed expressions)
 
-1. **+** -> **Compose**, rename `Intake`.
-2. Inputs: the object below. The `tenantId`, `LinkToMessage` and
-   `messagePayload.id` expressions are confirmed. Replace the paths marked
-   `UNCONFIRMED` with the names you found in the capture (or choose the field
-   in the dynamic-content panel).
+1. **+** -> **Compose** (Data operation). Rename it (card title -> `...` ->
+   Rename) to `Intake`.
+2. Click in **Inputs** and paste exactly this. The `@{...}` parts are
+   expressions Power Automate evaluates at run time (copy the whole block,
+   including the long lines):
 
 ```json
 {
   "schema": "pmo-intake/1",
   "producer": "pa-cloud-flow",
   "source": "teams",
-  "sourceId": "@{coalesce(triggerBody()?['messagePayload']?['id'], last(split(first(split(triggerBody()?['LinkToMessage'], '?')), '/')))}",
-  "receivedAt": "@{coalesce(triggerBody()?['messagePayload']?['createdDateTime'], utcNow())}",
+  "sourceId": "@{concat(triggerBody()?['teamsFlowRunContext']?['Conversation']?['Id'], '/', triggerBody()?['teamsFlowRunContext']?['MessagePayload']?['Id'])}",
+  "receivedAt": "@{formatDateTime(addSeconds('1970-01-01T00:00:00Z', div(int(triggerBody()?['teamsFlowRunContext']?['MessagePayload']?['Id']), 1000)), 'yyyy-MM-ddTHH:mm:ssZ')}",
   "sender": {
-    "name": "@{triggerBody()?['messagePayload']?['from']?['user']?['displayName']}"
+    "name": "@{triggerBody()?['teamsFlowRunContext']?['MessagePayload']?['From']?['User']?['DisplayName']}"
   },
-  "subject": "Teams message",
+  "subject": "@{coalesce(triggerBody()?['teamsFlowRunContext']?['Conversation']?['Name'], 'Teams message')}",
   "body": {
-    "text": "@{coalesce(triggerBody()?['messagePayload']?['body']?['content'], '')}",
-    "format": "html"
+    "text": "@{coalesce(triggerBody()?['teamsFlowRunContext']?['MessagePayload']?['Body']?['PlainText'], '')}",
+    "format": "text"
+  },
+  "thread": {
+    "conversationId": "@{triggerBody()?['teamsFlowRunContext']?['Conversation']?['Id']}",
+    "parentId": "@triggerBody()?['teamsFlowRunContext']?['MessagePayload']?['ReplyToId']"
   },
   "context": {
-    "tenantId": "@{triggerBody()?['tenantId']}"
+    "tenantId": "@{triggerBody()?['teamsFlowRunContext']?['ChannelData']?['Tenant']?['Id']}",
+    "chatId": "@{triggerBody()?['teamsFlowRunContext']?['Conversation']?['Id']}",
+    "chatType": "@{if(equals(triggerBody()?['teamsFlowRunContext']?['Conversation']?['IsGroup'], true), 'group', 'oneOnOne')}"
   },
   "attachments": [],
-  "link": "@{triggerBody()?['LinkToMessage']}"
+  "link": "@{triggerBody()?['teamsFlowRunContext']?['MessagePayload']?['LinkToMessage']}"
 }
 ```
 
-`UNCONFIRMED` paths in this object: `receivedAt` (`createdDateTime`),
-`sender.name` (`from.user.displayName`), `body.text` (`body.content`). If the
-capture shows a plain-text version of the message, prefer it for `body.text` and
-set `"format": "text"`. Keep `receivedAt` an ISO date-time; if the created time
-is missing, `utcNow()` stands in (the message's age is lost, nothing else is).
+3. If the designer turns the box into plain text or shows the expressions as
+   literal text, use `...` -> _Peek code_ / _Edit in code view_ and paste the
+   block into the action's `inputs` property instead.
 
-`sourceId` is the message id, falling back to the last path segment of the deep
-link (`.../l/message/<chat>/<messageId>?...`), so the same message selected
-twice is de-duplicated either way.
+Notes:
+
+- **`receivedAt`:** the message id is the creation time in milliseconds since
+  1970; the expression turns it into `2026-10-24T09:30:12Z`. Check the first
+  derived date against the message (step 4). If it is wrong, or the run fails
+  there (an id that is not a number), replace the whole value with
+  `@{utcNow()}`: that is the moment you clicked, which is good enough.
+- **`parentId`** has no braces on purpose: a bare `@...` keeps `null` as `null`.
+  Empty text would also be accepted by the app; you do not need a condition.
+- **`tenantId`:** if you would rather not send it, delete the line. The app then
+  relies on the chat allowlist (step 5).
+- **`subject`:** `coalesce` only skips `null`. If an unnamed chat arrives with an
+  empty name instead of `null` you get an empty subject, which the app allows.
+- No `sender.address` is sent: this trigger has no email address.
+
+**Why the message text is safe here:** a chat message is full of quotes,
+backslashes and line breaks. Because `Intake` is an **object** and each
+expression is the entire value of its field, Power Automate puts each value into
+the object _before_ it is turned into text and escapes it on the way, so a `"`
+in the message cannot break the file. The next step writes `string(...)` of that
+object. (If you ever build the JSON as text instead, see "Why Compose" at the
+top: never splice a raw value into hand-typed JSON.)
+
+#### Alternative: build it from the dynamic-content picker
+
+If you prefer clicking to pasting expressions: paste this skeleton into
+**Inputs** (it has only the intake's own property names), then put the cursor
+between the two quotes of each value and pick the field from **Dynamic content**:
+
+```json
+{
+  "schema": "pmo-intake/1",
+  "producer": "pa-cloud-flow",
+  "source": "teams",
+  "sourceId": "",
+  "receivedAt": "",
+  "sender": { "name": "" },
+  "subject": "",
+  "body": { "text": "", "format": "text" },
+  "thread": { "conversationId": "", "parentId": "" },
+  "context": { "chatId": "", "chatType": "" },
+  "attachments": [],
+  "link": ""
+}
+```
+
+| Between the quotes of | Pick                                                                                          |
+| --------------------- | --------------------------------------------------------------------------------------------- |
+| `sourceId`            | **Message ID**                                                                                |
+| `receivedAt`          | **Expression** tab: `utcNow()` -> **Add** (the picker has no created time)                    |
+| `name`                | **Sender User Display Name**                                                                  |
+| `subject`             | **Conversation Name** (an unnamed chat then has an empty subject, which is allowed)          |
+| `text`                | **Plain Text Message Content**                                                                |
+| `conversationId`      | **Conversation ID**                                                                           |
+| `parentId`            | **Reply to Message ID**                                                                       |
+| `chatId`              | **Conversation ID**                                                                           |
+| `chatType`            | **Expression** tab: `if(equals(<Is Group>, true), 'group', 'oneOnOne')`, with `<Is Group>` added from **Dynamic content** |
+| `link`                | **Link to message**                                                                           |
+
+Each pick must be the **whole** value of its field (nothing typed around it).
+There is no tenant id in the picker; add `"tenantId": ""` to `context` and fill
+it with the **Expression** tab:
+`triggerBody()?['teamsFlowRunContext']?['ChannelData']?['Tenant']?['Id']`, or
+leave it out and use the chat allowlist.
 
 ### 3. Write the file
 
-Identical to Recipe A step 5, with the file name
-`concat('teams-', guid(), '.json')` and content `string(outputs('Intake'))`.
-Use `/PMO-Inbox-test` until a test file in it looks right (the message text is in
-`body.text`, the tenant GUID is in `context.tenantId`), then switch to
-`/PMO-Inbox`. Remove the capture steps (_Raw_ and its _Create file_) from the
-final flow.
+Identical to Recipe A step 5 (**Create file**, OneDrive for Business), with the
+file name `concat('teams-', guid(), '.json')` and file content
+`string(outputs('Intake'))`. Use `/PMO-Inbox-test` while testing, then switch to
+`/PMO-Inbox`. Save.
 
-### 4. Allow your tenant in the app
+### 4. Test
 
-Until your tenant is allowlisted the app **filters every Teams item** (it is
-default-deny, and says so in its status bar). Either:
+1. In Teams, open a **test** chat (a chat with yourself works), write a message
+   such as `Test: please send the RAID log to Pat by Friday`, hover it ->
+   **...** -> **More actions** -> **Send to PMO To-Do** -> **Run**.
+2. Power Automate -> **My flows** -> the flow -> **28-day run history**: green
+   ticks. Open the run and look at `Intake`: `body.text` holds the message,
+   `context.chatId` and `thread.conversationId` start with `19:`, `sender.name`
+   is `Last, First`, and **`receivedAt` is today's date and about the time you
+   clicked** (the message was just written; if it is a different day or year the
+   derived time is wrong: use `utcNow()`).
+3. The file appears in `PMO-Inbox-test` (OneDrive sync can take a minute).
+   Remember that nobody gets a reply: the only evidence the flow ran is the run
+   history and the file.
+4. Point _Create file_ at `/PMO-Inbox`.
 
-- open the app's **Settings** (gear icon), paste the tenant GUID from the
-  capture (`tenantId`) under _Allowed Teams tenant IDs_, **Save**; or
-- run the flow on a test message once; the item appears under **Filtered** with
-  the tenant GUID and an **Allow this tenant** button.
+### 5. Allow the chat or tenant in the app
+
+Until a chat or tenant is allowed, the app **filters every Teams item** (it is
+default-deny, and says so in its status bar).
+
+- **If you sent `tenantId`:** paste it under _Allowed Teams tenant IDs_ in
+  Settings, or click **Allow this tenant** on the filtered item. Every Teams
+  message from your tenant then comes through.
+- **Or allow one chat at a time:** run the flow on a message; in the app open
+  **Filtered**: the item shows its **Conversation ID** with an **Allow this
+  chat** button. Click it. Each new chat needs its own click.
 
 Then run the flow on the message again (a filtered message's text is discarded
 by design, so it cannot be moved into the queue; it has to be sent again).
 
-### 5. Save and test
+### 6. If a value comes out empty: capture the raw output
 
-Save, run it from a message in a test chat, check the run history for green
-ticks, then look in OneDrive and in the app. Remember that nobody gets a reply:
-the only evidence the flow ran is the run history and the file.
+You do not need this for the set-up above; it is how the field list was found.
+If a field is empty or an expression errors, capture once more. Add two
+**temporary** actions at the end of the flow. They write the **whole** trigger
+output to `/PMO-Debug`, **never** to `/PMO-Inbox`, so it cannot reach the queue:
+
+1. **Compose**, rename `Raw`; **Expression** tab: `string(triggerOutputs())`.
+2. **Create file** (OneDrive for Business): Folder `/PMO-Debug`; File Name
+   (expression) `concat('teams-raw-', utcNow('yyyyMMddTHHmmss'), '.json')`; File
+   Content: the **Outputs** of `Raw`.
+3. Run the flow on a test message and open the file in a text editor, or open
+   the `Raw` card's **Outputs** in the run history.
+
+> **Warning: the capture contains a signed URL.** `headers` holds the trigger's
+> own callback URL with a `sig=...` secret, and the run-history output of the
+> trigger and of `Raw` shows it too. Treat the file as a secret: do not share it,
+> do not paste it into a chat or ticket, and do not commit it. When you are done,
+> **delete the capture file** from `PMO-Debug`, **delete the `Raw` and capture
+> _Create file_ actions** from the flow, and, if you built a separate capture
+> flow, **delete that flow**. If you want a fixture in the PMO To-Do repo, copy
+> only the shape and replace every name, id and text with fictional values (see
+> [`examples/teams-v2-selected-message.json`](./examples/teams-v2-selected-message.json)).
+
+### Good to know
+
+- **Sign-off replies from Teams** cannot be matched to the approver by email,
+  because a Teams message has no address. The app can only match the sender's
+  **display name** (it ignores order, so `Nair, Priya` matches an approver
+  entered as `Priya Nair`). Enter the approver as a plain name if you expect the
+  answer on Teams; an approver entered with an email address will never match a
+  Teams reply (you can still tick "mark received" yourself).
+- **No created time field**, so `receivedAt` is derived from the message id (or
+  is the click time if you use the picker alternative).
 
 ---
 
@@ -354,8 +456,9 @@ the only evidence the flow ran is the run history and the file.
       run on a message that contained quotes).
 - [ ] The only actions are: trigger, Compose/Select, Create file (and optional
       Rename file). No send, post, approve, HTTP or mail action.
-- [ ] The Teams flow no longer contains the capture steps, and `PMO-Debug` has
-      been emptied.
+- [ ] The Teams flow no longer contains the capture steps (`Raw` and its _Create
+      file_), `PMO-Debug` has been emptied, and any separate capture flow is
+      deleted (a capture contains a signed trigger URL).
 - [ ] The file lands in `PMO-Inbox` and, within ~30 seconds of syncing, in the
       app's Review Queue (or under Filtered with a reason).
 - [ ] Nothing client-related is flagged or selected while you are testing.

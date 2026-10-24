@@ -5,12 +5,14 @@
 // UI and `pnpm test` share it.
 //
 //   outlook  outlook|<mailbox>|<conversationId>        needs thread.conversationId
-//   teams    teams|conv|<tenant>|<conversationId>      when the producer gave one
+//   teams    teams|conv|<tenant>|<conversationId>      when the producer gave one (the flow's
+//                                                      Conversation ID, e.g. 19:...@unq.gbl.spaces)
 //            teams|chat|<tenant>|<chatId>              a 1:1 or group chat (chat id from
 //                                                      context or the deep link)
-//            teams|chat|<tenant>|<channelId>|<root>    a channel post/reply: root is the
-//                                                      link's parentMessageId, else its own
-//                                                      message id
+//            teams|chat|<tenant>|<channelId>|<root>    a channel post/reply (id ends @thread.tacv2,
+//                                                      from either field): root is the link's
+//                                                      parentMessageId, else thread.parentId,
+//                                                      else its own message id
 //   manual   never (a paste has no reliable thread)
 //
 // Keys include the source, the tenant (Teams) and the mailbox (Outlook), so
@@ -43,7 +45,9 @@ function teamsLink(link: string | undefined): {
 export function threadKeyOf(
   intake: Pick<Intake, "source" | "thread" | "context" | "link" | "sourceId">,
 ): string | null {
-  const conversationId = norm((intake.thread as { conversationId?: string }).conversationId);
+  const conversationId = norm(
+    (intake.thread as { conversationId?: string }).conversationId,
+  );
   if (intake.source === "outlook") {
     return conversationId
       ? `outlook|${norm(intake.context.mailbox)}|${conversationId}`
@@ -52,18 +56,25 @@ export function threadKeyOf(
   if (intake.source === "teams") {
     const { tenantId, chatId } = teamsIdsOf(intake);
     const tenant = norm(tenantId);
-    if (conversationId) return `teams|conv|${tenant}|${conversationId}`;
-    if (!chatId) return null;
-    const chat = norm(chatId);
+    // An explicit conversation id from the producer (the Power Automate flow
+    // sends the trigger's "Conversation ID" here and in context.chatId) wins
+    // over anything read from the deep link. Both are the same kind of id
+    // (19:...@thread.v2, 19:...@unq.gbl.spaces, 19:...@thread.tacv2).
+    const id = conversationId || norm(chatId);
+    if (!id) return null;
     // A channel (…@thread.tacv2) holds many unrelated posts: only a post and
-    // its own replies share a key. A 1:1 or group chat is one key; the model
-    // is then asked whether the new message is about the same thing at all.
-    if (/@thread\.tacv2$/.test(chat)) {
+    // its own replies share a key, whichever field carried the id. A 1:1 or
+    // group chat is one key; the model is then asked whether the new message
+    // is about the same thing at all.
+    if (/@thread\.tacv2$/.test(id)) {
       const link = teamsLink(intake.link);
-      const root = norm(link.parentMessageId ?? link.messageId);
-      return root ? `teams|chat|${tenant}|${chat}|${root}` : null;
+      const parentId = (intake.thread as { parentId?: string }).parentId;
+      const root = norm(link.parentMessageId || parentId || link.messageId);
+      return root ? `teams|chat|${tenant}|${id}|${root}` : null;
     }
-    return `teams|chat|${tenant}|${chat}`;
+    return conversationId
+      ? `teams|conv|${tenant}|${conversationId}`
+      : `teams|chat|${tenant}|${id}`;
   }
   return null;
 }

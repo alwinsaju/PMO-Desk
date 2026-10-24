@@ -166,7 +166,11 @@ describe("Filtered tab helpers", () => {
     },
     ...extra,
   });
-  const config = { allowedTenantIds: [], allowedSenderDomains: ["deloitte.com"] };
+  const config = {
+    allowedTenantIds: [],
+    teamsChatAllowlist: [],
+    allowedSenderDomains: ["deloitte.com"],
+  };
 
   it("counts items per reason, known reasons first, and filters by one", () => {
     const records = [
@@ -224,6 +228,47 @@ describe("Filtered tab helpers", () => {
       /tenant ID/,
     );
     assert.match(WHY_NO_BODY, /thrown away when it is filtered/);
+  });
+
+  it("offers Allow this chat for a Teams item with a Conversation ID, next to Allow this tenant", () => {
+    const conv = "19:7F3C1A2B4D5E4F60A1B2C3D4E5F60718@unq.gbl.spaces";
+    const teamsSummary = { ...record("x").summary, source: "teams" };
+    // No tenant on the message: only the chat can be allowed.
+    const noTenant = resendGuidance(
+      record("teams-not-allowlisted", { chatId: conv, summary: teamsSummary }),
+      config,
+    );
+    assert.equal(noTenant.allowChatId, conv, "kept as sent; the filter ignores case");
+    assert.equal(noTenant.allowTenantId, null);
+    assert.match(noTenant.steps, /Allow this chat/);
+    // Tenant present too: both buttons.
+    const both = resendGuidance(
+      record("tenant-not-allowed", {
+        tenantId: "ABCD0000-0000-4000-8000-000000000000",
+        chatId: conv,
+        summary: teamsSummary,
+      }),
+      config,
+    );
+    assert.equal(both.allowTenantId, "abcd0000-0000-4000-8000-000000000000");
+    assert.equal(both.allowChatId, conv);
+    assert.match(both.steps, /run the Teams flow on the message again/);
+    // Already allowed (any case): no button, and the steps say so.
+    const done = resendGuidance(
+      record("teams-not-allowlisted", { chatId: conv, summary: teamsSummary }),
+      { ...config, teamsChatAllowlist: [conv.toLowerCase()] },
+    );
+    assert.equal(done.allowChatId, null);
+    assert.match(done.steps, /chat is allowed now/);
+    // No chat id at all: the old advice, and never a chat button.
+    const none = resendGuidance(record("teams-not-allowlisted"), config);
+    assert.equal(none.allowChatId, null);
+    assert.match(none.steps, /tenant ID/);
+    // Outlook reasons never offer a chat.
+    assert.equal(
+      resendGuidance(record("sender-domain-not-allowed"), config).allowChatId,
+      null,
+    );
   });
 });
 

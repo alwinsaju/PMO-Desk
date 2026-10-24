@@ -128,7 +128,10 @@ function FilteredRow({
   const guidance = resendGuidance(record, state.config);
 
   async function allow(
-    patch: { allowedTenantIds: string[] } | { allowedSenderDomains: string[] },
+    patch:
+      | { allowedTenantIds: string[] }
+      | { teamsChatAllowlist: string[] }
+      | { allowedSenderDomains: string[] },
     done: string,
   ) {
     setBusy(true);
@@ -196,6 +199,34 @@ function FilteredRow({
             </span>
           </>
         )}
+        {guidance.allowChatId && (
+          <>
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={busy}
+              onClick={() =>
+                void allow(
+                  {
+                    teamsChatAllowlist: [
+                      ...state.config.teamsChatAllowlist,
+                      guidance.allowChatId as string,
+                    ],
+                  },
+                  "Chat allowed. Run the Teams flow on this message again and it will be picked up on the next scan.",
+                )
+              }
+            >
+              Allow this chat
+            </Button>
+            <span
+              className="text-ink-muted min-w-0 truncate font-mono text-[11.5px]"
+              title={guidance.allowChatId}
+            >
+              {guidance.allowChatId}
+            </span>
+          </>
+        )}
         {guidance.allowDomain && (
           <Button
             variant="secondary"
@@ -216,7 +247,7 @@ function FilteredRow({
             Allow {guidance.allowDomain}
           </Button>
         )}
-        {!guidance.allowTenantId && !guidance.allowDomain && (
+        {!guidance.allowTenantId && !guidance.allowChatId && !guidance.allowDomain && (
           <Button variant="ghost" size="sm" onClick={onOpenSettings}>
             Open settings
           </Button>

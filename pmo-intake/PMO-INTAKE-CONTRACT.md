@@ -51,9 +51,9 @@ Required: `schema`, `source`, `sourceId`, `receivedAt`, `sender`, `subject`,
 | `receivedAt`  | ISO 8601 date-time                                                                           | With offset or `Z`.                                                                           |
 | `sender`      | `{ name?, address? }`                                                                        | Teams gives a name only; neither field is required on its own.                                |
 | `recipients`  | `[{ name?, address?, role? }]`                                                               | `role`: `to`, `cc`, `bcc`.                                                                    |
-| `subject`     | string                                                                                       | Email subject, or the Teams chat/channel name. May be empty.                                  |
+| `subject`     | string                                                                                       | Email subject, or the Teams chat/channel name (Teams flow: `Conversation.Name`, else `Teams message`). May be empty. |
 | `body`        | `{ text, format? }`                                                                          | `format`: `text` (default) or `html`.                                                         |
-| `thread`      | `{ conversationId?, parentId? }`                                                             |                                                                                               |
+| `thread`      | `{ conversationId?, parentId? }`                                                             | Teams flow: `conversationId` is the chat's Conversation ID, `parentId` the id of the message replied to (`null` or empty = none). |
 | `context`     | `{ origin?, tenantId?, chatId?, chatType?, teamName?, channelName?, mailbox?, importance? }` | See Teams below. `origin` (`teams`, `outlook`, `manual`) is set by Paste only; informational. |
 | `attachments` | `[{ name?, contentType?, size?, ref? }]`                                                     | References only; the app never opens them.                                                    |
 | `link`        | string                                                                                       | Teams message deep link, or `outlook:<EntryID>`.                                              |
@@ -66,10 +66,12 @@ characters)`. A message whose key has already produced a proposal is deleted
 from the inbox and logged as a duplicate, so dropping the same file twice (or a
 flow that fires twice) yields one item.
 
-`sourceId` for Teams: the message id (the id inside the trigger's message
-payload, `messagePayload.id`; confirmed present in your tenant). If a flow cannot
-get it, derive it from the deep link (the last path segment of
-`/l/message/<chat>/<messageId>`).
+`sourceId` for Teams: the Conversation ID, a `/`, and the message id
+(`MessagePayload.Id`, 13 digits: the message's creation time in epoch
+milliseconds), for example `19:<32 hex>@thread.v2/1792834212345`. The picker
+version of the flow sends the bare message id instead; either is a stable key, but
+do not mix the two for one message. If a flow cannot get it, derive it from the
+deep link (the last path segment of `/l/message/<chat>/<messageId>`).
 
 `sourceId` for Outlook: the Internet Message-ID (`<...@...>`, stable when a mail
 moves folders), and only if a message has none, its EntryID. The Outlook script
@@ -92,12 +94,15 @@ model. First rule that rejects wins. A rejected item is **quarantined**
    (default `takeda.com`; subdomains match) is quarantined.
 2. Any `blockedTerms` entry (default none) found in subject or body.
 3. `source: "teams"` is **default-deny**: it passes only if its tenant ID is in
-   `allowedTenantIds` or its chat ID is in `teamsChatAllowlist`. Both lists
+   `allowedTenantIds` or its chat ID (the Conversation ID, for example
+   `19:...@thread.v2` or `19:...@unq.gbl.spaces`) is in `teamsChatAllowlist`. A
+   tenant ID is therefore optional if the chat is allowlisted; ids compare
+   case-insensitively. Both lists
    ship empty, so until you add your tenant, every Teams item is filtered. The
    app says so in its status bar. The tenant and chat IDs are read from
    `context.tenantId` / `context.chatId`, or, when the flow cannot supply them,
    from the Teams deep link in `link` (`...?tenantId=<guid>` and the chat id in
-   the path).
+   the path). An explicit `context.chatId` always wins over the link.
 4. `source: "outlook"` needs a sender domain in `allowedSenderDomains`
    (default `deloitte.com`; subdomains match). No readable sender address means
    quarantined.
@@ -111,9 +116,10 @@ model. First rule that rejects wins. A rejected item is **quarantined**
    allowlisted); the blocked domains and terms are still enforced. Both halves
    are covered by tests (`pmo.test.mjs`, `pmo.server.test.mjs`).
 
-### Allowing your Teams tenant
+### Allowing your Teams tenant (or one chat)
 
-Either use **Allow this tenant** on a filtered Teams item in the app, or open
+Either use **Allow this tenant** (or **Allow this chat**, which adds the item's
+Conversation ID to `teamsChatAllowlist`) on a filtered Teams item in the app, or open
 **Settings** (the gear in the app's top bar) and put the GUID under _Allowed
 Teams tenant IDs_, or edit `config.json` in the PMO data folder
 (`%LOCALAPPDATA%\AI OS\pmo` in development; `<AI OS user data>\pmo` in the
@@ -123,9 +129,11 @@ desktop app) and add the GUID:
 { "allowedTenantIds": ["00000000-0000-0000-0000-000000000000"] }
 ```
 
-Where to find the tenant ID: the Teams flow's trigger output (run history, the
-run, the trigger card, the `tenantId` value), or `?tenantId=` in any Teams
-message link.
+Where to find the tenant ID: the flow sends it as `context.tenantId` (it is
+`ChannelData.Tenant.Id` in the trigger output, and the `x-ms-tenant-id` header),
+or `?tenantId=` in a Teams message link. To allow one chat instead, put its
+Conversation ID in `teamsChatAllowlist` (one per entry), or click **Allow this
+chat** on the filtered item.
 
 ### Filtered items cannot be "moved to review"
 
@@ -136,6 +144,38 @@ offers what is possible: one click to allow the tenant or the sender's domain,
 then **send the message again** (Teams: run the flow on it again; Outlook: flag
 it again, or run the script with `-IgnoreSeen`; a paste: paste it again). The
 same message, once it passes, also clears its old Filtered entry.
+
+## The Teams flow's mapping (`source: "teams"`)
+
+Built by [Recipe B](./PA-FLOW-RECIPES.md) from **For a selected message (V2)**;
+fictional example: [`examples/teams-v2-selected-message.json`](./examples/teams-v2-selected-message.json).
+
+| Intake field              | From the trigger (`triggerBody()?['teamsFlowRunContext']...`)                           |
+| ------------------------- | --------------------------------------------------------------------------------------- |
+| `sourceId`                | `Conversation.Id` + `/` + `MessagePayload.Id`                                           |
+| `receivedAt`              | derived from `MessagePayload.Id` (epoch ms); fallback `utcNow()`. **No created-time field exists.** |
+| `sender.name`             | `MessagePayload.From.User.DisplayName` (`Last, First`); **no address**                  |
+| `subject`                 | `Conversation.Name`, else `Teams message`                                               |
+| `body.text` / `format`    | `MessagePayload.Body.PlainText` / `text` (a mention keeps the person's name in the text) |
+| `link`                    | `MessagePayload.LinkToMessage`                                                          |
+| `thread.conversationId`   | `Conversation.Id`                                                                       |
+| `thread.parentId`         | `MessagePayload.ReplyToId` (`null` unless a reply)                                      |
+| `context.chatId`          | `Conversation.Id`                                                                       |
+| `context.chatType`        | `group` if `Conversation.IsGroup`, else `oneOnOne` (free text, informational)           |
+| `context.tenantId`        | `ChannelData.Tenant.Id`                                                                 |
+
+Consequences worth knowing:
+
+- **Threads.** Two messages in the same conversation share a thread key (tenant,
+  Conversation ID). A channel conversation (`...@thread.tacv2`) is keyed by the
+  post and its replies (`thread.parentId` / the link's `parentMessageId`), never
+  by the whole channel.
+- **Sign-off.** A Teams sender has a display name and no email address, so a
+  Teams reply can only be matched to the approver **by name** (order ignored:
+  `Nair, Priya` = `Priya Nair`). An approver entered with an email address never
+  matches a Teams reply; the person can still tick "mark received" by hand.
+- **Time.** With the picker version of the flow `receivedAt` is when the flow
+  ran, not when the message was written.
 
 ## Retention
 

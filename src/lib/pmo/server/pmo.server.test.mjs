@@ -202,6 +202,34 @@ describe("inbox ingest", () => {
     assert.equal((await proposals()).length, 1);
   });
 
+  it("lets a flow-built Teams item with no tenant ID through once its chat (Conversation ID) is allowlisted", async () => {
+    const full = await example("teams-v2-selected-message.json");
+    // As a flow that could not supply the tenant id would send it.
+    const intake = {
+      ...full,
+      context: { chatId: full.context.chatId, chatType: "group" },
+    };
+    await drop("v2a.json", intake);
+    await pmo.ingestor.scan();
+    const [held] = await pmo.store.listQuarantine();
+    assert.equal(held.code, "teams-not-allowlisted");
+    assert.equal(held.tenantId, null);
+    assert.equal(
+      held.chatId,
+      intake.context.chatId,
+      "the Filtered tab can offer Allow this chat",
+    );
+
+    const done = await updateConfig(pmo, { teamsChatAllowlist: [held.chatId] });
+    assert.equal(done.ok, true);
+    assert.deepEqual(done.config.teamsChatAllowlist, [intake.context.chatId]);
+    await drop("v2b.json", intake);
+    const report = await pmo.ingestor.scan();
+    assert.equal(report.ingested, 1);
+    assert.equal((await pmo.store.listQuarantine()).length, 0);
+    assert.equal((await proposals()).length, 1);
+  });
+
   it("skips files that are too new or too large, and non-JSON files", async () => {
     await drop("fresh.json", await example("outlook-task.json"), 500);
     await drop("big.json", JSON.stringify({ pad: "x".repeat(1_100_000) }));

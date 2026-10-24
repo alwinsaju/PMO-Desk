@@ -673,6 +673,17 @@ describe("who counts as the approver", () => {
     assert.equal(approverName("  "), null);
   });
 
+  it("a Teams sender (display name 'Last, First', no address) matches a plain-name approver only", () => {
+    const teamsSender = { name: "Nair, Priya" };
+    assert.equal(senderIsApprover("Priya Nair", teamsSender), true);
+    assert.equal(senderIsApprover("Priya Menon", teamsSender), false);
+    // An approver entered with an email address can never be matched from Teams.
+    assert.equal(
+      senderIsApprover("Priya Nair <priya.nair@deloitte.com>", teamsSender),
+      false,
+    );
+  });
+
   it("a name must match in full: two words in common, not one", () => {
     assert.equal(
       senderIsApprover("Priya Nair", { name: "Priya Nair", address: "p@x.com" }),

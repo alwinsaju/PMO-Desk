@@ -1,0 +1,23 @@
+{
+  "schema": "pmo-intake/1",
+  "producer": "pa-cloud-flow",
+  "source": "teams",
+  "sourceId": "19:7f3c1a2b4d5e4f60a1b2c3d4e5f60718@thread.v2/1792834212345",
+  "receivedAt": "2026-10-24T09:30:12Z",
+  "sender": { "name": "Sample, Jordan" },
+  "subject": "Resourcing weekly",
+  "body": {
+    "text": "Alex Sample can you send the updated onboarding checklist to Sam Example by Friday? Thanks.",
+    "format": "text"
+  },
+  "thread": {
+    "conversationId": "19:7f3c1a2b4d5e4f60a1b2c3d4e5f60718@thread.v2"
+  },
+  "context": {
+    "tenantId": "00000000-0000-0000-0000-000000000000",
+    "chatId": "19:7f3c1a2b4d5e4f60a1b2c3d4e5f60718@thread.v2",
+    "chatType": "group"
+  },
+  "attachments": [],
+  "link": "https://teams.microsoft.com/l/message/19:7f3c1a2b4d5e4f60a1b2c3d4e5f60718@thread.v2/1792834212345?context=%7B%22contextType%22%3A%22chat%22%7D"
+}
