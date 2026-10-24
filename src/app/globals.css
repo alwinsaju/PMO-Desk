@@ -838,11 +838,48 @@ body {
 
 .wp-blob {
   position: absolute;
-  border-radius: 50%;
-  filter: blur(80px);
-  will-change: transform;
+}
+
+/* Slow drift is OPT-IN (set data-wp-drift="on" on <html>) and off by default.
+   Merely having the animation declared, even paused, promotes every blob to its
+   own compositor layer, so each dock hover / window drag had to blend 4 extra
+   full-size layers (measured with software compositing: 26 ms vs 12 ms per
+   frame while dragging a window). Moving blobs would also re-blur every
+   backdrop-filter surface above the wallpaper on every frame. */
+:root[data-wp-drift="on"] .wp-blob {
   animation: wp-drift 34s ease-in-out infinite alternate;
-  animation-play-state: paused;
+}
+
+/* The glow itself. It used to be a solid disc under `filter: blur(80px)`, but a
+   filter is applied by the compositor on EVERY frame it redraws the blob, and on
+   a machine without a working GPU (software compositing) that was ~175 ms per
+   frame: every dock hover or window drag re-blurred the wallpaper (measured:
+   VizCompositorThread 79-81% busy, 18-23 fps; without the filter, 64 fps).
+   Now the blur is baked into a radial gradient that is painted once. The
+   gradient is the exact radial profile of a disc blurred with sigma 80px
+   (R ~ 280px), spread over a box 32.5% larger on each side so the soft edge
+   isn't clipped. `--c` is the glow colour (set per theme below). */
+.wp-blob::before {
+  content: "";
+  position: absolute;
+  inset: -32.5%;
+  background: radial-gradient(
+    closest-side,
+    color-mix(in srgb, var(--c) 99.8%, transparent) 0%,
+    color-mix(in srgb, var(--c) 99.6%, transparent) 8%,
+    color-mix(in srgb, var(--c) 98.9%, transparent) 16%,
+    color-mix(in srgb, var(--c) 97.1%, transparent) 24%,
+    color-mix(in srgb, var(--c) 92.7%, transparent) 32%,
+    color-mix(in srgb, var(--c) 84.4%, transparent) 40%,
+    color-mix(in srgb, var(--c) 71.4%, transparent) 48%,
+    color-mix(in srgb, var(--c) 54.6%, transparent) 56%,
+    color-mix(in srgb, var(--c) 36.8%, transparent) 64%,
+    color-mix(in srgb, var(--c) 21.5%, transparent) 72%,
+    color-mix(in srgb, var(--c) 10.6%, transparent) 80%,
+    color-mix(in srgb, var(--c) 4.4%, transparent) 88%,
+    color-mix(in srgb, var(--c) 1.5%, transparent) 96%,
+    color-mix(in srgb, var(--c) 0%, transparent) 100%
+  );
 }
 
 :root:not([data-theme="dark"]):not([data-brand="deloitte"]) .wp-lt,
@@ -856,14 +893,15 @@ body {
     visibility 0s;
 }
 
+/* Hidden wallpaper variants never animate, even with drift on. */
+:root .wp-layer .wp-blob {
+  animation-play-state: paused;
+}
 :root:not([data-theme="dark"]):not([data-brand="deloitte"]) .wp-lt .wp-blob,
 :root[data-theme="dark"]:not([data-brand="deloitte"]) .wp-dk .wp-blob,
 :root[data-brand="deloitte"]:not([data-theme="dark"]) .wp-dll .wp-blob,
 :root[data-brand="deloitte"][data-theme="dark"] .wp-dld .wp-blob {
-  /* Drift intentionally NOT started: a moving wallpaper makes every
-     backdrop-filter layer above it (dock, command bar, menus) re-blur each
-     frame. Change to `running` to restore the slow drift. */
-  animation-play-state: paused;
+  animation-play-state: running;
 }
 
 .wp-lt {
@@ -891,7 +929,7 @@ body {
   height: 44vw;
   left: -10%;
   top: -22%;
-  background: #8fa8ff;
+  --c: #8fa8ff;
   opacity: 0.6;
 }
 .wp-lt .wp-b2 {
@@ -899,7 +937,7 @@ body {
   height: 39vw;
   right: -8%;
   top: 13%;
-  background: #ff9fc4;
+  --c: #ff9fc4;
   opacity: 0.5;
   animation-duration: 42s;
 }
@@ -908,7 +946,7 @@ body {
   height: 36vw;
   left: 18%;
   bottom: -27%;
-  background: #ffd2a1;
+  --c: #ffd2a1;
   opacity: 0.75;
   animation-duration: 38s;
   animation-delay: -8s;
@@ -918,7 +956,7 @@ body {
   height: 33vw;
   left: 4%;
   bottom: -7%;
-  background: #8fd8cc;
+  --c: #8fd8cc;
   opacity: 0.45;
   animation-duration: 46s;
 }
@@ -928,7 +966,7 @@ body {
   height: 43vw;
   left: -7%;
   top: -22%;
-  background: #4a3bd6;
+  --c: #4a3bd6;
   opacity: 0.5;
 }
 .wp-dk .wp-b2 {
@@ -936,7 +974,7 @@ body {
   height: 39vw;
   right: -10%;
   top: 7%;
-  background: #b0328f;
+  --c: #b0328f;
   opacity: 0.38;
   animation-duration: 42s;
 }
@@ -945,7 +983,7 @@ body {
   height: 36vw;
   left: 21%;
   bottom: -28%;
-  background: #1a8f86;
+  --c: #1a8f86;
   opacity: 0.42;
   animation-duration: 38s;
   animation-delay: -8s;
@@ -955,7 +993,7 @@ body {
   height: 29vw;
   left: 1%;
   bottom: -9%;
-  background: #2b4fd0;
+  --c: #2b4fd0;
   opacity: 0.35;
   animation-duration: 46s;
 }
@@ -965,7 +1003,7 @@ body {
   height: 43vw;
   left: -11%;
   top: -22%;
-  background: #86bc25;
+  --c: #86bc25;
   opacity: 0.26;
 }
 .wp-dll .wp-b2 {
@@ -973,7 +1011,7 @@ body {
   height: 39vw;
   right: -10%;
   top: 22%;
-  background: #00a3e0;
+  --c: #00a3e0;
   opacity: 0.14;
   animation-duration: 42s;
 }
@@ -982,7 +1020,7 @@ body {
   height: 33vw;
   left: 19%;
   bottom: -29%;
-  background: #86eb22;
+  --c: #86eb22;
   opacity: 0.2;
   animation-duration: 38s;
   animation-delay: -8s;
@@ -993,7 +1031,7 @@ body {
   height: 43vw;
   left: -11%;
   top: -22%;
-  background: #86bc25;
+  --c: #86bc25;
   opacity: 0.2;
 }
 .wp-dld .wp-b2 {
@@ -1001,7 +1039,7 @@ body {
   height: 39vw;
   right: -10%;
   top: 22%;
-  background: #005587;
+  --c: #005587;
   opacity: 0.4;
   animation-duration: 42s;
 }
@@ -1010,7 +1048,7 @@ body {
   height: 33vw;
   left: 19%;
   bottom: -29%;
-  background: #86eb22;
+  --c: #86eb22;
   opacity: 0.1;
   animation-duration: 38s;
   animation-delay: -8s;
