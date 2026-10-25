@@ -48,6 +48,7 @@ export type AuditAction =
   | "waiting"
   | "update-apply"
   | "update-separate"
+  | "split"
   | "chaser-draft"
   | "signoff-request"
   | "signoff-record"

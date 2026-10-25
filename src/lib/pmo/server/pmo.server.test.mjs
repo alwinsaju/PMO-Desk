@@ -117,6 +117,81 @@ const scanAndStructure = async () => {
 };
 const proposals = () => pmo.store.listProposals();
 
+describe("several tasks in one message", () => {
+  const quote = "send me the consolidated RAID log";
+  const three = () => [
+    aiOutput({ title: "Send the weekly report to Rahul", quote }),
+    aiOutput({ title: "Book the room for Thursday's review", quote, dueAt: "2026-10-29" }),
+    aiOutput({ title: "Chase Dev about the invoice", quote, dueAt: null, dueBasis: "none" }),
+  ];
+
+  it("turns each independent task into its own ready review item linked to the same message", async () => {
+    ai.handler = async () => three();
+    await drop("a.json", await example("outlook-task.json"));
+    await scanAndStructure();
+    const list = await proposals();
+    assert.equal(list.length, 3);
+    assert.equal(new Set(list.map((p) => p.intakeId)).size, 1);
+    assert.ok(list.every((p) => p.status === "ready" && p.draft));
+    assert.deepEqual(list.map((p) => p.draft.title).sort(), [
+      "Book the room for Thursday's review",
+      "Chase Dev about the invoice",
+      "Send the weekly report to Rahul",
+    ]);
+    assert.deepEqual(list.map((p) => p.part.index).sort(), [1, 2, 3]);
+    assert.ok(list.every((p) => p.part.total === 3));
+    assert.equal(ai.calls.length, 1, "one model call for the whole message");
+
+    // Each is approvable on its own and becomes a separate to-do.
+    for (const p of list) {
+      const done = await approveProposal(pmo, p.id, { draft: effectiveDraft(p) });
+      assert.equal(done.ok, true);
+    }
+    const todos = await pmo.store.listTodos();
+    assert.equal(todos.length, 3);
+    assert.equal(new Set(todos.map((t) => t.source.intakeId)).size, 1);
+  });
+
+  it("a single-task answer (list or bare object) gives one proposal without a part", async () => {
+    for (const answer of [() => [aiOutput()], () => aiOutput()]) {
+      await rm(dataDir, { recursive: true, force: true });
+      dataDir = await mkdtemp(path.join(os.tmpdir(), "pmo-data-"));
+      pmo = await createPmo({ dataDir, inboxDir, generator: ai, now: () => clock });
+      ai.handler = async () => answer();
+      await drop("a.json", await example("outlook-task.json"));
+      await scanAndStructure();
+      const list = await proposals();
+      assert.equal(list.length, 1);
+      assert.equal(list[0].part ?? null, null);
+    }
+  });
+
+  it("drops duplicates the model repeated and FYI entries", async () => {
+    ai.handler = async () => [
+      aiOutput({ title: "Send the RAID log to Pat" }),
+      aiOutput({ title: "Send RAID log to Pat" }),
+      aiOutput({ title: "Thanks for the update", isActionable: false }),
+    ];
+    await drop("a.json", await example("outlook-task.json"));
+    await scanAndStructure();
+    const list = await proposals();
+    assert.equal(list.length, 1);
+    assert.equal(list[0].part ?? null, null);
+    assert.match(list[0].ai.adjustments.join(" "), /near-identical/);
+  });
+
+  it("keeps the raw message until every split task is decided", async () => {
+    ai.handler = async () => three();
+    await drop("a.json", await example("outlook-task.json"));
+    await scanAndStructure();
+    const list = await proposals();
+    await rejectProposal(pmo, list[0].id);
+    const later = new Date(clock.getTime() + 400 * 86_400_000);
+    await purgeExpired(pmo.store, { now: later, retentionDays: 7 });
+    assert.ok(await pmo.store.readRaw(list[0].intakeId), "two tasks are still undecided");
+  });
+});
+
 describe("inbox ingest", () => {
   it("turns a valid file into one pending proposal with an immutable raw snapshot, and clears the inbox", async () => {
     const intake = await example("outlook-task.json");
@@ -316,7 +391,7 @@ describe("structuring", () => {
     assert.equal(log.length, 1);
     assert.equal(log[0].outcome, "ok");
     assert.equal(log[0].intakeId, proposal.intakeId);
-    assert.equal(log[0].promptVersion, 3);
+    assert.equal(log[0].promptVersion, 4);
     assert.ok(prompt.includes("Date hints (computed"));
     assert.ok(
       log[0].bytes > 100 &&

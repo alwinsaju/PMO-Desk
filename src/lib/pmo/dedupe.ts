@@ -27,3 +27,10 @@ export function idsForKey(key: string): { intakeId: string; proposalId: string }
   const hash = sha256(key).slice(0, 20);
   return { intakeId: `in_${hash}`, proposalId: `pr_${hash}` };
 }
+
+/** Id of the n-th (2-based) extra proposal made from the same message when it
+ *  holds several tasks. Derived from the first proposal's id, so a re-run never
+ *  duplicates; plain `pr_<hex>` like every other proposal id (isSafeId). */
+export function siblingProposalId(proposalId: string, n: number): string {
+  return `pr_${sha256(`${proposalId}#${n}`).slice(0, 20)}`;
+}

@@ -20,7 +20,7 @@
 // accepted rather than taking a lock on every append.
 import { readFile, readdir, stat, unlink } from "node:fs/promises";
 import path from "node:path";
-import { DEFAULT_RETENTION_DAYS } from "../types.ts";
+import { DEFAULT_RETENTION_DAYS, type Proposal } from "../types.ts";
 import { writeTextAtomic } from "./fsx.ts";
 import type { Store } from "./store.ts";
 
@@ -154,7 +154,20 @@ export async function purgeExpired(
         store.listProposals(),
         store.listTodos(),
       ]);
-      const proposalByIntake = new Map(proposals.map((p) => [p.intakeId, p]));
+      // A message that held several tasks has several proposals: it counts as
+      // undecided while any of them is, otherwise by the latest decision.
+      const proposalByIntake = new Map<string, Proposal>();
+      for (const p of proposals) {
+        const seen = proposalByIntake.get(p.intakeId);
+        const decided = (q: Proposal) => q.status === "approved" || q.status === "rejected";
+        if (
+          !seen ||
+          (decided(seen) && !decided(p)) ||
+          (decided(seen) === decided(p) && p.updatedAt > seen.updatedAt)
+        ) {
+          proposalByIntake.set(p.intakeId, p);
+        }
+      }
       const todoById = new Map(todos.map((t) => [t.id, t]));
       const openIntakes = new Set(
         todos.filter((t) => t.status === "open").map((t) => t.source.intakeId),

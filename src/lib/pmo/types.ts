@@ -452,6 +452,22 @@ export const AiModelSchema = z.object({
 });
 export type AiModelOutput = z.output<typeof AiModelSchema>;
 
+/** Most separate to-dos one message may produce (prompt version 4). */
+export const MAX_TASKS_PER_MESSAGE = 5;
+
+/** What the model answers from prompt version 4: one entry per independently
+ *  completable task in the message (a message with one task gets one entry).
+ *  Each entry is the lean AiModelSchema. The array is capped, not rejected, when
+ *  the model is over-eager; the worker's own clean-up (splitTasks.ts) decides
+ *  which ones survive. */
+export const AiModelTasksSchema = z.object({
+  tasks: z
+    .array(AiModelSchema)
+    .min(1)
+    .transform((tasks) => tasks.slice(0, MAX_TASKS_PER_MESSAGE + 2))
+    .meta({ maxItems: MAX_TASKS_PER_MESSAGE + 2 }),
+});
+
 /** The stored shape of a model answer (proposal.draft / proposal.rawDraft).
  *  `reason`, `confidence` and `tags` have defaults so records written by
  *  prompt version 2 (which have them) and version 3 (which do not) both parse. */
@@ -619,6 +635,12 @@ export const ProposalSchema = z.object({
     adjustments: z.array(z.string()).optional(),
   }),
   todoId: z.string().nullable().optional(),
+  /** Set when one message held several independent tasks: this proposal is the
+   *  `index`-th (1-based) of `total` made from the same intake. Absent on a
+   *  message that produced a single to-do. */
+  part: z
+    .object({ index: z.number().int().min(1), total: z.number().int().min(2) })
+    .nullish(),
   /** Set when the message belongs to the thread of an open to-do: this is an
    *  "update to existing to-do" card, not a new proposal. `draft` stays null. */
   update: z

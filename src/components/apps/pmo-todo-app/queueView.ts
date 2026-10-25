@@ -35,6 +35,13 @@ export interface QueueGroups {
 const byReceivedDesc = (a: Proposal, b: Proposal) =>
   b.summary.receivedAt.localeCompare(a.summary.receivedAt);
 
+/** "Task 2 of 3" for a to-do split from a message that held several; null for a
+ *  message with one task. */
+export function partLabel(proposal: Pick<Proposal, "part">): string | null {
+  const part = proposal.part;
+  return part && part.total > 1 ? `Task ${part.index} of ${part.total}` : null;
+}
+
 export const isUpdateProposal = (p: Pick<Proposal, "update">): boolean => !!p.update;
 
 export function groupQueue(queue: Proposal[]): QueueGroups {

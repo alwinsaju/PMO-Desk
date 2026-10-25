@@ -3,8 +3,10 @@
 // tests and the PMO_AI_STUB switch never need Ollama; the real one is wired
 // in service.ts. Failures here are local state only: nothing is sent anywhere.
 import { prepareForModel, displayText } from "../preprocess.ts";
+import { siblingProposalId } from "../dedupe.ts";
 import { groundQuote } from "../quote.ts";
 import { sanitizeDraft } from "../sanitizeDraft.ts";
+import { asTaskList, selectTasks } from "../splitTasks.ts";
 import { awaitingSignoff, readSignoff } from "../signoff.ts";
 import type { AiNarrative } from "../reportNarrative.ts";
 import { PROMPT_VERSION, buildSystemPrompt, buildUserPrompt } from "../structurePrompt.ts";
@@ -38,8 +40,9 @@ export interface UpdateRequest extends ModelRequest {
 export interface Generator {
   /** Name of the model that answers (for the log and the review UI). */
   model(): string;
-  /** Message -> to-do proposal. */
-  generate(request: ModelRequest): Promise<AiStructured>;
+  /** Message -> to-do proposal(s): one entry per independently completable task
+   *  in the message. A single object is a message with one task. */
+  generate(request: ModelRequest): Promise<AiStructured | AiStructured[]>;
   /** New message + existing to-do -> what changed (thread-aware intake). */
   generateUpdate(request: UpdateRequest): Promise<AiUpdate>;
   /** A follow-up message to review and copy. Plain text, untrusted. */
@@ -303,7 +306,7 @@ export class StructuringWorker {
 
     const system = buildSystemPrompt(config.me);
     const prompt = buildUserPrompt(intake, bodyText, this.now());
-    return this.attempts<AiStructured>({
+    return this.attempts<AiStructured | AiStructured[]>({
       id,
       claimed,
       bytes: Buffer.byteLength(system) + Buffer.byteLength(prompt),
@@ -311,33 +314,65 @@ export class StructuringWorker {
       task: "structure",
       call: () => this.generator.generate({ system, prompt, label: intake.subject }),
       onOk: async (output, durationMs, attempts) => {
-        // Keep only the part of the quote that is really in the message.
-        const grounded = groundQuote(displayText(intake), output.quote);
-        const rawDraft = { ...output, quote: grounded.quote };
-        // The app's own clean-up of the model's usual mistakes (past dates,
-        // over-assigned priority, duplicate steps, a misread "waiting on"). The
-        // review form starts from `draft`; `rawDraft` keeps what the model said.
-        const { draft, adjustments } = sanitizeDraft(rawDraft, {
-          now: this.now(),
-          text: `${intake.subject}\n${bodyText}`,
-          me: config.me,
+        const cleaned = asTaskList(output).map((task) => {
+          // Keep only the part of the quote that is really in the message.
+          const grounded = groundQuote(displayText(intake), task.quote);
+          const rawDraft = { ...task, quote: grounded.quote };
+          // The app's own clean-up of the model's usual mistakes (past dates,
+          // over-assigned priority, duplicate steps, a misread "waiting on").
+          // The review form starts from `draft`; `rawDraft` keeps what the
+          // model said.
+          const { draft, adjustments } = sanitizeDraft(rawDraft, {
+            now: this.now(),
+            text: `${intake.subject}
+${bodyText}`,
+            me: config.me,
+          });
+          return { task, grounded, rawDraft, draft, adjustments };
         });
-        await this.setStatus(id, ["structuring"], (p) => ({
+        // One message can hold several independent tasks: drop duplicates,
+        // FYIs and over-split sub-steps, cap the count.
+        const { kept, notes } = selectTasks(cleaned, (c) => c.draft);
+        const total = kept.length;
+        const fill = (p: Proposal, c: (typeof kept)[number], index: number): Proposal => ({
           ...p,
           status: "ready",
-          draft,
-          rawDraft,
-          isActionable: output.isActionable,
-          confidence: output.confidence,
-          quoteVerified: grounded.verified,
+          draft: c.draft,
+          rawDraft: c.rawDraft,
+          isActionable: c.task.isActionable,
+          confidence: c.task.confidence,
+          quoteVerified: c.grounded.verified,
+          part: total > 1 ? { index, total } : null,
           ai: {
             model: this.generator.model(),
             durationMs,
             attempts,
             error: null,
-            adjustments,
+            adjustments: [...c.adjustments, ...notes],
           },
-        }));
+        });
+        const first = await this.setStatus(id, ["structuring"], (p) => fill(p, kept[0], 1));
+        if (!first || total < 2) return "done";
+        // Each extra task is its own review item, linked to the same message
+        // (same intakeId) and never overwriting a proposal already decided.
+        await this.store.withLock(async () => {
+          for (let i = 1; i < total; i++) {
+            const siblingId = siblingProposalId(id, i + 1);
+            if (await this.store.getProposal(siblingId)) continue;
+            const base: Proposal = {
+              ...first,
+              id: siblingId,
+              edits: null,
+              todoId: null,
+              update: null,
+            };
+            await this.store.putProposal({
+              ...fill(base, kept[i], i + 1),
+              updatedAt: new Date(this.now()).toISOString(),
+            });
+          }
+        });
+        await this.store.audit("split", { proposalId: id, tasks: total });
         return "done";
       },
     });

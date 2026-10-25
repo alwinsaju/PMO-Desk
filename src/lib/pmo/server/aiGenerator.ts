@@ -12,7 +12,7 @@ import {
 import { AiNarrativeSchema } from "../reportNarrative.ts";
 import { summarizeRuntime } from "../runtimeSummary.ts";
 import {
-  AiModelSchema,
+  AiModelTasksSchema,
   AiStructuredSchema,
   AiUpdateModelSchema,
   AiUpdateSignoffModelSchema,
@@ -25,8 +25,11 @@ import type { Generator } from "./structure.ts";
  *  Node fetch's 300 s silence limit (see MAX_REQUEST_TIMEOUT_MS). */
 const TIMEOUT_MS = clampTimeoutMs(Number(process.env.AI_OS_PMO_AI_TIMEOUT_MS) || 240_000);
 
-/** What the model is asked for, validated, then widened to the stored shape. */
-const STRUCTURE_SCHEMA = AiModelSchema.transform((answer) => AiStructuredSchema.parse(answer));
+/** What the model is asked for (one entry per independent task), validated, then
+ *  each entry widened to the stored shape. */
+const STRUCTURE_SCHEMA = AiModelTasksSchema.transform(({ tasks }) =>
+  tasks.map((task) => AiStructuredSchema.parse(task)),
+);
 
 const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 const words = (text: string) => text.trim().split(/\s+/).filter(Boolean).length;
@@ -44,7 +47,7 @@ export function createRuntimeGenerator(): Generator {
       generateJson({
         system,
         prompt,
-        // The model answers the lean AiModelSchema (no reason / confidence / tags);
+        // The model answers a list of lean AiModelSchema tasks (no reason / confidence / tags);
         // the stored shape fills those in with their defaults.
         schema: STRUCTURE_SCHEMA,
         timeoutMs: TIMEOUT_MS,
@@ -52,10 +55,13 @@ export function createRuntimeGenerator(): Generator {
         log: {
           task: "structure",
           label,
-          note: (r) =>
-            r.isActionable
-              ? `${count(r.actionItems.length, "action item", "action items")} found`
-              : "not a task",
+          note: (r) => {
+            const actionable = r.filter((t) => t.isActionable);
+            if (actionable.length === 0) return "not a task";
+            return actionable.length === 1
+              ? `${count(actionable[0].actionItems.length, "action item", "action items")} found`
+              : `${count(actionable.length, "task", "tasks")} found`;
+          },
         },
       }),
     // Same runtime, same queue (concurrency 1), same think: false. A to-do that

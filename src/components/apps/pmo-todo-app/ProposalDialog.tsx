@@ -27,8 +27,10 @@ import {
 } from "./api";
 import { DraftForm } from "./DraftForm";
 import { OriginalMessage } from "./OriginalMessage";
+import { partLabel } from "./queueView";
 import { proposalWaitNote } from "./toolbarView";
 import {
+  Chip,
   ErrorLine,
   MESSAGE_PANE,
   Note,
@@ -144,6 +146,11 @@ export function ProposalDialog({
           <DialogTitle className="min-w-0 flex-1 truncate pr-0 text-[23px] tracking-[-0.02em]">
             {shown.summary.subject || "(no subject)"}
           </DialogTitle>
+          {partLabel(shown) && (
+            <Chip className="shrink-0" title="This message held several separate tasks; each has its own review item">
+              {partLabel(shown)}
+            </Chip>
+          )}
           <ProposalStatusBadge proposal={shown} structuring={structuring} />
         </div>
         <DialogDescription className="sr-only">

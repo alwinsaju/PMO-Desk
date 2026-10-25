@@ -16,7 +16,7 @@ import {
   SectionLabel,
   SourceBadge,
 } from "./parts";
-import { groupQueue, relativeTime } from "./queueView";
+import { groupQueue, partLabel, relativeTime } from "./queueView";
 import { UpdateCard } from "./UpdateCard";
 
 interface ReviewQueueProps {
@@ -211,6 +211,7 @@ const Row = memo(function Row({
             {sender}
             {" · "}
             {relativeTime(summary.receivedAt, nowMs)}
+            {partLabel(proposal) ? ` · ${partLabel(proposal)} from this message` : ""}
             {subject ? ` · ${subject}` : ""}
           </span>
         </span>

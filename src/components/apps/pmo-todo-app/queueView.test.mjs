@@ -619,3 +619,12 @@ describe("repeats text", () => {
     assert.equal(repeatsText("   "), null);
   });
 });
+
+import { partLabel as partLabelUnderTest } from "./queueView.ts";
+describe("split tasks", () => {
+  it("labels a task split from a multi-task message, and nothing else", () => {
+    assert.equal(partLabelUnderTest({ part: { index: 2, total: 3 } }), "Task 2 of 3");
+    assert.equal(partLabelUnderTest({ part: null }), null);
+    assert.equal(partLabelUnderTest({}), null);
+  });
+});
