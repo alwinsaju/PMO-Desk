@@ -51,8 +51,17 @@ tasks/**/config/
 tasks/**/reference/
 tasks/**/templates/
 tasks/.venv/
+tasks/**/.venv/
+tasks/**/.pytest_cache/
+tasks/**/backups/
+tasks/**/*.snapshot.json
+tasks/**/*.plan.json
 tasks/shared/roster-reference/*
 !tasks/shared/roster-reference/README.md
+
+# the pre-migration location of the task folders (agent-apps/ became tasks/): kept locally, holds
+# the user's real business files and a .venv, so the whole folder stays out of git
+/agent-apps/
 
 # tasks engine: local venv and runtime data (run history)
 /tasks-engine/.venv/

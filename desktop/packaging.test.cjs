@@ -110,6 +110,24 @@ describe("desktop packaging", () => {
       assert.ok(files.indexOf("tasks/**/*") < files.indexOf("!tasks/**/input/**"));
     });
 
+    it("never ships a task's real data folders or files, wherever they sit under tasks/", () => {
+      for (const pattern of [
+        "!tasks/**/config/**",
+        "!tasks/**/templates/**",
+        "!tasks/**/reference/**",
+        "!tasks/**/backups/**",
+        "!tasks/shared/roster-reference/**/*.xls*",
+        "!tasks/shared/roster/Names.xlsx",
+        "!tasks/**/*.snapshot.json",
+        "!tasks/**/*.plan.json",
+        "!tasks/**/.venv/**",
+        "!tasks/**/~$*",
+      ]) {
+        assert.ok(files.includes(pattern), `${pattern} is excluded`);
+        assert.ok(files.indexOf("tasks/**/*") < files.indexOf(pattern), `${pattern} trims tasks/**/*`);
+      }
+    });
+
     it("copies the bundled Python runtime to resources/python", () => {
       assert.deepEqual(pkg.build.extraResources, [
         { from: "build/python-runtime/python", to: "python" },
