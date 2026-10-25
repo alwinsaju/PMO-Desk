@@ -348,6 +348,13 @@ export function ownerLabel(owner: Todo["owner"]): string {
   return owner.name || owner.email || "Unassigned";
 }
 
+/** "Repeats: weekly, before Tuesday" for a to-do that repeats, else null. Plain
+ *  text: the app shows the cadence but does not re-create or re-remind anything. */
+export function repeatsText(recurrence: string | null | undefined): string | null {
+  const text = recurrence?.replace(/\s+/g, " ").trim();
+  return text ? `Repeats: ${text}` : null;
+}
+
 export const SOURCE_LABEL = {
   outlook: "Outlook",
   teams: "Teams",

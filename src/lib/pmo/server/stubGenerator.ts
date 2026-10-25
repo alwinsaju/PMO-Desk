@@ -38,6 +38,10 @@ function runtimeError(code: string, message: string): Error {
 }
 
 const FYI = /\b(fyi|for your information|no action|newsletter|unsubscribe)\b/i;
+// "every week", "weekly", "every Monday", "monthly" ...: the stub reads a cadence
+// the way the real model is told to, and then proposes no one-off date.
+const CADENCE =
+  /\b(every (?:day|week|month|quarter|mon(?:day)?|tue(?:sday)?|wed(?:nesday)?|thu(?:rsday)?|fri(?:day)?)|daily|weekly|monthly|quarterly)\b/i;
 const THANKS_ONLY =
   /^\s*(thanks|thank you|ok|okay|noted|cheers|great)\b[^.?!]{0,40}[.!]?\s*$/i;
 const DELIVERED =
@@ -135,7 +139,8 @@ export function createStubGenerator(
       const first = body.split(/(?<=[.!?])\s+|\n/).find((line) => line.trim()) ?? body;
       const sentence = first.trim().slice(0, 250);
       const actionable = !FYI.test(body);
-      const day = /\b(\d{4}-\d{2}-\d{2})\b/.exec(body)?.[1] ?? null;
+      const cadence = CADENCE.exec(body)?.[1]?.toLowerCase() ?? null;
+      const day = cadence ? null : (/\b(\d{4}-\d{2}-\d{2})\b/.exec(body)?.[1] ?? null);
       return AiStructuredSchema.parse({
         reason: actionable
           ? "The message asks for something to be done."
@@ -146,6 +151,7 @@ export function createStubGenerator(
         description: sentence,
         owner: { name: "Alwin Saju", email: "alsaju@deloitte.com", isMe: true },
         requester: { name: null, email: null },
+        recurrence: cadence,
         dueAt: day,
         dueBasis: day ? "explicit" : "none",
         priority: /urgent|asap/i.test(body) ? "high" : "normal",

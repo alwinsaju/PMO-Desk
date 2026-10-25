@@ -215,6 +215,13 @@ with `-IgnoreSeen` to send it again.
   with the original, edit it, then **Approve** (creates the to-do) or **Reject**.
   Nothing becomes a to-do without you. A model that thinks a message is not a
   task puts it under **Probably not a task**.
+  The app tidies the model's usual slips before you see the draft (a deadline
+  that had already passed when you read an old message is dropped, "high" priority
+  needs real urgency, the same step is not listed twice, "waiting on" is only for
+  somebody else's delivery to you); a quiet "Adjusted by the app: ..." line says
+  what it changed. **Repeats (optional)** holds a cadence such as "weekly, before
+  Tuesday" when the message asks for something every week; it is shown on the
+  to-do for reference, and the app does not repeat it or remind you again by itself.
 - **Filtered.** Anything outside the rules lands here with the reason (not a
   Deloitte sender, a blocked domain or term, a Teams tenant that is not allowed).
   Filter the list by reason with the pills at the top. A filtered message's

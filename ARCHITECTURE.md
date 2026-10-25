@@ -793,23 +793,32 @@ src/lib/pmo/            Pure logic, one co-located *.test.mjs per area
                         between these files carry the .ts extension, enabled by
                         `allowImportingTsExtensions`, and parameter properties /
                         enums are avoided).
-  types.ts                zod: Intake, Proposal, Todo, TodoDraft, the model's
-                          AiStructuredSchema (length limits live in the JSON
-                          Schema via .meta(), clamping in transforms), config.
-                          `confidence` stays in the schema as a rough model
-                          estimate but the UI no longer shows it.
+  types.ts                zod: Intake, Proposal, Todo, TodoDraft, config, and the
+                          model's answer: `AiModelSchema` (what the model is asked
+                          for, prompt v3: no reason / confidence / tags) widened to
+                          the stored `AiStructuredSchema` (those three default to
+                          ""/null/[] so v2 and v3 records both parse). Length
+                          limits live in the JSON Schema via .meta(), clamping in
+                          transforms. `recurrence` (nullable text, 80 chars) is on
+                          the model answer, TodoDraft and Todo, informational only.
   filter.ts               The Deloitte-only filter (pure, first reject wins).
   dedupe.ts               source + sha256(sourceId), with the documented fallback.
   preprocess.ts           HTML -> text, strip quoted reply chains, drop base64 and
                           tracking links, truncate to ~12k chars. Client-safe.
   quote.ts                Hallucination guard: is `quote` really in the message?
   structurePrompt.ts      System/user prompts (message in <message> delimiters,
-                          marked as untrusted data). `PROMPT_VERSION` is bumped
-                          on every wording change and logged with each AI call.
-                          The user turn ends with a computed "Date hints" block
-                          (received day + next 14 days as `Mon 2026-10-26`, IST,
-                          from time.ts) so the model copies dates instead of
-                          counting; it sits outside the untrusted delimiters.
+                          marked as untrusted data). `PROMPT_VERSION` (now 3) is
+                          bumped on every wording change and logged with each AI
+                          call. The user turn ends with a computed "Date hints"
+                          block (today and tomorrow, the received day with the
+                          message's age, and the 14 days after the received day as
+                          `Mon 2026-10-26`, IST, from time.ts) so the model copies
+                          dates instead of counting; it sits outside the untrusted
+                          delimiters. Relative wording resolves against the
+                          received day, urgency is judged against today.
+  sanitizeDraft.ts        The deterministic clean-up of the model's answer (see
+                          "Structuring: prompt v3 and the app's clean-up" below).
+                          Pure, client-safe, unit-tested.
   todoLogic.ts            Draft -> Todo, derived stage/progress, patches (fields,
                           action items with owner/due, checkpoint add/rename/
                           reorder/remove/skip/complete, snooze). Client-safe.
@@ -959,6 +968,62 @@ roughly 50-100 s per message, and the first one after the model has gone to slee
 minutes longer because the model is waking up"), so structuring is strictly
 background work. The model is not loaded at launch and sleeps 2 minutes after the
 last call, so the idle state is **Model asleep**, which is normal.
+
+### Structuring: prompt v3 and the app's clean-up
+
+`PROMPT_VERSION` 3 (logged with every call; `structurePrompt.ts`). What changed from 2:
+
+- **Today and age.** The date hints now carry today (IST) and its tomorrow, and the received
+  day with the message's age ("12 days ago"), then the 14 days after the received day.
+  Relative wording ("Friday") still resolves against the received day; urgency is judged
+  against today. `buildUserPrompt(intake, body, now)` takes the worker's clock.
+  `buildDateHints` (the old form) is unchanged: the update prompt still uses it.
+- **Recurrence.** `recurrence` (nullable, 80 chars, placed before `dueAt` in the answer) holds a
+  cadence such as "weekly, before Tuesday". Cadence wording is not a one-off deadline, so a
+  repeating task has no `dueAt` unless the message names one specific date. It is carried by
+  `draftFromAi` -> `TodoDraft` -> approve -> `Todo.recurrence`, editable in the review form
+  ("Repeats (optional)"), and shown as plain text ("Repeats: ..." on the list row and in the
+  to-do detail). **It is informational only**: nothing re-creates a repeating to-do or sends
+  recurring reminders. Old records parse with `recurrence: null`.
+- **Precise rules.** `waitingOn` only when the user is waiting for somebody else's delivery
+  (contacting or coordinating with someone is the user's own step); priority defaults to
+  normal and "high" needs an urgency word or a deadline today/tomorrow counted from today;
+  one action item per step, a shared step once with owner "Everyone"; at most 6 items; an item
+  gets its own date only if it differs from the main one. All injection-resistance rules kept.
+- **Lean answer.** The model answers `AiModelSchema`, without `reason`, `confidence` and `tags`
+  (output tokens cost about 8 per second on this CPU; `tags` and `confidence` were never shown
+  and `reason` only appears in the "not a task" note, which now falls back to a plain sentence
+  when the reason is empty). `aiGenerator` widens the answer to the stored `AiStructuredSchema`
+  (those three default to `""` / `null` / `[]`), so v2 and v3 records both parse.
+- **No few-shot examples.** Three short invented examples (about 150 prompt tokens) were
+  measured and changed nothing that the rules alone did not, so they are not in the prompt.
+
+**Deterministic clean-up** (`sanitizeDraft.ts`, pure, run in `structure.ts` after validation and
+quote grounding). `proposal.rawDraft` keeps the model's answer, `proposal.draft` is the cleaned
+one the form starts from, `proposal.ai.adjustments` lists what changed in words, and the review
+dialog shows it as a quiet "Adjusted by the app: ..." line. Rules, with "today" = the IST day of
+the worker's clock:
+
+1. A due date before today is dropped (`dueBasis` "none", and "(Stated deadline D had already
+   passed when this was read.)" is appended to the description); the same for action-item dates.
+   A date of exactly today stays.
+2. "high" becomes "normal" unless the subject or cleaned text has an urgency word (urgent, asap,
+   as soon as possible, immediately, right away, critical, escalat*, eod, end of day, by today,
+   today) or the due date is today or tomorrow.
+3. Action items with the same text (case, spacing and punctuation ignored) merge, owners joined
+   with " / " ("Everyone" absorbs the others); more than 6 are cut to the first 6.
+4. `waitingOn` is cleared when it is the user (any of "my" names or emails) or equals the owner
+   who is the user, or when an action item the user owns names that person (full name, or first
+   name for a person's name; never the first word of a group such as "Finance team") and no
+   waiting wording (asked, waiting for/on, awaiting, chase, follow up, reminder, pending from,
+   get back, revert) appears within about 100 characters of that name in the message.
+5. Tags are trimmed, de-duplicated and capped at 4 (not reported in `adjustments`).
+
+Nothing from the draft or the adjustments is written to `logs/ai-calls.jsonl` or `audit.jsonl`
+(a source-scan test checks `structure.ts`). Tests: `sanitizeDraft.test.mjs`, the prompt and
+schema blocks of `pmo.test.mjs`, the "prompt v3" block of `server/pmo.server.test.mjs`.
+`PMO_AI_STUB=1`: the stub reads "every week", "weekly", "every Monday" ... as a recurrence and
+then proposes no one-off date.
 
 ### Phase 3: editing, reminders, badge
 

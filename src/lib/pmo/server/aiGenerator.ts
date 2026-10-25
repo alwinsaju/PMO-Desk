@@ -12,6 +12,7 @@ import {
 import { AiNarrativeSchema } from "../reportNarrative.ts";
 import { summarizeRuntime } from "../runtimeSummary.ts";
 import {
+  AiModelSchema,
   AiStructuredSchema,
   AiUpdateModelSchema,
   AiUpdateSignoffModelSchema,
@@ -23,6 +24,9 @@ import type { Generator } from "./structure.ts";
  *  queue is background work, so this is generous on purpose. Clamped below
  *  Node fetch's 300 s silence limit (see MAX_REQUEST_TIMEOUT_MS). */
 const TIMEOUT_MS = clampTimeoutMs(Number(process.env.AI_OS_PMO_AI_TIMEOUT_MS) || 240_000);
+
+/** What the model is asked for, validated, then widened to the stored shape. */
+const STRUCTURE_SCHEMA = AiModelSchema.transform((answer) => AiStructuredSchema.parse(answer));
 
 const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 const words = (text: string) => text.trim().split(/\s+/).filter(Boolean).length;
@@ -40,7 +44,9 @@ export function createRuntimeGenerator(): Generator {
       generateJson({
         system,
         prompt,
-        schema: AiStructuredSchema,
+        // The model answers the lean AiModelSchema (no reason / confidence / tags);
+        // the stored shape fills those in with their defaults.
+        schema: STRUCTURE_SCHEMA,
         timeoutMs: TIMEOUT_MS,
         think: false,
         log: {

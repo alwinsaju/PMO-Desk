@@ -37,6 +37,7 @@ export function emptyDraft(title = ""): TodoDraft {
     checkpointTemplate: "simple",
     waitingOn: null,
     tags: [],
+    recurrence: null,
   };
 }
 
@@ -54,6 +55,7 @@ export function draftFromAi(ai: AiStructured, fallbackTitle = ""): TodoDraft {
     checkpointTemplate: ai.checkpointTemplate,
     waitingOn: ai.waitingOn,
     tags: ai.tags,
+    recurrence: ai.recurrence,
   };
 }
 
@@ -146,6 +148,7 @@ export function buildTodo(draft: TodoDraft, context: BuildTodoContext): Todo {
     waitingSince: waitingOn ? (draft.waitingSince ?? context.now) : null,
     chaserDays: null,
     tags: draft.tags,
+    recurrence: trimToNull(draft.recurrence),
     source,
     // Phase 1 sends no notifications; the shape is here so a later phase
     // doesn't need a migration.

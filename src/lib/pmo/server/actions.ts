@@ -99,6 +99,7 @@ function parseDraft(input: unknown): { draft: TodoDraft } | { reason: string } {
       description: draft.description.trim(),
       actionItems: draft.actionItems.filter((item) => item.text.trim() !== ""),
       tags: draft.tags.map((tag) => tag.trim()).filter(Boolean),
+      recurrence: draft.recurrence?.trim() || null,
     },
   };
 }
@@ -194,6 +195,7 @@ function draftSnapshot(proposal: Proposal): TodoDraft | null {
     checkpointTemplate: ai.checkpointTemplate,
     waitingOn: ai.waitingOn,
     tags: ai.tags,
+    recurrence: ai.recurrence,
   };
 }
 

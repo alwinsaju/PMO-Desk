@@ -139,6 +139,9 @@ const isoInstant = z.string().refine((value) => !Number.isNaN(Date.parse(value))
   message: "Not an ISO 8601 date-time",
 });
 
+/** Longest "Repeats" text (the model's and the person's). */
+export const RECURRENCE_MAX = 80;
+
 export const DEFAULT_CHASER_DAYS = 2;
 export const MAX_CHASER_DAYS = 30;
 
@@ -175,6 +178,9 @@ export const TodoDraftSchema = z.object({
   /** When the waiting started; absent = the moment of approval. */
   waitingSince: isoInstant.nullable().optional(),
   tags: z.array(z.string()).max(10),
+  /** "weekly, before Tuesday": informational only for now (nothing re-creates
+   *  or re-reminds a repeating to-do). null = a one-off. */
+  recurrence: z.string().trim().max(RECURRENCE_MAX).nullable().default(null),
 });
 export type TodoDraft = z.infer<typeof TodoDraftSchema>;
 
@@ -356,6 +362,9 @@ export const TodoSchema = z.object({
   /** Chase after this many quiet working days; null = the global default. */
   chaserDays: z.number().int().min(1).max(MAX_CHASER_DAYS).nullable().default(null),
   tags: z.array(z.string()),
+  /** How often it repeats, as plain text ("weekly, before Tuesday"). Shown only:
+   *  nothing re-creates or re-reminds a repeating to-do. null = a one-off. */
+  recurrence: z.string().nullable().default(null),
   source: TodoSourceSchema,
   reminders: RemindersSchema,
   createdAt: z.string(),
@@ -408,30 +417,67 @@ export const AiOwnerSchema = z.object({
 });
 
 // Property order matters: constrained decoding emits keys in this order, so
-// `reason` comes before the verdict it explains and `quote` is last.
-export const AiStructuredSchema = z.object({
-  reason: clip(200),
+// `recurrence` comes before `dueAt` (the model decides "does this repeat?"
+// before it picks a one-off date) and `quote` is last.
+const aiActionItem = z.object({
+  text: clip(200),
+  owner: clipNullable(120),
+  dueAt: dayOrNull,
+});
+
+/** Everything the model has to answer (prompt version 3). `reason`,
+ *  `confidence` and `tags` are no longer asked for: each cost output tokens
+ *  (about 8 per second on this CPU) and nothing used them. See AiStructuredSchema
+ *  for the stored shape. */
+export const AiModelSchema = z.object({
   isActionable: z.boolean(),
-  // A rough self-estimate from a small model: kept in the schema and on the
-  // proposal for the record, but the UI does not show it (it is not calibrated).
-  confidence: z
-    .number()
-    .transform((value) => Math.min(1, Math.max(0, Number.isFinite(value) ? value : 0))),
   title: clip(90),
   description: clip(600),
   owner: AiOwnerSchema,
   requester: z.object({ name: clipNullable(120), email: clipNullable(200) }),
+  recurrence: clipNullable(RECURRENCE_MAX),
   dueAt: dayOrNull,
   dueBasis: z.enum(["explicit", "inferred", "none"]),
   priority: z.enum(PRIORITIES),
   actionItems: z
-    .array(
-      z.object({
-        text: clip(200),
-        owner: clipNullable(120),
-        dueAt: dayOrNull,
-      }),
+    .array(aiActionItem)
+    .transform((items) => items.filter((item) => item.text).slice(0, 6))
+    .meta({ maxItems: 6 }),
+  checkpointTemplate: z.enum(CHECKPOINT_TEMPLATE_IDS),
+  waitingOn: clipNullable(200),
+  // Bounded like the rest: left unbounded, the model occasionally ran on until
+  // the 4-minute timeout. Bounded, it sometimes fills the limit instead of
+  // stopping at the end of the sentence; groundQuote (quote.ts) trims that.
+  quote: clip(300),
+});
+export type AiModelOutput = z.output<typeof AiModelSchema>;
+
+/** The stored shape of a model answer (proposal.draft / proposal.rawDraft).
+ *  `reason`, `confidence` and `tags` have defaults so records written by
+ *  prompt version 2 (which have them) and version 3 (which do not) both parse. */
+export const AiStructuredSchema = z.object({
+  /** Why it is or is not actionable. Prompt versions 1-2 only; "" afterwards. */
+  reason: clip(200).default(""),
+  isActionable: z.boolean(),
+  // A rough self-estimate from a small model, prompt versions 1-2 only: not
+  // calibrated and never shown. null when the model was not asked.
+  confidence: z
+    .number()
+    .nullable()
+    .transform((value) =>
+      value === null ? null : Math.min(1, Math.max(0, Number.isFinite(value) ? value : 0)),
     )
+    .default(null),
+  title: clip(90),
+  description: clip(600),
+  owner: AiOwnerSchema,
+  requester: z.object({ name: clipNullable(120), email: clipNullable(200) }),
+  recurrence: clipNullable(RECURRENCE_MAX).default(null),
+  dueAt: dayOrNull,
+  dueBasis: z.enum(["explicit", "inferred", "none"]),
+  priority: z.enum(PRIORITIES),
+  actionItems: z
+    .array(aiActionItem)
     .transform((items) => items.filter((item) => item.text).slice(0, 8))
     .meta({ maxItems: 8 }),
   checkpointTemplate: z.enum(CHECKPOINT_TEMPLATE_IDS),
@@ -444,10 +490,8 @@ export const AiStructuredSchema = z.object({
         .filter(Boolean)
         .slice(0, 5),
     )
-    .meta({ maxItems: 5 }),
-  // Bounded like the rest: left unbounded, the model occasionally ran on until
-  // the 4-minute timeout. Bounded, it sometimes fills the limit instead of
-  // stopping at the end of the sentence; groundQuote (quote.ts) trims that.
+    .meta({ maxItems: 5 })
+    .default([]),
   quote: clip(300),
 });
 export type AiStructured = z.output<typeof AiStructuredSchema>;
@@ -550,8 +594,14 @@ export const ProposalSchema = z.object({
   intakeId: z.string(),
   status: z.enum(PROPOSAL_STATUSES),
   summary: IntakeSummarySchema,
-  /** The model's output, exactly as validated. Never mutated afterwards. */
+  /** What the review form starts from: the model's output after the app's
+   *  deterministic clean-up (sanitizeDraft.ts; `ai.adjustments` says what it
+   *  changed). Never mutated afterwards; the person's changes are `edits`. */
   draft: AiStructuredSchema.nullable(),
+  /** The model's output exactly as validated, before the clean-up. null on a
+   *  proposal from before prompt version 3, or when nothing was changed it
+   *  equals `draft`. */
+  rawDraft: AiStructuredSchema.nullable().optional(),
   /** The user's staged edits; null until they change something. */
   edits: TodoDraftSchema.nullable(),
   isActionable: z.boolean().nullable(),
@@ -563,6 +613,10 @@ export const ProposalSchema = z.object({
     durationMs: z.number().nullable(),
     attempts: z.number(),
     error: z.string().nullable().optional(),
+    /** Plain-language notes on what the app's clean-up changed in the model's
+     *  answer ("Priority lowered from high to normal ..."). Shown quietly in the
+     *  review dialog. Absent or empty = nothing changed. */
+    adjustments: z.array(z.string()).optional(),
   }),
   todoId: z.string().nullable().optional(),
   /** Set when the message belongs to the thread of an open to-do: this is an

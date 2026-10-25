@@ -3,7 +3,7 @@
 import { PlusIcon, XIcon } from "@phosphor-icons/react";
 import { Button, IconButton, Input } from "@/components/ui";
 import { CHECKPOINT_TEMPLATE_LIST } from "@/lib/pmo/checkpointTemplates";
-import { PRIORITIES, type TodoDraft } from "@/lib/pmo/types";
+import { PRIORITIES, RECURRENCE_MAX, type TodoDraft } from "@/lib/pmo/types";
 import { Chip, Field, Segmented, TextArea } from "./parts";
 
 interface DraftFormProps {
@@ -99,6 +99,22 @@ export function DraftForm({ draft, onChange, dueBasis, disabled }: DraftFormProp
           />
         </Field>
       </div>
+
+      <Field label="Repeats (optional)">
+        <Input
+          value={draft.recurrence ?? ""}
+          disabled={disabled}
+          maxLength={RECURRENCE_MAX}
+          placeholder="Only if it repeats, e.g. weekly, before Tuesday"
+          onChange={(event) => set({ recurrence: event.target.value || null })}
+        />
+        {draft.recurrence && (
+          <span className="text-ink-muted text-[12px]">
+            Shown on the to-do for reference. The app does not repeat it or remind you again
+            by itself.
+          </span>
+        )}
+      </Field>
 
       <Field label="Priority">
         <Segmented

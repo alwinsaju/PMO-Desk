@@ -7,6 +7,7 @@ import {
   FlagIcon,
   HourglassMediumIcon,
   PlusIcon,
+  RepeatIcon,
   SealCheckIcon,
 } from "@phosphor-icons/react";
 import { Button, Progress } from "@/components/ui";
@@ -37,6 +38,7 @@ import {
   filterTodos,
   formatDay,
   ownerLabel,
+  repeatsText,
   sortTodosBy,
   todoRowView,
   type TodoFilter,
@@ -194,8 +196,14 @@ const TodoCard = memo(function TodoCard({
   const waiting = row.open ? describeWaiting(todo, now, prefs, today) : null;
   const signoff = signoffRowView(todo, now, prefs);
   const shownItems = todo.actionItems.slice(0, 3);
+  const repeats = repeatsText(todo.recurrence);
   const hasMore =
-    !!waiting || !!signoff || row.snoozed || row.total > 0 || shownItems.length > 0;
+    !!waiting ||
+    !!signoff ||
+    !!repeats ||
+    row.snoozed ||
+    row.total > 0 ||
+    shownItems.length > 0;
 
   // The due chip: the view-logic's headline (Overdue / Due soon / Done /
   // Cancelled) when there is one, else the day itself.
@@ -326,6 +334,17 @@ const TodoCard = memo(function TodoCard({
             <p className="text-ink-muted flex items-center gap-2 text-[12.5px]">
               <BellSlashIcon size={14} className="shrink-0" />
               Snoozed until {describeInstant(todo.reminders.snoozedUntil!, prefs.timeZone)}
+            </p>
+          )}
+
+          {repeats && (
+            <p
+              data-testid="repeats-text"
+              title="Shown for reference. The app does not repeat to-dos or send recurring reminders."
+              className="text-ink-muted flex min-w-0 items-center gap-2 text-[12.5px]"
+            >
+              <RepeatIcon size={14} className="shrink-0" />
+              <span className="min-w-0 truncate">{repeats}</span>
             </p>
           )}
 

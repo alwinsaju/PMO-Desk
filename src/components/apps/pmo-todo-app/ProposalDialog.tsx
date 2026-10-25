@@ -90,6 +90,7 @@ export function ProposalDialog({
   const isFailed = shown.status === "failed";
   const showForm = (isReady || manual) && draft !== null;
   const notATask = isReady && shown.isActionable === false;
+  const adjustments = isReady ? (shown.ai.adjustments ?? []) : [];
 
   async function run(action: () => Promise<{ ok: boolean } & { reason?: string }>) {
     setBusy(true);
@@ -152,8 +153,8 @@ export function ProposalDialog({
 
         {notATask && shown.draft && (
           <Note className="mt-3.5 shrink-0">
-            The model thinks this is <strong className="text-ink">not a task</strong>:{" "}
-            {shown.draft.reason}
+            The model thinks this is <strong className="text-ink">not a task</strong>
+            {shown.draft.reason ? <>: {shown.draft.reason}</> : "."}
           </Note>
         )}
         {isReady && shown.quoteVerified === false && (
@@ -188,6 +189,14 @@ export function ProposalDialog({
             </SectionLabel>
             {showForm && draft ? (
               <ScrollBody className="md:pr-2">
+                {adjustments.length > 0 && !manual && (
+                  <p
+                    data-testid="adjusted-by-app"
+                    className="text-ink-muted mb-3 text-[12px] leading-snug"
+                  >
+                    Adjusted by the app: {adjustments.join(" ")}
+                  </p>
+                )}
                 <DraftForm
                   draft={draft}
                   dueBasis={shown.draft?.dueBasis}

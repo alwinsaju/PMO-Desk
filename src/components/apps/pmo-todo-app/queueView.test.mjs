@@ -16,6 +16,7 @@ import {
   reviewCount,
   reasonCounts,
   relativeTime,
+  repeatsText,
   resendGuidance,
   sortTodos,
   statusLabel,
@@ -606,5 +607,15 @@ describe("the to-do row view", () => {
       false,
     );
     assert.equal(todoRowView({ ...sleeping, status: "done" }, today, now).snoozed, false);
+  });
+});
+
+describe("repeats text", () => {
+  it("is one plain 'Repeats: ...' line, or null for a one-off", () => {
+    assert.equal(repeatsText("weekly, before Tuesday"), "Repeats: weekly, before Tuesday");
+    assert.equal(repeatsText("  every   Monday \n"), "Repeats: every Monday");
+    assert.equal(repeatsText(null), null);
+    assert.equal(repeatsText(undefined), null);
+    assert.equal(repeatsText("   "), null);
   });
 });

@@ -4,6 +4,7 @@
 // in service.ts. Failures here are local state only: nothing is sent anywhere.
 import { prepareForModel, displayText } from "../preprocess.ts";
 import { groundQuote } from "../quote.ts";
+import { sanitizeDraft } from "../sanitizeDraft.ts";
 import { awaitingSignoff, readSignoff } from "../signoff.ts";
 import type { AiNarrative } from "../reportNarrative.ts";
 import { PROMPT_VERSION, buildSystemPrompt, buildUserPrompt } from "../structurePrompt.ts";
@@ -301,7 +302,7 @@ export class StructuringWorker {
     }
 
     const system = buildSystemPrompt(config.me);
-    const prompt = buildUserPrompt(intake, bodyText);
+    const prompt = buildUserPrompt(intake, bodyText, this.now());
     return this.attempts<AiStructured>({
       id,
       claimed,
@@ -312,15 +313,30 @@ export class StructuringWorker {
       onOk: async (output, durationMs, attempts) => {
         // Keep only the part of the quote that is really in the message.
         const grounded = groundQuote(displayText(intake), output.quote);
-        const draft = { ...output, quote: grounded.quote };
+        const rawDraft = { ...output, quote: grounded.quote };
+        // The app's own clean-up of the model's usual mistakes (past dates,
+        // over-assigned priority, duplicate steps, a misread "waiting on"). The
+        // review form starts from `draft`; `rawDraft` keeps what the model said.
+        const { draft, adjustments } = sanitizeDraft(rawDraft, {
+          now: this.now(),
+          text: `${intake.subject}\n${bodyText}`,
+          me: config.me,
+        });
         await this.setStatus(id, ["structuring"], (p) => ({
           ...p,
           status: "ready",
           draft,
+          rawDraft,
           isActionable: output.isActionable,
           confidence: output.confidence,
           quoteVerified: grounded.verified,
-          ai: { model: this.generator.model(), durationMs, attempts, error: null },
+          ai: {
+            model: this.generator.model(),
+            durationMs,
+            attempts,
+            error: null,
+            adjustments,
+          },
         }));
         return "done";
       },
@@ -410,6 +426,7 @@ export class StructuringWorker {
       status: "pending",
       update: null,
       draft: null,
+      rawDraft: null,
       isActionable: null,
       quoteVerified: null,
       ai: { model: null, durationMs: null, attempts: 0, error: null },
@@ -451,6 +468,7 @@ export class StructuringWorker {
       status: "pending",
       update: null,
       draft: null,
+      rawDraft: null,
       isActionable: null,
       quoteVerified: null,
       ai: { model: null, durationMs: null, attempts: 0, error: null },

@@ -99,7 +99,7 @@ async function drop(name, intake, ageMs = 60_000) {
 beforeEach(async () => {
   dataDir = await mkdtemp(path.join(os.tmpdir(), "pmo-data-"));
   inboxDir = await mkdtemp(path.join(os.tmpdir(), "pmo-inbox-"));
-  clock = new Date();
+  clock = new Date("2026-10-23T05:00:00.000Z"); // Friday 10:30 IST (fixed: the draft's dates are checked against "today")
   ai = fakeModel();
   pmo = await createPmo({ dataDir, inboxDir, generator: ai, now: () => clock });
 });
@@ -316,7 +316,7 @@ describe("structuring", () => {
     assert.equal(log.length, 1);
     assert.equal(log[0].outcome, "ok");
     assert.equal(log[0].intakeId, proposal.intakeId);
-    assert.equal(log[0].promptVersion, 2);
+    assert.equal(log[0].promptVersion, 3);
     assert.ok(prompt.includes("Date hints (computed"));
     assert.ok(
       log[0].bytes > 100 &&
@@ -1220,5 +1220,160 @@ describe("storage primitives", () => {
     await pmo.ingestor.scan();
     assert.equal((await proposals()).length, 1);
     assert.ok(pmo.store.corruptFiles >= 1);
+  });
+});
+
+describe("prompt v3: today, the app's clean-up, recurrence", () => {
+  const readyFrom = async (patch) => {
+    ai.handler = async () => aiOutput(patch);
+    // A new conversation each time: a later message in the thread of an open
+    // to-do would become an update card instead of a proposal.
+    await drop(`${Math.random()}.json`, {
+      ...(await example("outlook-task.json")),
+      sourceId: String(Math.random()),
+      thread: { conversationId: `conv-${Math.random()}`, parentId: null },
+    });
+    await scanAndStructure();
+    const list = (await proposals()).filter((p) => p.status === "ready");
+    return list[list.length - 1];
+  };
+
+  it("tells the model today's date and the message's age, from the worker's clock", async () => {
+    clock = new Date("2026-11-04T05:00:00.000Z"); // 12 days after the example message
+    await readyFrom({});
+    const { prompt } = ai.calls[0];
+    assert.match(prompt, /^Today: Wed 2026-11-04 /m);
+    assert.match(prompt, /^Received: Thu 2026-10-22 \(13 days ago\)$/m);
+  });
+
+  it("keeps the model's answer as rawDraft and stores the cleaned one as draft, with adjustments", async () => {
+    const proposal = await readyFrom({
+      priority: "high",
+      dueAt: "2026-10-20", // already past on Friday 23 October
+      dueBasis: "explicit",
+      waitingOn: "Alwin Saju",
+      actionItems: [
+        { text: "Leave comments.", owner: "Alwin Saju", dueAt: null },
+        { text: "leave comments", owner: "Karthik Rao", dueAt: null },
+      ],
+      tags: [" a ", ""],
+    });
+    assert.equal(proposal.status, "ready");
+    // The model's own answer, untouched.
+    assert.equal(proposal.rawDraft.priority, "high");
+    assert.equal(proposal.rawDraft.dueAt, "2026-10-20");
+    assert.equal(proposal.rawDraft.waitingOn, "Alwin Saju");
+    assert.equal(proposal.rawDraft.actionItems.length, 2);
+    // What the review form starts from.
+    assert.equal(proposal.draft.dueAt, null);
+    assert.equal(proposal.draft.dueBasis, "none");
+    assert.match(proposal.draft.description, /Stated deadline 2026-10-20 had already passed/);
+    assert.equal(proposal.draft.priority, "normal");
+    assert.equal(proposal.draft.waitingOn, null);
+    assert.equal(proposal.draft.actionItems.length, 1);
+    assert.equal(proposal.draft.actionItems[0].owner, "Alwin Saju / Karthik Rao");
+    assert.deepEqual(proposal.draft.tags, ["a"]);
+    assert.equal(proposal.ai.adjustments.length, 4);
+    assert.equal(effectiveDraft(proposal).dueAt, null);
+  });
+
+  it("a clean answer has an empty adjustments list and a draft equal to rawDraft", async () => {
+    const proposal = await readyFrom({});
+    assert.deepEqual(proposal.ai.adjustments, []);
+    assert.deepEqual(proposal.draft, proposal.rawDraft);
+    assert.equal(proposal.draft.dueAt, "2026-10-27");
+  });
+
+  it("neither the adjustments nor the draft reach the AI-call log", async () => {
+    await readyFrom({ priority: "high", dueAt: "2026-10-20", dueBasis: "explicit" });
+    const log = await readFile(path.join(dataDir, "logs", "ai-calls.jsonl"), "utf8");
+    assert.ok(!/Priority lowered|had already passed|Send the RAID log|adjust/i.test(log));
+    const audit = await readFile(path.join(dataDir, "audit.jsonl"), "utf8").catch(() => "");
+    assert.ok(!/Priority lowered|had already passed/.test(audit));
+  });
+
+  it("source scan: structure.ts logs only counts and metadata, never draft text or adjustments", async () => {
+    const source = await readFile(path.join(here, "structure.ts"), "utf8");
+    const blocks = source.match(/logAiCall\(\{[^}]*\}\)/g) ?? [];
+    assert.ok(blocks.length >= 2);
+    for (const block of blocks) assert.doesNotMatch(block, /adjust|draft|rawDraft|title|description|quote/i);
+    assert.doesNotMatch(source, /console\.(log|info)\([^)]*(adjust|draft)/);
+  });
+
+  it("carries a recurrence from the model through the review form and approve into the to-do", async () => {
+    const proposal = await readyFrom({
+      recurrence: "weekly, before Tuesday",
+      dueAt: null,
+      dueBasis: "none",
+    });
+    assert.equal(proposal.draft.recurrence, "weekly, before Tuesday");
+    assert.equal(effectiveDraft(proposal).recurrence, "weekly, before Tuesday");
+
+    // Unedited: audited as not edited (recurrence is part of the snapshot).
+    const result = await approveProposal(pmo, proposal.id, { draft: effectiveDraft(proposal) });
+    assert.equal(result.ok, true);
+    assert.equal(result.todo.recurrence, "weekly, before Tuesday");
+    assert.equal(result.todo.dueAt, null);
+    assert.equal((await pmo.store.getTodo(result.todo.id)).recurrence, "weekly, before Tuesday");
+    const audit = (await readFile(path.join(dataDir, "audit.jsonl"), "utf8"))
+      .trim()
+      .split("\n")
+      .map(JSON.parse);
+    assert.equal(audit.at(-1).edited, false);
+  });
+
+  it("an edited or cleared recurrence is what the to-do gets; blank means none", async () => {
+    const a = await readyFrom({ recurrence: "weekly" });
+    const edited = await approveProposal(pmo, a.id, {
+      draft: { ...effectiveDraft(a), recurrence: "  every Monday  " },
+    });
+    assert.equal(edited.todo.recurrence, "every Monday");
+    const b = await readyFrom({ recurrence: "weekly" });
+    const cleared = await approveProposal(pmo, b.id, {
+      draft: { ...effectiveDraft(b), recurrence: "   " },
+    });
+    assert.equal(cleared.todo.recurrence, null);
+    const c = await readyFrom({});
+    const none = await approveProposal(pmo, c.id, { draft: effectiveDraft(c) });
+    assert.equal(none.todo.recurrence, null);
+  });
+
+  it("refuses an over-long recurrence in an approved draft", async () => {
+    const proposal = await readyFrom({});
+    const result = await approveProposal(pmo, proposal.id, {
+      draft: { ...effectiveDraft(proposal), recurrence: "x".repeat(81) },
+    });
+    assert.equal(result.ok, false);
+    assert.equal((await pmo.store.listTodos()).length, 0);
+  });
+
+  it("an old proposal and a draft saved without recurrence still approve (recurrence defaults to none)", async () => {
+    const proposal = await readyFrom({});
+    const legacyDraft = { ...effectiveDraft(proposal) };
+    delete legacyDraft.recurrence;
+    const result = await approveProposal(pmo, proposal.id, { draft: legacyDraft });
+    assert.equal(result.ok, true);
+    assert.equal(result.todo.recurrence, null);
+  });
+
+  it("the stub model reads a cadence as a recurrence and proposes no one-off date for it", async () => {
+    const stub = await createPmo({
+      dataDir,
+      inboxDir,
+      generator: createStubGenerator({ dataDir }),
+      now: () => clock,
+    });
+    const base = await example("outlook-task.json");
+    await drop("w.json", {
+      ...base,
+      sourceId: "weekly",
+      body: { text: "Please update the slide every week before 2026-10-27.", format: "text" },
+    });
+    await stub.ingestor.scan();
+    await stub.worker.kick();
+    await stub.worker.idle();
+    const [proposal] = await stub.store.listProposals();
+    assert.equal(proposal.draft.recurrence, "every week");
+    assert.equal(proposal.draft.dueAt, null);
   });
 });

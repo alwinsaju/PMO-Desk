@@ -44,7 +44,7 @@ import {
   SourceBadge,
   TextArea,
 } from "./parts";
-import { formatDay } from "./queueView";
+import { formatDay, repeatsText } from "./queueView";
 import { cn } from "@/lib/cn";
 import { TimelineTab } from "./TimelineTab";
 import { ActionItemsEditor, CheckpointsEditor } from "./TodoEditors";
@@ -177,6 +177,7 @@ export function TodoDetailDialog({
   };
 
   const open = shown.status === "open";
+  const repeats = repeatsText(shown.recurrence);
   const progress = checkpointProgress(shown);
   const percent = progress.total ? Math.round((progress.done / progress.total) * 100) : 0;
   const stage = deriveStage(shown);
@@ -253,6 +254,15 @@ export function TodoDetailDialog({
             />
           )}
         </div>
+        {repeats && (
+          <p
+            data-testid="repeats-text"
+            title="Shown for reference. The app does not repeat to-dos or send recurring reminders."
+            className="text-ink-muted mt-1 shrink-0 truncate text-[12.5px]"
+          >
+            {repeats}
+          </p>
+        )}
         {progress.total > 0 && (
           <Progress
             value={percent}

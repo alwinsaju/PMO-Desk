@@ -70,3 +70,23 @@ export function istStamp(instant: Date | string | number): string {
   }).format(date);
   return `${istDate(date)}T${time} IST (${day})`;
 }
+
+/** YYYY-MM-DD moved by `offset` calendar days (month/year rollover exact). */
+export function addIsoDays(day: string, offset: number): string {
+  const [year, month, date] = day.split("-").map(Number);
+  return new Date(Date.UTC(year, month - 1, date + offset)).toISOString().slice(0, 10);
+}
+
+/** Whole calendar days from `from` to `to` (both YYYY-MM-DD); negative if `to` is earlier. */
+export function isoDaysBetween(from: string, to: string): number {
+  const at = (day: string) => {
+    const [year, month, date] = day.split("-").map(Number);
+    return Date.UTC(year, month - 1, date);
+  };
+  return Math.round((at(to) - at(from)) / 86_400_000);
+}
+
+/** "Mon 2026-10-26" for a YYYY-MM-DD day. */
+export function isoDayLabel(day: string): string {
+  return labelledDay(day, 0);
+}
