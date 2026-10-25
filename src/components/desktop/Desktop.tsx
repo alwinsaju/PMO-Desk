@@ -6,6 +6,7 @@ import {
   CommandBar,
   PresenceAvatars,
 } from "@/components/ai-layer";
+import { FirstRunSetup } from "@/components/setup/FirstRunSetup";
 import { DesktopContextMenu } from "./DesktopContextMenu";
 import { PmoReminders } from "./PmoReminders";
 import { SettingsMenu } from "./SettingsMenu";
@@ -36,6 +37,7 @@ export function Desktop() {
       <Dock />
       <SettingsMenu />
       <PmoReminders />
+      <FirstRunSetup />
 
       <CommandBar />
       <AICursor />

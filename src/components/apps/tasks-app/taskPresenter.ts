@@ -1,17 +1,10 @@
 /**
- * The presentation *rules* for a task, ported from the reference agent-office
- * frontend's `agentPresenter.js`
- * (`C:\Projects\Agents-workspace\agent-office\frontend\src\agentPresenter.js`,
- * read-only reference) and reimplemented here as plain, typed, idiomatic
- * TS/React functions — not a line of that file's own vanilla-DOM code is
- * reused, but the rules themselves (state -> label vocabulary, the one-line
- * status sentence per state, how the step tracker derives its per-step
- * status) are intentionally kept identical so this app matches "how it
- * worked before."
+ * The presentation *rules* for a task: the state -> label vocabulary, the
+ * one-line status sentence per state, and how the step tracker derives its
+ * per-step status. Plain, typed functions, no React.
  */
 import type {
   ActionResult,
-  Agent,
   OutputFile,
   Task,
   TaskNotification,
@@ -19,8 +12,7 @@ import type {
   TaskStep,
 } from "./types";
 
-/** Human-readable label for each state — mirrors agentPresenter.js's
- *  STATE_LABEL exactly. */
+/** Human-readable label for each state. */
 export const STATE_LABEL: Record<TaskState, string> = {
   resting: "Idle",
   working: "Running",
@@ -31,8 +23,7 @@ export const STATE_LABEL: Record<TaskState, string> = {
 };
 
 /** Converts a snake_case step/task id into a readable label, e.g.
- *  "build_report" -> "Build report". Mirrors agentPresenter.js's
- *  `humanize`. */
+ *  "build_report" -> "Build report". */
 export function humanize(id: string | null | undefined): string {
   if (!id) return "";
   return id.replace(/_/g, " ").replace(/^./, (char) => char.toUpperCase());
@@ -47,14 +38,9 @@ export function stepLabel(task: Task, stepId: string | null | undefined): string
 }
 
 /**
- * One-line status sentence for a task card — adapted from agentPresenter.js's
- * `statusLabel`, which names the assigned worker (e.g. "Adam is running
- * ..."); this app deliberately drops that framing (the person it's built
- * for doesn't want agent names surfaced while a task is running) and just
- * describes the state/step, but otherwise keeps the same one-line-per-state
- * shape, including its one asymmetry: "error" resolves to an empty string
- * here too, because that state renders its own dedicated error box instead
- * (see TaskCard) rather than a status sentence.
+ * One-line status sentence for a task card, plain words per state ("Running
+ * Build report…"). "error" resolves to an empty string: that state renders its
+ * own dedicated error box instead (see TaskCard).
  */
 export function statusSentence(task: Task): string {
   switch (task.state) {
@@ -77,12 +63,11 @@ export type StepStatus = "done" | "active" | "gate" | "failed" | "pending";
 
 /**
  * Per-step done/active/gate/failed/pending status for the horizontal step
- * tracker, derived purely from `currentStep` + `state` — mirrors
- * agentPresenter.js's `buildStepTracker` exactly. Steps are fully dynamic
+ * tracker, derived purely from `currentStep` + `state`. Steps are fully dynamic
  * per task (a manifest can have as few as 3 steps and no review/send gate
  * at all), so this never assumes a fixed pipeline shape, and a
  * `currentStep` that no longer matches any step id (e.g. mid-rescan on the
- * real backend) degrades to "no active step" rather than throwing.
+ * real engine) degrades to "no active step" rather than throwing.
  */
 export function computeStepStatuses(task: Task): StepStatus[] {
   const activeIndex = task.currentStep
@@ -97,15 +82,8 @@ export function computeStepStatuses(task: Task): StepStatus[] {
   });
 }
 
-/** Whether the "Run"/"Retry" action should be enabled — true when at least
- *  one pool worker is currently idle. Mirrors main.js's `lastCanStart`
- *  (`workers.some((w) => !w.currentTaskId)`). */
-export function canStartFromAgents(agents: Pick<Agent, "currentTaskId">[]): boolean {
-  return agents.some((agent) => !agent.currentTaskId);
-}
-
 // ---------------------------------------------------------------------------
-// Human gates of the task platform (agent-apps/TASK-PLATFORM-CONTRACT.md).
+// Human gates of the task platform (tasks/TASK-PLATFORM-CONTRACT.md).
 // The four older tasks declare no `label`/`gate` on their steps, so every
 // function below falls through to "no platform gate" for them and the legacy
 // UI (bare Approve/Reject, the review_incidents queue) is untouched. Kept in
@@ -145,7 +123,7 @@ export function hasStartForm(task: Task): boolean {
   return (task.inputs?.length ?? 0) > 0;
 }
 
-/** The newest `task.review_ready` notification, whose body the backend
+/** The newest `task.review_ready` notification, whose body the engine
  *  fills from the step's `reviewMessage`. */
 export function latestReviewNotification(task: Task): TaskNotification | null {
   for (let i = task.notifications.length - 1; i >= 0; i--) {
@@ -155,7 +133,7 @@ export function latestReviewNotification(task: Task): TaskNotification | null {
 }
 
 /** The newest notification that carries an output artifact (for the draft
- *  workbook "Open" button — the backend sets it from report-data.json's
+ *  workbook "Open" button — the engine sets it from report-data.json's
  *  workbook_path). */
 export function latestArtifactNotification(task: Task): TaskNotification | null {
   for (let i = task.notifications.length - 1; i >= 0; i--) {
@@ -165,7 +143,7 @@ export function latestArtifactNotification(task: Task): TaskNotification | null 
 }
 
 /** Every file a notification offers an Open button for: its `outputPaths`
- *  (duplicates dropped), else the single `outputPath` of an older backend. */
+ *  (duplicates dropped), else the single `outputPath` of an older engine. */
 export function notificationFiles(notification: TaskNotification): OutputFile[] {
   const listed = Array.isArray(notification.outputPaths) ? notification.outputPaths : [];
   const files: OutputFile[] = [];
@@ -201,7 +179,7 @@ export function openButtonLabel(
 }
 
 /** Review-ready text for the status line: the notification body exactly as
- *  the backend wrote it, but only for steps that opted into the platform
+ *  the engine wrote it, but only for steps that opted into the platform
  *  (a `label` or `gate`). The older tasks keep their fixed sentences. */
 export function reviewReadyText(task: Task): string | null {
   const step = pausedStep(task);
@@ -238,7 +216,7 @@ export function describeApproval(
 /** How many ids/messages a refusal line names before "+N more". */
 const REFUSAL_PREVIEW = 3;
 
-/** One-line text for an `ok:false` action reply. The backend's `reason` is
+/** One-line text for an `ok:false` action reply. The engine's `reason` is
  *  used as given; a form-gate refusal also names the first few unanswered
  *  field ids, and a diff-gate refusal the first few blockers. */
 export function refusalText(result: ActionResult): string {
@@ -252,7 +230,7 @@ export function refusalText(result: ActionResult): string {
   return `${base} (${shown}${extra > 0 ? ` +${extra} more` : ""})`;
 }
 
-/** Parses a backend timestamp. The backend stamps UTC, but a naive ISO
+/** Parses a engine timestamp. The engine stamps UTC, but a naive ISO
  *  string (no `Z`/offset) would be read by `Date` as LOCAL time, so it is
  *  pinned to UTC first. */
 export function parseUtc(value: string): Date {

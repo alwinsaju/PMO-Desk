@@ -38,15 +38,12 @@ import { useGateData } from "./useGateData";
 import type { HistoryRun, LogEntry, Task } from "./types";
 
 /** Matches the log tab's live-refresh cadence to the rest of the app's poll
- *  interval — mirrors agentPresenter.js's buildStepLog, which "refreshes
- *  live while open." */
+ *  interval, so the log refreshes live while open. */
 const LOG_POLL_MS = 2000;
 
 interface TaskDetailDialogProps {
   /** null closes the dialog. */
   task: Task | null;
-  /** Whether a pool worker is idle — for the action bar shown at a gate. */
-  canStart: boolean;
   /** Refetch hook so an Approve/Confirm from here shows up immediately. */
   onSettled: () => void;
   onOpenChange: (open: boolean) => void;
@@ -66,7 +63,6 @@ interface TaskDetailDialogProps {
  */
 export const TaskDetailDialog = memo(function TaskDetailDialog({
   task,
-  canStart,
   onSettled,
   onOpenChange,
 }: TaskDetailDialogProps) {
@@ -287,7 +283,6 @@ export const TaskDetailDialog = memo(function TaskDetailDialog({
               <div className="border-line mt-5 border-t pt-4">
                 <TaskActions
                   task={task}
-                  canStart={canStart}
                   onSettled={onSettled}
                   gate={gate}
                   extraBlock={{
@@ -408,9 +403,6 @@ function HistoryTab({ task }: { task: Task }) {
                 <Badge variant={run.outcome === "completed" ? "success" : "danger"} dot>
                   {run.outcome === "completed" ? "Completed" : "Failed"}
                 </Badge>
-                {run.agent_name ? (
-                  <span className="text-ink-muted font-medium">{run.agent_name}</span>
-                ) : null}
               </p>
               <p className="text-ink-muted mt-1.5">
                 {new Date(run.started_at).toLocaleString()}

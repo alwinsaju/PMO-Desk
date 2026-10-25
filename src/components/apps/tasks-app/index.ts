@@ -6,7 +6,7 @@
 // resolves app content through `getAppComponent(appId)`.
 //
 // Registers TasksAppGate (not TasksApp itself) — the gate auto-launches
-// the agent-office backend and shows a loading/error screen before handing
+// the Tasks engine and shows a loading/error screen before handing
 // off to the real <TasksApp>. See TasksAppGate.tsx.
 import { registerLazyApp } from "../registry";
 

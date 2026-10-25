@@ -7,7 +7,7 @@ import type { Flag, FlagSeverity, FlagsFile } from "./types";
 
 export const SEVERITIES: readonly FlagSeverity[] = ["error", "warning", "info"];
 
-/** Null-safe text: backend fields may be null (e.g. a flag with no person). */
+/** Null-safe text: engine fields may be null (e.g. a flag with no person). */
 export function textOf(value: string | null | undefined): string {
   return value ?? "";
 }

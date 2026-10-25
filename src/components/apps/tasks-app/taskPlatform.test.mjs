@@ -1,10 +1,10 @@
 // Run with `pnpm test` (Node's built-in test runner imports the .ts modules
 // directly). Pure logic for the task-platform UI (start form, gates, form
 // answers, flags, diff) plus the api.ts call shapes against a FAKE fetch —
-// nothing here ever touches the network or the live agent-office backend.
+// nothing here ever touches the network or the live Tasks engine.
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
-import { AGENT_OFFICE_API_URL } from "./api.ts";
+import { setEngineUrl } from "./engineUrl.ts";
 import * as api from "./api.ts";
 import {
   blockers,
@@ -79,6 +79,9 @@ import {
   stepLabel,
 } from "./taskPresenter.ts";
 
+const TASKS_ENGINE_URL = "http://127.0.0.1:8123";
+setEngineUrl(TASKS_ENGINE_URL);
+
 function task(overrides = {}) {
   return {
     id: "shift-roster",
@@ -86,10 +89,8 @@ function task(overrides = {}) {
     state: "resting",
     error: null,
     currentStep: null,
-    assignedAgentId: null,
     steps: [],
     notifications: [],
-    schedule: null,
     ...overrides,
   };
 }
@@ -275,7 +276,7 @@ describe("gates", () => {
           id: "n1",
           kind: "task.review_ready",
           title: "t",
-          body: "backend text",
+          body: "engine text",
           outputPath: null,
           createdAt: "",
         },
@@ -614,7 +615,7 @@ describe("api helpers (fake fetch, never the network)", () => {
     const file = new File(["x"], "roster.xlsx");
     await api.uploadInput("shift-roster", "roster", file);
 
-    const base = `${AGENT_OFFICE_API_URL}/tasks/shift-roster`;
+    const base = `${TASKS_ENGINE_URL}/tasks/shift-roster`;
     const seen = calls.map((c) => `${c.init.method} ${c.url.replace(base, "")}`);
     assert.deepEqual(seen, [
       "GET /inputs",
@@ -641,7 +642,7 @@ describe("api helpers (fake fetch, never the network)", () => {
     assert.ok(calls[0].url.endsWith("/tasks/a%20b/upload?input=in%2Fput"));
   });
 
-  it("turns a 404 from an older backend into ok:false instead of throwing", async () => {
+  it("turns a 404 from an older engine into ok:false instead of throwing", async () => {
     fake(() => json({ detail: "Not Found" }, 404));
     const reply = await api.getForm("shift-roster");
     assert.equal(reply.ok, false);
@@ -654,7 +655,7 @@ describe("api helpers (fake fetch, never the network)", () => {
     });
     assert.deepEqual(await api.getFlags("t"), {
       ok: false,
-      reason: "Couldn't reach the backend.",
+      reason: "Couldn't reach the engine.",
     });
     fake(() => {
       throw new DOMException("timed out", "TimeoutError");
@@ -662,7 +663,7 @@ describe("api helpers (fake fetch, never the network)", () => {
     assert.match((await api.getDiff("t")).reason, /too long/);
   });
 
-  it("passes backend refusals through untouched", async () => {
+  it("passes engine refusals through untouched", async () => {
     fake(() => json({ ok: false, reason: "disabled", pending: ["a"] }));
     const reply = await api.saveParams("t", { cycle: "x" });
     assert.equal(reply.ok, false);
@@ -731,7 +732,7 @@ describe("summaries and refusals", () => {
   });
 });
 
-describe("backend nulls (real flags have person/date null)", () => {
+describe("engine nulls (real flags have person/date null)", () => {
   const flags = [
     {
       key: "a",
@@ -944,7 +945,7 @@ describe("form gate: text fields and optional defaults (December Disconnect avai
     );
   });
 
-  it("counts a required text answer like the backend: trimmed and non-empty", () => {
+  it("counts a required text answer like the engine: trimmed and non-empty", () => {
     assert.equal(isAnswered(note, "  "), false);
     assert.equal(isAnswered(note, "\n\t"), false);
     assert.equal(isAnswered(note, undefined), false);
@@ -1017,7 +1018,7 @@ describe("form gate: text fields and optional defaults (December Disconnect avai
       note: null,
     });
     assert.deepEqual(localPending(schema, effective), ["note"]);
-    // nothing saved and nothing typed: no null for an answer the backend never had
+    // nothing saved and nothing typed: no null for an answer the engine never had
     const blank = { avail_dates_1: "" };
     assert.deepEqual(answersToSave(schema, {}, eff({}, blank), blank), {
       "shift:N": "S1",
@@ -1102,7 +1103,7 @@ describe("several output files (Open buttons)", () => {
     ...over,
   });
 
-  it("lists outputPaths, falling back to the single outputPath of an older backend", () => {
+  it("lists outputPaths, falling back to the single outputPath of an older engine", () => {
     assert.deepEqual(notificationFiles(note()), [
       { label: null, path: "C:/t/output/main.xlsx" },
     ]);
@@ -1184,7 +1185,7 @@ describe("api: open a listed file, clear an answer", () => {
       "n 1",
       "C:\\t\\output\\An plan.xlsx",
     );
-    const base = `${AGENT_OFFICE_API_URL}/tasks/december-disconnect/notifications/n%201/open`;
+    const base = `${TASKS_ENGINE_URL}/tasks/december-disconnect/notifications/n%201/open`;
     assert.equal(calls[0].url, base);
     assert.equal(calls[1].url, `${base}?path=C%3A%5Ct%5Coutput%5CAn%20plan.xlsx`);
     assert.deepEqual(
@@ -1551,7 +1552,7 @@ describe("clear input files", () => {
   it("is offered only when resting, on the inputs platform and something is cleanable", () => {
     assert.equal(canClearInputs(base(), files(3, 100)), true);
     assert.equal(canClearInputs(base(), files(0, 0)), false);
-    assert.equal(canClearInputs(base(), null), false); // older backend: no `cleanable`
+    assert.equal(canClearInputs(base(), null), false); // older engine: no `cleanable`
     assert.equal(canClearInputs(base(), undefined), false);
     for (const state of [
       "working",
@@ -1703,12 +1704,11 @@ describe("polled GETs share the previous parsed value when the body is unchanged
     assert.equal(third[0].state, "resting");
   });
 
-  it("keeps paths independent (tasks vs agents)", async () => {
-    globalThis.fetch = async (url) =>
-      reply(String(url).endsWith("/tasks") ? "[1]" : "[1]");
+  it("keeps paths independent (tasks vs a task's log)", async () => {
+    globalThis.fetch = async () => reply("[1]");
     const tasks = await api.fetchTasks();
-    const agents = await api.fetchAgents();
-    assert.notEqual(tasks, agents);
+    const log = await api.fetchTaskLog("a");
+    assert.notEqual(tasks, log);
   });
 
   it("shares gate GETs too, and never shares a failure", async () => {

@@ -762,7 +762,7 @@ describe("nothing is ever sent", () => {
     ]);
   });
 
-  it("the report modules import no mail, Outlook, network or agent-office code", async () => {
+  it("the report modules import no mail, Outlook, network or tasks-engine code", async () => {
     const files = [
       "src/lib/pmo/report.ts",
       "src/lib/pmo/reportNarrative.ts",
@@ -780,7 +780,7 @@ describe("nothing is ever sent", () => {
         "",
       );
       assert.ok(
-        !/agent-office|nodemailer|smtp|sendmail|ActiveX|Outlook\.Application|child_process|XMLHttpRequest|WebSocket|sendBeacon/i.test(
+        !/tasks-engine|nodemailer|smtp|sendmail|ActiveX|Outlook\.Application|child_process|XMLHttpRequest|WebSocket|sendBeacon/i.test(
           text,
         ),
         file,

@@ -35,11 +35,9 @@ if (displaySettings.shouldDisableHardwareAcceleration(launchedDisplay)) {
 const HOST = "127.0.0.1";
 const PREFERRED_PORT = 3100;
 const PORT_SPAN = 100;
-const AGENT_OFFICE_START_TIMEOUT_MS = 60_000;
+const TASKS_ENGINE_START_TIMEOUT_MS = 60_000;
 const SERVER_STOP_TIMEOUT_MS = 10_000;
 const PORT_FREE_TIMEOUT_MS = 10_000;
-const AGENT_OFFICE_API_URL =
-  process.env.NEXT_PUBLIC_AGENT_OFFICE_API_URL?.trim() || "http://localhost:8000";
 const OUTPUT_TAIL_LINES = 25;
 
 let mainWindow;
@@ -56,9 +54,9 @@ let attentionCount = 0;
 /** The page has registered its window.aiOsDesktop.onOpenTodo listener. */
 let rendererReady = false;
 let pendingOpen = null;
-/** Skip the Agent Office start/stop calls (they would touch the real backend):
- *  for testing the shell on its own, e.g. AI_OS_SKIP_AGENT_OFFICE=1. */
-const skipAgentOffice = process.env.AI_OS_SKIP_AGENT_OFFICE === "1";
+/** Skip the Tasks engine start/stop calls (they would touch the real engine):
+ *  for testing the shell on its own, e.g. AI_OS_SKIP_TASKS_ENGINE=1. */
+const skipTasksEngine = process.env.AI_OS_SKIP_TASKS_ENGINE === "1";
 /** Where the Next server mirrors the "keep running in the tray" setting. */
 const desktopPrefsFile = () => path.join(app.getPath("userData"), "desktop-prefs.json");
 
@@ -126,7 +124,7 @@ async function startDesktopApp() {
     showSplash();
   }
   await startUiServerWithFallback();
-  await startAgentOffice();
+  await startTasksEngine();
   buildMenu();
   createWindow();
   closeSplash();
@@ -187,6 +185,7 @@ async function startUiServer(mode) {
       AI_OS_PMO_DATA_DIR: path.join(app.getPath("userData"), "pmo"),
       // The server mirrors the tray setting here for this shell to read.
       AI_OS_DESKTOP_PREFS_FILE: desktopPrefsFile(),
+      ...tasksEngineEnv(),
       ELECTRON_RUN_AS_NODE: "1",
       NODE_ENV: mode === "live-dev" ? "development" : "production",
     },
@@ -230,8 +229,30 @@ async function startUiServer(mode) {
   ui.ready = true;
 }
 
+/**
+ * What the UI server needs to start the Tasks engine from an installed app: the
+ * Python bundled in resources/python, and a data folder under userData so the
+ * install folder stays read-only and task inputs, outputs and run history
+ * survive a reinstall (tasks-engine/workcopy.py). Unpackaged runs (`pnpm
+ * desktop`) use the repo's own Python and run tasks in place. Either can be
+ * overridden from the environment.
+ */
+function tasksEngineEnv() {
+  if (!app.isPackaged) {
+    return {};
+  }
+  return {
+    AI_OS_TASKS_PYTHON:
+      process.env.AI_OS_TASKS_PYTHON ||
+      path.join(process.resourcesPath, "python", "pythonw.exe"),
+    AI_OS_TASKS_DATA_DIR:
+      process.env.AI_OS_TASKS_DATA_DIR ||
+      path.join(app.getPath("userData"), "tasks-engine"),
+  };
+}
+
 /** Stop the spawned UI server and everything it started (dev mode forks a
- *  worker, and the owned backend is its child). Resolves when gone. */
+ *  worker, and the owned engine is its child). Resolves when gone. */
 async function stopUiServer() {
   const child = ui.child;
   if (!child) {
@@ -301,9 +322,9 @@ async function offerUiRestart(message) {
 
 /**
  * Developer > Restart UI server. Stops the UI server (which also stops the
- * backend it owns, since the backend is its child), starts it again in the
+ * engine it owns, since the engine is its child), starts it again in the
  * same mode on the same port (the web origin, and with it saved settings,
- * stays the same), re-launches the backend and reloads the window.
+ * stays the same), re-launches the engine and reloads the window.
  */
 async function restartUiServer({ confirmIfBusy }) {
   if (ui.restarting || isQuitting) {
@@ -319,9 +340,9 @@ async function restartUiServer({ confirmIfBusy }) {
       detail:
         (busy.length
           ? `WARNING: ${busy.length} task(s) are not idle (${busy.join(", ")}). ` +
-            "Restarting also restarts the backend and STOPS those runs.\n\n"
+            "Restarting also restarts the engine and STOPS those runs.\n\n"
           : "") +
-        "The backend (Agent Office) is restarted together with the UI server. " +
+        "The engine (Tasks engine) is restarted together with the UI server. " +
         "The window reloads when it is back.",
       buttons: ["Cancel", busy.length ? "Restart and stop runs" : "Restart"],
       defaultId: 0,
@@ -359,7 +380,7 @@ async function restartUiServer({ confirmIfBusy }) {
       await startUiServer("bundled");
     }
 
-    await startAgentOffice();
+    await startTasksEngine();
     buildMenu();
     updateWindowTitle();
     if (mainWindow) {
@@ -383,7 +404,15 @@ async function restartUiServer({ confirmIfBusy }) {
 /** Read-only: names of tasks that are not resting. Empty if unreachable. */
 async function listBusyTasks() {
   try {
-    const response = await fetch(`${AGENT_OFFICE_API_URL}/tasks`, {
+    // The engine's port is picked at launch; ask the UI server where it is.
+    const config = await fetch(`${appUrl}/api/tasks-engine/config`, {
+      signal: AbortSignal.timeout(2_000),
+    });
+    const { url } = config.ok ? await config.json() : {};
+    if (!url) {
+      return [];
+    }
+    const response = await fetch(`${url}/tasks`, {
       signal: AbortSignal.timeout(2_000),
     });
     if (!response.ok) {
@@ -396,28 +425,28 @@ async function listBusyTasks() {
 }
 
 // ---------------------------------------------------------------------------
-// Agent Office backend (started and stopped through the UI server's routes)
+// Tasks engine (started and stopped through the UI server's routes)
 // ---------------------------------------------------------------------------
 
-async function startAgentOffice() {
-  if (skipAgentOffice) {
-    desktopLog("AI_OS_SKIP_AGENT_OFFICE=1: not starting Agent Office.");
+async function startTasksEngine() {
+  if (skipTasksEngine) {
+    desktopLog("AI_OS_SKIP_TASKS_ENGINE=1: not starting Tasks engine.");
     return;
   }
-  desktopLog("Starting Agent Office.");
-  const response = await fetch(`${appUrl}/api/agent-office/start`, {
+  desktopLog("Starting Tasks engine.");
+  const response = await fetch(`${appUrl}/api/tasks-engine/start`, {
     method: "POST",
-    signal: AbortSignal.timeout(AGENT_OFFICE_START_TIMEOUT_MS),
+    signal: AbortSignal.timeout(TASKS_ENGINE_START_TIMEOUT_MS),
   });
   if (!response.ok) {
-    throw new Error(`Agent Office start request failed: ${response.status}.`);
+    throw new Error(`Tasks engine start request failed: ${response.status}.`);
   }
 
   const result = await response.json();
   if (!result.ok) {
-    throw new Error(result.reason || "Agent Office could not start.");
+    throw new Error(result.reason || "Tasks engine could not start.");
   }
-  desktopLog("Agent Office is ready.");
+  desktopLog("Tasks engine is ready.");
 }
 
 // ---------------------------------------------------------------------------
@@ -637,6 +666,18 @@ ipcMain.handle("display:get-state", (event) =>
   isFromMainWindow(event) ? displayState() : null,
 );
 
+/** The setup screen's "Browse": a folder picker over the main window. */
+ipcMain.handle("setup:choose-folder", async (event) => {
+  if (!isFromMainWindow(event) || !mainWindow) {
+    return null;
+  }
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: "Choose the PMO inbox folder",
+    properties: ["openDirectory"],
+  });
+  return result.canceled ? null : (result.filePaths[0] ?? null);
+});
+
 ipcMain.handle("display:set-hardware-acceleration", (event, enabled) => {
   if (!isFromMainWindow(event) || typeof enabled !== "boolean") {
     return null;
@@ -657,13 +698,13 @@ ipcMain.handle("display:set-hardware-acceleration", (event, enabled) => {
 });
 
 /** "Restart to apply": relaunch the app. The normal quit path runs first (it
- *  stops the UI server, the Agent Office backend this app owns and the AI
+ *  stops the UI server, the Tasks engine this app owns and the AI
  *  runtime), then the new instance starts. Warns first if a task is running. */
 ipcMain.handle("display:relaunch", async (event) => {
   if (!isFromMainWindow(event) || isQuitting) {
     return false;
   }
-  const busy = skipAgentOffice ? [] : await listBusyTasks();
+  const busy = skipTasksEngine ? [] : await listBusyTasks();
   if (busy.length) {
     const { response } = await showMessage({
       type: "warning",
@@ -827,23 +868,23 @@ async function stopServices() {
   await stopProcess(child);
 }
 
-/** Ask the UI server to stop the backend and the local AI runtime it owns. */
+/** Ask the UI server to stop the engine and the local AI runtime it owns. */
 async function requestServiceShutdown() {
   // A dev server may need to compile these routes on first use.
   const timeout = ui.mode === "live-dev" ? 20_000 : 5_000;
   try {
-    if (!skipAgentOffice) {
-      const response = await fetch(`${appUrl}/api/agent-office/stop`, {
+    if (!skipTasksEngine) {
+      const response = await fetch(`${appUrl}/api/tasks-engine/stop`, {
         method: "POST",
         signal: AbortSignal.timeout(timeout),
       });
       if (!response.ok) {
-        throw new Error(`Agent Office stop request failed: ${response.status}.`);
+        throw new Error(`Tasks engine stop request failed: ${response.status}.`);
       }
     }
   } catch (error) {
     desktopLog(
-      `Could not request a clean Agent Office shutdown: ${
+      `Could not request a clean Tasks engine shutdown: ${
         error instanceof Error ? error.message : String(error)
       }`,
       "error",

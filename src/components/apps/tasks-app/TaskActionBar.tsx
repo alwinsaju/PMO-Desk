@@ -10,10 +10,6 @@ const DEFAULT_CONFIRM_LABEL = "Confirm & send";
 
 interface TaskActionBarProps {
   state: TaskState;
-  /** True once at least one pool worker is idle — only gates the "Run"
-   *  button (resting state); every other state's buttons don't depend on
-   *  worker availability. */
-  canStart: boolean;
   pending: TaskActionName | null;
   lastFailure: string | null;
   /** Set when Approve was stopped because incidents still need a
@@ -41,9 +37,8 @@ interface TaskActionBarProps {
 }
 
 /**
- * Renders exactly the action buttons legal for `state` — mirrors
- * agentPresenter.js's `buildActions` switch statement rule for rule: Run
- * only when resting (disabled without an idle worker), Retry + Reset only
+ * Renders exactly the action buttons legal for `state`: Run
+ * only when resting, Retry + Reset only
  * on error, Approve + Reject only in awaiting_review, Confirm & send only
  * in awaiting_send, and a working/finishing task gets no action at all
  * except a Force-reset escape hatch (plus an in-progress indicator in
@@ -58,7 +53,6 @@ interface TaskActionBarProps {
  */
 export function TaskActionBar({
   state,
-  canStart,
   pending,
   lastFailure,
   reviewBlock = null,
@@ -82,17 +76,10 @@ export function TaskActionBar({
   switch (state) {
     case "resting":
       buttons = (
-        <Button disabled={!canStart || isBusy} onClick={onStart}>
+        <Button disabled={isBusy} onClick={onStart}>
           {pending === "start" ? "Starting…" : runLabel}
         </Button>
       );
-      if (!canStart) {
-        caption = (
-          <p className="text-ink-muted text-xs">
-            All agents are busy — try again when one frees up.
-          </p>
-        );
-      }
       break;
 
     case "error":
@@ -188,7 +175,7 @@ export function TaskActionBar({
                 : "Confirming…"
               : confirmLabel}
           </Button>
-          {/* A blocked confirm cannot be repaired in place and the backend has no
+          {/* A blocked confirm cannot be repaired in place and the engine has no
               reject at this gate: Reset (start over) is the way out. */}
           {sendBlocked && (
             <Button variant="outline" disabled={isBusy} onClick={onReset}>

@@ -1,0 +1,326 @@
+// Run with `pnpm test`. The setup report: every state a computer can be in
+// gets a plain sentence, the right buttons and no more.
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
+import { buildReport, missingRequired } from "./report.ts";
+
+const GB = 1024 ** 3;
+
+function facts(overrides = {}) {
+  const dirs = new Set(["C:\\OneDrive", "C:\\OneDrive\\PMO-Inbox"]);
+  const base = {
+    platform: "win32",
+    ollama: {
+      exe: "C:\\Ollama\\ollama.exe",
+      running: true,
+      version: "0.41.0",
+      installedModels: ["gemma4:12b"],
+      defaultModel: "gemma4:12b",
+    },
+    hardware: { totalRamBytes: 32 * GB, freeDiskBytes: 300 * 1e9 },
+    inbox: {
+      path: "C:\\OneDrive\\PMO-Inbox",
+      fromEnvironment: false,
+      exists: true,
+      oneDrive: { signedIn: true, roots: ["C:\\OneDrive"] },
+      isDirectory: (p) => dirs.has(p),
+    },
+    outlook: { comRegistered: true, classicInstalled: true, newOutlook: false },
+    engine: {
+      python: "C:\\app\\resources\\python\\pythonw.exe",
+      selfTest: {
+        ok: true,
+        python: "3.13.14",
+        checks: [
+          { id: "python", title: "Python runtime", ok: true, detail: "Python 3.13.14" },
+        ],
+      },
+    },
+  };
+  return {
+    ...base,
+    ...overrides,
+    ollama: { ...base.ollama, ...overrides.ollama },
+    hardware: { ...base.hardware, ...overrides.hardware },
+    inbox: { ...base.inbox, ...overrides.inbox },
+    outlook: { ...base.outlook, ...overrides.outlook },
+    engine: { ...base.engine, ...overrides.engine },
+  };
+}
+
+const check = (report, id) => report.checks.find((c) => c.id === id);
+const NOW = () => new Date("2026-10-25T10:00:00Z");
+
+describe("a fully set up computer", () => {
+  const report = buildReport(facts(), NOW);
+
+  it("is ready, with every check ok and nothing to do", () => {
+    assert.equal(report.ready, true);
+    assert.equal(report.generatedAt, "2026-10-25T10:00:00.000Z");
+    assert.deepEqual(
+      report.checks.map((c) => [c.id, c.state]),
+      [
+        ["ollama", "ok"],
+        ["model", "ok"],
+        ["pmo-inbox", "ok"],
+        ["engine", "ok"],
+        ["outlook", "ok"],
+      ],
+    );
+    assert.deepEqual(missingRequired(report), []);
+    for (const id of ["ollama", "model", "outlook"])
+      assert.deepEqual(check(report, id).steps, []);
+  });
+
+  it("marks only Outlook as optional", () => {
+    assert.deepEqual(
+      report.checks.filter((c) => !c.required).map((c) => c.id),
+      ["outlook"],
+    );
+  });
+});
+
+describe("Ollama and the model", () => {
+  it("offers the install when Ollama is missing, and holds the model back", () => {
+    const report = buildReport(
+      facts({
+        ollama: { exe: null, running: false, version: null, installedModels: null },
+      }),
+      NOW,
+    );
+    assert.equal(check(report, "ollama").state, "missing");
+    assert.deepEqual(check(report, "ollama").actions, ["install-ollama"]);
+    assert.match(check(report, "ollama").steps.join(" "), /blocked on your network/);
+    assert.equal(check(report, "model").state, "missing");
+    assert.deepEqual(check(report, "model").actions, []);
+    assert.equal(report.ready, false);
+    assert.deepEqual(missingRequired(report), ["model", "ollama"]);
+  });
+
+  it("installed but not running is only a note", () => {
+    const c = check(
+      buildReport(facts({ ollama: { running: false, installedModels: null } }), NOW),
+      "ollama",
+    );
+    assert.equal(c.state, "attention");
+    assert.match(c.summary, /starts it when it is needed/);
+  });
+
+  it("asks for the model download when it is not there", () => {
+    const c = check(
+      buildReport(facts({ ollama: { installedModels: [] } }), NOW),
+      "model",
+    );
+    assert.equal(c.state, "missing");
+    assert.deepEqual(c.actions, ["pull-model"]);
+    assert.match(c.steps[0], /large download.*12 GB.*carries on where it stopped/);
+  });
+
+  it("cannot tell when Ollama is not answering, but still offers the download", () => {
+    const c = check(
+      buildReport(facts({ ollama: { running: false, installedModels: null } }), NOW),
+      "model",
+    );
+    assert.equal(c.state, "unknown");
+    assert.deepEqual(c.actions, ["pull-model"]);
+  });
+
+  it("warns about memory and offers the smaller model", () => {
+    const c = check(
+      buildReport(
+        facts({ ollama: { installedModels: [] }, hardware: { totalRamBytes: 8 * GB } }),
+        NOW,
+      ),
+      "model",
+    );
+    assert.deepEqual(c.actions, ["pull-model", "pull-fallback-model"]);
+    assert.ok(c.details.some((d) => /8 GB of memory.*qwen3\.5:9b/.test(d)));
+  });
+
+  it("blocks the big download on a full disk and says how much is free", () => {
+    const c = check(
+      buildReport(
+        facts({ ollama: { installedModels: [] }, hardware: { freeDiskBytes: 3e9 } }),
+        NOW,
+      ),
+      "model",
+    );
+    assert.equal(c.state, "missing");
+    assert.match(c.summary, /not enough free disk space.*3\.0 GB is free/);
+    assert.deepEqual(c.actions, ["pull-model", "pull-fallback-model"]);
+  });
+
+  it("notices that only the fallback is installed", () => {
+    const c = check(
+      buildReport(facts({ ollama: { installedModels: ["qwen3.5:9b"] } }), NOW),
+      "model",
+    );
+    assert.equal(c.state, "attention");
+    assert.match(
+      c.summary,
+      /qwen3\.5:9b is installed, but AI OS is set up for gemma4:12b/,
+    );
+  });
+});
+
+describe("the PMO inbox folder", () => {
+  it("explains that OneDrive is not signed in and offers to choose another folder", () => {
+    const report = buildReport(
+      facts({ inbox: { exists: false, oneDrive: { signedIn: false, roots: [] } } }),
+      NOW,
+    );
+    const c = check(report, "pmo-inbox");
+    assert.equal(c.state, "missing");
+    assert.match(c.summary, /OneDrive is not signed in/);
+    assert.deepEqual(c.actions, ["choose-inbox"]);
+    assert.equal(report.ready, false);
+  });
+
+  it("says the folder is missing when OneDrive is fine, and suggests where it might be", () => {
+    const c = check(
+      buildReport(facts({ inbox: { path: "C:\\Old\\PMO-Inbox", exists: false } }), NOW),
+      "pmo-inbox",
+    );
+    assert.match(
+      c.summary,
+      /OneDrive is signed in, but the PMO inbox folder does not exist/,
+    );
+    assert.deepEqual(c.suggestions, ["C:\\OneDrive\\PMO-Inbox"]);
+    assert.match(c.steps[0], /Pick the folder below/);
+  });
+
+  it("keeps working but warns when the folder exists and OneDrive does not look signed in", () => {
+    const c = check(
+      buildReport(facts({ inbox: { oneDrive: { signedIn: false, roots: [] } } }), NOW),
+      "pmo-inbox",
+    );
+    assert.equal(c.state, "attention");
+    assert.match(c.steps[0], /Sign in to OneDrive/);
+  });
+
+  it("does not claim OneDrive when a setting fixes the folder", () => {
+    const c = check(
+      buildReport(
+        facts({
+          inbox: { fromEnvironment: true, oneDrive: { signedIn: false, roots: [] } },
+        }),
+        NOW,
+      ),
+      "pmo-inbox",
+    );
+    assert.equal(c.state, "ok");
+    assert.match(c.summary, /fixed by a setting, so OneDrive is not checked/);
+  });
+
+  it("cannot be changed from the screen when the environment sets it", () => {
+    const c = check(
+      buildReport(
+        facts({
+          inbox: {
+            fromEnvironment: true,
+            exists: false,
+            oneDrive: { signedIn: false, roots: [] },
+          },
+        }),
+        NOW,
+      ),
+      "pmo-inbox",
+    );
+    assert.deepEqual(c.actions, []);
+    assert.ok(c.details.some((d) => /AI_OS_PMO_INBOX_DIR/.test(d)));
+  });
+});
+
+describe("classic Outlook (report only)", () => {
+  it("never blocks, whatever it finds", () => {
+    for (const outlook of [
+      { comRegistered: false, classicInstalled: false, newOutlook: true },
+      { comRegistered: false, classicInstalled: false, newOutlook: false },
+      { comRegistered: null, classicInstalled: null, newOutlook: null },
+    ]) {
+      assert.equal(buildReport(facts({ outlook }), NOW).ready, true);
+    }
+  });
+
+  it("explains new Outlook has no COM and what to do", () => {
+    const c = check(
+      buildReport(
+        facts({
+          outlook: { comRegistered: false, classicInstalled: false, newOutlook: true },
+        }),
+        NOW,
+      ),
+      "outlook",
+    );
+    assert.equal(c.state, "attention");
+    assert.match(c.summary, /Only the new Outlook is installed/);
+    assert.match(c.steps.join(" "), /never opens your mailbox or sends anything/);
+  });
+
+  it("says classic Outlook was not found, and that only the four mail tasks need it", () => {
+    const c = check(
+      buildReport(
+        facts({
+          outlook: { comRegistered: false, classicInstalled: false, newOutlook: false },
+        }),
+        NOW,
+      ),
+      "outlook",
+    );
+    assert.match(
+      c.summary,
+      /Classic Outlook was not found.*everything else works without/,
+    );
+  });
+
+  it("is unknown on other systems", () => {
+    assert.equal(
+      check(buildReport(facts({ platform: "linux" }), NOW), "outlook").state,
+      "unknown",
+    );
+  });
+});
+
+describe("the engine self-test", () => {
+  it("asks to be run when it has not been", () => {
+    const c = check(buildReport(facts({ engine: { selfTest: null } }), NOW), "engine");
+    assert.equal(c.state, "unknown");
+    assert.deepEqual(c.actions, ["run-selftest"]);
+    assert.equal(buildReport(facts({ engine: { selfTest: null } }), NOW).ready, false);
+  });
+
+  it("shows running, and lists every result when it fails", () => {
+    assert.match(
+      check(buildReport(facts({ engine: { selfTest: "running" } }), NOW), "engine")
+        .summary,
+      /Running the self-test/,
+    );
+    const failing = {
+      ok: false,
+      python: "3.13.14",
+      checks: [
+        { id: "python", title: "Python runtime", ok: true, detail: "Python 3.13.14" },
+        {
+          id: "packages",
+          title: "Task packages",
+          ok: false,
+          detail: "ModuleNotFoundError: scipy",
+        },
+      ],
+    };
+    const c = check(buildReport(facts({ engine: { selfTest: failing } }), NOW), "engine");
+    assert.equal(c.state, "missing");
+    assert.match(c.summary, /self-test failed: Task packages/);
+    assert.ok(c.details.includes("FAILED: Task packages - ModuleNotFoundError: scipy"));
+    assert.deepEqual(c.actions, ["run-selftest"]);
+  });
+
+  it("reports a missing Python as a reinstall problem", () => {
+    const c = check(
+      buildReport(facts({ engine: { python: null, selfTest: null } }), NOW),
+      "engine",
+    );
+    assert.equal(c.state, "missing");
+    assert.match(c.steps[0], /Reinstall AI OS/);
+  });
+});

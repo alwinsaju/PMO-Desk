@@ -4,7 +4,7 @@ import type { ActionResult, ReviewQueue } from "./types";
 export interface ReviewBlock {
   pending: number;
   /** First few unresolved incident numbers (best effort — may be empty if
-   *  the queue couldn't be re-read after a backend refusal). */
+   *  the queue couldn't be re-read after a engine refusal). */
   numbers: string[];
 }
 
@@ -26,14 +26,14 @@ function blockFromQueue(queue: ReviewQueue): ReviewBlock {
 }
 
 /**
- * Approve for a task paused at the `review_incidents` gate. The backend
+ * Approve for a task paused at the `review_incidents` gate. The engine
  * decides pending purely from its own saved files, so before asking it to
  * approve we re-read that same queue (read-only GET) and refuse locally if
  * anything is still unclassified — nothing mutating is sent until the
  * server itself says pending === 0. If the queue can't be read at all the
  * approve is NOT attempted (`unverified`), because proceeding blind is
  * exactly how a stale screen would let a half-classified run through; the
- * backend's own gate remains the final check either way. If the backend still
+ * engine's own gate remains the final check either way. If the engine still
  * refuses with a pending count (the queue changed under us), that refusal
  * is turned into the same block so the user gets the same guidance.
  *

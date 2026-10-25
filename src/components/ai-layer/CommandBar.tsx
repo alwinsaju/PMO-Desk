@@ -206,7 +206,7 @@ export function CommandBar() {
   // stomp on a NEWER task's state. `isBusy` already prevents overlapping
   // submits today, so in practice this is a defensive belt-and-suspenders
   // guard rather than something that fires — same reasoning as
-  // useBackendLauncher.ts's own `tokenRef`.
+  // useEngineLauncher.ts's own `tokenRef`.
   const taskTokenRef = useRef(0);
 
   const setCommandBarAnchor = useAgentStore((s) => s.setCommandBarAnchor);

@@ -1,5 +1,5 @@
 // Regression: the REAL GET /tasks shape (captured read-only from the live
-// backend) must make Run open the start form for tasks that declare inputs.
+// engine) must make Run open the start form for tasks that declare inputs.
 // Runs against a FAKE fetch only.
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
@@ -29,7 +29,6 @@ const LIVE_TASKS = [
     state: "resting",
     error: null,
     currentStep: null,
-    assignedAgentId: null,
     steps: [
       {
         id: "analyze",
@@ -85,8 +84,6 @@ const LIVE_TASKS = [
       },
     ],
     notifications: [],
-    schedule: null,
-    runtime: "local",
     inputs: [
       {
         id: "roster",
@@ -137,7 +134,6 @@ const LIVE_TASKS = [
     state: "resting",
     error: null,
     currentStep: null,
-    assignedAgentId: null,
     steps: [
       {
         id: "prepare_data",
@@ -165,8 +161,6 @@ const LIVE_TASKS = [
       },
     ],
     notifications: [],
-    schedule: null,
-    runtime: null,
     inputs: [],
     prepare: false,
   },
@@ -176,7 +170,6 @@ const LIVE_TASKS = [
     state: "resting",
     error: null,
     currentStep: null,
-    assignedAgentId: null,
     steps: [
       {
         id: "analyze",
@@ -232,8 +225,6 @@ const LIVE_TASKS = [
       },
     ],
     notifications: [],
-    schedule: null,
-    runtime: "local",
     inputs: [
       {
         id: "roster",
@@ -363,14 +354,11 @@ const OLDER_TASKS = [
   state: "resting",
   error: null,
   currentStep: null,
-  assignedAgentId: null,
   steps: [
     { id: "prepare_data", type: "python", label: null, gate: null },
     { id: "review_incidents", type: "review", label: null, gate: null },
   ],
   notifications: [],
-  schedule: null,
-  runtime: null,
   inputs: [
     {
       id: "data",
@@ -482,7 +470,7 @@ describe("synthetic manifests: the four older tasks gain a file-only inputs bloc
     assert.match(cleanupNote(t), /except the ones kept on file/);
   });
 
-  it("older backend: no persist/cleanup/cleanable fields still behaves as before", async () => {
+  it("older engine: no persist/cleanup/cleanable fields still behaves as before", async () => {
     const plain = LIVE_TASKS.find((t) => t.id === "shift-roster");
     assert.equal(cleanupNote(plain), null);
     assert.equal(canClearInputs(plain, undefined), false);

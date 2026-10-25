@@ -52,7 +52,7 @@ interface StartTaskDialogProps {
   task: Task;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** The real start call (useTaskAction.start); resolves with the backend's
+  /** The real start call (useTaskAction.start); resolves with the engine's
    *  reply, or null if it couldn't be reached. */
   onStart: () => Promise<ActionResult | null>;
 }
@@ -111,7 +111,7 @@ export function StartTaskDialog({
   const ready = canPrepare(task, statuses);
   const uploading = Object.values(busy).some(Boolean);
 
-  // Fresh state every time the dialog opens: files already on the backend
+  // Fresh state every time the dialog opens: files already on the engine
   // are shown as uploaded, but options are always recomputed (a file may
   // have changed since the last check), so Start can't ride on stale ones.
   useEffect(() => {
@@ -230,7 +230,7 @@ export function StartTaskDialog({
     if (session.current !== mine) return;
     setStarting(false);
     if (result === null) {
-      setStartError("Couldn't reach the backend.");
+      setStartError("Couldn't reach the engine.");
     } else if (!result.ok) {
       const needs = result.missing?.length
         ? ` Missing: ${result.missing.join(", ")}.`

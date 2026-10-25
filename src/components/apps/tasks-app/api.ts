@@ -1,6 +1,5 @@
 import type {
   ActionResult,
-  Agent,
   CleanupPayload,
   DiffPayload,
   FlagsPayload,
@@ -15,26 +14,15 @@ import type {
   Task,
   UploadPayload,
 } from "./types";
+import { getEngineUrl } from "./engineUrl.ts";
 
-/**
- * Base URL of the agent-office FastAPI backend — a separate, already-running
- * system this app is a live client of (see
- * `C:\Projects\Agents-workspace\agent-office\backend`, read-only reference).
- * A single named constant rather than a literal repeated at every call
- * site; override via `NEXT_PUBLIC_AGENT_OFFICE_API_URL` if it ever runs
- * somewhere other than the default. Its CORS is already wide open
- * (`allow_origins=["*"]`), so this calls it directly with no proxy.
- */
-export const AGENT_OFFICE_API_URL =
-  process.env.NEXT_PUBLIC_AGENT_OFFICE_API_URL?.trim() || "http://localhost:8000";
-
-/** Every request is time-boxed so a half-dead connection (e.g. the backend
+/** Every request is time-boxed so a half-dead connection (e.g. the engine
  *  restarting mid keep-alive) rejects promptly instead of hanging the poll
- *  loop — see useAgentOfficeData's catch path. */
+ *  loop — see useTasksData's catch path. */
 const REQUEST_TIMEOUT_MS = 8000;
 
 async function getJson<T>(path: string): Promise<T> {
-  const res = await fetch(`${AGENT_OFFICE_API_URL}${path}`, {
+  const res = await fetch(`${await getEngineUrl()}${path}`, {
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
   if (!res.ok) throw new Error(`GET ${path} failed: ${res.status}`);
@@ -56,7 +44,7 @@ const MAX_SHARED_PATHS = 64;
 const MAX_SHARED_TEXT = 2_000_000;
 
 async function getJsonShared<T>(path: string): Promise<T> {
-  const res = await fetch(`${AGENT_OFFICE_API_URL}${path}`, {
+  const res = await fetch(`${await getEngineUrl()}${path}`, {
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
   if (!res.ok) throw new Error(`GET ${path} failed: ${res.status}`);
@@ -78,7 +66,7 @@ async function readShared<T>(path: string, res: Response): Promise<T> {
 }
 
 async function postAction(path: string): Promise<ActionResult> {
-  const res = await fetch(`${AGENT_OFFICE_API_URL}${path}`, {
+  const res = await fetch(`${await getEngineUrl()}${path}`, {
     method: "POST",
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
@@ -92,13 +80,6 @@ const EMPTY_LOG: LogEntry[] = [];
 /** All discovered tasks with their live state. */
 export function fetchTasks(): Promise<Task[]> {
   return getJsonShared<Task[]>("/tasks");
-}
-
-/** All pool workers with their live state — used only to derive whether
- *  any worker is idle (see taskPresenter.ts's `canStartFromAgents`); never
- *  rendered as its own panel. */
-export function fetchAgents(): Promise<Agent[]> {
-  return getJsonShared<Agent[]>("/agents");
 }
 
 /** This task's past runs, newest first. The endpoint replies
@@ -125,8 +106,8 @@ export async function fetchTaskLog(taskId: string): Promise<LogEntry[]> {
 
 // ---------------------------------------------------------------------------
 // State-machine actions. Each is a bare POST with no body, matching the
-// backend's actual route signatures exactly (see main.py) — none of them
-// take a request body. SAFETY: these five call a real backend that really
+// engine's actual route signatures exactly (see main.py) — none of them
+// take a request body. SAFETY: these five call a real engine that really
 // starts pipelines and really sends real email (see the task brief) with no
 // auth in front of it. This module only ever DEFINES the calls; see
 // useTaskAction.ts for the one place they're actually invoked, and the
@@ -134,8 +115,8 @@ export async function fetchTaskLog(taskId: string): Promise<LogEntry[]> {
 // triggering them for real.
 // ---------------------------------------------------------------------------
 
-/** Starts a task's pipeline on an idle worker. Also used for "Retry" from
- *  the error state — the backend itself distinguishes fresh-start from
+/** Starts a task's pipeline. Also used for "Retry" from
+ *  the error state — the engine itself distinguishes fresh-start from
  *  retry by the task's current state (see main.py's start_task). */
 export function startTask(taskId: string): Promise<ActionResult> {
   return postAction(`/tasks/${encodeURIComponent(taskId)}/start`);
@@ -163,10 +144,10 @@ export function resetTask(taskId: string): Promise<ActionResult> {
   return postAction(`/tasks/${encodeURIComponent(taskId)}/reset`);
 }
 
-/** Tells the backend (running locally on this same machine) to open a
+/** Tells the engine (running locally on this same machine) to open a
  *  notification's output artifact with the OS default app. Safe/local —
  *  not one of the five state-machine actions above. With `path` it opens
- *  that one of the notification's `outputPaths` (the backend refuses any
+ *  that one of the notification's `outputPaths` (the engine refuses any
  *  path the notification doesn't list); without it, the primary file. */
 export function openTaskNotification(
   taskId: string,
@@ -207,14 +188,14 @@ export async function fetchReviewIncidents(taskId: string): Promise<ReviewQueue>
 }
 
 /** Persists the human's Subcategory2 choices for a task's review queue.
- *  The backend writes them to the task's output/review-resolutions.json,
+ *  The engine writes them to the task's output/review-resolutions.json,
  *  which the refresh step folds into the staging workbook. */
 export async function postReviewResolutions(
   taskId: string,
   resolutions: { number: string; subcategory2: string }[],
 ): Promise<ActionResult> {
   const res = await fetch(
-    `${AGENT_OFFICE_API_URL}/tasks/${encodeURIComponent(taskId)}/review-resolutions`,
+    `${await getEngineUrl()}/tasks/${encodeURIComponent(taskId)}/review-resolutions`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -227,10 +208,10 @@ export async function postReviewResolutions(
 }
 
 // ---------------------------------------------------------------------------
-// Task platform endpoints (agent-apps/TASK-PLATFORM-CONTRACT.md section 2):
+// Task platform endpoints (tasks/TASK-PLATFORM-CONTRACT.md section 2):
 // inputs/upload/prepare/options/params for the start form, form/diff/flags
 // for the human gates. All reply `{ok, reason?, ...}`. Unlike the helpers
-// above these NEVER throw: a missing route (an older backend still running
+// above these NEVER throw: a missing route (an older engine still running
 // the pre-platform code answers 404), a network failure or a timeout all
 // collapse into `{ok: false, reason}` so every caller has a single failure
 // path and the four older tasks never see any of it.
@@ -238,7 +219,7 @@ export async function postReviewResolutions(
 
 /** Upload bodies can be tens of MB over a local socket. */
 const UPLOAD_TIMEOUT_MS = 120_000;
-/** The backend gives `prepare` 120 s itself; allow a little more so its own
+/** The engine gives `prepare` 120 s itself; allow a little more so its own
  *  `{ok:false, reason, stderr_tail}` wins the race against our abort. */
 const PREPARE_TIMEOUT_MS = 150_000;
 
@@ -260,7 +241,7 @@ async function callJson<T extends object>(
   { method = "GET", body, headers, timeoutMs = REQUEST_TIMEOUT_MS }: CallOptions = {},
 ): Promise<Reply<T>> {
   try {
-    const res = await fetch(`${AGENT_OFFICE_API_URL}${path}`, {
+    const res = await fetch(`${await getEngineUrl()}${path}`, {
       method,
       body,
       headers,
@@ -269,8 +250,8 @@ async function callJson<T extends object>(
     if (!res.ok) {
       return failure<T>(
         res.status === 404
-          ? "The running agent-office backend doesn't support this yet — restart it to pick up the new version."
-          : `The backend rejected the request (HTTP ${res.status}).`,
+          ? "The running Tasks engine doesn't support this yet — restart it to pick up the new version."
+          : `The engine rejected the request (HTTP ${res.status}).`,
         res.status === 404,
       );
     }
@@ -279,7 +260,7 @@ async function callJson<T extends object>(
   } catch (error) {
     const timedOut = error instanceof DOMException && error.name === "TimeoutError";
     return failure<T>(
-      timedOut ? "The backend took too long to respond." : "Couldn't reach the backend.",
+      timedOut ? "The engine took too long to respond." : "Couldn't reach the engine.",
     );
   }
 }
@@ -299,7 +280,7 @@ export function getInputs(taskId: string): Promise<Reply<InputsPayload>> {
 }
 
 /** Uploads one file input (multipart field `file`). Only accepted while the
- *  task is resting; the backend re-checks extension, size and destination. */
+ *  task is resting; the engine re-checks extension, size and destination. */
 export function uploadInput(
   taskId: string,
   inputId: string,
@@ -327,7 +308,7 @@ export function getOptions(taskId: string): Promise<Reply<OptionsPayload>> {
   return callJson<OptionsPayload>(`${taskPath(taskId)}/options`);
 }
 
-/** Saves the start form's select values (`{inputId: value}`); the backend
+/** Saves the start form's select values (`{inputId: value}`); the engine
  *  refuses a value that is missing from, or disabled in, the options file. */
 export function saveParams(
   taskId: string,
@@ -366,9 +347,9 @@ export function getFlags(taskId: string): Promise<Reply<FlagsPayload>> {
   return callJson<FlagsPayload>(`${taskPath(taskId)}/flags`);
 }
 
-/** Deletes the task's input files from disk (the backend keeps files its
+/** Deletes the task's input files from disk (the engine keeps files its
  *  manifest marks to keep). Only accepted while the task is resting. A reply
- *  with `notFound` means an older backend without this route. */
+ *  with `notFound` means an older engine without this route. */
 export function cleanupInputs(taskId: string): Promise<Reply<CleanupPayload>> {
   return callJson<CleanupPayload>(`${taskPath(taskId)}/cleanup`, { method: "POST" });
 }

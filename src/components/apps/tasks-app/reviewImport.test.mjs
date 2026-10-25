@@ -1,5 +1,5 @@
 // Run with `pnpm test` (Node's built-in test runner; Node >= 23.6 imports the
-// .ts modules directly). Pure logic only — no network, no real backend.
+// .ts modules directly). Pure logic only — no network, no real engine.
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { approveWithReviewCheck } from "./approveGate.ts";
@@ -231,7 +231,7 @@ describe("applyResolutions / toResolutionPayload", () => {
       { number: "INC3", subcategory2: "Other" },
     ]);
     assert.equal(next.pending, 0);
-    // Posted payload is the FULL resolved set in the backend's shape.
+    // Posted payload is the FULL resolved set in the engine's shape.
     assert.deepEqual(toResolutionPayload(next.incidents), [
       { number: "INC1", subcategory2: "Hardware Issue" },
       { number: "INC2", subcategory2: "Print Label" },
@@ -298,7 +298,7 @@ describe("approveWithReviewCheck", () => {
     assert.equal(outcome.kind, "unverified");
   });
 
-  it("turns a backend pending-refusal into the same block", async () => {
+  it("turns a engine pending-refusal into the same block", async () => {
     let reads = 0;
     const outcome = await approveWithReviewCheck("t", {
       fetchReviewIncidents: async () => queueWith(++reads === 1 ? 7 : 5),
@@ -313,7 +313,7 @@ describe("approveWithReviewCheck", () => {
     assert.deepEqual(outcome.block.numbers, ["INC6", "INC7"]);
   });
 
-  it("passes any other backend refusal through untouched", async () => {
+  it("passes any other engine refusal through untouched", async () => {
     const outcome = await approveWithReviewCheck("t", {
       fetchReviewIncidents: async () => queueWith(7),
       approveTask: async () => ({ ok: false, reason: "task is working" }),

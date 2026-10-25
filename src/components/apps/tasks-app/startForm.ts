@@ -16,7 +16,7 @@ import type {
   TaskInputDef,
 } from "./types";
 
-/** Matches the backend's upload cap (contract section 2). */
+/** Matches the engine's upload cap (contract section 2). */
 export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
 
 export function fileInputs(task: Task): TaskInputDef[] {
@@ -51,7 +51,7 @@ export function isPresent(statuses: InputStatus[], id: string): boolean {
   return statuses.some((status) => status.id === id && status.present);
 }
 
-/** All `prepare.after` inputs are on the backend, so "Check inputs" can run. */
+/** All `prepare.after` inputs are on the engine, so "Check inputs" can run. */
 export function canPrepare(task: Task, statuses: InputStatus[]): boolean {
   if (!hasPrepare(task)) return false;
   const after = prepareAfterIds(task);
@@ -64,8 +64,8 @@ export function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-/** Client-side guard mirroring the backend's checks, so a bad file is
- *  refused with a readable message before the upload starts. The backend
+/** Client-side guard mirroring the engine's checks, so a bad file is
+ *  refused with a readable message before the upload starts. The engine
  *  re-validates everything; this is only for fast feedback. */
 export function validateFile(
   input: Pick<TaskInputDef, "accept" | "label">,
@@ -336,7 +336,7 @@ function plural(count: number, noun: string): string {
 
 /** Offered only while the task is resting (never while running/awaiting),
  *  for a task on the inputs platform, and only when there is something to
- *  delete. `cleanable` is undefined on a backend without the feature. */
+ *  delete. `cleanable` is undefined on a engine without the feature. */
 export function canClearInputs(
   task: Pick<Task, "state" | "inputs">,
   cleanable: Cleanable | null | undefined,

@@ -1,0 +1,104 @@
+{
+  "id": "shift-roster",
+  "displayName": "Shift Roster",
+  "completedMessage": "The final roster is ready in the output folder, with a next-year file when the cycle runs past the end of the roster. The audit log is saved with them.",
+  "inputs": [
+    {
+      "id": "roster",
+      "label": "Roster workbook",
+      "type": "file",
+      "accept": [".xlsx"],
+      "dest": "input/roster.xlsx",
+      "required": true
+    },
+    {
+      "id": "holidays",
+      "label": "Holiday Roster (optional - the reference file is used if you don't upload one)",
+      "type": "file",
+      "accept": [".xlsx"],
+      "dest": "input/holiday-roster.xlsx",
+      "required": false,
+      "persist": true
+    },
+    {
+      "id": "pto",
+      "label": "PTO import (optional)",
+      "type": "file",
+      "accept": [".xlsx"],
+      "dest": "input/pto-import.xlsx",
+      "required": false
+    },
+    {
+      "id": "cycle",
+      "label": "Cycle",
+      "type": "select",
+      "optionsFile": "output/options.json",
+      "optionsKey": "cycles",
+      "required": true
+    }
+  ],
+  "cleanup": {
+    "onComplete": true
+  },
+  "prepare": {
+    "cmd": "scripts/prepare_options.py",
+    "after": ["roster"]
+  },
+  "steps": [
+    {
+      "id": "analyze",
+      "type": "python",
+      "cmd": "scripts/analyze.py",
+      "label": "Check the roster and list the questions"
+    },
+    {
+      "id": "answers",
+      "type": "review",
+      "label": "Answer the questions",
+      "reviewMessage": "A few questions need your answer before the draft can be built",
+      "gate": {
+        "type": "form",
+        "schema": "output/ask-me.json",
+        "answers": "output/ask-me-answers.json"
+      }
+    },
+    {
+      "id": "build_draft",
+      "type": "python",
+      "cmd": "scripts/build_draft.py",
+      "label": "Build the draft roster"
+    },
+    {
+      "id": "review_draft",
+      "type": "review",
+      "label": "Review the draft in Excel",
+      "reviewMessage": "The draft is ready: open it, fix anything that needs fixing, save it, then approve",
+      "gate": {
+        "type": "flags",
+        "file": "output/flags.json"
+      }
+    },
+    {
+      "id": "diff_draft",
+      "type": "python",
+      "cmd": "scripts/diff_draft.py",
+      "label": "Compare your edits with the draft"
+    },
+    {
+      "id": "confirm_diff",
+      "type": "confirm",
+      "label": "Confirm the changes",
+      "reviewMessage": "Look at every changed cell and confirm to build the final roster",
+      "gate": {
+        "type": "diff",
+        "file": "output/roster-diff.json"
+      }
+    },
+    {
+      "id": "finalize",
+      "type": "python",
+      "cmd": "scripts/finalize.py",
+      "label": "Build the final roster"
+    }
+  ]
+}

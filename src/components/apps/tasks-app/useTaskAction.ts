@@ -26,7 +26,7 @@ export interface TaskActionState {
    *  unclassified incidents; cleared by the next action or `clearReviewBlock`. */
   reviewBlock: ReviewBlock | null;
   clearReviewBlock: () => void;
-  /** Resolves with the backend's reply (null when it couldn't be reached),
+  /** Resolves with the engine's reply (null when it couldn't be reached),
    *  so the start form can keep itself open and show a refusal inline. */
   start: () => Promise<ActionResult | null>;
   approve: () => void;
@@ -48,8 +48,7 @@ export interface TaskActionState {
  *
  * `onSettled` fires after every call settles (success or failure) so the
  * caller can refetch immediately instead of waiting for the next poll tick
- * — mirrors main.js's `buildActions(task, api, refresh, ...)`, where
- * `refresh` is exactly this "onDone" callback.
+ * (the card's `refresh`).
  */
 export function useTaskAction(
   taskId: string,
@@ -75,7 +74,7 @@ export function useTaskAction(
         return result;
       })
       .catch(() => {
-        setLastFailure("couldn't reach the backend");
+        setLastFailure("couldn't reach the engine");
         return null;
       })
       .finally(() => {
@@ -110,7 +109,7 @@ export function useTaskAction(
         }
       })
       .catch(() => {
-        setLastFailure("couldn't reach the backend");
+        setLastFailure("couldn't reach the engine");
       })
       .finally(() => {
         setPending(null);

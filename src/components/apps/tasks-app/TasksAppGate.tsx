@@ -2,9 +2,9 @@
 
 import { motion } from "motion/react";
 import { easeStandard } from "@/lib/motion";
-import { BackendLaunchScreen } from "./BackendLaunchScreen";
+import { EngineLaunchScreen } from "./EngineLaunchScreen";
 import { TasksApp } from "./TasksApp";
-import { useBackendLauncher } from "./useBackendLauncher";
+import { useEngineLauncher } from "./useEngineLauncher";
 
 /** Plain opacity crossfade for the hand-off between this gate's two very
  *  differently-shaped states (a centered loading card vs. the real app's
@@ -18,21 +18,21 @@ const GATE_TRANSITION = { duration: 0.2, ease: easeStandard };
 
 /**
  * What actually gets registered under "tasks" (see index.ts) — wraps the
- * real <TasksApp> with an auto-launch step for its agent-office backend,
+ * real <TasksApp> with an auto-launch step for its Tasks engine,
  * so opening the app no longer requires `uvicorn` to already be running by
  * hand. <TasksApp> itself is untouched and still works exactly as before
  * if ever rendered directly (e.g. in isolation/tests): all of the new
- * behavior lives in this file + useBackendLauncher.ts +
- * BackendLaunchScreen.tsx, deliberately kept out of the existing
+ * behavior lives in this file + useEngineLauncher.ts +
+ * EngineLaunchScreen.tsx, deliberately kept out of the existing
  * TasksApp/TaskCard/etc. files.
  *
- * While useBackendLauncher's phase isn't "ready", <TasksApp> (and its
- * useAgentOfficeData poll loop) isn't mounted at all — so once it is
+ * While useEngineLauncher's phase isn't "ready", <TasksApp> (and its
+ * useTasksData poll loop) isn't mounted at all — so once it is
  * mounted, its very first poll should already succeed, since we've just
- * confirmed the backend is reachable.
+ * confirmed the engine is reachable.
  */
 export function TasksAppGate({ windowId }: { windowId: string }) {
-  const launcher = useBackendLauncher();
+  const launcher = useEngineLauncher();
 
   if (launcher.phase !== "ready") {
     return (
@@ -44,7 +44,7 @@ export function TasksAppGate({ windowId }: { windowId: string }) {
         data-window-id={windowId}
         className="flex h-full w-full items-center justify-center p-6"
       >
-        <BackendLaunchScreen
+        <EngineLaunchScreen
           state={launcher.phase === "failed" ? "failed" : "launching"}
           reason={launcher.reason}
           onRetry={launcher.retry}

@@ -22,9 +22,9 @@ interface ClearInputFilesProps {
 /**
  * "Clear input files (N files, X MB)" for the task detail view: deletes the
  * files uploaded for a task that sits idle. Offered only while the task is
- * resting and the backend reports something cleanable; the delete is behind
+ * resting and the engine reports something cleanable; the delete is behind
  * an inline confirmation. Reads `cleanable` from GET /inputs and posts to
- * /cleanup; an older backend without either simply hides the control.
+ * /cleanup; an older engine without either simply hides the control.
  * Render it with `key={task.id}` so its state belongs to one task.
  */
 export function ClearInputFiles({ task, onSettled }: ClearInputFilesProps) {

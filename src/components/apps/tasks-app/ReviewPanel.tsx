@@ -34,7 +34,7 @@ const EMPTY_QUEUE: ReviewQueue = { count: 0, pending: 0, options: [], incidents:
  * The in-app review queue for a task: every incident prepare_data flagged
  * as needing a human Subcategory2, listed so the human can click through,
  * classify each one in ReviewIncidentDialog, and save the batch. Resolutions
- * are staged locally and POSTed together; the backend's Approve gate refuses
+ * are staged locally and POSTed together; the engine's Approve gate refuses
  * to continue until pending reaches zero, so this panel is where the run
  * actually gets unblocked.
  */
@@ -77,7 +77,7 @@ export function ReviewPanel({
   // Unmounting drops anything staged, so it can no longer be "unsaved".
   useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
 
-  // New labels (staged now, or saved earlier and handed back by the backend)
+  // New labels (staged now, or saved earlier and handed back by the engine)
   // aren't in the queue's own option list; fold them in so they display
   // and can be reused from the picker.
   const options = useMemo(
@@ -110,9 +110,9 @@ export function ReviewPanel({
     [onPendingChange],
   );
 
-  // POSTs the FULL set of resolved incidents (the backend overwrites its
+  // POSTs the FULL set of resolved incidents (the engine overwrites its
   // file with whatever is sent), then re-reads the queue so what's shown is
-  // what the backend will actually gate Approve on.
+  // what the engine will actually gate Approve on.
   const persist = useCallback(
     async (incidents: ReviewIncident[]): Promise<boolean> => {
       setSaving(true);
@@ -123,14 +123,14 @@ export function ReviewPanel({
           toResolutionPayload(incidents),
         );
         if (!result.ok) {
-          setSaveError(result.reason ?? "the backend rejected the save");
+          setSaveError(result.reason ?? "the engine rejected the save");
           return false;
         }
         setDirty(false);
         await load();
         return true;
       } catch {
-        setSaveError("couldn't reach the backend — your choices are still staged here.");
+        setSaveError("couldn't reach the engine — your choices are still staged here.");
         return false;
       } finally {
         setSaving(false);

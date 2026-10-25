@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 // never safe to treat as static/cacheable content.
 export const dynamic = "force-dynamic";
 
-/** Same reasoning as agent-office/shared.ts's PROBE_TIMEOUT_MS: this backs
+/** Same reasoning as tasks-engine/shared.ts's PROBE_TIMEOUT_MS: this backs
  *  an interactive "can I load this" check for the Browser app's address
  *  bar, so a slow/half-dead target should fail fast (closed — the
  *  graceful new-tab fallback) rather than leave the address bar's page

@@ -3,7 +3,8 @@
 // The page uses it to (a) learn it is inside the desktop app, so it does not
 // poll for reminders itself, (b) open a to-do when a reminder notification is
 // clicked, (c) report how many items need attention, and (d) read/change the
-// "Hardware acceleration" display setting and restart to apply it. No generic IPC, no
+// "Hardware acceleration" display setting and restart to apply it, and (e) pick a
+// folder for the setup screen. No generic IPC, no
 // Node, no file access is handed over; main.cjs also checks who is asking.
 const { contextBridge, ipcRenderer } = require("electron");
 
@@ -32,6 +33,10 @@ contextBridge.exposeInMainWorld("aiOsDesktop", {
     /** Relaunches AI OS (asks first if a task is running); resolves true if it is restarting. */
     relaunch: () => ipcRenderer.invoke("display:relaunch"),
   },
+
+  /** Opens the system folder picker for the setup screen; resolves to the
+   *  chosen folder's path, or null if cancelled. */
+  chooseFolder: () => ipcRenderer.invoke("setup:choose-folder"),
 
   /** callback(todoId | null) when a reminder is clicked; returns an unsubscribe.
    *  A click that arrived before the page was ready is delivered right away. */

@@ -16,7 +16,7 @@ const STATUS_WORD: Record<StepStatus, string> = {
 };
 
 /** `.progress[data-state]` (globals.css) per task state: the fill's color and
- *  whether it shimmers. There is no "ok" here: the backend has no "done"
+ *  whether it shimmers. There is no "ok" here: the engine has no "done"
  *  state (a finished run just returns the task to "resting"), so a
  *  completed task reads as idle again rather than as a green full bar. */
 const PROGRESS_STATE: Record<TaskState, "idle" | "run" | "gate" | "err"> = {
@@ -96,8 +96,7 @@ interface StepTrackerProps {
  *  (done / in progress / waiting on you / failed / not started). Steps are
  *  fully dynamic per task — some have as few as 3 steps and no review/send
  *  gate at all — so this never assumes a fixed shape. Status derivation
- *  mirrors agentPresenter.js's `buildStepTracker` via
- *  taskPresenter.computeStepStatuses. */
+ *  lives in taskPresenter.computeStepStatuses. */
 export function StepTracker({ task }: StepTrackerProps) {
   const count = task.steps.length;
   if (count === 0) return null;

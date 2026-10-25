@@ -21,8 +21,8 @@ interface OpenFileButtonsProps {
 /**
  * One Open button per file a notification lists (report-data.json's
  * `workbook_path` plus its `extra_paths`, e.g. the main plan and the
- * Analytics plan). Each click asks the backend to open exactly that listed
- * path with the OS default app; the backend refuses anything the
+ * Analytics plan). Each click asks the engine to open exactly that listed
+ * path with the OS default app; the engine refuses anything the
  * notification doesn't list. A failed open says so and points at the output
  * folder.
  */
@@ -41,7 +41,7 @@ export function OpenFileButtons({
     setState((current) => ({ ...current, [path]: "opening" }));
     let ok = false;
     try {
-      // a single unlabelled file keeps the plain call (older backends have no `path`)
+      // a single unlabelled file keeps the plain call (older engines have no `path`)
       const result = await openTaskNotification(
         taskId,
         notification.id,

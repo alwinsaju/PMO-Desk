@@ -11,8 +11,8 @@ export interface GateData {
   /** The panel gate the task is waiting at right now (null = none). */
   gate: PanelGate | null;
   status: GateStatus;
-  /** Why the gate's data couldn't be read (an older backend without the
-   *  route, a missing file, an unreachable backend). */
+  /** Why the gate's data couldn't be read (an older engine without the
+   *  route, a missing file, an unreachable engine). */
   error: string | null;
   form: FormPayload | null;
   diff: RosterDiff | null;
@@ -53,7 +53,7 @@ export function notifyGateChanged(taskId: string): void {
  * Reads the data behind the gate a task is waiting at (form schema +
  * pending ids, flags, or the roster diff) — once when the gate is entered,
  * and again on `refetch()` / `notifyGateChanged`. Read-only GETs; nothing
- * here mutates. A route the running backend doesn't have yet degrades to
+ * here mutates. A route the running engine doesn't have yet degrades to
  * `status: "unavailable"` with the reason, never an exception.
  */
 export function useGateData(task: Task | null): GateData {
@@ -91,7 +91,7 @@ export function useGateData(task: Task | null): GateData {
         ...IDLE,
         key,
         status: "unavailable",
-        error: reason ?? "The backend couldn't provide this gate's data.",
+        error: reason ?? "The engine couldn't provide this gate's data.",
       });
       let next: Loaded;
       if (gate === "form") {

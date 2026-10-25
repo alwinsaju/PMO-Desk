@@ -8,7 +8,7 @@
  * Vocabulary rule: a value matching an existing option
  * (case/whitespace-insensitively) is normalized to that option's spelling.
  * Any other non-blank value is accepted as a NEW label, exactly as typed
- * (whitespace collapsed) — the backend and the downstream workbook build
+ * (whitespace collapsed) — the engine and the downstream workbook build
  * take any label — and reported in `newLabels` so typos can be spotted
  * before saving. Near-duplicates inside one import ("Server Related" /
  * "server related") collapse to the first spelling seen.
@@ -58,7 +58,7 @@ export function normalizeKey(text: string): string {
   return text.replace(/\s+/g, " ").trim().toLowerCase();
 }
 
-/** Values that mean "no answer" — the backend ignores "skip", and
+/** Values that mean "no answer" — the engine ignores "skip", and
  *  "Needs Review" is the placeholder prepare_data writes into unresolved
  *  rows, so a sheet that still holds it hasn't been filled in. */
 const BLANK_PLACEHOLDERS = new Set(["", "skip", "needs review"]);
@@ -363,7 +363,7 @@ export function applyResolutions(
 }
 
 /** The full set of currently resolved incidents, in the exact shape the
- *  backend's review-resolutions POST wants. The backend OVERWRITES its file
+ *  engine's review-resolutions POST wants. The engine OVERWRITES its file
  *  with whatever is posted, so this must always be the complete set. */
 export function toResolutionPayload(
   incidents: ReviewIncident[],
@@ -376,7 +376,7 @@ export function toResolutionPayload(
 /**
  * The option list plus any label already resolved on an incident that the
  * list doesn't contain (a new label staged this session, or one saved
- * earlier and handed back by the backend), so those show up in the picker
+ * earlier and handed back by the engine), so those show up in the picker
  * for reuse. Case/whitespace-insensitive; the list's own spelling wins.
  */
 export function withResolvedLabels(

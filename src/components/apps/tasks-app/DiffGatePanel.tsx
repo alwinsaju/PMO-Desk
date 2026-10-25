@@ -36,7 +36,7 @@ const PAGE_SIZE = 300;
  * after, searchable and sortable), the changes that fall outside the plan,
  * issues, and the flag delta. If the diff carries `blocking` items they sit
  * on top, impossible to miss, and the confirm button (in the action bar
- * below the tabs) is disabled — the backend refuses the confirm too.
+ * below the tabs) is disabled — the engine refuses the confirm too.
  */
 export function DiffGatePanel({ gate }: { gate: GateData }) {
   if (gate.status === "loading" || gate.status === "idle") {

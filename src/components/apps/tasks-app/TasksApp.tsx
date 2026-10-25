@@ -2,10 +2,9 @@
 
 import { useCallback, useMemo, useState } from "react";
 import { ScrollArea, Tabs, TabsList, TabsTrigger } from "@/components/ui";
-import { AGENT_OFFICE_API_URL } from "./api";
 import { TaskCard } from "./TaskCard";
 import { TaskDetailDialog } from "./TaskDetailDialog";
-import { useAgentOfficeData } from "./useAgentOfficeData";
+import { useTasksData } from "./useTasksData";
 import type { Task } from "./types";
 
 /** The header's filter tabs, derived purely from each task's own `state`
@@ -35,14 +34,14 @@ function matchesFilter(task: Task, filter: TaskFilter): boolean {
  * and is registered under "tasks" in `index.ts`.
  *
  * Unlike every other app in this registry, this one is a live client of a
- * separate, already-running FastAPI backend (agent-office) rather than
- * local/mocked state — see api.ts and useAgentOfficeData.ts. `windowId`
+ * separate, already-running FastAPI engine (tasks-engine) rather than
+ * local/mocked state — see api.ts and useTasksData.ts. `windowId`
  * isn't needed for any lookup here (state lives in the polling hook, not
  * per-window) but is stamped onto the root as a data attribute per this
  * registry's usual convention (see AppStoreApp.tsx).
  */
 export function TasksApp({ windowId }: { windowId: string }) {
-  const { tasks, canStart, connection, hasLoadedOnce, refetch } = useAgentOfficeData();
+  const { tasks, connection, hasLoadedOnce, refetch } = useTasksData();
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [filter, setFilter] = useState<TaskFilter>("all");
 
@@ -70,7 +69,7 @@ export function TasksApp({ windowId }: { windowId: string }) {
 
   // Never blank the screen for a transient failure once we've shown real
   // data before — only the very first load (never yet succeeded) gets the
-  // full-panel loading/error treatment; see useAgentOfficeData's doc
+  // full-panel loading/error treatment; see useTasksData's doc
   // comment for why a later failure instead just flips a small banner.
   if (!hasLoadedOnce) {
     return (
@@ -79,7 +78,7 @@ export function TasksApp({ windowId }: { windowId: string }) {
         className="flex h-full w-full items-center justify-center p-6"
       >
         {connection === "offline" ? (
-          <BackendUnreachableNotice />
+          <EngineUnreachableNotice />
         ) : (
           <p className="text-ink-muted text-sm">Loading tasks…</p>
         )}
@@ -94,7 +93,7 @@ export function TasksApp({ windowId }: { windowId: string }) {
           role="status"
           className="rounded-card bg-amber-soft text-amber mx-6 mb-2 px-3.5 py-2.5 text-center text-[13px]"
         >
-          Can&apos;t reach the agent-office backend right now — showing the last known
+          Can&apos;t reach the Tasks engine right now — showing the last known
           state.
         </div>
       )}
@@ -138,7 +137,6 @@ export function TasksApp({ windowId }: { windowId: string }) {
                   <TaskCard
                     key={task.id}
                     task={task}
-                    canStart={canStart}
                     onSettled={refetch}
                     onOpenDetail={setSelectedTaskId}
                     index={index}
@@ -152,7 +150,6 @@ export function TasksApp({ windowId }: { windowId: string }) {
 
       <TaskDetailDialog
         task={selectedTask}
-        canStart={canStart}
         onSettled={refetch}
         onOpenChange={handleDetailOpenChange}
       />
@@ -160,18 +157,15 @@ export function TasksApp({ windowId }: { windowId: string }) {
   );
 }
 
-function BackendUnreachableNotice() {
+function EngineUnreachableNotice() {
   return (
     <div className="flex max-w-sm flex-col items-center gap-2 text-center">
       <p className="text-ink font-headline text-lg">
-        Can&apos;t reach the agent-office backend
+        Can&apos;t reach the Tasks engine
       </p>
       <p className="text-ink-muted text-[13.5px]">
-        Make sure it&apos;s running on{" "}
-        <code className="text-ink-soft font-mono text-[12px]">
-          {AGENT_OFFICE_API_URL}
-        </code>
-        . This will connect automatically once it&apos;s available.
+        It starts with AI OS, so this is usually a moment&apos;s wait. This will
+        connect automatically once it&apos;s available.
       </p>
     </div>
   );
