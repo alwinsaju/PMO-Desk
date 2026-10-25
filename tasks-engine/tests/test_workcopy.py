@@ -108,6 +108,213 @@ def test_user_data_is_never_touched(defs, tmp_path):
         assert path.read_text() == text, path
 
 
+# ---- user data inside shared/ (roster/Names.xlsx, roster-reference/*.xls*) ----
+
+def _put_user_data(work: Path) -> dict:
+    keep = {
+        work / "shared" / "roster" / "Names.xlsx": "my names",
+        work / "shared" / "roster-reference" / "Holiday Roster 2026.xlsx": "my holidays",
+        work / "shared" / "roster-reference" / "PDT_Staff_Roster.xls": "old format",
+        work / "shared" / "roster-reference" / "Macro.xlsm": "macro book",
+        work / "shared" / "roster-reference" / "codes.csv": "a,b",
+        work / "shared" / "roster-reference" / "2027" / "Holiday Roster 2027.xlsx": "nested",
+        work / "shared" / "roster-reference" / "2027" / "deep" / "extra.json": "{}",
+    }
+    for path, text in keep.items():
+        write(path, text)
+    return keep
+
+
+def _assert_kept(keep: dict):
+    for path, text in keep.items():
+        assert path.read_text() == text, path
+
+
+@pytest.fixture
+def shipped(defs):
+    """The install ships code and docs in the two data folders, but no data."""
+    write(defs / "shared" / "roster" / "name_matching.py", "match v1")
+    write(defs / "shared" / "roster-reference" / "README.md", "drop files here")
+    return defs
+
+
+def test_protected_shared_data_survives_a_sync(shipped, tmp_path):
+    work = tmp_path / "work"
+    workcopy.sync(shipped, work)
+    keep = _put_user_data(work)
+
+    workcopy.sync(shipped, work)
+
+    _assert_kept(keep)
+    assert (work / "shared" / "roster" / "name_matching.py").read_text() == "match v1"
+    assert (work / "shared" / "roster-reference" / "README.md").is_file()
+
+
+def test_protected_data_survives_when_its_folder_is_not_shipped_at_all(defs, tmp_path):
+    # roster-reference/ is not in the definitions: the folder must not be pruned wholesale
+    work = tmp_path / "work"
+    workcopy.sync(defs, work)
+    keep = _put_user_data(work)
+    write(work / "shared" / "roster-reference" / "stray.py", "not data")
+
+    workcopy.sync(defs, work)
+
+    _assert_kept(keep)
+    assert not (work / "shared" / "roster-reference" / "stray.py").exists()
+
+
+def test_shipped_code_in_the_data_folders_is_still_mirrored_and_pruned(shipped, tmp_path):
+    work = tmp_path / "work"
+    workcopy.sync(shipped, work)
+    keep = _put_user_data(work)
+    write(work / "shared" / "roster" / "stale_module.py", "removed upstream")
+    write(work / "shared" / "roster" / "notes.txt", "not a data extension")
+    write(work / "shared" / "roster-reference" / "2027" / "scratch.py", "stale code in a user folder")
+    write(shipped / "shared" / "roster" / "name_matching.py", "match v2 - longer")
+    write(shipped / "shared" / "roster" / "extra.py", "new module")
+    (shipped / "shared" / "roster-reference" / "README.md").unlink()
+
+    workcopy.sync(shipped, work)
+
+    assert (work / "shared" / "roster" / "name_matching.py").read_text() == "match v2 - longer"
+    assert (work / "shared" / "roster" / "extra.py").is_file()
+    assert not (work / "shared" / "roster" / "stale_module.py").exists()
+    assert not (work / "shared" / "roster" / "notes.txt").exists()
+    assert not (work / "shared" / "roster-reference" / "README.md").exists()
+    assert not (work / "shared" / "roster-reference" / "2027" / "scratch.py").exists()
+    _assert_kept(keep)
+
+
+def test_a_stale_data_file_outside_the_data_folders_is_still_removed(shipped, tmp_path):
+    work = tmp_path / "work"
+    workcopy.sync(shipped, work)
+    write(work / "shared" / "lib" / "old_table.json", "shipped once, gone now")
+    write(work / "shared" / "lib" / "old_book.xlsx", "same")
+    write(work / "shared" / "Names.xlsx", "wrong folder")
+    write(work / "shared" / "roster_lib" / "examples" / "a.xlsx", "similar name, not a data folder")
+
+    workcopy.sync(shipped, work)
+
+    assert not (work / "shared" / "lib" / "old_table.json").exists()
+    assert not (work / "shared" / "lib" / "old_book.xlsx").exists()
+    assert not (work / "shared" / "Names.xlsx").exists()
+    assert not (work / "shared" / "roster_lib").exists()
+
+
+def test_a_shipped_file_never_overwrites_a_protected_one_but_seeds_an_absent_one(shipped, tmp_path):
+    work = tmp_path / "work"
+    workcopy.sync(shipped, work)
+    holiday = work / "shared" / "roster-reference" / "Holiday Roster 2026.xlsx"
+    write(work / "shared" / "roster" / "Names.xlsx", "my names")
+    write(shipped / "shared" / "roster" / "Names.xlsx", "someone else's names")
+    write(shipped / "shared" / "roster-reference" / "Holiday Roster 2026.xlsx", "default holidays")
+
+    workcopy.sync(shipped, work)
+    workcopy.sync(shipped, work)
+
+    assert (work / "shared" / "roster" / "Names.xlsx").read_text() == "my names"
+    assert holiday.read_text() == "default holidays"  # absent -> seeded once
+    holiday.write_text("my edit")
+    workcopy.sync(shipped, work)
+    assert holiday.read_text() == "my edit"
+
+
+def test_protected_data_survives_a_shipped_file_taking_its_folders_name(shipped, tmp_path):
+    work = tmp_path / "work"
+    workcopy.sync(shipped, work)
+    keep = _put_user_data(work)
+    write(shipped / "shared" / "roster-reference" / "2027", "a file where the user has a folder")
+
+    workcopy.sync(shipped, work)
+
+    _assert_kept(keep)
+    assert (work / "shared" / "roster-reference" / "2027").is_dir()
+
+
+def test_syncing_with_protected_data_is_idempotent(shipped, tmp_path, monkeypatch):
+    work = tmp_path / "work"
+    workcopy.sync(shipped, work)
+    keep = _put_user_data(work)
+    workcopy.sync(shipped, work)
+    snapshot = sorted(str(p.relative_to(work)) for p in work.rglob("*"))
+    copied = []
+    real = workcopy.shutil.copy2
+    monkeypatch.setattr(workcopy.shutil, "copy2", lambda s, d, *a, **k: (copied.append(s), real(s, d, *a, **k))[1])
+
+    workcopy.sync(shipped, work)
+
+    assert sorted(str(p.relative_to(work)) for p in work.rglob("*")) == snapshot
+    assert copied == []
+    _assert_kept(keep)
+
+
+def test_protection_ignores_case_so_windows_style_names_survive(shipped, tmp_path):
+    work = tmp_path / "work"
+    workcopy.sync(shipped, work)
+    keep = {
+        work / "shared" / "Roster" / "names.XLSX": "mine",
+        work / "shared" / "ROSTER-REFERENCE" / "holiday roster.XLS": "mine too",
+    }
+    for path, text in keep.items():
+        write(path, text)
+
+    workcopy.sync(shipped, work)
+
+    _assert_kept(keep)
+
+
+@pytest.mark.parametrize("rel", [
+    "roster/Names.xlsx",
+    "roster/names.XLSX",
+    "ROSTER\\Names.xlsx",
+    "Roster-Reference/Holiday Roster 2026.xls",
+    "roster-reference\\2027/deep\\Holiday Roster 2027.XLSM",
+    "roster-reference/codes.csv",
+    "roster-reference/overrides.json",
+    "./roster/Names.xlsx",
+    ("roster-reference", "2027", "x.xls"),
+])
+def test_is_protected_shared_accepts_user_data(rel):
+    assert workcopy.is_protected_shared(rel)
+
+
+@pytest.mark.parametrize("rel", [
+    "",
+    "Names.xlsx",
+    "roster",
+    "roster/name_matching.py",
+    "roster/README.md",
+    "roster-reference/README.md",
+    "roster-reference/Picture1.png",
+    "roster/~$Names.xlsx",
+    "roster/__pycache__/x.pyc",
+    "roster_lib/examples/holiday_roster_template.xlsx",
+    "roster_lib/examples/rotation_config.example.json",
+    "assets/logo.png",
+    "rosterx/Names.xlsx",
+    "roster/../Names.xlsx",
+    "roster/../../outside.xlsx",
+    "roster-reference/..\\..\\outside.xlsx",
+    "roster/C:/Names.xlsx",
+    "C:\\roster\\Names.xlsx",
+    "roster/Names.xlsx:stream",
+])
+def test_is_protected_shared_rejects_code_other_folders_and_traversal(rel):
+    assert not workcopy.is_protected_shared(rel)
+
+
+def test_task_templates_are_still_mirrored_exactly(defs, tmp_path):
+    work = tmp_path / "work"
+    workcopy.sync(defs, work)
+    write(work / "alpha" / "templates" / "extra.xlsx", "not shipped")
+    write(work / "alpha" / "templates" / "mail.html", "hand edit")
+
+    workcopy.sync(defs, work)
+
+    assert not (work / "alpha" / "templates" / "extra.xlsx").exists()
+    assert (work / "alpha" / "templates" / "mail.html").read_text() == "<p/>"
+
+
 def test_a_task_the_definitions_dropped_is_unlisted_but_keeps_its_data(defs, tmp_path):
     work = tmp_path / "work"
     workcopy.sync(defs, work)

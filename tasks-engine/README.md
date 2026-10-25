@@ -48,6 +48,17 @@ working copy under that folder and the engine runs tasks from it: task definitio
 `output/`, `reference/` and `config/` (seeded once from the shipped defaults) are never overwritten.
 A reinstall therefore keeps everyone's work. See `../tasks/TASK-PLATFORM-CONTRACT.md`.
 
+`shared/` is mirrored exactly too (stale code is removed on every start), with one exception: the
+user data that lives in it. The installer does not ship it, so the mirror must not delete it. The
+rule is `workcopy.is_protected_shared()`: a file under `shared/` is **protected** (never overwritten,
+never deleted) when its first folder is `roster` or `roster-reference` and its name ends in
+`.xlsx`, `.xlsm`, `.xls`, `.csv` or `.json`, at any depth. That covers `shared/roster/Names.xlsx`
+and the Holiday Roster and other reference workbooks in `shared/roster-reference/`. Matching ignores
+case and accepts `/` and `\`. Python modules, READMEs and everything else in those folders, and all
+of the rest of `shared/`, stay mirrored exactly. Task `templates/` are not protected (they hold
+shipped templates only). To protect another kind of file, extend `PROTECTED_SHARED_DIRS` or
+`PROTECTED_SHARED_EXTS` in `workcopy.py`.
+
 The Python the installed app runs the engine and every task step with is built by
 `../scripts/build-python-runtime.py` (a pinned embeddable CPython plus the hash-locked wheels in
 `../scripts/python-runtime/requirements.lock.txt`).
