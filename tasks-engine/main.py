@@ -100,6 +100,11 @@ class Task:
         self.approvals: list[dict] = []
         # True while a manifest `prepare` script is executing (one at a time).
         self.preparing = False
+        # Run generation + the step process in flight (see _cancel_run): a
+        # Force reset ends the current run by bumping the generation, so a run
+        # that was still inside a step can no longer touch this task's state.
+        self.run_gen = 0
+        self.active_proc: subprocess.Popen | None = None
 
     def apply_manifest(self, manifest: dict):
         """Manifest-derived fields (name, steps, inputs, prepare, cleanup)."""
@@ -360,14 +365,46 @@ def run_step(step: dict, cwd: Path, entry_id: str | None, task: "Task | None" = 
         text=True, stdin=subprocess.DEVNULL, env=_step_env(),
         **STEP_POPEN_EXTRA_KWARGS,
     )
+    if task is not None:
+        task.active_proc = proc
     out_lines: list[str] = []
     assert proc.stdout is not None
-    for line in proc.stdout:
-        out_lines.append(line)
-        if task is not None:
-            task.log_step(step["id"], "stdout", line)
-    _, stderr = proc.communicate()
+    try:
+        for line in proc.stdout:
+            out_lines.append(line)
+            # Only the step the task still owns writes to the log: after a
+            # Force reset (_cancel_run clears active_proc) the old step's last
+            # lines must not land in the next run's fresh log.
+            if task is not None and task.active_proc is proc:
+                task.log_step(step["id"], "stdout", line)
+        _, stderr = proc.communicate()
+    finally:
+        if task is not None and task.active_proc is proc:
+            task.active_proc = None
     return subprocess.CompletedProcess(cmd, proc.returncode, "".join(out_lines), stderr)
+
+
+def _cancel_run(task: Task) -> None:
+    """End whatever run the task is in the middle of (Force reset). The
+    generation bump makes run_steps drop out as soon as its current step
+    returns, without touching the task's state, completed steps, history or
+    log; killing the step in flight (with its child processes) stops it from
+    writing to the task's files while the next run starts."""
+    task.run_gen += 1
+    proc, task.active_proc = task.active_proc, None
+    if proc is None or proc.poll() is not None:
+        return
+    try:
+        if sys.platform == "win32":
+            subprocess.run(
+                ["taskkill", "/PID", str(proc.pid), "/T", "/F"],
+                capture_output=True, timeout=10, **STEP_POPEN_EXTRA_KWARGS,
+            )
+        else:
+            proc.kill()
+        proc.wait(timeout=10)
+    except Exception:
+        log.warning("could not stop the running step of %s", task.id, exc_info=True)
 
 
 def _read_history() -> list[dict]:
@@ -532,7 +569,10 @@ async def run_steps(task: Task, steps: list[dict]):
     the steps run out (already-completed steps are skipped)."""
     loop = asyncio.get_running_loop()
     _ensure_task_dirs(task)
+    gen = task.run_gen
     for step in steps:
+        if task.run_gen != gen:
+            return  # the run was reset under us (see _cancel_run): it is no longer ours to advance
         if step["type"] == "review":
             _review_gate(task, step)
             return
@@ -546,11 +586,15 @@ async def run_steps(task: Task, steps: list[dict]):
         try:
             result = await loop.run_in_executor(None, run_step, step, task.folder, task.entry_id, task)
         except Exception as exc:
+            if task.run_gen != gen:
+                return
             # The step never launched (folder deleted mid-run, unknown step
             # type, missing interpreter). Without this, the exception dies in
             # the fire-and-forget task and it looks like the run just finished.
             _fail_task(task, step["id"], f"{type(exc).__name__}: {exc}")
             return
+        if task.run_gen != gen:
+            return  # reset while the step ran: its result belongs to a run that no longer exists
         if result.stderr:
             task.log_step(step["id"], "stderr", result.stderr)
         if result.returncode != 0:
@@ -696,6 +740,9 @@ async def reset_task(task_id: str):
     task = tasks.get(task_id)
     if not task:
         return {"ok": False, "reason": "unknown task"}
+    # Force reset can arrive while a run is still inside a step: end that run
+    # for real, or it keeps going next to the next one (see _cancel_run).
+    await asyncio.to_thread(_cancel_run, task)
     task.completed_steps.clear()
     task.run_id = None
     task.run_started_at = None

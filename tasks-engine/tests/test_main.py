@@ -657,3 +657,81 @@ def test_step_output_cleared_on_new_run(tmp_path):
     # entry was cleared - any entries present are from the current run only.
     assert resp["ok"]
     assert all(e["step"] != "old" for e in task.step_output)
+
+
+# --- Regression: Force reset during a step must end that run for real ---
+
+def _slow_pivot_task(tmp_path):
+    """build -> pivot (slow) -> email, where email only passes if the pivot ran
+    after the build, like the backlog report's workbook."""
+    steps = [{"id": s, "type": "python", "cmd": f"scripts/{s}.py"} for s in ("build", "pivot", "email")]
+    folder = make_task_folder(tmp_path, "task-a", "task-a", steps)
+    (folder / "scripts" / "build.py").write_text("open('wb.txt', 'w').write('page')")
+    (folder / "scripts" / "pivot.py").write_text(
+        "import time; time.sleep(30); open('wb.txt', 'a').write('+pivot'); print('pivot done')"
+    )
+    (folder / "scripts" / "email.py").write_text("assert 'pivot' in open('wb.txt').read()")
+    return folder
+
+
+def test_force_reset_stops_the_run_in_flight_and_it_cannot_touch_the_next_run(tmp_path):
+    folder = _slow_pivot_task(tmp_path)
+    backend.discover_tasks()
+    task = backend.tasks["task-a"]
+
+    async def scenario():
+        await backend.start_task("task-a")
+        for _ in range(100):  # wait until the first run is inside the slow step
+            if task.active_proc is not None and task.current_step == "pivot":
+                break
+            await asyncio.sleep(0.1)
+        assert task.current_step == "pivot"
+        old_proc = task.active_proc
+        await backend.reset_task("task-a")
+        assert old_proc.poll() is not None  # the step in flight was stopped
+        await asyncio.sleep(0.3)  # let the first run's coroutine see its step end
+        return old_proc
+
+    old_proc = asyncio.run(scenario())
+
+    # The stale run left no trace: no failure, no completed steps, no history
+    # record, nothing in the log, and the task is free to be run again.
+    assert task.state == "resting"
+    assert task.error is None
+    assert task.completed_steps == set()
+    assert task.step_output == []
+    assert not backend.HISTORY_FILE.exists()
+    assert not any(n["kind"] == "task.failed" for n in task.notifications)
+
+
+def test_new_run_after_force_reset_runs_every_step_itself(tmp_path):
+    folder = _slow_pivot_task(tmp_path)
+    (folder / "scripts" / "pivot.py").write_text(
+        "import os, time\n"
+        "if os.path.exists('second-run'):\n"
+        "    open('wb.txt', 'a').write('+pivot')\n"
+        "else:\n"
+        "    open('second-run', 'w').close(); time.sleep(30)\n"
+    )
+    backend.discover_tasks()
+    task = backend.tasks["task-a"]
+
+    async def scenario():
+        await backend.start_task("task-a")
+        for _ in range(100):
+            if task.current_step == "pivot" and task.active_proc is not None:
+                break
+            await asyncio.sleep(0.1)
+        await backend.reset_task("task-a")
+        await backend.start_task("task-a")
+        for _ in range(200):
+            if task.state == "resting":
+                break
+            await asyncio.sleep(0.1)
+
+    asyncio.run(scenario())
+
+    assert task.state == "resting"
+    assert task.error is None
+    assert [e["step"] for e in task.step_output] == []  # these steps print nothing
+    assert (folder / "wb.txt").read_text() == "page+pivot"

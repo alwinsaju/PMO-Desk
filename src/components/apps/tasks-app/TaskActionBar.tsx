@@ -202,7 +202,7 @@ export function TaskActionBar({
             variant="outline"
             disabled={isBusy}
             onClick={onReset}
-            title="Clears the stuck status if this has hung — doesn't stop a script that's actually still running"
+            title="Stops the running step and clears the stuck status, so the task can be run again from the start"
           >
             {pending === "reset" ? "Resetting…" : "Force reset"}
           </Button>
