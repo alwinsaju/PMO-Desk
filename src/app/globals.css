@@ -421,12 +421,35 @@ body {
   border: 1px solid var(--color-glass-edge);
 }
 
-/* Blurred, tinted backdrop behind a modal. Blur strength is `--scrim-blur`
-   (tokens.css); set it to 0px to drop the blur on weak GPUs. */
+/* Tinted backdrop behind a modal. Lean (default) = tint only: a full-viewport
+   backdrop blur is re-computed on the CPU every time ANYTHING behind or in the
+   modal animates (a running task's shimmer / blinking dots), which measured
+   ~220 ms per frame on a software compositor. The blur (`--scrim-blur`,
+   tokens.css) comes back in the rich mode, see below. */
 @utility scrim {
   background-color: var(--color-scrim);
-  -webkit-backdrop-filter: blur(var(--scrim-blur));
-  backdrop-filter: blur(var(--scrim-blur));
+}
+
+/* The modal PANEL (ui/Dialog.tsx adds `glass-modal` next to `glass-pop`): lean
+   drops its 24px backdrop blur for the same reason as the scrim. The fill is
+   made ~96% opaque instead (from 86-98%) so what is behind the panel does not
+   show through un-blurred. */
+:root:not([data-fx="rich"]) .glass-modal {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  background-color: color-mix(in srgb, var(--color-pop) 25%, var(--color-neutral-0));
+}
+
+/* Lean: while a modal is open, the decorative loops BEHIND it (progress
+   shimmer, pulsing progress dot, blinking status dots) are frozen. Nobody sees
+   them through the scrim, but each frame of them still dirtied the screen and
+   forced the compositor to redraw the scrim + panel. The modal's own
+   animations (it is portaled outside <main>) keep running. */
+:root:not([data-fx="rich"])
+  body[data-scroll-locked]
+  > main
+  :is(.progress-fill, .progress-dot, [class*="animate-blink"], [class*="animate-rot"]) {
+  animation-play-state: paused;
 }
 
 /* RICH EFFECTS (Settings > Hardware acceleration ON => <html data-fx="rich">,
@@ -445,6 +468,10 @@ body {
 :root[data-fx="rich"] .glass-win {
   -webkit-backdrop-filter: blur(40px) saturate(1.5);
   backdrop-filter: blur(40px) saturate(1.5);
+}
+:root[data-fx="rich"] .scrim {
+  -webkit-backdrop-filter: blur(var(--scrim-blur));
+  backdrop-filter: blur(var(--scrim-blur));
 }
 /* The idle ring spins again (it is invisible at opacity 0, but the GPU
    compositor handles it for free). */

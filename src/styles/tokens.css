@@ -509,8 +509,8 @@
   /* AI glow ring colors (conic stops). See the `ai-ring` utility. */
   --ring-colors: #4b8dff, #8a5bff, #ff5bbd, #ff6a3d, #ffc247, #3dd6a3, #4b8dff;
 
-  /* Blur of the modal scrim. Set to 0px if a GPU-poor machine struggles
-     (a full-viewport backdrop blur repaints with whatever is behind it). */
+  /* Blur of the modal scrim. Only applied in the rich effects mode
+     (`:root[data-fx="rich"] .scrim`, globals.css); lean has no scrim blur. */
   --scrim-blur: 8px;
 }
 

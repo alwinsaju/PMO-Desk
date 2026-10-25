@@ -347,7 +347,12 @@ function LogTab({ task }: { task: Task }) {
       ) : (
         <div className="flex flex-col gap-2 p-1">
           {log.map((entry, index) => (
-            <div key={index}>
+            // content-visibility: a long log (hundreds of entries, refreshed
+            // every 2 s while running) only lays out the entries on screen.
+            <div
+              key={index}
+              className="[contain-intrinsic-size:auto_90px] [content-visibility:auto]"
+            >
               <span className="text-ink-muted font-mono text-[10.5px] uppercase">
                 {stepLabel(task, entry.step)} · {entry.stream}
               </span>

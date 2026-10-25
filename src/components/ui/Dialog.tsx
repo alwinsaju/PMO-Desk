@@ -17,10 +17,9 @@ export const DialogOverlay = React.forwardRef<
   <DialogPrimitive.Overlay
     ref={ref}
     className={cn(
-      // Tinted + blurred scrim (the `scrim` utility). The blur is a
-      // full-viewport backdrop-filter that repaints with whatever is behind
-      // it, so its strength is a single knob: `--scrim-blur` in tokens.css
-      // (set it to 0px on a GPU-poor machine and only the tint remains).
+      // Tinted scrim (the `scrim` utility). Its blur is a full-viewport
+      // backdrop-filter that repaints with whatever is behind it, so it exists
+      // only in the rich effects mode (`--scrim-blur` in tokens.css).
       "scrim fixed inset-0 z-[var(--z-overlay)]",
       "data-[state=open]:[animation:scrim-in_350ms_var(--ease-smooth)_forwards]",
       "data-[state=closed]:[animation:scrim-out_250ms_var(--ease-exit)_forwards]",
@@ -52,7 +51,8 @@ export const DialogContent = React.forwardRef<
       <DialogPrimitive.Content
         ref={ref}
         className={cn(
-          "glass-pop shadow-modal rounded-surface pointer-events-auto relative w-full max-w-md p-7",
+          // `glass-modal`: lean mode drops glass-pop's backdrop blur (globals.css).
+          "glass-pop glass-modal shadow-modal rounded-surface pointer-events-auto relative w-full max-w-md p-7",
           "focus:outline-none",
           dialogEnter,
           dialogExit,
