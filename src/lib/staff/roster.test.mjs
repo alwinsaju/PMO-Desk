@@ -16,6 +16,7 @@ import {
   fillWeek,
   formatDays,
   formatHours,
+  hueOfShift,
   indexAssignments,
   interpretCell,
   leaveOn,
@@ -88,27 +89,49 @@ describe("times", () => {
     assert.equal(shortLabel("NS"), "NS");
   });
 
-  it("colours by start time, so equal hours look equal in different schedules", () => {
+  it("colours a shift by its name, the way the workbook does, in every team", () => {
+    const hue = (ref, extra) =>
+      resolveAssignment(makeAssignment("m", "2026-03-02", ref, extra), defaultSchedules())
+        .hue;
+    assert.equal(hue("main:shift-1"), "s1");
+    assert.equal(hue("main:shift-2"), "s2");
+    assert.equal(hue("main:shift-3"), "s3");
+    assert.equal(hue("main:shift-4"), "s4");
+    assert.equal(hue("main:shift-5"), "s5");
+    assert.equal(hue("main:ns"), "ns");
+    assert.equal(hue("main:us-cst"), "cst");
+    assert.equal(hue("main:us-pst"), "pst");
+    // The same name has the same colour although the hours differ per team.
+    assert.equal(hue("device-support:shift-3"), hue("main:shift-3"));
+    assert.equal(hue("lab:weekend"), "wk");
+    // Day types and custom hours have their own colours; a swapped day is orange.
+    assert.equal(hue("status:holiday"), "hol");
+    assert.equal(hue("status:pto"), "leave");
+    assert.equal(hue("status:temp-pto"), "temp");
+    assert.equal(hue("status:comp"), "comp");
+    assert.equal(hue("status:on-call"), "oc");
+    assert.equal(hue("custom", { text: "11AM-8PM" }), "custom");
+    assert.equal(hue("main:shift-3", { swap: true }), "swap");
+    const main = resolveAssignment(
+      makeAssignment("m", "2026-03-02", "main:shift-3"),
+      defaultSchedules(),
+    );
+    const device = resolveAssignment(
+      makeAssignment("m", "2026-03-02", "device-support:shift-3"),
+      defaultSchedules(),
+    );
+    assert.notEqual(main.hours, device.hours); // Shift-3 is 9 PM - 6 AM there
+    assert.deepEqual(device.range, { start: "21:00", end: "06:00" });
+  });
+
+  it("colours a shift with an unusual name by when it starts", () => {
     assert.equal(bandOf("08:00"), "day");
     assert.equal(bandOf("14:00"), "afternoon");
     assert.equal(bandOf("16:30"), "evening");
     assert.equal(bandOf("21:00"), "night");
     assert.equal(bandOf("02:00"), "night");
-    const main = resolveAssignment(
-      makeAssignment("m", "2026-03-02", "main:shift-3"),
-      defaultSchedules(),
-    );
-    const lab = resolveAssignment(
-      makeAssignment("m", "2026-03-02", "lab:shift-1"),
-      defaultSchedules(),
-    );
-    assert.equal(main.tone, lab.tone); // both 2-11 PM
-    const device = resolveAssignment(
-      makeAssignment("m", "2026-03-02", "device-support:shift-3"),
-      defaultSchedules(),
-    );
-    assert.notEqual(main.tone, device.tone); // Shift-3 is 9 PM - 6 AM there
-    assert.equal(main.label, device.label);
+    assert.equal(hueOfShift({ id: "x", label: "Early", start: "06:00" }), "s1");
+    assert.equal(hueOfShift({ id: "x", label: "Late", start: "22:00" }), "ns");
   });
 
   it("works with calendar months", () => {
@@ -294,11 +317,15 @@ describe("rows and sections", () => {
     assert.equal(sections.find((s) => s.id === "l2").schedule.name, "Main");
   });
 
-  it("filters by search and team, dropping empty teams only while filtering", () => {
-    assert.equal(buildSections(config, employees).sections.length > 4, true);
+  it("filters by search and team, dropping empty teams", () => {
+    assert.equal(buildSections(config, employees).sections.length >= 3, true);
     const byTeam = buildSections(config, employees, { groupId: "lab" });
     assert.deepEqual(
       byTeam.sections.map((s) => s.id),
+      ["lab"],
+    );
+    assert.deepEqual(
+      buildSections(config, employees, { groupId: "Lab" }).sections.map((s) => s.id),
       ["lab"],
     );
     const byText = buildSections(config, employees, { query: "wanda" });

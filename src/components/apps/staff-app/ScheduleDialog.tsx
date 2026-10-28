@@ -27,9 +27,15 @@ import { cn } from "@/lib/cn";
 import { slugify } from "@/lib/staff/rosterCatalog";
 import { useRosterStore } from "@/lib/staff/rosterStore";
 import { useStaffStore } from "@/lib/staff/staffStore";
-import { BAND_TONE, bandOf, formatDays, formatHours, newId } from "@/lib/staff/shifts";
+import {
+  buildSections,
+  formatDays,
+  formatHours,
+  hueOfShift,
+  newId,
+} from "@/lib/staff/shifts";
 import type { RosterConfig, ShiftDef, ShiftSchedule } from "@/lib/staff/types";
-import { SELECT_CLASS, TONE_DOT } from "./parts";
+import { SELECT_CLASS, hueDot } from "./parts";
 
 const DAY_LETTERS = ["M", "T", "W", "T", "F", "S", "S"];
 const DAY_NAMES = [
@@ -73,9 +79,16 @@ function Body({ onClose }: { onClose: () => void }) {
   const stored = useRosterStore((s) => s.config);
   const save = useRosterStore((s) => s.save);
   const shifts = useStaffStore((s) => s.shifts);
+  const employees = useStaffStore((s) => s.employees);
   const [draft, setDraft] = useState<RosterConfig>(() => structuredClone(stored));
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  /** Teams that only the directory names so far (saved with the roster once you pick a schedule). */
+  const directoryTeams = useMemo(
+    () => buildSections(draft, employees).teams.filter((t) => t.virtual),
+    [draft, employees],
+  );
 
   /** How many days use each `<schedule>:<shift>`. */
   const used = useMemo(() => {
@@ -243,7 +256,6 @@ function Body({ onClose }: { onClose: () => void }) {
                 <ul className="mt-3 flex flex-col gap-2">
                   {schedule.shifts.map((x) => {
                     const days = used.get(`${schedule.id}:${x.id}`) ?? 0;
-                    const tone = BAND_TONE[bandOf(x.start)];
                     return (
                       <li
                         key={x.id}
@@ -252,7 +264,7 @@ function Body({ onClose }: { onClose: () => void }) {
                         <span
                           className={cn(
                             "h-2.5 w-2.5 shrink-0 rounded-full",
-                            TONE_DOT[tone],
+                            hueDot(hueOfShift(x)),
                           )}
                         />
                         <Input
@@ -362,6 +374,11 @@ function Body({ onClose }: { onClose: () => void }) {
         </TabsContent>
 
         <TabsContent value="teams" className="mt-4 flex flex-col gap-2">
+          <p className="text-ink-muted mb-1 text-[12.5px] leading-snug">
+            Teams come from the Team on each directory profile: a new team or person
+            appears in the roster by itself. Name a team here the way the directory spells
+            it to give it its own schedule. Use the eye on a team to hide it.
+          </p>
           {draft.groups.map((group, index) => {
             const count = membersIn(group.id);
             return (
@@ -440,6 +457,39 @@ function Body({ onClose }: { onClose: () => void }) {
               </div>
             );
           })}
+          {directoryTeams.map((team) => (
+            <div
+              key={team.id}
+              className="border-line bg-card rounded-card flex flex-wrap items-center gap-2 border border-dashed px-3 py-2.5"
+            >
+              <span className="text-ink w-[200px] truncate text-[13.5px] font-semibold">
+                {team.name}
+              </span>
+              <select
+                aria-label={`Schedule for ${team.name}`}
+                className={cn(SELECT_CLASS, "h-8 w-[180px]")}
+                value={team.scheduleId}
+                onChange={(e) =>
+                  setDraft((d) => ({
+                    ...d,
+                    groups: [
+                      ...d.groups,
+                      { id: team.id, name: team.name, scheduleId: e.target.value },
+                    ],
+                  }))
+                }
+              >
+                {draft.schedules.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+              <span className="text-ink-muted text-[12.5px]">
+                From the directory · {team.count} {team.count === 1 ? "person" : "people"}
+              </span>
+            </div>
+          ))}
           <div>
             <Button
               variant="outline"

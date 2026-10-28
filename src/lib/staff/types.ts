@@ -91,6 +91,8 @@ export interface RosterGroup {
   id: string;
   name: string;
   scheduleId: string;
+  /** Kept out of the roster views (the team and its people stay on file). */
+  hidden?: boolean;
 }
 
 /** A person on the shift roster. Linked to a directory profile when
@@ -114,6 +116,8 @@ export interface RosterEvent {
   endDate: string;
   label: string;
   kind: "holiday" | "swap" | "note";
+  /** Holidays only: the locations that observe it. Empty or missing = every location. */
+  locations?: string[];
 }
 
 /** Everything about the shift roster except the day-by-day assignments. */

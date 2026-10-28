@@ -97,8 +97,15 @@ export const rosterConfigSchema = z
       )
       .max(60),
     groups: z
-      .array(z.object({ id: slug, name: text(60).min(1), scheduleId: slug }))
-      .max(100),
+      .array(
+        z.object({
+          id: slug,
+          name: text(60).min(1),
+          scheduleId: slug,
+          hidden: z.boolean().optional(),
+        }),
+      )
+      .max(200),
     members: z
       .array(
         z.object({
@@ -119,6 +126,7 @@ export const rosterConfigSchema = z
           endDate: requiredDate,
           label: text(100).min(1),
           kind: z.enum(["holiday", "swap", "note"]),
+          locations: z.array(text(60).min(1)).max(40).optional(),
         }),
       )
       .max(2000),

@@ -18,7 +18,7 @@ import {
 } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { initials, photoUrl } from "@/lib/staff/employees";
-import type { Tone } from "@/lib/staff/shifts";
+import type { Hue, Tone } from "@/lib/staff/rosterCatalog";
 import type { Employee } from "@/lib/staff/types";
 
 /** Tone -> colors, all from the theme tokens so dark, light and Deloitte mode follow. */
@@ -29,7 +29,6 @@ export const TONE_PILL: Record<Tone, string> = {
   red: "bg-red-soft text-red",
   success: "bg-success-soft text-success",
   neutral: "bg-chip text-ink-soft",
-  night: "bg-ink text-ink-inverse",
 };
 
 export const TONE_DOT: Record<Tone, string> = {
@@ -39,8 +38,11 @@ export const TONE_DOT: Record<Tone, string> = {
   red: "bg-red",
   success: "bg-success-dot",
   neutral: "bg-ink-faint",
-  night: "bg-ink",
 };
+
+/** The shift roster's colours (src/styles/roster-colors.css): a filled pill and a dot. */
+export const hueClass = (hue: Hue): string => `rh-${hue}`;
+export const hueDot = (hue: Hue): string => `rd-${hue}`;
 
 export function TonePill({
   tone,

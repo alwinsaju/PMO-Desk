@@ -4,6 +4,7 @@
 // come in, a plan comes out, nothing is saved here.
 import { addDays, isIsoDate } from "./dates.ts";
 import { parseDateCell } from "./employees.ts";
+import { locationHint } from "./holidays.ts";
 import {
   GROUP_ALIASES,
   defaultGroups,
@@ -263,12 +264,16 @@ export function planRosterImport(
     const id = `ev_${banner.date}_${slugify(label)}`.slice(0, 80);
     if (eventKeys.has(id)) return;
     const last = i === parsed.banners.length - 1;
+    const kind = eventKind(label);
+    // The banner often says where it applies ("Holi (Except Gur)", "HYD Only", "KOL HOL").
+    const hint = kind === "holiday" ? locationHint(label) : undefined;
     events.push({
       id,
       date: banner.date,
       endDate: last && isIsoDate(parsed.endDate) ? parsed.endDate : banner.date,
       label,
-      kind: eventKind(label),
+      kind,
+      ...(hint ? { locations: hint } : {}),
     });
     eventKeys.add(id);
     stats.events++;

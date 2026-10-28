@@ -1,0 +1,198 @@
+/* The colours of the shift roster grid. Light mode (and Deloitte light) uses the
+   pairs the team's workbook paints its cells with; dark mode (and Deloitte dark)
+   uses deep tints of the same hues so every theme keeps the colour coding. */
+
+:root {
+  --rh-s1-bg: #d6ecc4;
+  --rh-s1-fg: #2f6b1f;
+  --rh-s2-bg: #ffeaa8;
+  --rh-s2-fg: #7a5a00;
+  --rh-s3-bg: #cde2f6;
+  --rh-s3-fg: #1d4e89;
+  --rh-s4-bg: #e2d3f1;
+  --rh-s4-fg: #5a2d82;
+  --rh-s5-bg: #f8d2e2;
+  --rh-s5-fg: #8c2857;
+  --rh-ns-bg: #b4c1ee;
+  --rh-ns-fg: #1e2a78;
+  --rh-cst-bg: #c4eadb;
+  --rh-cst-fg: #17664e;
+  --rh-pst-bg: #fad3bb;
+  --rh-pst-fg: #8b3e10;
+  --rh-wk-bg: #d5dce6;
+  --rh-wk-fg: #2f3b52;
+  --rh-hol-bg: #f3b1ac;
+  --rh-hol-fg: #a31d1d;
+  --rh-leave-bg: #e5e7eb;
+  --rh-leave-fg: #4b5563;
+  --rh-temp-bg: #c9edf2;
+  --rh-temp-fg: #0f6570;
+  --rh-comp-bg: #d3dbf0;
+  --rh-comp-fg: #3a4a7c;
+  --rh-oc-bg: #fcdca0;
+  --rh-oc-fg: #87530a;
+  --rh-custom-bg: #f1e8d4;
+  --rh-custom-fg: #5b4a1f;
+  --rh-swap-bg: #fce0c4;
+  --rh-swap-fg: #c55a11;
+  --rh-off-bg: #eef1f5;
+  --rh-off-fg: #6b7280;
+}
+
+:root[data-theme="dark"] {
+  --rh-s1-bg: #22361a;
+  --rh-s1-fg: #b5e08e;
+  --rh-s2-bg: #3a3114;
+  --rh-s2-fg: #f2d06a;
+  --rh-s3-bg: #1b3047;
+  --rh-s3-fg: #8fc1f0;
+  --rh-s4-bg: #2e2340;
+  --rh-s4-fg: #cdb0ec;
+  --rh-s5-bg: #40202f;
+  --rh-s5-fg: #f0a9c8;
+  --rh-ns-bg: #232a52;
+  --rh-ns-fg: #a9b7f5;
+  --rh-cst-bg: #17342b;
+  --rh-cst-fg: #84d9b9;
+  --rh-pst-bg: #3f281a;
+  --rh-pst-fg: #f0b28b;
+  --rh-wk-bg: #2a3342;
+  --rh-wk-fg: #b5c3d9;
+  --rh-hol-bg: #46201f;
+  --rh-hol-fg: #f59a92;
+  --rh-leave-bg: #2b303b;
+  --rh-leave-fg: #a9b2c0;
+  --rh-temp-bg: #17343a;
+  --rh-temp-fg: #7fd3df;
+  --rh-comp-bg: #26304d;
+  --rh-comp-fg: #a8b8f0;
+  --rh-oc-bg: #40301a;
+  --rh-oc-fg: #f1c474;
+  --rh-custom-bg: #35301f;
+  --rh-custom-fg: #dccb9e;
+  --rh-swap-bg: #442d18;
+  --rh-swap-fg: #f3a265;
+  --rh-off-bg: #232734;
+  --rh-off-fg: #8a94a6;
+}
+
+.rh-s1 {
+  background-color: var(--rh-s1-bg);
+  color: var(--rh-s1-fg);
+}
+.rh-s2 {
+  background-color: var(--rh-s2-bg);
+  color: var(--rh-s2-fg);
+}
+.rh-s3 {
+  background-color: var(--rh-s3-bg);
+  color: var(--rh-s3-fg);
+}
+.rh-s4 {
+  background-color: var(--rh-s4-bg);
+  color: var(--rh-s4-fg);
+}
+.rh-s5 {
+  background-color: var(--rh-s5-bg);
+  color: var(--rh-s5-fg);
+}
+.rh-ns {
+  background-color: var(--rh-ns-bg);
+  color: var(--rh-ns-fg);
+}
+.rh-cst {
+  background-color: var(--rh-cst-bg);
+  color: var(--rh-cst-fg);
+}
+.rh-pst {
+  background-color: var(--rh-pst-bg);
+  color: var(--rh-pst-fg);
+}
+.rh-wk {
+  background-color: var(--rh-wk-bg);
+  color: var(--rh-wk-fg);
+}
+.rh-hol {
+  background-color: var(--rh-hol-bg);
+  color: var(--rh-hol-fg);
+}
+.rh-leave {
+  background-color: var(--rh-leave-bg);
+  color: var(--rh-leave-fg);
+}
+.rh-temp {
+  background-color: var(--rh-temp-bg);
+  color: var(--rh-temp-fg);
+}
+.rh-comp {
+  background-color: var(--rh-comp-bg);
+  color: var(--rh-comp-fg);
+}
+.rh-oc {
+  background-color: var(--rh-oc-bg);
+  color: var(--rh-oc-fg);
+}
+.rh-custom {
+  background-color: var(--rh-custom-bg);
+  color: var(--rh-custom-fg);
+}
+.rh-swap {
+  background-color: var(--rh-swap-bg);
+  color: var(--rh-swap-fg);
+}
+.rh-off {
+  background-color: var(--rh-off-bg);
+  color: var(--rh-off-fg);
+}
+
+.rd-s1 {
+  background-color: var(--rh-s1-fg);
+}
+.rd-s2 {
+  background-color: var(--rh-s2-fg);
+}
+.rd-s3 {
+  background-color: var(--rh-s3-fg);
+}
+.rd-s4 {
+  background-color: var(--rh-s4-fg);
+}
+.rd-s5 {
+  background-color: var(--rh-s5-fg);
+}
+.rd-ns {
+  background-color: var(--rh-ns-fg);
+}
+.rd-cst {
+  background-color: var(--rh-cst-fg);
+}
+.rd-pst {
+  background-color: var(--rh-pst-fg);
+}
+.rd-wk {
+  background-color: var(--rh-wk-fg);
+}
+.rd-hol {
+  background-color: var(--rh-hol-fg);
+}
+.rd-leave {
+  background-color: var(--rh-leave-fg);
+}
+.rd-temp {
+  background-color: var(--rh-temp-fg);
+}
+.rd-comp {
+  background-color: var(--rh-comp-fg);
+}
+.rd-oc {
+  background-color: var(--rh-oc-fg);
+}
+.rd-custom {
+  background-color: var(--rh-custom-fg);
+}
+.rd-swap {
+  background-color: var(--rh-swap-fg);
+}
+.rd-off {
+  background-color: var(--rh-off-fg);
+}

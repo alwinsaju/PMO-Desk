@@ -3,13 +3,16 @@
 // No React, no I/O.
 import { addDays, weekDates } from "./dates.ts";
 import { displayName } from "./employees.ts";
+import { locationOf } from "./holidays.ts";
 import {
   CUSTOM_REF,
+  GROUP_ALIASES,
   STATUS_DEFS,
   STATUS_PREFIX,
+  slugify,
   statusRef,
+  type Hue,
   type StatusDef,
-  type Tone,
 } from "./rosterCatalog.ts";
 import type {
   Employee,
@@ -20,9 +23,10 @@ import type {
   ShiftDef,
   ShiftSchedule,
   TimeOffRequest,
+  TimeOffType,
 } from "./types.ts";
 
-export type { Tone };
+export type { Hue };
 
 // ---------------------------------------------------------------------------
 // Times
@@ -105,8 +109,8 @@ export function parseTimeRange(text: string): { start: string; end: string } | n
 
 export type Band = "day" | "afternoon" | "evening" | "night";
 
-/** When a shift starts, in four bands. Colours follow the band, not the shift's
- *  name, so equal hours look equal in every team's schedule. */
+/** When a shift starts, in four bands. Only used to colour a shift that has no
+ *  colour of its own (a name other than Shift-1 ... Shift-5, NS, US-CST, US-PST). */
 export function bandOf(start: string): Band {
   const m = toMinutes(start);
   if (m >= 19 * 60 || m < 5 * 60) return "night";
@@ -115,19 +119,35 @@ export function bandOf(start: string): Band {
   return "day";
 }
 
-export const BAND_TONE: Record<Band, Tone> = {
-  day: "accent",
-  afternoon: "amber",
-  evening: "info",
-  night: "night",
+const BAND_HUE: Record<Band, Hue> = {
+  day: "s1",
+  afternoon: "s3",
+  evening: "s4",
+  night: "ns",
 };
 
-export const BAND_LABEL: Record<Band, string> = {
-  day: "Day",
-  afternoon: "Afternoon",
-  evening: "Evening",
-  night: "Night",
-};
+const NAMED_HUES: readonly (readonly [RegExp, Hue])[] = [
+  [/^shift-?1$/, "s1"],
+  [/^shift-?2$/, "s2"],
+  [/^shift-?3$/, "s3"],
+  [/^shift-?4$/, "s4"],
+  [/^shift-?5$/, "s5"],
+  [/^ns$/, "ns"],
+  [/^(us-?)?cst$/, "cst"],
+  [/^(us-?)?pst$/, "pst"],
+  [/^weekend/, "wk"],
+];
+
+/** The colour of a shift: by its name, the way the team's workbook paints it
+ *  (Shift-1 green, Shift-2 yellow, Shift-3 blue ...), so a shift looks the same in
+ *  every team; the hours differ per team and are in each team's legend. */
+export function hueOfShift(def: Pick<ShiftDef, "id" | "label" | "start">): Hue {
+  const names = [def.id, def.label].map((n) => n.toLowerCase().replace(/[\s_]+/g, "-"));
+  for (const [pattern, hue] of NAMED_HUES) {
+    if (names.some((n) => pattern.test(n))) return hue;
+  }
+  return BAND_HUE[bandOf(def.start)];
+}
 
 /** "Shift-3" -> "S3", "US-CST" -> "CST", "Weekend (W)" -> "W". */
 export function shortLabel(label: string): string {
@@ -182,14 +202,18 @@ export interface CellView {
   days: string;
   /** Name of the schedule the shift belongs to. */
   schedule: string;
-  tone: Tone;
-  band: Band | null;
+  hue: Hue;
+  /** When the shift starts and ends (HH:MM, IST); null for a day type or unreadable hours. */
+  range: { start: string; end: string } | null;
   /** Drawn with a dashed outline: a day type rather than a shift. */
   dashed: boolean;
   /** Counts towards "on shift". */
   working: boolean;
   swap: boolean;
   note: string;
+  /** Where the day comes from: typed in the roster, approved Time off, or a
+   *  holiday of the person's location. */
+  source: "entry" | "leave" | "holiday";
 }
 
 const NOT_WORKING_TEXT = /\b(off|leave|holiday|pto)\b/i;
@@ -203,8 +227,11 @@ export function resolveAssignment(
     note: a.note ?? "",
     days: "",
     schedule: "",
-    band: null as Band | null,
+    range: null as CellView["range"],
+    source: "entry" as const,
   };
+  // A swapped day is painted like the workbook's Shift-swap cells.
+  const hueFor = (hue: Hue): Hue => (a.swap ? "swap" : hue);
   if (a.ref === CUSTOM_REF) {
     const text = a.text ?? "";
     const range = parseTimeRange(text);
@@ -214,8 +241,8 @@ export function resolveAssignment(
       short: range ? shortHours(range.start, range.end) : text.slice(0, 5) || "?",
       label: "Custom hours",
       hours: text,
-      tone: range ? BAND_TONE[bandOf(range.start)] : "neutral",
-      band: range ? bandOf(range.start) : null,
+      hue: hueFor("custom"),
+      range,
       dashed: false,
       working: !NOT_WORKING_TEXT.test(text),
     };
@@ -229,7 +256,7 @@ export function resolveAssignment(
       short: def?.short ?? tail.toUpperCase().slice(0, 4),
       label: def?.label ?? tail,
       hours: "",
-      tone: def?.tone ?? "neutral",
+      hue: def?.hue ?? "off",
       dashed: true,
       working: tail === "on-call",
     };
@@ -243,12 +270,11 @@ export function resolveAssignment(
       short: tail.toUpperCase().slice(0, 4) || "?",
       label: tail || a.ref,
       hours: "",
-      tone: "neutral",
+      hue: "off",
       dashed: true,
       working: true,
     };
   }
-  const band = bandOf(def.start);
   return {
     ...base,
     kind: "shift",
@@ -257,11 +283,128 @@ export function resolveAssignment(
     hours: formatHours(def.start, def.end),
     days: formatDays(def.days),
     schedule: schedule.name,
-    tone: BAND_TONE[band],
-    band,
+    hue: hueFor(hueOfShift(def)),
+    range: { start: def.start, end: def.end },
     dashed: false,
     working: true,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Days that are not typed into the roster: approved Time off and holidays
+// ---------------------------------------------------------------------------
+
+const LEAVE_STATUS: Record<TimeOffType, string> = {
+  pto: "pto",
+  sick: "sick",
+  "public-holiday": "holiday",
+  "comp-off": "comp",
+  parental: "pto",
+  other: "pto",
+};
+
+const derived = (
+  status: StatusDef,
+  label: string,
+  source: "leave" | "holiday",
+): CellView => ({
+  kind: "status",
+  short: status.short,
+  label,
+  hours: "",
+  days: "",
+  schedule: "",
+  hue: status.hue,
+  range: null,
+  dashed: true,
+  working: false,
+  swap: false,
+  note: "",
+  source,
+});
+
+const leaveViews = new Map<string, CellView>();
+
+/** What approved Time off looks like in the roster: PTO, sick leave, comp off ... */
+export function leaveView(type: TimeOffType, typeLabel: string): CellView {
+  let view = leaveViews.get(type);
+  if (!view) {
+    view = derived(
+      statusDef(LEAVE_STATUS[type]) ?? STATUS_DEFS[1],
+      `${typeLabel} (approved in Time off)`,
+      "leave",
+    );
+    leaveViews.set(type, view);
+  }
+  return view;
+}
+
+const holidayViews = new Map<string, CellView>();
+
+/** The HOL of a holiday the person's location observes, when nothing else is entered. */
+export function holidayView(name: string): CellView {
+  let view = holidayViews.get(name);
+  if (!view) {
+    view = derived(STATUS_DEFS[0], name, "holiday");
+    holidayViews.set(name, view);
+  }
+  return view;
+}
+
+export interface DayCell {
+  cell: CellView | null;
+  /** What was typed in for the day when approved Time off covers it instead. */
+  covered: string;
+}
+
+/**
+ * What a person's day shows. A day typed into the roster wins, except that
+ * approved Time off replaces a working shift (leave beats the plan, while
+ * holidays, weekly offs and on-call stay as entered). With nothing entered, on a day
+ * the person would normally work, approved leave shows, then a holiday of the
+ * person's location.
+ */
+export function dayCell(
+  entry: CellView | null,
+  leave: { type: TimeOffType; label: string } | null,
+  holiday: string | null,
+  /** Whether the person would normally work this day (see `usuallyWorks`). */
+  works: boolean,
+): DayCell {
+  if (entry) {
+    if (leave && (entry.kind === "shift" || entry.kind === "custom") && entry.working) {
+      return {
+        cell: leaveView(leave.type, leave.label),
+        covered: `${entry.label}${entry.hours ? ` ${entry.hours}` : ""}`,
+      };
+    }
+    return { cell: entry, covered: "" };
+  }
+  if (!works) return { cell: null, covered: "" };
+  if (leave) return { cell: leaveView(leave.type, leave.label), covered: "" };
+  if (holiday) return { cell: holidayView(holiday), covered: "" };
+  return { cell: null, covered: "" };
+}
+
+/**
+ * Whether a person normally works this weekday, read from their own entries around it:
+ * the same weekday a week or two either side (anything but a day off counts), or, when
+ * they have none, whether they have entries on nearby days at all (then this is a weekly
+ * off). Null when nothing nearby says, so the caller falls back to "weekdays".
+ */
+export function usuallyWorks(
+  index: ReadonlyMap<string, ShiftAssignment>,
+  memberId: string,
+  date: string,
+): boolean | null {
+  for (const offset of [-7, 7, -14, 14]) {
+    const a = index.get(assignmentId(memberId, addDays(date, offset)));
+    if (a && a.ref !== statusRef("off")) return true;
+  }
+  for (const offset of [-3, -2, -1, 1, 2, 3, -7, 7]) {
+    if (index.has(assignmentId(memberId, addDays(date, offset)))) return false;
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -369,19 +512,35 @@ export function leaveOn(
 export interface RosterRow {
   /** Stable key for React. */
   key: string;
-  /** The roster member; null for a directory person not in any team yet. */
+  /** The roster member; null for a directory person who has no shifts entered yet. */
   member: RosterMember | null;
   employee: Employee | null;
   name: string;
   subtitle: string;
+  /** Where they work, for holidays ("" when unknown). */
+  location: string;
 }
 
 export interface RosterSection {
   id: string;
-  /** null = directory people who are not in any team yet. */
+  /** null = directory people whose profile names no team. */
   group: RosterGroup | null;
+  /** The team exists only because a directory profile names it; it is saved with the
+   *  roster the first time something is entered or changed for it. */
+  virtual: boolean;
+  hidden: boolean;
   schedule: ShiftSchedule | undefined;
   rows: RosterRow[];
+}
+
+/** One team in the teams list, whether it is shown or not. */
+export interface TeamInfo {
+  id: string;
+  name: string;
+  hidden: boolean;
+  virtual: boolean;
+  scheduleId: string;
+  count: number;
 }
 
 export const UNASSIGNED_ID = "unassigned";
@@ -395,27 +554,55 @@ function rowFor(member: RosterMember, employee: Employee | null): RosterRow {
     subtitle: employee
       ? [employee.level, employee.op].filter(Boolean).join(" · ")
       : [member.role, member.city].filter(Boolean).join(" · "),
+    location: locationOf(member, employee),
   };
 }
 
 export interface SectionsResult {
   sections: RosterSection[];
+  /** Every team (shown or hidden, with or without people). */
+  teams: TeamInfo[];
   /** Directory people left out because their profile is excluded from the shift roster. */
   excluded: number;
   /** Everyone shown, across sections. */
   total: number;
+  /** People in hidden teams. */
+  hiddenPeople: number;
+}
+
+/** The stored team a directory "Team" value names (same words, or a known alias). */
+export function matchGroup(
+  groups: readonly RosterGroup[],
+  team: string,
+): RosterGroup | undefined {
+  const slug = slugify(team);
+  if (!slug) return undefined;
+  const alias = GROUP_ALIASES[team.trim().toLowerCase().replace(/\s+/g, " ")];
+  return groups.find((g) => g.id === slug || slugify(g.name) === slug || g.id === alias);
+}
+
+/** Adds a team that only the directory names to the roster's teams (a no-op for a stored one). */
+export function withGroup(config: RosterConfig, group: RosterGroup): RosterConfig {
+  return config.groups.some((g) => g.id === group.id)
+    ? config
+    : { ...config, groups: [...config.groups, group] };
 }
 
 /**
- * The people of the shift roster, by team. Roster members come from the roster
- * itself; a member linked to a directory profile takes the name from there and
- * disappears when that profile is excluded from the shift roster. Included
- * directory people who are in no team yet are listed last, waiting for one.
+ * The people of the shift roster, by team. The teams come from the directory: a
+ * person's team is the "Team" on their profile, and a team nobody has stored yet
+ * appears as soon as a profile names it. Roster entries that are not linked to a
+ * profile (imported from the workbook) stay in the team they were put in. Profiles
+ * excluded from the shift roster are left out; hidden teams are not listed.
  */
 export function buildSections(
   config: RosterConfig,
   employees: readonly Employee[],
-  { query = "", groupId = "" }: { query?: string; groupId?: string } = {},
+  {
+    query = "",
+    groupId = "",
+    showHidden = false,
+  }: { query?: string; groupId?: string; showHidden?: boolean } = {},
 ): SectionsResult {
   const byId = new Map(employees.map((e) => [e.id, e]));
   const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
@@ -426,6 +613,7 @@ export function buildSections(
       row.member?.name,
       row.member?.city,
       row.member?.role,
+      row.location,
       row.employee?.deloitteEmail,
       row.employee?.level,
       row.employee?.op,
@@ -436,23 +624,50 @@ export function buildSections(
     return terms.every((t) => haystack.includes(t));
   };
 
-  const linked = new Set<string>();
+  const defaultSchedule = config.schedules[0]?.id ?? "main";
+  const scheduleOf = (id: string) => config.schedules.find((s) => s.id === id);
   const sections: RosterSection[] = config.groups.map((group) => ({
     id: group.id,
     group,
-    schedule: config.schedules.find((s) => s.id === group.scheduleId),
+    virtual: false,
+    hidden: group.hidden === true,
+    schedule: scheduleOf(group.scheduleId),
     rows: [],
   }));
   const sectionOf = new Map(sections.map((s) => [s.id, s]));
 
+  /** The section for a directory team name; a team no stored group matches gets a new one. */
+  const sectionForTeam = (team: string): RosterSection | null => {
+    const name = team.trim();
+    if (!name) return null;
+    const stored = matchGroup(config.groups, name);
+    if (stored) return sectionOf.get(stored.id) ?? null;
+    const id = slugify(name) || "team";
+    let section = sectionOf.get(id);
+    if (!section) {
+      const group: RosterGroup = { id, name, scheduleId: defaultSchedule };
+      section = {
+        id,
+        group,
+        virtual: true,
+        hidden: false,
+        schedule: scheduleOf(defaultSchedule),
+        rows: [],
+      };
+      sectionOf.set(id, section);
+      sections.push(section);
+    }
+    return section;
+  };
+
+  const linked = new Set<string>();
   for (const member of config.members) {
     const employee = member.employeeId ? (byId.get(member.employeeId) ?? null) : null;
     if (employee) linked.add(employee.id);
     if (employee?.excludeFromShiftRoster) continue;
-    const section = sectionOf.get(member.groupId);
-    if (!section) continue;
-    const row = rowFor(member, employee);
-    if (matches(row)) section.rows.push(row);
+    const section =
+      (employee && sectionForTeam(employee.team)) ?? sectionOf.get(member.groupId);
+    section?.rows.push(rowFor(member, employee));
   }
 
   const waiting: RosterRow[] = [];
@@ -464,21 +679,56 @@ export function buildSections(
       employee,
       name: displayName(employee),
       subtitle: [employee.level, employee.op].filter(Boolean).join(" · "),
+      location: locationOf(null, employee),
     };
-    if (matches(row)) waiting.push(row);
-  }
-  if (waiting.length) {
-    sections.push({ id: UNASSIGNED_ID, group: null, schedule: undefined, rows: waiting });
+    const section = sectionForTeam(employee.team);
+    if (section) section.rows.push(row);
+    else waiting.push(row);
   }
 
-  const filtering = terms.length > 0 || groupId !== "";
-  const shown = sections.filter(
-    (s) => (!groupId || s.id === groupId) && (s.rows.length > 0 || !filtering),
+  // Teams only the directory names come after the stored ones, in alphabetical order.
+  const storedCount = config.groups.length;
+  const named = sections.slice(storedCount).sort((a, b) => a.id.localeCompare(b.id));
+  sections.splice(storedCount, named.length, ...named);
+  if (waiting.length) {
+    sections.push({
+      id: UNASSIGNED_ID,
+      group: null,
+      virtual: false,
+      hidden: false,
+      schedule: undefined,
+      rows: waiting,
+    });
+  }
+
+  const teams: TeamInfo[] = sections.flatMap((s) =>
+    s.group
+      ? [
+          {
+            id: s.id,
+            name: s.group.name,
+            hidden: s.hidden,
+            virtual: s.virtual,
+            scheduleId: s.group.scheduleId,
+            count: s.rows.length,
+          },
+        ]
+      : [],
   );
+
+  const shown = sections
+    .filter((s) => showHidden || !s.hidden)
+    .map((s) => ({ ...s, rows: s.rows.filter(matches) }))
+    .filter(
+      (s) =>
+        s.rows.length > 0 && (!groupId || s.id === groupId || s.group?.name === groupId),
+    );
   return {
     sections: shown,
+    teams,
     excluded: employees.filter((e) => e.excludeFromShiftRoster).length,
     total: shown.reduce((n, s) => n + s.rows.length, 0),
+    hiddenPeople: sections.filter((s) => s.hidden).reduce((n, s) => n + s.rows.length, 0),
   };
 }
 
@@ -584,6 +834,45 @@ export function autoLinkMembers(
   }
   return changed;
 }
+
+// ---------------------------------------------------------------------------
+// The Today view: a shift as a stretch of the 24-hour day
+// ---------------------------------------------------------------------------
+
+export interface DaySpan {
+  /** Minutes after midnight. */
+  from: number;
+  to: number;
+  /** Today's shift that runs on past midnight, or last night's shift still running. */
+  open: boolean;
+}
+
+/**
+ * The part of a shift that falls on one day. `today`: the shift that starts that day
+ * (an overnight shift is cut at midnight). `yesterday`: the tail of last night's
+ * overnight shift that is still running early that day; null for a daytime shift.
+ */
+export function daySpan(
+  range: { start: string; end: string },
+  which: "today" | "yesterday",
+): DaySpan | null {
+  const start = toMinutes(range.start);
+  const end = toMinutes(range.end);
+  const overnight = end <= start;
+  if (which === "today") {
+    return overnight
+      ? { from: start, to: 1440, open: true }
+      : { from: start, to: end, open: false };
+  }
+  return overnight ? { from: 0, to: end, open: true } : null;
+}
+
+export const spanActiveAt = (span: DaySpan, minute: number): boolean =>
+  span.from <= minute && minute < span.to;
+
+/** Minutes after midnight on the machine's clock. */
+export const minutesNow = (now: Date = new Date()): number =>
+  now.getHours() * 60 + now.getMinutes();
 
 // ---------------------------------------------------------------------------
 // Ids

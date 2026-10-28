@@ -878,18 +878,44 @@ meant different hours. It is modelled so that stays true without the confusion:
   `HOL`, for India, US, Mexico and all locations), PTO, temp PTO, comp off, on-call, sick, day
   off. A **swap** is a flag (plus note) on a day, not a shift of its own, and **custom hours**
   (`custom` + typed text, e.g. `11AM-8PM`) cover what no schedule has.
-- **Colours follow the start time** (day / afternoon / evening / night), not the shift name, so
-  equal hours look equal across teams; day types are drawn dashed. Each team section shows its
-  own legend (every shift with its hours and usual days) above its people.
+- **Colours follow the workbook**: a shift is painted by its name (Shift-1 green, Shift-2 yellow,
+  Shift-3 blue, Shift-4 purple, Shift-5 pink, NS indigo, US-CST teal, US-PST peach), holiday red,
+  PTO/sick grey, temp PTO cyan, comp off periwinkle, on-call amber, custom hours beige, a swapped
+  day orange (`hueOfShift`, `src/styles/roster-colors.css`, one pair per theme so light, dark and
+  Deloitte mode all keep the coding). The hours still differ per team, so each team section shows
+  its own legend (every shift with its hours and usual days) above its people.
 - **Events** (holidays, swap days, notes such as the winter disconnect) apply to a day or a run
-  of days for everyone and show above the dates.
+  of days and show above the dates. A **holiday** can list the locations that observe it
+  (`RosterEvent.locations`; empty = everywhere). **Holidays** in the toolbar edits them: pick the
+  locations with chips (Every location / India only / tick everything and untick the
+  exceptions), or add a place. People are placed by their location (`RosterMember.city`, else the
+  directory's office; set per person from the row menu); a person at an observing location gets
+  a tinted day and, when nothing else is entered and they would normally work that weekday
+  (`usuallyWorks`: read from their own entries around it), a `HOL` cell. The date header shows
+  the holiday's name and where it applies. The workbook importer reads locations from banner
+  labels ("Holi (Except Gur)", "HYD Only", "KOL HOL").
+- **Time off.** Approved requests of the Time off tab are shown in the roster (`dayCell`): leave
+  replaces a planned working shift, while holidays, days off and on-call stay as entered, and a
+  day with nothing entered shows the leave on days the person would work. Pending and rejected
+  requests are not shown. The roster entries underneath are kept.
+- **Teams come from the directory.** A person's team is the Team on their directory profile;
+  a team no stored group matches (by name or alias) appears by itself, with the first schedule
+  until you pick one under Schedules and teams, and a new profile appears in the roster
+  without any step. A roster entry is created for a directory person only when something is
+  entered for them (`ensureMember`, together with their team). Entries that are not linked to a
+  profile (imported) stay in the team they were put in. **Teams** in the toolbar (or the eye on
+  a team) hides a team: `RosterGroup.hidden`, kept on file; hidden teams are left out of the
+  views and the "On shift" count.
+- **Views.** _Today_ (the day as a 24-hour track with a pill per person covering the shift's
+  hours, a "now" line, last night's overnight tail), _Week_, _Month_ and _Cycle_ (the Tasks
+  app's two-month cycle: whole Sunday-Saturday weeks, `cycles.ts`).
 - **Who is on the roster.** A `RosterMember` is one row. It links to a directory profile
   (`employeeId`) or, until the person exists in the directory, stands alone with the name, city
   and role from the workbook; **Manage > Match names to the directory** (and the import itself)
   link members whose name is the same words as exactly one profile. A linked member takes the
   name and photo from the directory and disappears when the profile is excluded from the shift
-  roster. Directory people who are included but in no team yet are listed last under "Not in a
-  team yet", with **Add to team**. Removing a person from the directory unlinks their entry
+  roster. Directory people whose profile names no team are listed last under "Not in a team
+  yet", with **Add to team**. Removing a person from the directory unlinks their entry
   (and keeps its shifts) rather than deleting it.
 - **Storage.** `roster.json` holds `{ schedules, groups, members, events }` (replaced as a whole
   by PUT, validated for dangling teams / schedules / links); `shifts.json` holds the days

@@ -1,14 +1,14 @@
 "use client";
 
-import { useCallback, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
+  CalendarDotsIcon,
   CaretLeftIcon,
   CaretRightIcon,
   CopyIcon,
-  DotsThreeIcon,
+  EyeIcon,
   FileXlsIcon,
   GearSixIcon,
-  LinkBreakIcon,
   MagnifyingGlassIcon,
   UsersThreeIcon,
   WarningCircleIcon,
@@ -21,51 +21,45 @@ import {
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
   IconButton,
   Input,
 } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import {
+  cycleContaining,
+  cycleDates,
+  cycleSpan,
+  nextCycle,
+  previousCycle,
+} from "@/lib/staff/cycles";
+import {
   addDays,
   addMonths,
   dayName,
   formatDate,
-  formatDayMonth,
   formatMonth,
   formatRange,
-  isWeekend,
   monthDates,
   monthStart,
   mondayOf,
   todayIso,
   weekDates,
 } from "@/lib/staff/dates";
-import { CUSTOM_REF, STATUS_DEFS, statusRef } from "@/lib/staff/rosterCatalog";
+import { locationChoices } from "@/lib/staff/holidays";
 import { useRosterStore, useRosterSync } from "@/lib/staff/rosterStore";
 import {
-  BAND_LABEL,
-  BAND_TONE,
   assignmentId,
   autoLinkMembers,
-  bandOf,
   buildSections,
   copyPreviousWeek,
-  coverageOn,
   fillWeek,
-  formatDays,
-  formatHours,
   indexAssignments,
   leaveOn,
   makeAssignment,
   newId,
   resolveAssignment,
-  shiftRef,
-  shortLabel,
-  type Band,
+  withGroup,
   type CellView,
   type RosterRow,
   type RosterSection,
@@ -75,35 +69,74 @@ import { TIME_OFF_META } from "@/lib/staff/timeoff";
 import type {
   RosterConfig,
   RosterEvent,
+  RosterGroup,
+  RosterMember,
   ShiftAssignment,
-  ShiftSchedule,
   StaffChanges,
 } from "@/lib/staff/types";
 import { CellDialog, type CellEdit } from "./CellDialog";
+import { DayView } from "./DayView";
+import { HolidayDialog } from "./HolidayDialog";
 import { LinkDialog } from "./LinkDialog";
-import {
-  ConfirmDialog,
-  EmptyState,
-  FilterMenu,
-  PersonAvatar,
-  TONE_DOT,
-  TONE_PILL,
-} from "./parts";
-import { RosterCell, type RosterView } from "./RosterCell";
+import { ConfirmDialog, EmptyState, FilterMenu } from "./parts";
+import type { RosterView } from "./RosterCell";
+import { RosterGrid, type GridActions } from "./RosterGrid";
+import { CellMenu, Legend, type MenuTarget } from "./RosterParts";
 import { RosterImportDialog } from "./RosterImportDialog";
 import { ScheduleDialog } from "./ScheduleDialog";
 
-const NAME_COL = 240;
-const DAY_COL: Record<RosterView, number> = { week: 112, month: 40 };
-const EVENT_ROW = 28;
+const VIEWS: readonly RosterView[] = ["today", "week", "month", "cycle"];
+const VIEW_LABEL: Record<RosterView, string> = {
+  today: "Today",
+  week: "Week",
+  month: "Month",
+  cycle: "Cycle",
+};
+const UNIT: Record<RosterView, string> = {
+  today: "day",
+  week: "week",
+  month: "month",
+  cycle: "cycle",
+};
 
-interface MenuTarget {
-  memberId: string;
-  date: string;
-  rect: DOMRect;
+/** The day, Monday, first of the month or cycle start that `view` is anchored on for `focus`. */
+function anchorFor(view: RosterView, focus: string): string {
+  switch (view) {
+    case "today":
+      return focus;
+    case "week":
+      return mondayOf(focus);
+    case "month":
+      return monthStart(focus);
+    case "cycle":
+      return cycleContaining(focus).start;
+  }
 }
 
-const EVENT_TONE = { holiday: "amber", swap: "info", note: "neutral" } as const;
+function rangeOf(view: RosterView, anchor: string) {
+  switch (view) {
+    case "today":
+      return {
+        days: [anchor],
+        title: `${dayName(anchor)}, ${formatDate(anchor)}`,
+        subtitle: "",
+      };
+    case "week": {
+      const days = weekDates(anchor);
+      return { days, title: formatRange(days[0], days[6]), subtitle: "" };
+    }
+    case "month":
+      return { days: monthDates(anchor), title: formatMonth(anchor), subtitle: "" };
+    case "cycle": {
+      const cycle = cycleContaining(anchor);
+      return {
+        days: cycleDates(cycle),
+        title: `${cycle.label} cycle`,
+        subtitle: cycleSpan(cycle),
+      };
+    }
+  }
+}
 
 export function ShiftRoster() {
   useRosterSync();
@@ -123,29 +156,37 @@ export function ShiftRoster() {
   const [cellEdit, setCellEdit] = useState<CellEdit | null>(null);
   const [linking, setLinking] = useState<string | null>(null);
   const [removing, setRemoving] = useState<RosterRow | null>(null);
-  const [dialog, setDialog] = useState<"schedules" | "import" | null>(null);
+  const [dialog, setDialog] = useState<"schedules" | "import" | "holidays" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const materialising = useRef(new Map<string, Promise<string | null>>());
 
-  const days = useMemo(
-    () => (view === "week" ? weekDates(anchor) : monthDates(anchor)),
-    [view, anchor],
-  );
-  const groupId = config.groups.find((g) => g.name === groupName)?.id ?? "";
-  const { sections, excluded, total } = useMemo(
-    () => buildSections(config, employees, { query, groupId }),
-    [config, employees, query, groupId],
+  const { days, title, subtitle } = useMemo(() => rangeOf(view, anchor), [view, anchor]);
+  const { sections, teams, excluded, total, hiddenPeople } = useMemo(
+    () => buildSections(config, employees, { query, groupId: groupName }),
+    [config, employees, query, groupName],
   );
   const index = useMemo(() => indexAssignments(shifts), [shifts]);
   const rows = useMemo(() => sections.flatMap((s) => s.rows), [sections]);
-  const rowByMember = useMemo(() => {
+  const rowByKey = useMemo(() => {
     const map = new Map<string, { row: RosterRow; section: RosterSection }>();
     for (const section of sections) {
-      for (const row of section.rows)
-        if (row.member) map.set(row.member.id, { row, section });
+      for (const row of section.rows) map.set(row.key, { row, section });
     }
     return map;
   }, [sections]);
+  const approved = useMemo(
+    () => timeOff.filter((r) => r.status === "approved"),
+    [timeOff],
+  );
+  const choices = useMemo(
+    () => locationChoices(config.members, employees, config.events),
+    [config.members, config.events, employees],
+  );
+  const linkable = useMemo(
+    () => autoLinkMembers(config.members, employees).length,
+    [config.members, employees],
+  );
 
   // One view per assignment, kept while the assignment object is, so a roster
   // with thousands of days only re-renders the days that changed.
@@ -191,34 +232,73 @@ export function ShiftRoster() {
     [commit],
   );
 
-  const openMenu = useCallback((memberId: string, date: string, rect: DOMRect) => {
-    setMenu({ memberId, date, rect });
+  const openMenu = useCallback((rowKey: string, date: string, rect: DOMRect) => {
+    setMenu({ rowKey, date, rect });
   }, []);
 
-  async function saveRoster(next: RosterConfig, done?: string) {
+  async function saveRoster(next: RosterConfig, done?: string): Promise<boolean> {
     setError(null);
     setNotice(null);
     const result = await saveConfig(next);
     if (!result.ok) setError(result.reason);
     else if (done) setNotice(done);
+    return result.ok;
   }
 
-  const patchMember = (
-    memberId: string,
-    change: Partial<RosterConfig["members"][number]>,
-  ) =>
-    saveRoster({
-      ...config,
-      members: config.members.map((m) => (m.id === memberId ? { ...m, ...change } : m)),
+  /** The latest saved configuration, for actions that follow another save. */
+  const latest = () => useRosterStore.getState().config;
+
+  const patchMember = (memberId: string, change: Partial<RosterMember>) => {
+    const current = latest();
+    return saveRoster({
+      ...current,
+      members: current.members.map((m) => (m.id === memberId ? { ...m, ...change } : m)),
     });
+  };
+
+  /**
+   * The roster member behind a row. A directory person has no roster entry until
+   * something is entered for them: it is created here, together with their team when
+   * only the directory names it, and the id is returned.
+   */
+  function ensureMember(rowKey: string): Promise<string | null> {
+    const found = rowByKey.get(rowKey);
+    if (!found) return Promise.resolve(null);
+    const { row, section } = found;
+    if (row.member) return Promise.resolve(row.member.id);
+    const employee = row.employee;
+    const group = section.group;
+    if (!employee || !group) return Promise.resolve(null);
+    const pending = materialising.current.get(row.key);
+    if (pending) return pending;
+    const task = (async () => {
+      const current = latest();
+      const member: RosterMember = {
+        id: newId("mem"),
+        name: row.name,
+        employeeId: employee.id,
+        groupId: group.id,
+        city: employee.homeOffice,
+        role: employee.team,
+      };
+      const ok = await saveRoster({
+        ...withGroup(current, group),
+        members: [...current.members, member],
+      });
+      return ok ? member.id : null;
+    })().finally(() => materialising.current.delete(row.key));
+    materialising.current.set(row.key, task);
+    return task;
+  }
 
   function addToTeam(row: RosterRow, targetGroupId: string) {
     const employee = row.employee;
     if (!employee) return;
+    const current = latest();
     return saveRoster({
-      ...config,
+      ...current,
       members: [
-        ...config.members,
+        ...current.members,
         {
           id: newId("mem"),
           name: row.name,
@@ -228,6 +308,16 @@ export function ShiftRoster() {
           role: employee.team,
         },
       ],
+    });
+  }
+
+  function setTeamHidden(group: RosterGroup, hidden: boolean) {
+    const base = withGroup(latest(), group);
+    return saveRoster({
+      ...base,
+      groups: base.groups.map((g) =>
+        g.id === group.id ? { ...g, hidden: hidden ? true : undefined } : g,
+      ),
     });
   }
 
@@ -246,36 +336,78 @@ export function ShiftRoster() {
     );
   }
 
+  const actions: GridActions = {
+    open: openMenu,
+    link: (row) => row.member && setLinking(row.member.id),
+    unlink: (row) => {
+      if (row.member) void patchMember(row.member.id, { employeeId: null });
+    },
+    move: (row, gid) => {
+      if (row.member) void patchMember(row.member.id, { groupId: gid });
+      else void addToTeam(row, gid);
+    },
+    setLocation: (row, location) => {
+      void ensureMember(row.key).then((id) => {
+        if (id) void patchMember(id, { city: location });
+      });
+    },
+    remove: setRemoving,
+    hide: (section) => section.group && void setTeamHidden(section.group, true),
+  };
+
   function navigate(direction: -1 | 1) {
-    setAnchor((a) =>
-      view === "week" ? addDays(a, 7 * direction) : addMonths(a, direction),
-    );
+    setAnchor((a) => {
+      switch (view) {
+        case "today":
+          return addDays(a, direction);
+        case "week":
+          return addDays(a, 7 * direction);
+        case "month":
+          return addMonths(a, direction);
+        case "cycle": {
+          const cycle = cycleContaining(a);
+          return (direction > 0 ? nextCycle(cycle) : previousCycle(cycle)).start;
+        }
+      }
+    });
   }
 
   function switchView(next: RosterView) {
     if (next === view) return;
+    const focus = days.includes(today) ? today : days[0];
     setView(next);
-    setAnchor((a) => (next === "month" ? monthStart(a) : mondayOf(a)));
+    setAnchor(anchorFor(next, focus));
   }
 
-  const target = menu ? rowByMember.get(menu.memberId) : undefined;
-  const targetSchedule: ShiftSchedule | undefined = target?.section.schedule;
-  const targetKey = menu ? assignmentId(menu.memberId, menu.date) : "";
-  const targetCurrent = menu ? (index.get(targetKey) ?? null) : null;
+  const target = menu ? rowByKey.get(menu.rowKey) : undefined;
+  const targetMemberId = target?.row.member?.id ?? null;
+  const targetCurrent =
+    menu && targetMemberId
+      ? (index.get(assignmentId(targetMemberId, menu.date)) ?? null)
+      : null;
+  const targetLeave =
+    menu && target?.row.employee
+      ? leaveOn(approved, target.row.employee.id, menu.date)
+      : undefined;
 
-  const setRef = (ref: string) =>
-    menu && run({ upsert: [makeAssignment(menu.memberId, menu.date, ref)] });
+  async function setRef(ref: string) {
+    if (!menu) return;
+    const memberId = await ensureMember(menu.rowKey);
+    if (memberId) await run({ upsert: [makeAssignment(memberId, menu.date, ref)] });
+  }
 
   const hasPeople =
     config.members.length > 0 || employees.some((e) => !e.excludeFromShiftRoster);
   const todayInView = days.includes(today);
+  const visibleTeams = teams.filter((t) => !t.hidden);
+  const hiddenTeams = teams.length - visibleTeams.length;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex flex-wrap items-center gap-2 px-5 pb-3">
         <div className="flex items-center gap-1">
           <IconButton
-            aria-label={view === "week" ? "Previous week" : "Previous month"}
+            aria-label={`Previous ${UNIT[view]}`}
             variant="outline"
             size="sm"
             onClick={() => navigate(-1)}
@@ -283,7 +415,7 @@ export function ShiftRoster() {
             <CaretLeftIcon weight="bold" />
           </IconButton>
           <IconButton
-            aria-label={view === "week" ? "Next week" : "Next month"}
+            aria-label={`Next ${UNIT[view]}`}
             variant="outline"
             size="sm"
             onClick={() => navigate(1)}
@@ -291,16 +423,15 @@ export function ShiftRoster() {
             <CaretRightIcon weight="bold" />
           </IconButton>
         </div>
-        <h2 className="text-ink min-w-[150px] text-[15px] font-bold" aria-live="polite">
-          {view === "week"
-            ? formatRange(days[0], days[days.length - 1])
-            : formatMonth(anchor)}
-        </h2>
+        <div className="min-w-[150px]" aria-live="polite">
+          <h2 className="text-ink text-[15px] leading-tight font-bold">{title}</h2>
+          {subtitle && <p className="text-ink-muted text-[11.5px]">{subtitle}</p>}
+        </div>
         <Button
           variant="ghost"
           size="sm"
           disabled={todayInView}
-          onClick={() => setAnchor(view === "week" ? mondayOf(today) : monthStart(today))}
+          onClick={() => setAnchor(anchorFor(view, today))}
         >
           Today
         </Button>
@@ -309,20 +440,20 @@ export function ShiftRoster() {
           aria-label="Range"
           className="bg-chip rounded-seg inline-flex gap-0.5 p-0.5"
         >
-          {(["week", "month"] as const).map((v) => (
+          {VIEWS.map((v) => (
             <button
               key={v}
               type="button"
               aria-pressed={view === v}
               onClick={() => switchView(v)}
               className={cn(
-                "rounded-seg-item transition-ui h-7 px-3 text-[13px] font-semibold capitalize",
+                "rounded-seg-item transition-ui h-7 px-3 text-[13px] font-semibold",
                 view === v
                   ? "bg-field text-ink shadow-[0_2px_8px_rgba(30,30,60,0.12)]"
                   : "text-ink-muted hover:text-ink",
               )}
             >
-              {v}
+              {VIEW_LABEL[v]}
             </button>
           ))}
         </div>
@@ -343,9 +474,74 @@ export function ShiftRoster() {
         <FilterMenu
           label="teams"
           value={groupName}
-          options={config.groups.map((g) => g.name)}
+          options={visibleTeams.map((t) => t.name)}
           onChange={setGroupName}
         />
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="sm" aria-label="Show or hide teams">
+              <EyeIcon size={14} weight="bold" />
+              Teams
+              {hiddenTeams > 0 && (
+                <span className="bg-accent-soft text-accent-ink rounded-chip px-1.5 text-[11px] font-bold">
+                  {hiddenTeams} hidden
+                </span>
+              )}
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            align="end"
+            className="max-h-[360px] min-w-[230px] overflow-y-auto"
+          >
+            <DropdownMenuLabel>Teams shown in the roster</DropdownMenuLabel>
+            {teams.length === 0 && (
+              <p className="text-ink-muted px-3 py-2 text-[12.5px]">No teams yet.</p>
+            )}
+            {teams.map((t) => (
+              <DropdownMenuCheckboxItem
+                key={t.id}
+                checked={!t.hidden}
+                onSelect={(e) => e.preventDefault()}
+                onCheckedChange={(show) =>
+                  void setTeamHidden(
+                    { id: t.id, name: t.name, scheduleId: t.scheduleId },
+                    !show,
+                  )
+                }
+              >
+                <span className="flex-1">{t.name}</span>
+                <span className="text-ink-muted ml-3 text-[12px]">{t.count}</span>
+              </DropdownMenuCheckboxItem>
+            ))}
+            {hiddenTeams > 0 && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onSelect={() => {
+                    const current = latest();
+                    void saveRoster({
+                      ...current,
+                      groups: current.groups.map((g) =>
+                        g.hidden ? { ...g, hidden: undefined } : g,
+                      ),
+                    });
+                  }}
+                >
+                  Show all teams
+                </DropdownMenuItem>
+              </>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <Button
+          variant="outline"
+          size="sm"
+          aria-label="Holidays by location"
+          onClick={() => setDialog("holidays")}
+        >
+          <CalendarDotsIcon size={14} weight="bold" />
+          Holidays
+        </Button>
         {view === "week" && (
           <Button
             variant="outline"
@@ -369,6 +565,9 @@ export function ShiftRoster() {
             <DropdownMenuItem onSelect={() => setDialog("schedules")}>
               Schedules and teams…
             </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => setDialog("holidays")}>
+              Holidays by location…
+            </DropdownMenuItem>
             <DropdownMenuItem onSelect={() => setDialog("import")}>
               Import from Excel…
             </DropdownMenuItem>
@@ -379,10 +578,29 @@ export function ShiftRoster() {
         </DropdownMenu>
       </div>
 
-      {(excluded > 0 || notice) && (
+      {(excluded > 0 || hiddenPeople > 0 || notice || linkable > 0) && (
         <p role="status" className="text-ink-muted px-5 pb-2 text-[12.5px]">
-          {notice ??
-            `${excluded} ${excluded === 1 ? "person is" : "people are"} excluded from the shift roster. Change this on their profile in the Directory.`}
+          {notice ?? (
+            <>
+              {excluded > 0 &&
+                `${excluded} ${excluded === 1 ? "person is" : "people are"} excluded from the shift roster (change it on their Directory profile). `}
+              {hiddenPeople > 0 &&
+                `${hiddenPeople} ${hiddenPeople === 1 ? "person is" : "people are"} in hidden teams. `}
+              {linkable > 0 && (
+                <>
+                  {linkable} roster {linkable === 1 ? "name matches" : "names match"} a
+                  directory profile.{" "}
+                  <button
+                    type="button"
+                    className="text-accent-ink font-semibold underline"
+                    onClick={matchNames}
+                  >
+                    Link them
+                  </button>
+                </>
+              )}
+            </>
+          )}
         </p>
       )}
       {error && (
@@ -404,175 +622,45 @@ export function ShiftRoster() {
               </Button>
             }
           >
-            People in the Directory appear here unless they are excluded from the shift
-            roster. To start from your existing workbook, import it: teams, schedules,
-            people and their shifts come across.
+            People in the Directory appear here, in the team named on their profile,
+            unless they are excluded from the shift roster. To start from your existing
+            workbook, import it: teams, schedules, people and their shifts come across.
           </EmptyState>
         ) : total === 0 && (query || groupName) ? (
           <EmptyState icon={<MagnifyingGlassIcon size={26} />} title="No one matches">
             Try a different name or team.
           </EmptyState>
+        ) : total === 0 ? (
+          <EmptyState icon={<EyeIcon size={26} />} title="Every team is hidden">
+            Use the Teams menu to show a team again.
+          </EmptyState>
+        ) : view === "today" ? (
+          <DayView
+            date={anchor}
+            today={today}
+            sections={sections}
+            index={index}
+            viewOf={viewOf}
+            timeOff={timeOff}
+            eventsByDay={eventsByDay}
+            choices={choices}
+            onOpen={openMenu}
+            onHide={actions.hide}
+          />
         ) : (
-          <table
-            className="border-line border-separate border-spacing-0 border"
-            style={{
-              tableLayout: "fixed",
-              width: view === "week" ? "100%" : NAME_COL + days.length * DAY_COL[view],
-              minWidth: NAME_COL + days.length * DAY_COL[view],
-            }}
-          >
-            <colgroup>
-              <col style={{ width: NAME_COL }} />
-              {days.map((day) => (
-                <col key={day} style={{ width: DAY_COL[view] }} />
-              ))}
-            </colgroup>
-            <thead className="bg-surface-elevated">
-              <tr>
-                <th
-                  scope="col"
-                  rowSpan={2}
-                  className="border-line text-ink-muted bg-surface-elevated sticky top-0 left-0 z-[4] border-b px-4 text-left align-bottom text-[11.5px] font-bold tracking-[0.06em] uppercase"
-                >
-                  Employee
-                </th>
-                {days.map((day) => {
-                  const events = eventsByDay.get(day);
-                  return (
-                    <th
-                      key={day}
-                      scope="col"
-                      style={{ height: EVENT_ROW }}
-                      className="bg-surface-elevated sticky top-0 z-[3] border-l border-transparent p-0"
-                    >
-                      {events && (
-                        <div
-                          title={events.map((e) => e.label).join(" · ")}
-                          className={cn(
-                            "text-ink-soft mx-[2px] truncate rounded-sm px-1 text-[10px] leading-[18px] font-semibold",
-                            TONE_PILL[EVENT_TONE[events[0].kind]],
-                          )}
-                        >
-                          {view === "week" ? events.map((e) => e.label).join(" · ") : "•"}
-                        </div>
-                      )}
-                    </th>
-                  );
-                })}
-              </tr>
-              <tr>
-                {days.map((day) => {
-                  const isToday = day === today;
-                  return (
-                    <th
-                      key={day}
-                      scope="col"
-                      style={{ top: EVENT_ROW }}
-                      className={cn(
-                        "border-line bg-surface-elevated sticky z-[3] border-b border-l px-1 py-1.5 text-center",
-                        isWeekend(day) && "bg-chip",
-                      )}
-                    >
-                      <span className="text-ink-muted block text-[10.5px] font-bold tracking-[0.06em] uppercase">
-                        {dayName(day)}
-                      </span>
-                      <span
-                        className={cn(
-                          "mt-0.5 inline-block rounded-full px-1.5 text-[12px] font-semibold",
-                          isToday ? "bg-accent text-accent-contrast" : "text-ink",
-                        )}
-                      >
-                        {view === "week"
-                          ? formatDayMonth(day)
-                          : day.slice(8).replace(/^0/, "")}
-                      </span>
-                    </th>
-                  );
-                })}
-              </tr>
-            </thead>
-            {sections.map((section) => (
-              <tbody key={section.id}>
-                <tr>
-                  <td
-                    colSpan={days.length + 1}
-                    className="border-line bg-chip border-b p-0"
-                  >
-                    <SectionHeader section={section} />
-                  </td>
-                </tr>
-                {section.rows.map((row) => (
-                  <tr key={row.key}>
-                    <th
-                      scope="row"
-                      className="border-line bg-surface-elevated sticky left-0 z-[2] border-b px-3 py-1.5 text-left font-normal"
-                    >
-                      <PersonCell
-                        row={row}
-                        section={section}
-                        groups={config.groups}
-                        onLink={() => row.member && setLinking(row.member.id)}
-                        onUnlink={() =>
-                          row.member &&
-                          void patchMember(row.member.id, { employeeId: null })
-                        }
-                        onMove={(gid) =>
-                          row.member
-                            ? void patchMember(row.member.id, { groupId: gid })
-                            : void addToTeam(row, gid)
-                        }
-                        onRemove={() => setRemoving(row)}
-                      />
-                    </th>
-                    {days.map((day) => {
-                      const a = row.member
-                        ? index.get(assignmentId(row.member.id, day))
-                        : undefined;
-                      const leave =
-                        row.employee && !a
-                          ? leaveOn(timeOff, row.employee.id, day)
-                          : undefined;
-                      return (
-                        <RosterCell
-                          key={day}
-                          view={view}
-                          memberId={row.member?.id ?? null}
-                          date={day}
-                          cell={a ? viewOf(a) : null}
-                          leave={leave ? TIME_OFF_META[leave.type].label : null}
-                          weekend={isWeekend(day)}
-                          marked={
-                            eventsByDay.get(day)?.some((e) => e.kind === "holiday") ??
-                            false
-                          }
-                          who={row.name}
-                          onOpen={openMenu}
-                        />
-                      );
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            ))}
-            <tfoot>
-              <tr>
-                <th
-                  scope="row"
-                  className="text-ink-muted bg-chip sticky left-0 z-[2] px-4 py-2.5 text-left text-[12px] font-bold tracking-[0.06em] uppercase"
-                >
-                  On shift
-                </th>
-                {days.map((day) => (
-                  <td
-                    key={day}
-                    className="bg-chip text-ink border-line border-l px-1 py-2.5 text-center text-[12.5px] font-bold"
-                  >
-                    {coverageOn(day, rows, index, config.schedules, timeOff)}
-                  </td>
-                ))}
-              </tr>
-            </tfoot>
-          </table>
+          <RosterGrid
+            view={view}
+            days={days}
+            today={today}
+            sections={sections}
+            config={config}
+            index={index}
+            viewOf={viewOf}
+            timeOff={timeOff}
+            eventsByDay={eventsByDay}
+            choices={choices}
+            actions={actions}
+          />
         )}
       </div>
 
@@ -580,24 +668,31 @@ export function ShiftRoster() {
 
       <CellMenu
         menu={menu}
-        schedule={targetSchedule}
+        schedule={target?.section.schedule}
         name={target?.row.name ?? ""}
         current={targetCurrent}
-        onClose={() => setMenu(null)}
-        onSet={setRef}
-        onFill={(def) =>
-          menu &&
-          targetSchedule &&
-          void run({
-            upsert: fillWeek(mondayOf(menu.date), menu.memberId, targetSchedule.id, def),
-          })
+        leaveNote={
+          targetLeave
+            ? `Approved ${TIME_OFF_META[targetLeave.type].label} in the Time off tab covers this day, so the roster shows it instead of the shift.`
+            : null
         }
+        onClose={() => setMenu(null)}
+        onSet={(ref) => void setRef(ref)}
+        onFill={(def) => {
+          const schedule = target?.section.schedule;
+          if (!menu || !schedule) return;
+          void ensureMember(menu.rowKey).then((id) => {
+            if (id) {
+              void run({ upsert: fillWeek(mondayOf(menu.date), id, schedule.id, def) });
+            }
+          });
+        }}
         onSwap={(swap) =>
           menu &&
           targetCurrent &&
           void run({
             upsert: [
-              makeAssignment(menu.memberId, menu.date, targetCurrent.ref, {
+              makeAssignment(targetCurrent.memberId, menu.date, targetCurrent.ref, {
                 text: targetCurrent.text,
                 swap,
                 note: targetCurrent.note,
@@ -605,16 +700,24 @@ export function ShiftRoster() {
             ],
           })
         }
-        onCustom={() =>
-          menu &&
-          setCellEdit({
-            memberId: menu.memberId,
-            date: menu.date,
-            who: target?.row.name ?? "",
-            current: targetCurrent,
-          })
+        onCustom={() => {
+          if (!menu) return;
+          void ensureMember(menu.rowKey).then((id) => {
+            if (id) {
+              setCellEdit({
+                memberId: id,
+                date: menu.date,
+                who: target?.row.name ?? "",
+                current: targetCurrent,
+              });
+            }
+          });
+        }}
+        onClear={() =>
+          menu && targetMemberId
+            ? void run({ remove: [assignmentId(targetMemberId, menu.date)] })
+            : undefined
         }
-        onClear={() => menu && void run({ remove: [targetKey] })}
       />
       <CellDialog
         edit={cellEdit}
@@ -655,16 +758,21 @@ export function ShiftRoster() {
       <ConfirmDialog
         open={removing !== null}
         title={`Remove ${removing?.name ?? "this person"} from the shift roster?`}
-        description="Their shifts on the roster are deleted. Their directory profile, if they have one, is not touched."
+        description={
+          removing?.employee
+            ? "Their shifts on the roster are deleted. They are in the Directory, so they stay listed here with an empty schedule; exclude them on their profile to keep them off the roster."
+            : "Their shifts on the roster are deleted. They are not in the Directory, so nothing else is touched."
+        }
         confirmLabel="Remove"
         onOpenChange={(open) => !open && setRemoving(null)}
         onConfirm={() => {
           const member = removing?.member;
           setRemoving(null);
           if (member) {
+            const current = latest();
             void saveRoster({
-              ...config,
-              members: config.members.filter((m) => m.id !== member.id),
+              ...current,
+              members: current.members.filter((m) => m.id !== member.id),
             });
           }
         }}
@@ -673,304 +781,14 @@ export function ShiftRoster() {
         open={dialog === "schedules"}
         onOpenChange={(o) => !o && setDialog(null)}
       />
+      <HolidayDialog
+        open={dialog === "holidays"}
+        onOpenChange={(o) => !o && setDialog(null)}
+      />
       <RosterImportDialog
         open={dialog === "import"}
         onOpenChange={(o) => !o && setDialog(null)}
       />
     </div>
-  );
-}
-
-function Chip({ band, children }: { band: Band; children: ReactNode }) {
-  return (
-    <span
-      className={cn(
-        "rounded-chip inline-flex h-6 items-center gap-1.5 px-2.5 text-[11.5px] leading-none font-semibold whitespace-nowrap",
-        TONE_PILL[BAND_TONE[band]],
-      )}
-    >
-      {children}
-    </span>
-  );
-}
-
-/** The team's name and its legend: each shift with its hours. The same name can
- *  mean different hours in another team, so every section shows its own. */
-function SectionHeader({ section }: { section: RosterSection }) {
-  const { group, schedule, rows } = section;
-  return (
-    <div className="sticky left-0 flex w-[min(100%,980px)] flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-2">
-      <h3 className="text-ink text-[13.5px] font-bold">
-        {group ? group.name : "Not in a team yet"}
-        <span className="text-ink-muted ml-1.5 font-semibold">{rows.length}</span>
-      </h3>
-      {group && schedule && (
-        <>
-          <span className="text-ink-muted text-[12px]">Schedule: {schedule.name}</span>
-          <ul className="flex flex-wrap gap-1.5" aria-label={`${schedule.name} shifts`}>
-            {schedule.shifts.map((s) => (
-              <li key={s.id}>
-                <Chip band={bandOf(s.start)}>
-                  {shortLabel(s.label)}
-                  <span className="font-medium opacity-80">
-                    {formatHours(s.start, s.end)}
-                    {s.days.length > 0 && ` · ${formatDays(s.days)}`}
-                  </span>
-                </Chip>
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
-      {!group && (
-        <span className="text-ink-muted text-[12px]">
-          In the directory and included in the shift roster. Choose a team for each person
-          to start planning their shifts.
-        </span>
-      )}
-    </div>
-  );
-}
-
-function PersonCell({
-  row,
-  section,
-  groups,
-  onLink,
-  onUnlink,
-  onMove,
-  onRemove,
-}: {
-  row: RosterRow;
-  section: RosterSection;
-  groups: RosterConfig["groups"];
-  onLink: () => void;
-  onUnlink: () => void;
-  onMove: (groupId: string) => void;
-  onRemove: () => void;
-}) {
-  const unlinked = row.member !== null && row.employee === null;
-  return (
-    <div className="flex min-w-0 items-center gap-2.5">
-      <PersonAvatar employee={row.employee} name={row.name} size="sm" />
-      <div className="min-w-0 flex-1">
-        <p className="text-ink truncate text-[13px] font-semibold" title={row.name}>
-          {row.name}
-        </p>
-        <p className="text-ink-muted truncate text-[11.5px]">
-          {row.subtitle || "\u00a0"}
-        </p>
-      </div>
-      {unlinked && (
-        <LinkBreakIcon
-          size={14}
-          aria-label="Not in the directory"
-          role="img"
-          className="text-ink-faint shrink-0"
-        />
-      )}
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <IconButton
-            aria-label={`Options for ${row.name}`}
-            size="sm"
-            className="shrink-0"
-          >
-            <DotsThreeIcon weight="bold" />
-          </IconButton>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start">
-          {unlinked && (
-            <DropdownMenuItem onSelect={onLink}>
-              Link to a directory profile…
-            </DropdownMenuItem>
-          )}
-          {row.member && row.employee && (
-            <DropdownMenuItem onSelect={onUnlink}>
-              Unlink from the directory
-            </DropdownMenuItem>
-          )}
-          <DropdownMenuSub>
-            <DropdownMenuSubTrigger>
-              {row.member ? "Move to team" : "Add to team"}
-            </DropdownMenuSubTrigger>
-            <DropdownMenuSubContent>
-              {groups.map((g) => (
-                <DropdownMenuItem
-                  key={g.id}
-                  disabled={g.id === section.id}
-                  onSelect={() => onMove(g.id)}
-                >
-                  {g.name}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuSubContent>
-          </DropdownMenuSub>
-          {row.member && (
-            <>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem className="text-red" onSelect={onRemove}>
-                Remove from the shift roster
-              </DropdownMenuItem>
-            </>
-          )}
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </div>
-  );
-}
-
-/** One menu for the whole grid, opened over the cell that was clicked. */
-function CellMenu({
-  menu,
-  schedule,
-  name,
-  current,
-  onClose,
-  onSet,
-  onFill,
-  onSwap,
-  onCustom,
-  onClear,
-}: {
-  menu: MenuTarget | null;
-  schedule: ShiftSchedule | undefined;
-  name: string;
-  current: ShiftAssignment | null;
-  onClose: () => void;
-  onSet: (ref: string) => void;
-  onFill: (def: ShiftSchedule["shifts"][number]) => void;
-  onSwap: (swap: boolean) => void;
-  onCustom: () => void;
-  onClear: () => void;
-}) {
-  const rect = menu?.rect;
-  return (
-    <DropdownMenu open={menu !== null} onOpenChange={(open) => !open && onClose()}>
-      <DropdownMenuTrigger asChild>
-        <span
-          aria-hidden
-          style={{
-            position: "fixed",
-            left: rect?.left ?? 0,
-            top: rect?.top ?? 0,
-            width: rect?.width ?? 0,
-            height: rect?.height ?? 0,
-            pointerEvents: "none",
-          }}
-        />
-      </DropdownMenuTrigger>
-      <DropdownMenuContent
-        align="center"
-        className="max-h-[70vh] min-w-[250px] overflow-y-auto"
-      >
-        {menu && (
-          <>
-            <DropdownMenuLabel>
-              {name} · {formatDate(menu.date)}
-            </DropdownMenuLabel>
-            {schedule && (
-              <>
-                <DropdownMenuLabel className="text-ink-muted text-[11.5px] font-semibold">
-                  {schedule.name} shifts
-                </DropdownMenuLabel>
-                {schedule.shifts.map((s) => (
-                  <DropdownMenuItem
-                    key={s.id}
-                    onSelect={() => onSet(shiftRef(schedule.id, s.id))}
-                  >
-                    <span
-                      className={cn(
-                        "h-2.5 w-2.5 shrink-0 rounded-full",
-                        TONE_DOT[BAND_TONE[bandOf(s.start)]],
-                      )}
-                    />
-                    <span className="flex-1">{s.label}</span>
-                    <span className="text-ink-muted text-[12px]">
-                      {formatHours(s.start, s.end)}
-                    </span>
-                  </DropdownMenuItem>
-                ))}
-                {schedule.shifts.some((s) => s.days.length > 0) && (
-                  <DropdownMenuSub>
-                    <DropdownMenuSubTrigger>Fill the week with…</DropdownMenuSubTrigger>
-                    <DropdownMenuSubContent>
-                      {schedule.shifts
-                        .filter((s) => s.days.length > 0)
-                        .map((s) => (
-                          <DropdownMenuItem key={s.id} onSelect={() => onFill(s)}>
-                            <span className="flex-1">{s.label}</span>
-                            <span className="text-ink-muted text-[12px]">
-                              {formatDays(s.days)}
-                            </span>
-                          </DropdownMenuItem>
-                        ))}
-                    </DropdownMenuSubContent>
-                  </DropdownMenuSub>
-                )}
-                <DropdownMenuSeparator />
-              </>
-            )}
-            <DropdownMenuLabel className="text-ink-muted text-[11.5px] font-semibold">
-              Day types
-            </DropdownMenuLabel>
-            {STATUS_DEFS.map((s) => (
-              <DropdownMenuItem key={s.id} onSelect={() => onSet(statusRef(s.id))}>
-                <span
-                  className={cn("h-2.5 w-2.5 shrink-0 rounded-full", TONE_DOT[s.tone])}
-                />
-                <span className="flex-1">{s.label}</span>
-                <span className="text-ink-muted text-[12px]">{s.short}</span>
-              </DropdownMenuItem>
-            ))}
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onSelect={onCustom}>Custom hours or note…</DropdownMenuItem>
-            <DropdownMenuCheckboxItem
-              checked={current?.swap === true}
-              disabled={!current}
-              onCheckedChange={onSwap}
-            >
-              Swapped shift
-            </DropdownMenuCheckboxItem>
-            {current && (
-              <DropdownMenuItem onSelect={onClear}>
-                {current.ref === CUSTOM_REF ? "Clear custom hours" : "Clear this day"}
-              </DropdownMenuItem>
-            )}
-          </>
-        )}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
-function Legend() {
-  return (
-    <ul
-      aria-label="Legend"
-      className="border-line text-ink-muted flex flex-wrap items-center justify-center gap-x-5 gap-y-1.5 border-t px-5 py-2.5 text-[12px]"
-    >
-      <li className="text-ink-faint">Colour follows when the shift starts:</li>
-      {(Object.keys(BAND_LABEL) as Band[]).map((band) => (
-        <li key={band} className="flex items-center gap-1.5">
-          <span className={cn("h-2.5 w-2.5 rounded-full", TONE_DOT[BAND_TONE[band]])} />
-          {BAND_LABEL[band]}
-        </li>
-      ))}
-      <li className="text-ink-faint">Dashed:</li>
-      {STATUS_DEFS.slice(0, 5).map((s) => (
-        <li key={s.id} className="flex items-center gap-1.5" title={s.description}>
-          <span
-            className={cn(
-              "inline-block h-3 min-w-6 rounded-sm border border-dashed border-current/40 px-1 text-center text-[9px] leading-[11px] font-bold",
-              TONE_PILL[s.tone],
-            )}
-          >
-            {s.short}
-          </span>
-          {s.label}
-        </li>
-      ))}
-    </ul>
   );
 }

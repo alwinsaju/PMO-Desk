@@ -1,6 +1,6 @@
 // Pure time-off logic: types and statuses, stats, overlap checks, filtering.
 import { inclusiveDays, isIsoDate, workingDays } from "./dates.ts";
-import type { Tone } from "./shifts.ts";
+import type { Tone } from "./rosterCatalog.ts";
 import type { Employee, TimeOffRequest, TimeOffStatus, TimeOffType } from "./types.ts";
 import { displayName } from "./employees.ts";
 

@@ -4,7 +4,31 @@
 // roster starts from and what the workbook importer maps names onto.
 import type { RosterConfig, RosterGroup, ShiftDef, ShiftSchedule } from "./types.ts";
 
-export type Tone = "accent" | "info" | "amber" | "red" | "success" | "neutral" | "night";
+export type Tone = "accent" | "info" | "amber" | "red" | "success" | "neutral";
+
+/** The colours of the roster grid: the same pairs the team's workbook paints its
+ *  cells with (Shift-1 green, Shift-2 yellow, Shift-3 blue, holiday red, ...). The
+ *  actual colours per theme are in src/styles/roster-colors.css. */
+export const HUES = [
+  "s1",
+  "s2",
+  "s3",
+  "s4",
+  "s5",
+  "ns",
+  "cst",
+  "pst",
+  "wk",
+  "hol",
+  "leave",
+  "temp",
+  "comp",
+  "oc",
+  "custom",
+  "swap",
+  "off",
+] as const;
+export type Hue = (typeof HUES)[number];
 
 /** Day types every team shares (they are not part of any schedule). */
 export interface StatusDef {
@@ -13,7 +37,7 @@ export interface StatusDef {
   /** What shows in a compact cell. */
   short: string;
   description: string;
-  tone: Tone;
+  hue: Hue;
 }
 
 export const STATUS_PREFIX = "status";
@@ -24,49 +48,49 @@ export const STATUS_DEFS: readonly StatusDef[] = [
     label: "Holiday",
     short: "HOL",
     description: "India, US or Mexico holiday (the same code for every location)",
-    tone: "amber",
+    hue: "hol",
   },
   {
     id: "pto",
     label: "PTO",
     short: "PTO",
     description: "Paid time off",
-    tone: "info",
+    hue: "leave",
   },
   {
     id: "temp-pto",
     label: "Temp PTO",
     short: "T",
     description: "Temporary PTO",
-    tone: "neutral",
+    hue: "temp",
   },
   {
     id: "comp",
     label: "Comp off",
     short: "COMP",
     description: "Compensatory off",
-    tone: "success",
+    hue: "comp",
   },
   {
     id: "on-call",
     label: "On-call",
     short: "OC",
     description: "On-call / holiday support",
-    tone: "red",
+    hue: "oc",
   },
   {
     id: "sick",
     label: "Sick leave",
     short: "SL",
     description: "Sick leave",
-    tone: "red",
+    hue: "leave",
   },
   {
     id: "off",
     label: "Day off",
     short: "OFF",
     description: "Weekly off marked on purpose (for example after a swap)",
-    tone: "neutral",
+    hue: "off",
   },
 ];
 

@@ -20,8 +20,9 @@ on the user's computer (loopback only; the AI is a local Ollama model, no cloud 
   the deployment mailer) through prepare, review, approve and send gates.
 - **Staff Management** (`src/lib/staff/`, `src/components/apps/staff-app/`): the roster of
   people. A Directory (the main columns in a list, everything else in a right-hand detail pane),
-  a Shift roster (teams, each with its own shift schedule, imported from the team's roster
-  workbook), a Time-off tracker and an Offboarded list (people removed from the
+  a Shift roster (teams from the directory, each with its own shift schedule, in Today, Week,
+  Month and two-month Cycle views, with holidays by location and approved time off; it can be
+  imported from the team's roster workbook), a Time-off tracker and an Offboarded list (people removed from the
   roster, kept on file and editable, restorable or deletable). It is meant to be the one list of people that
   the other apps read instead of an uploaded Excel file.
 - **First-run Setup screen**: checks and installs what a new computer lacks (Ollama, the AI
