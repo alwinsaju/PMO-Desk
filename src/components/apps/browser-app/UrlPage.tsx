@@ -5,7 +5,9 @@ import { motion } from "motion/react";
 import { cn } from "@/lib/cn";
 import { easeStandard } from "@/lib/motion";
 import { EMBEDDABLE_IFRAME_SANDBOX, useEmbeddableUrl } from "@/lib/useEmbeddableUrl";
+import { getDesktopBridge } from "@/lib/pmo/desktopBridge";
 import { EmbedBlocked, EmbedLoading } from "../web-app/EmbedStates";
+import { DesktopWebview } from "./DesktopWebview";
 
 /** Shared by this file's 3 mutually-exclusive return states (checking /
  *  blocked / embeddable) so each one fades in on mount instead of hard-
@@ -50,7 +52,13 @@ function hostnameOf(url: string): string {
  * `url`/reload (see its `key`), so every piece of state below starts
  * clean on each real navigation instead of needing to be reset by hand.
  */
-export function UrlPage({ url, knownEmbeddable, onEmbeddableResolved }: UrlPageProps) {
+export function UrlPage(props: UrlPageProps) {
+  // The desktop shell browses for real (<webview>), so framing headers don't apply.
+  if (getDesktopBridge()?.isDesktop) return <DesktopWebview url={props.url} />;
+  return <EmbeddedUrlPage {...props} />;
+}
+
+function EmbeddedUrlPage({ url, knownEmbeddable, onEmbeddableResolved }: UrlPageProps) {
   const [isFrameLoading, setIsFrameLoading] = useState(true);
   const check = useEmbeddableUrl(url, knownEmbeddable);
   const host = hostnameOf(url);

@@ -152,7 +152,9 @@ export function Window({ id }: WindowProps) {
   useEffect(() => {
     function handleFocusIn(event: FocusEvent) {
       if (
-        event.target instanceof HTMLIFrameElement &&
+        (event.target instanceof HTMLIFrameElement ||
+          (event.target instanceof HTMLElement &&
+            event.target.tagName === "WEBVIEW")) &&
         outerRef.current?.contains(event.target)
       ) {
         focusWindow(id);
