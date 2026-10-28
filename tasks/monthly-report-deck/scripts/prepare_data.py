@@ -497,7 +497,7 @@ def prepare_incidents(raw_path, template_path, roster_path=ROSTER_PATH, history_
 def build_review_queue(prepared):
     """The incidents the human must classify, with just the fields the review
     UI needs to decide Subcategory2 — written to output/review-incidents.json
-    and served by agent-office's /review-incidents endpoint."""
+    and served by the Tasks engine's /tasks/{task_id}/review-incidents endpoint."""
     index = {header: prepared.headers.index(header) for header in prepared.headers}
     queue = []
     for row in prepared.rows:
@@ -709,7 +709,8 @@ def main():
     if not history_paths:
         raise FileNotFoundError(
             f'No previous monthly workbook ("{MONTHLY_WORKBOOK_PATTERN}") with a month before '
-            f"{report_month.strftime('%B %Y')} found in {reference_dir} or {output_dir}"
+            f"{report_month.strftime('%B %Y')} found: upload last month's workbook in the Tasks app "
+            f"(looked in {reference_dir} and {output_dir})"
         )
     template_path = history_paths[0]
 

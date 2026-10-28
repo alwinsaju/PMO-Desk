@@ -1,4 +1,4 @@
-"""The writable working copy: definitions are mirrored, the user's data is never touched."""
+﻿"""The writable working copy: definitions are mirrored, the user's data is never touched."""
 import json
 import os
 import subprocess
@@ -168,7 +168,6 @@ def test_shipped_code_in_the_data_folders_is_still_mirrored_and_pruned(shipped, 
     workcopy.sync(shipped, work)
     keep = _put_user_data(work)
     write(work / "shared" / "roster" / "stale_module.py", "removed upstream")
-    write(work / "shared" / "roster" / "notes.txt", "not a data extension")
     write(work / "shared" / "roster-reference" / "2027" / "scratch.py", "stale code in a user folder")
     write(shipped / "shared" / "roster" / "name_matching.py", "match v2 - longer")
     write(shipped / "shared" / "roster" / "extra.py", "new module")
@@ -179,10 +178,23 @@ def test_shipped_code_in_the_data_folders_is_still_mirrored_and_pruned(shipped, 
     assert (work / "shared" / "roster" / "name_matching.py").read_text() == "match v2 - longer"
     assert (work / "shared" / "roster" / "extra.py").is_file()
     assert not (work / "shared" / "roster" / "stale_module.py").exists()
-    assert not (work / "shared" / "roster" / "notes.txt").exists()
     assert not (work / "shared" / "roster-reference" / "README.md").exists()
     assert not (work / "shared" / "roster-reference" / "2027" / "scratch.py").exists()
     _assert_kept(keep)
+
+
+@pytest.mark.parametrize("name", ["book.xlsb", "notes.txt", "letter.docx", "scan.pdf", "sheet.ods", "photo.png", "LICENSE"])
+def test_any_non_code_file_in_the_data_folders_survives(shipped, tmp_path, name):
+    work = tmp_path / "work"
+    workcopy.sync(shipped, work)
+    mine = [
+        write(work / "shared" / "roster" / name, "mine"),
+        write(work / "shared" / "roster-reference" / "sub" / name, "mine"),
+    ]
+
+    assert workcopy.sync(shipped, work) == 0
+
+    assert all(path.read_text() == "mine" for path in mine)
 
 
 def test_a_stale_data_file_outside_the_data_folders_is_still_removed(shipped, tmp_path):
@@ -271,6 +283,11 @@ def test_protection_ignores_case_so_windows_style_names_survive(shipped, tmp_pat
     "roster-reference\\2027/deep\\Holiday Roster 2027.XLSM",
     "roster-reference/codes.csv",
     "roster-reference/overrides.json",
+    "roster-reference/book.xlsb",
+    "roster-reference/notes.txt",
+    "roster/letter.DOCX",
+    "roster-reference/scan.pdf",
+    "roster-reference/Picture1.png",
     "./roster/Names.xlsx",
     ("roster-reference", "2027", "x.xls"),
 ])
@@ -285,7 +302,6 @@ def test_is_protected_shared_accepts_user_data(rel):
     "roster/name_matching.py",
     "roster/README.md",
     "roster-reference/README.md",
-    "roster-reference/Picture1.png",
     "roster/~$Names.xlsx",
     "roster/__pycache__/x.pyc",
     "roster_lib/examples/holiday_roster_template.xlsx",
@@ -358,6 +374,63 @@ def test_unchanged_files_are_not_copied_again(defs, tmp_path, monkeypatch):
     assert copied == []
 
 
+def test_sync_logs_and_counts_every_file_the_mirror_removes(shipped, tmp_path, caplog):
+    work = tmp_path / "work"
+    assert workcopy.sync(shipped, work) == 0  # first sync: nothing to remove
+    write(work / "alpha" / "scripts" / "hand_edit.py", "stray")
+    write(work / "shared" / "roster" / "stale_module.py", "removed upstream")
+    write(work / "shared" / "gone" / "a.json", "a")  # a stale folder: its files are counted one by one
+    write(work / "shared" / "gone" / "deep" / "b.json", "b")
+    user_file = write(work / "shared" / "roster" / "Names.xlsx", "mine")
+
+    with caplog.at_level("INFO", logger="tasks-engine"):
+        removed = workcopy.sync(shipped, work)
+
+    assert removed == 4
+    logged = [r.getMessage() for r in caplog.records if "workcopy sync removed" in r.getMessage()]
+    assert len(logged) == 4
+    for name in ("hand_edit.py", "stale_module.py", "a.json", "b.json"):
+        assert any(name in line for line in logged), name
+    assert user_file.read_text() == "mine"
+    assert workcopy.sync(shipped, work) == 0  # idempotent: nothing left to remove
+
+
+def test_an_unlisted_task_manifest_counts_as_a_removed_file(defs, tmp_path):
+    work = tmp_path / "work"
+    workcopy.sync(defs, work)
+    write(work / "orphan" / "task.json", "{}")
+    write(work / "orphan" / "output" / "keep.txt", "data")
+
+    assert workcopy.sync(defs, work) == 1
+
+    assert not (work / "orphan" / "task.json").exists()
+    assert (work / "orphan" / "output" / "keep.txt").exists()
+
+
+def test_a_removal_that_fails_is_not_counted(defs, tmp_path, monkeypatch):
+    work = tmp_path / "work"
+    workcopy.sync(defs, work)
+    write(work / "alpha" / "scripts" / "hand_edit.py", "stray")
+    monkeypatch.setattr(Path, "unlink", lambda self, *a, **k: (_ for _ in ()).throw(PermissionError("locked")))
+
+    assert workcopy.sync(defs, work) == 0
+
+
+def test_engine_start_logs_how_many_files_the_sync_removed(defs, tmp_path):
+    data = tmp_path / "userdata"
+    write(data / "tasks" / "alpha" / "scripts" / "stale.py", "removed upstream")
+    env = {**os.environ, "AI_OS_TASKS_DIR": str(defs), "AI_OS_TASKS_DATA_DIR": str(data)}
+
+    # run as a script (like the launcher), stopping at --help once the module-level sync has run
+    done = subprocess.run([sys.executable, str(ENGINE_DIR / "main.py"), "--help"],
+                          capture_output=True, text=True, env=env, timeout=120, cwd=tmp_path)
+
+    assert done.returncode == 0, done.stderr[-800:]
+    assert "workcopy sync removed 1 files" in done.stderr
+    assert "stale.py" in done.stderr
+    assert not (data / "tasks" / "alpha" / "scripts" / "stale.py").exists()
+
+
 def test_the_engine_runs_from_the_working_copy_when_a_data_dir_is_set(defs, tmp_path):
     data = tmp_path / "userdata"
     env = {**os.environ, "AI_OS_TASKS_DIR": str(defs), "AI_OS_TASKS_DATA_DIR": str(data)}
@@ -382,12 +455,12 @@ def test_the_engine_runs_from_the_working_copy_when_a_data_dir_is_set(defs, tmp_
 def test_without_a_data_dir_the_engine_runs_in_place(defs, tmp_path):
     env = {k: v for k, v in os.environ.items() if k != "AI_OS_TASKS_DATA_DIR"}
     env["AI_OS_TASKS_DIR"] = str(defs)
-    code = "import main; print(main.TASKS_ROOT, main.HISTORY_FILE.parent)"
+    code = "import main; print(main.TASKS_ROOT, main.HISTORY_FILE.parent, sep='|')"
 
     done = subprocess.run([sys.executable, "-I", "-c", f"import sys; sys.path.insert(0, {str(ENGINE_DIR)!r}); {code}"],
                           capture_output=True, text=True, env=env, timeout=120, cwd=tmp_path)
 
     assert done.returncode == 0, done.stderr[-800:]
-    root, history_dir = done.stdout.strip().splitlines()[-1].split(" ", 1)
+    root, history_dir = done.stdout.strip().splitlines()[-1].split("|", 1)
     assert Path(root) == defs.resolve()
     assert Path(history_dir) == (ENGINE_DIR / ".data").resolve()

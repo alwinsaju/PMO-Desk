@@ -11,6 +11,17 @@
       ],
       "dest": "input/Deployment and Activites.xlsx",
       "required": true
+    },
+    {
+      "id": "roster",
+      "label": "Team roster (Names.xlsx: Full Name, Email)",
+      "type": "file",
+      "accept": [
+        ".xlsx"
+      ],
+      "dest": "shared/roster/Names.xlsx",
+      "required": true,
+      "persist": true
     }
   ],
   "cleanup": {

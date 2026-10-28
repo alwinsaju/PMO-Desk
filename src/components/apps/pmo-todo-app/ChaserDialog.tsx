@@ -130,7 +130,7 @@ export function ChaserDialog({
 
         {(!job || drafting) && (
           <Note role="status" className="mt-4 flex items-center gap-2.5">
-            <span className="bg-accent h-2 w-2 shrink-0 rounded-full motion-safe:animate-blink" />
+            <span className="bg-accent motion-safe:animate-blink h-2 w-2 shrink-0 rounded-full" />
             Drafting… (can take a minute on this PC). You can close this window; the draft
             will be waiting on the to-do.
           </Note>

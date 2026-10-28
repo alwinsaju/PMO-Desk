@@ -498,9 +498,7 @@
   --z-overlay: 3000;
 
   /* Motion durations (pair with --ease-spring / --ease-smooth). */
-  --dur-fast: 0.2s; /* colors, small fades */
   --dur-base: 0.35s; /* presses, popovers' opacity */
-  --dur-slow: 0.55s; /* windows, modals, geometry */
 
   /* Shadow tint (per mode) and the top highlight line of glass surfaces. */
   --sh: rgba(34, 40, 80, 0.3);
@@ -525,4 +523,29 @@
 
 :root[data-brand="deloitte"][data-theme="dark"] {
   --sh: rgba(0, 0, 0, 0.7);
+}
+
+/* Window effects (windowFxMode in src/lib/displayFx.ts; Window.tsx sets
+   data-fx-win). With more than four windows open the unfocused ones drop the
+   blur and heavy shadow; the window being dragged/resized (data-gesture) alone
+   gets a compositor layer and a contained chrome. */
+:root[data-fx="rich"] .glass-win[data-fx-win="lean"] {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+.glass-win[data-fx-win="lean"] {
+  box-shadow: 0 2px 6px rgba(30, 30, 60, 0.12);
+}
+[data-window-chrome][data-gesture] {
+  will-change: transform;
+}
+[data-window-chrome][data-gesture] > .glass-win {
+  contain: layout paint;
+}
+
+/* Lean (default) mode: window bodies are fully opaque so text of windows
+   behind never ghosts through the translucent fill. */
+:root:not([data-fx="rich"]) .glass-win {
+  background-color: var(--color-neutral-0);
+  background-image: linear-gradient(var(--color-win), var(--color-win));
 }

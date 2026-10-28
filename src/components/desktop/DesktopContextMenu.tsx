@@ -6,8 +6,16 @@ import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
+  ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/components/ui";
+import { openOrFocusBuiltInApp } from "@/components/taskbar/launchBuiltInApp";
+
+const OPEN_ENTRIES = [
+  { appId: "pmo-todo", label: "Open PMO To-Do" },
+  { appId: "tasks", label: "Open Tasks" },
+  { appId: "notes", label: "Open Notes" },
+] as const;
 
 /**
  * Wraps the desktop background (the wallpaper) in a right-click menu. This
@@ -34,6 +42,12 @@ export function DesktopContextMenu({ children }: { children: ReactNode }) {
           <ArrowsClockwiseIcon size={16} aria-hidden className="text-ink-muted" />
           Refresh
         </ContextMenuItem>
+        <ContextMenuSeparator />
+        {OPEN_ENTRIES.map(({ appId, label }) => (
+          <ContextMenuItem key={appId} onSelect={() => openOrFocusBuiltInApp(appId)}>
+            {label}
+          </ContextMenuItem>
+        ))}
       </ContextMenuContent>
     </ContextMenu>
   );

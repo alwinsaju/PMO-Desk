@@ -5,10 +5,10 @@
 // What the rules mean (the full write-up is ARCHITECTURE.md, "Reminders"):
 //  - Everything is judged in `prefs.timeZone` (IST by default; IST has no DST,
 //    but the maths is generic).
-//  - due-soon   once per due date, while the due date is less than 24 h away.
-//               A due date is the START of that day, so the heads-up lands on
-//               the previous day and the overdue reminder takes over at 09:00
-//               on the due day itself.
+//  - due-soon   once per due date, from `leadWorkingDays` working days before it
+//               (default 1: a Monday-due item is reminded on the Friday) until
+//               the due day, when the overdue reminder takes over at 09:00.
+//               0 turns the advance reminder off.
 //  - overdue    09:00 (work start) on the due day, then once per working day.
 //  - chaser     a to-do with "waiting on" set and no reply for N working days
 //               (counted from `waitingSince`, else the last update; N is the
@@ -21,6 +21,7 @@
 //  - snooze: `reminders.snoozedUntil` silences one to-do until that instant.
 // Dedupe is by `key`: the server records delivered keys in state/notify.json.
 import { approverName, awaitingSignoff } from "./signoff.ts";
+import { isRealIsoDay, safeTimeZone } from "./time.ts";
 import type { ReminderPrefs, Todo } from "./types.ts";
 
 export type DueKind = "due-soon" | "overdue" | "chaser" | "digest";
@@ -45,7 +46,9 @@ const DAY_MS = 24 * HOUR_MS;
 // ---------------------------------------------------------------------------
 
 const formatters = new Map<string, Intl.DateTimeFormat>();
-function formatterFor(timeZone: string): Intl.DateTimeFormat {
+function formatterFor(configured: string): Intl.DateTimeFormat {
+  // A hand-edited bad zone name must never throw out of the engine.
+  const timeZone = safeTimeZone(configured);
   let formatter = formatters.get(timeZone);
   if (!formatter) {
     formatter = new Intl.DateTimeFormat("en-CA", {
@@ -155,6 +158,23 @@ export function workingDaysBetween(
   return count;
 }
 
+/** The working day on which the advance reminder for `dueAt` is first due:
+ *  `lead` working days before it (a Monday with lead 1 gives the Friday before).
+ *  null when the lead is 0: no advance reminder, the due day itself notifies. */
+export function advanceReminderDay(
+  dueAt: string,
+  prefs: Pick<ReminderPrefs, "workDays" | "leadWorkingDays">,
+): string | null {
+  let remaining = prefs.leadWorkingDays;
+  if (remaining <= 0) return null;
+  let day = dueAt;
+  for (let guard = 0; remaining > 0 && guard < 60; guard++) {
+    day = addDays(day, -1);
+    if (isWorkingDay(day, prefs)) remaining--;
+  }
+  return day;
+}
+
 const clockMinutes = (hhmm: string) => {
   const [hour, minute] = hhmm.split(":").map(Number);
   return hour * 60 + minute;
@@ -202,7 +222,7 @@ export function snoozeUntil(
 /** A `datetime-local` value ("2026-10-26T09:30") read in the prefs' zone. */
 export function instantFromLocalInput(value: string, timeZone: string): Date | null {
   const match = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/.exec(value);
-  if (!match) return null;
+  if (!match || !isRealIsoDay(match[1])) return null; // 2026-02-30 is not a day
   const instant = zonedInstant(match[1], match[2], timeZone);
   return Number.isNaN(instant.getTime()) ? null : instant;
 }
@@ -313,15 +333,23 @@ export function computeDue(
     if (isSnoozed(todo, now)) continue;
 
     if (todo.dueAt) {
-      const dueInstant = zonedInstant(todo.dueAt, "00:00", zone).getTime();
-      const ahead = dueInstant - now.getTime();
-      if (dueSoonOpen && ahead > 0 && ahead < DAY_MS) {
+      // Not yet due, and past the start of the reminder day: a reminder held
+      // back by quiet hours stays eligible until the due day takes over.
+      const reminderDay = advanceReminderDay(todo.dueAt, prefs);
+      const advanceOpen =
+        reminderDay !== null &&
+        today < todo.dueAt &&
+        now.getTime() > zonedInstant(reminderDay, "00:00", zone).getTime();
+      if (dueSoonOpen && advanceOpen) {
         out.push({
           todoId: todo.id,
           kind: "due-soon",
           key: `due-soon:${todo.id}:${todo.dueAt}`,
           title: todo.title,
-          body: `Due tomorrow (${shortDay(todo.dueAt)}).`,
+          body:
+            calendarDaysBetween(today, todo.dueAt) === 1
+              ? `Due tomorrow (${shortDay(todo.dueAt)}).`
+              : `Due ${shortDay(todo.dueAt)}.`,
         });
       } else if (dayKindsOpen && todo.dueAt <= today) {
         const late = calendarDaysBetween(todo.dueAt, today);

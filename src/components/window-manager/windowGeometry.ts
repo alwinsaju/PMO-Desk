@@ -30,6 +30,82 @@ export interface WindowGeometry {
   size: { width: number; height: number };
 }
 
+export interface Rect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface ClampConfig {
+  titlebarHeight: number;
+  /** Px of the title bar that must stay on screen horizontally. */
+  minVisibleX: number;
+  /** Bottom strip the command bar occupies; the title bar stays above it. */
+  bottomReserve: number;
+}
+
+export interface FitConfig extends ClampConfig {
+  insets: { side: number; top: number; bottom: number };
+}
+
+function clamp(n: number, lo: number, hi: number): number {
+  return Math.min(Math.max(n, lo), Math.max(lo, hi));
+}
+
+/** Keeps the title bar reachable: top >= 0, >= `minVisibleX` px of it on
+ *  screen horizontally, and its bottom above the command bar. Position only. */
+export function clampToViewport(
+  rect: Rect,
+  viewport: Viewport,
+  config: ClampConfig,
+): Rect {
+  const visible = Math.min(config.minVisibleX, rect.width);
+  const maxY = Math.max(
+    0,
+    viewport.height - config.bottomReserve - config.titlebarHeight,
+  );
+  const x = Math.round(clamp(rect.x, visible - rect.width, viewport.width - visible));
+  const y = Math.round(clamp(rect.y, 0, maxY));
+  return x === rect.x && y === rect.y ? rect : { ...rect, x, y };
+}
+
+/** Shrinks an oversized window into the keep-clear area (never below `min`),
+ *  then clamps its position. Returns `rect` itself when nothing changes. */
+export function fitRectToViewport(
+  rect: Rect,
+  viewport: Viewport,
+  config: FitConfig,
+  min: { width: number; height: number },
+): Rect {
+  const { insets } = config;
+  const width = Math.min(
+    rect.width,
+    Math.max(min.width, viewport.width - insets.side * 2),
+  );
+  const height = Math.min(
+    rect.height,
+    Math.max(min.height, viewport.height - insets.top - insets.bottom),
+  );
+  const sized =
+    width === rect.width && height === rect.height ? rect : { ...rect, width, height };
+  return clampToViewport(sized, viewport, config);
+}
+
+/** The rect a maximised window fills: the viewport minus the keep-clear
+ *  insets (dock above, command bar and presence avatars below). */
+export function maximizedRect(
+  viewport: Viewport,
+  insets: { side: number; top: number; bottom: number },
+): Rect {
+  return {
+    x: insets.side,
+    y: insets.top,
+    width: Math.max(0, viewport.width - insets.side * 2),
+    height: Math.max(0, viewport.height - insets.top - insets.bottom),
+  };
+}
+
 /** `viewport` is null on the server (no clamping possible); the unclamped
  *  result is only ever used if a window is opened before hydration. */
 export function defaultWindowGeometry(

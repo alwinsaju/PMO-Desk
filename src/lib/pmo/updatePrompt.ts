@@ -104,6 +104,7 @@ export function buildUpdateUserPrompt(
   todo: Todo,
   intake: Intake,
   bodyText: string,
+  timeZone?: string,
 ): string {
   const to = intake.recipients
     .slice(0, 8)
@@ -111,7 +112,7 @@ export function buildUpdateUserPrompt(
     .join("; ");
   const header = [
     `source="${intake.source}"`,
-    `received="${istStamp(intake.receivedAt)}"`,
+    `received="${istStamp(intake.receivedAt, timeZone)}"`,
     `sender="${attr(person(intake.sender))}"`,
     `subject="${attr(intake.subject)}"`,
     to ? `to="${attr(to)}"` : "",
@@ -119,6 +120,6 @@ export function buildUpdateUserPrompt(
     .filter(Boolean)
     .join(" ");
   const safeBody = bodyText.replace(/<\/(message|todo)/gi, "<\\/$1");
-  const hints = buildDateHints(intake.receivedAt);
+  const hints = buildDateHints(intake.receivedAt, 14, timeZone);
   return `<todo>\n${describeTodoForModel(todo).replace(/<\/?todo/gi, "(todo")}\n</todo>\n\n<message ${header}>\n${safeBody}\n</message>${hints ? `\n\n${hints}` : ""}`;
 }

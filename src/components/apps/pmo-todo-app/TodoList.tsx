@@ -14,7 +14,7 @@ import { Button, Progress } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { describeInstant } from "@/lib/pmo/due";
 import type { PmoState, ReminderPrefs, Todo } from "@/lib/pmo/types";
-import { patchTodo } from "./api";
+import { patchTodo, type NextOffer } from "./api";
 import {
   CONTENT_WIDTH,
   Chip,
@@ -57,6 +57,8 @@ interface TodoListProps {
   onViewChange: (view: TodoViewChoice) => void;
   onOpen: (todoId: string) => void;
   onNew: () => void;
+  /** A repeating to-do was just closed from the list: hold the offer for the next one. */
+  onNextOffer: (offer: NextOffer) => void;
   onSettled: () => void;
 }
 
@@ -75,6 +77,7 @@ export function TodoList({
   onViewChange,
   onOpen,
   onNew,
+  onNextOffer,
   onSettled,
 }: TodoListProps) {
   const { filter, sort } = view;
@@ -151,6 +154,7 @@ export function TodoList({
               prefs={state.config.reminders}
               index={index}
               onOpen={onOpen}
+              onNextOffer={onNextOffer}
               onSettled={onSettled}
             />
           ))}
@@ -179,6 +183,7 @@ const TodoCard = memo(function TodoCard({
   prefs,
   index,
   onOpen,
+  onNextOffer,
   onSettled,
 }: {
   todo: Todo;
@@ -188,6 +193,7 @@ const TodoCard = memo(function TodoCard({
   /** Position in the list; only staggers the entrance animation. */
   index: number;
   onOpen: (todoId: string) => void;
+  onNextOffer: (offer: NextOffer) => void;
   onSettled: () => void;
 }) {
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -223,7 +229,13 @@ const TodoCard = memo(function TodoCard({
   async function change(patch: Parameters<typeof patchTodo>[1], id: string) {
     setBusyId(id);
     try {
-      await patchTodo(todo.id, patch);
+      const reply = await patchTodo(todo.id, patch);
+      // A repeating to-do closed from the list: open it, where the offer to
+      // create the next one is shown.
+      if (reply.ok && reply.nextOccurrence) {
+        onNextOffer({ todo: reply.todo, dueAt: reply.nextOccurrence.dueAt });
+        onOpen(todo.id);
+      }
       onSettled();
     } finally {
       setBusyId(null);
@@ -240,7 +252,10 @@ const TodoCard = memo(function TodoCard({
       <div className="flex min-h-16 items-center gap-3.5 py-3 pr-3 pl-4">
         <span
           aria-hidden
-          className={cn("h-[26px] w-1 shrink-0 rounded-[2px]", PRIORITY_BAR[todo.priority])}
+          className={cn(
+            "h-[26px] w-1 shrink-0 rounded-[2px]",
+            PRIORITY_BAR[todo.priority],
+          )}
         />
         <button
           type="button"
@@ -259,7 +274,9 @@ const TodoCard = memo(function TodoCard({
           <span className="text-ink-muted flex min-w-0 items-center gap-x-3 overflow-hidden text-[12.5px] whitespace-nowrap">
             <span className="min-w-0 truncate">
               <span className="text-ink-muted">Owner </span>
-              <span className="text-ink-soft font-semibold">{ownerLabel(todo.owner)}</span>
+              <span className="text-ink-soft font-semibold">
+                {ownerLabel(todo.owner)}
+              </span>
             </span>
             <span className={cn("shrink-0", row.overdue && "text-red font-semibold")}>
               {row.dueText}
@@ -299,7 +316,8 @@ const TodoCard = memo(function TodoCard({
             >
               <HourglassMediumIcon size={14} className="shrink-0" />
               <span className="min-w-0">
-                Waiting on <strong className="text-ink font-semibold">{waiting.who}</strong>
+                Waiting on{" "}
+                <strong className="text-ink font-semibold">{waiting.who}</strong>
                 <span className="text-ink-muted">
                   {" · "}
                   {waiting.since}
@@ -333,7 +351,8 @@ const TodoCard = memo(function TodoCard({
           {row.snoozed && (
             <p className="text-ink-muted flex items-center gap-2 text-[12.5px]">
               <BellSlashIcon size={14} className="shrink-0" />
-              Snoozed until {describeInstant(todo.reminders.snoozedUntil!, prefs.timeZone)}
+              Snoozed until{" "}
+              {describeInstant(todo.reminders.snoozedUntil!, prefs.timeZone)}
             </p>
           )}
 

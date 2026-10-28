@@ -5,6 +5,7 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
 import { setEngineUrl } from "./engineUrl.ts";
+import { setEngineToken } from "../../../lib/tasks-engine/engineClient.ts";
 import * as api from "./api.ts";
 import {
   blockers,
@@ -48,7 +49,6 @@ import {
   cleansOnComplete,
   defaultChoice,
   emptyFileHint,
-  formatBytes,
   formatUploaded,
   formatYears,
   holidaySourceLine,
@@ -81,6 +81,7 @@ import {
 
 const TASKS_ENGINE_URL = "http://127.0.0.1:8123";
 setEngineUrl(TASKS_ENGINE_URL);
+setEngineToken(null); // the fake fetch below must see engine calls only
 
 function task(overrides = {}) {
   return {
@@ -208,9 +209,10 @@ describe("start form", () => {
     );
     assert.match(validateFile(input, { name: "a.xlsx", size: 0 }), /empty/);
     assert.equal(validateFile({ label: "x" }, { name: "a.bin", size: 1 }), null);
-    assert.equal(formatBytes(512), "512 B");
-    assert.equal(formatBytes(2048), "2.0 KB");
-    assert.equal(formatBytes(5 * 1024 * 1024), "5.0 MB");
+    assert.match(
+      validateFile(input, { name: "a.xlsx", size: 60 * 1024 * 1024 }),
+      /60\.0 MB — the limit is 50\.0 MB/,
+    );
   });
 });
 
@@ -640,6 +642,30 @@ describe("api helpers (fake fetch, never the network)", () => {
     const calls = fake(() => json({ ok: true }));
     await api.uploadInput("a b", "in/put", new File(["x"], "r.xlsx"));
     assert.ok(calls[0].url.endsWith("/tasks/a%20b/upload?input=in%2Fput"));
+  });
+
+  it("sends X-AI-OS-Token on every engine request once the server issued one", async () => {
+    const calls = fake((url) =>
+      url.endsWith("/api/tasks-engine/token")
+        ? json({ ok: true, token: "t0k" })
+        : json({ ok: true }),
+    );
+    setEngineToken(undefined);
+    try {
+      await api.fetchTasks();
+      await api.startTask("a");
+      await api.saveParams("a", { x: "1" });
+      await api.uploadInput("a", "in", new File(["x"], "r.xlsx"));
+      await api.postReviewResolutions("a", []);
+    } finally {
+      setEngineToken(null);
+    }
+    const engineCalls = calls.filter((c) => c.url.startsWith(TASKS_ENGINE_URL));
+    assert.equal(engineCalls.length, 5);
+    for (const call of engineCalls) {
+      assert.equal(new Headers(call.init.headers).get("x-ai-os-token"), "t0k");
+    }
+    assert.equal(calls.filter((c) => c.url.endsWith("/token")).length, 1);
   });
 
   it("turns a 404 from an older engine into ok:false instead of throwing", async () => {

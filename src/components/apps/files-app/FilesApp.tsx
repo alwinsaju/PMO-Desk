@@ -110,6 +110,12 @@ export function FilesApp({ windowId }: { windowId: string }) {
             );
           })}
         </nav>
+        <span
+          title="These files are demo content, not files on this computer"
+          className="bg-chip text-ink-muted rounded-chip shrink-0 px-2.5 py-1 text-[11px] font-bold tracking-[0.06em] uppercase"
+        >
+          Sample files
+        </span>
       </div>
 
       <div className="flex min-h-0 flex-1">

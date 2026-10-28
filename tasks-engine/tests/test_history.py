@@ -7,7 +7,7 @@ import types
 from datetime import datetime
 
 import pytest
-from fastapi.testclient import TestClient
+from conftest import make_client
 
 import main as backend
 
@@ -184,7 +184,7 @@ def test_history_endpoint_returns_runs_newest_first(tmp_path):
                                      ended="2026-08-24T10:00:10+00:00"))
     backend._append_history(make_run(run_id="new", started="2026-08-24T11:00:00+00:00",
                                      ended="2026-08-24T11:00:10+00:00"))
-    client = TestClient(backend.app, raise_server_exceptions=False)
+    client = make_client()
 
     body = client.get("/tasks/task-a/history").json()
 
@@ -197,7 +197,7 @@ def test_history_endpoint_filters_to_one_task(tmp_path):
     backend.discover_tasks()
     backend._append_history(make_run(task_id="task-a", run_id="a1"))
     backend._append_history(make_run(task_id="task-b", run_id="b1"))
-    client = TestClient(backend.app, raise_server_exceptions=False)
+    client = make_client()
 
     body = client.get("/tasks/task-a/history").json()
 
@@ -209,7 +209,7 @@ def test_history_endpoint_caps_at_100_runs(tmp_path):
     backend.discover_tasks()
     for i in range(105):
         backend._append_history(make_run(run_id=f"run-{i:03d}"))
-    client = TestClient(backend.app, raise_server_exceptions=False)
+    client = make_client()
 
     body = client.get("/tasks/task-a/history").json()
 
@@ -220,7 +220,7 @@ def test_history_endpoint_caps_at_100_runs(tmp_path):
 def test_history_endpoint_empty_when_no_runs(tmp_path):
     make_task_folder(tmp_path, "task-a", "task-a")
     backend.discover_tasks()
-    client = TestClient(backend.app, raise_server_exceptions=False)
+    client = make_client()
 
     body = client.get("/tasks/task-a/history").json()
 
@@ -228,7 +228,7 @@ def test_history_endpoint_empty_when_no_runs(tmp_path):
 
 
 def test_history_endpoint_unknown_task_returns_ok_false():
-    client = TestClient(backend.app, raise_server_exceptions=False)
+    client = make_client()
     resp = client.get("/tasks/ghost/history")
     assert resp.status_code == 200
     assert resp.json() == {"ok": False, "reason": "unknown task"}

@@ -2,9 +2,9 @@
 // "Now" is Saturday 24 Oct 2026, 12:00 IST; this week is Mon 19 - Sat 24 Oct.
 import { PeriodRequestSchema, buildReport } from "./report.ts";
 import { buildTodo, emptyDraft } from "./todoLogic.ts";
-import { PmoConfigSchema } from "./types.ts";
+import { developerConfig } from "./developerDefaults.ts";
 
-export const config = PmoConfigSchema.parse({});
+export const config = developerConfig();
 export const SAT = new Date("2026-10-24T06:30:00.000Z");
 
 let seq = 0;

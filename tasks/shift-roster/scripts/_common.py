@@ -219,8 +219,8 @@ def _first_lines(problems: Sequence[str], limit: int = 6) -> str:
 
 def load_config_file(paths: Paths) -> RotationConfig:
     if not paths.config.exists():
-        raise TaskError("the rotation config is missing (config/rotation-config.json); it is "
-                        "created once from the roster with the seed_config tool, see README.md")
+        raise TaskError("the rotation config is missing (config/rotation-config.json): upload your "
+                        "rotation settings file in the Tasks app")
     try:
         return load_config(paths.config)
     except ConfigError as exc:

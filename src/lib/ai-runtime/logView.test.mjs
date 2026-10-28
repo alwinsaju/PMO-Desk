@@ -2,6 +2,7 @@
 // the model-state words, all derived from the same events.
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { MEMORY_SIZE, formatBytes } from "../format.ts";
 import { RingLog } from "./log.ts";
 import {
   aboutBytes,
@@ -9,7 +10,6 @@ import {
   describeTask,
   filterEvents,
   filterLines,
-  formatBytes,
   formatClock,
   formatDuration,
   formatKeepAlive,
@@ -507,9 +507,9 @@ describe("small formatters", () => {
       [0, 850, 3200, 19_000, 60_000, 72_000, 3_600_000].map(formatDuration),
       ["0 ms", "850 ms", "3.2 s", "19 s", "1 min", "1 min 12 s", "60 min"],
     );
-    assert.equal(formatBytes(8.1 * GB), "8.1 GB");
-    assert.equal(formatBytes(420 * 1024 ** 2), "420 MB");
-    assert.equal(formatBytes(0), "0 MB");
+    assert.equal(formatBytes(8.1 * GB, MEMORY_SIZE), "8.1 GB");
+    assert.equal(formatBytes(420 * 1024 ** 2, MEMORY_SIZE), "420 MB");
+    assert.equal(formatBytes(0, MEMORY_SIZE), "0 MB");
     assert.equal(aboutBytes(7.6 * GB), "about 8 GB");
     assert.equal(formatClock(T0, "UTC"), "19:31");
     assert.deepEqual(["2m", "30s", "1h", "1h30m", "-1"].map(formatKeepAlive), [

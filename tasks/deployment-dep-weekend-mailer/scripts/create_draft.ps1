@@ -28,9 +28,9 @@ $ErrorActionPreference = "Stop"
 
 $data = Get-Content -Raw -Path $DataPath | ConvertFrom-Json
 
-$To = "USPDTOperate <uspdtoperate@deloitte.com>"
-$Cc = "Peethambaram, Sreela <speethambaram@deloitte.com>; Sarab, Mani Deep <msarab@deloitte.com>; Atchula, Rupavani <ratchula@deloitte.com>"
-$Subject = "Deployment and POC Details $($data.date_str) & DEP Team Schedule"
+$To = if ($data.to) { $data.to } else { "USPDTOperate <uspdtoperate@deloitte.com>" }
+$Cc = if ($data.cc) { $data.cc } else { "Peethambaram, Sreela <speethambaram@deloitte.com>; Sarab, Mani Deep <msarab@deloitte.com>; Atchula, Rupavani <ratchula@deloitte.com>" }
+$Subject = if ($data.subject) { $data.subject } else { "Deployment and POC Details $($data.date_str) & DEP Team Schedule" }
 
 $olMailItem = 0
 

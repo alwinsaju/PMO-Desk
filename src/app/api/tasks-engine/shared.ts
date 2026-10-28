@@ -10,6 +10,8 @@
 // range whether a Tasks engine answers there.
 import net from "node:net";
 import { spawnSync, type ChildProcess } from "node:child_process";
+import { withoutTlsOverride } from "../../../lib/security/childEnv.ts";
+import { engineAuthHeaders, getEngineAuth } from "../../../lib/tasks-engine/engineAuth.ts";
 
 declare global {
   var aiOsDesktopEngine: ChildProcess | undefined;
@@ -28,6 +30,9 @@ const STOP_TIMEOUT_MS = 10_000;
 
 export const engineUrlFor = (port: number) => `http://${ENGINE_HOST}:${port}`;
 
+/** The packaged app only ever talks to the engine it launched itself. */
+const isDesktopMode = () => process.env.AI_OS_DESKTOP_MODE === "1";
+
 /** An engine started by hand (or by a launcher outside this server). */
 function configuredUrl(): string | null {
   const value = process.env.AI_OS_TASKS_ENGINE_URL?.trim();
@@ -38,18 +43,44 @@ function configuredUrl(): string | null {
  * True when a Tasks engine answers GET /health at `url`. The identity check
  * matters: any other local process (or an older service from before the
  * engine moved into this repo) may hold a port in the range and answer `/tasks`.
+ * With `expectedInstance` the engine must also report that launch id.
  */
-export async function isTasksEngine(url: string): Promise<boolean> {
+export async function isTasksEngine(
+  url: string,
+  expectedInstance?: string,
+): Promise<boolean> {
   try {
     const res = await fetch(`${url}/health`, {
       signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
     });
     if (!res.ok) return false;
-    const body = (await res.json()) as { service?: string };
-    return body.service === "tasks-engine";
+    const body = (await res.json()) as { service?: string; instance?: string | null };
+    if (body.service !== "tasks-engine") return false;
+    return expectedInstance === undefined || body.instance === expectedInstance;
   } catch {
     return false;
   }
+}
+
+/** False only when the engine refuses our token (401/403): an engine left over from
+ *  an earlier dev server holds a different one and could not be used. */
+async function acceptsOurToken(url: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${url}/tasks`, {
+      headers: engineAuthHeaders(),
+      signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+    });
+    return res.status !== 401 && res.status !== 403;
+  } catch {
+    return false;
+  }
+}
+
+/** Desktop: only the engine this app launched (matching instance id). Dev: any
+ *  Tasks engine that accepts our token. */
+async function isAdoptable(url: string): Promise<boolean> {
+  if (isDesktopMode()) return isTasksEngine(url, getEngineAuth().instance);
+  return (await isTasksEngine(url)) && (await acceptsOurToken(url));
 }
 
 /**
@@ -62,12 +93,12 @@ export async function findRunningEngine(): Promise<string | null> {
   if (configured) return (await isTasksEngine(configured)) ? configured : null;
 
   const remembered = globalThis.aiOsTasksEngineUrl;
-  if (remembered && (await isTasksEngine(remembered))) return remembered;
+  if (remembered && (await isAdoptable(remembered))) return remembered;
 
   const urls = Array.from({ length: ENGINE_PORT_SPAN }, (_, i) =>
     engineUrlFor(ENGINE_PORT_START + i),
   );
-  const answers = await Promise.all(urls.map((url) => isTasksEngine(url)));
+  const answers = await Promise.all(urls.map((url) => isAdoptable(url)));
   const found = urls.find((_, i) => answers[i]) ?? null;
   globalThis.aiOsTasksEngineUrl = found ?? undefined;
   return found;
@@ -75,6 +106,23 @@ export async function findRunningEngine(): Promise<string | null> {
 
 export function rememberEngineUrl(url: string): void {
   globalThis.aiOsTasksEngineUrl = url;
+}
+
+/**
+ * The engine's environment: ours without any PYTHON* setting (a stray PYTHONHOME
+ * or PYTHONPATH breaks the bundled interpreter) and without a disabled TLS
+ * check, with the user site switched off and this process's token/instance id.
+ */
+export function engineEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const env = {} as NodeJS.ProcessEnv;
+  for (const [key, value] of Object.entries(withoutTlsOverride(base))) {
+    if (!key.toUpperCase().startsWith("PYTHON")) env[key] = value;
+  }
+  env.PYTHONNOUSERSITE = "1";
+  const auth = getEngineAuth();
+  env.AI_OS_ENGINE_TOKEN = auth.token;
+  env.AI_OS_ENGINE_INSTANCE = auth.instance;
+  return env;
 }
 
 export const hasConfiguredEngine = () => configuredUrl() !== null;

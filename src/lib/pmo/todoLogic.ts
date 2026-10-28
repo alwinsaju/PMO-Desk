@@ -16,6 +16,7 @@ import type {
   TodoSource,
 } from "./types.ts";
 import { MAX_CHASER_DAYS, MAX_HISTORY, PRIORITIES, TodoStatusSchema } from "./types.ts";
+import { isRealIsoDay, isRealIsoInstant } from "./time.ts";
 
 export function newId(prefix: string): string {
   return `${prefix}_${globalThis.crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`;
@@ -118,6 +119,8 @@ export interface BuildTodoContext {
   now: string;
   approvedBy: string;
   source: TodoSource;
+  /** Fixed id (derived from the proposal) so a repeated approve finds its to-do. */
+  id?: string;
 }
 
 const trimToNull = (value: string | null | undefined): string | null =>
@@ -127,7 +130,7 @@ export function buildTodo(draft: TodoDraft, context: BuildTodoContext): Todo {
   const waitingOn = trimToNull(draft.waitingOn);
   const { source } = context;
   return {
-    id: newId("td"),
+    id: context.id ?? newId("td"),
     title: draft.title.trim(),
     description: draft.description.trim(),
     owner: draft.owner,
@@ -215,7 +218,12 @@ export function isOverdue(todo: Pick<Todo, "dueAt" | "status">, today: string): 
 // Patching
 // ---------------------------------------------------------------------------
 
-const isoDay = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+const isoDay = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/)
+  .refine(isRealIsoDay, {
+    message: "Not a real calendar date (for example 2026-02-30 does not exist).",
+  });
 
 /** Bounds on what a person can pile onto one to-do. */
 export const MAX_ACTION_ITEMS = 50;
@@ -242,8 +250,8 @@ export const TodoPatchSchema = z.object({
   /** When the waiting began (ISO); defaults to now when `waitingOn` is set. */
   waitingSince: z
     .string()
-    .refine((value) => !Number.isNaN(Date.parse(value)), {
-      message: "waitingSince must be an ISO 8601 date-time",
+    .refine(isRealIsoInstant, {
+      message: "waitingSince must be an ISO 8601 date-time on a real calendar day",
     })
     .nullable()
     .optional(),
@@ -254,8 +262,8 @@ export const TodoPatchSchema = z.object({
   /** Silence this to-do's reminders until this instant (ISO); null un-snoozes. */
   snoozedUntil: z
     .string()
-    .refine((value) => !Number.isNaN(Date.parse(value)), {
-      message: "snoozedUntil must be an ISO 8601 date-time",
+    .refine(isRealIsoInstant, {
+      message: "snoozedUntil must be an ISO 8601 date-time on a real calendar day",
     })
     .nullable()
     .optional(),

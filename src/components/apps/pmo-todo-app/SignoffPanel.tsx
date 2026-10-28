@@ -85,7 +85,7 @@ export function SignoffPanel({
 
   const formProblem = recordFormProblem(form);
   const field = conditionsField(form.outcome);
-  const evidence = evidenceOptions(todo);
+  const evidence = evidenceOptions(todo, prefs.timeZone);
 
   return (
     <div

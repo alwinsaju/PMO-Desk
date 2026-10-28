@@ -124,7 +124,22 @@ describe("desktop packaging", () => {
         "!tasks/**/~$*",
       ]) {
         assert.ok(files.includes(pattern), `${pattern} is excluded`);
-        assert.ok(files.indexOf("tasks/**/*") < files.indexOf(pattern), `${pattern} trims tasks/**/*`);
+        assert.ok(
+          files.indexOf("tasks/**/*") < files.indexOf(pattern),
+          `${pattern} trims tasks/**/*`,
+        );
+      }
+    });
+
+    it("ships the Outlook export scripts (resources/app/pmo-intake/scripts) without their tests", () => {
+      assert.ok(files.includes("pmo-intake/scripts/*.ps1"));
+      assert.ok(files.includes("!pmo-intake/scripts/tests/**"));
+      assert.ok(
+        files.indexOf("pmo-intake/scripts/*.ps1") <
+          files.indexOf("!pmo-intake/scripts/tests/**"),
+      );
+      for (const name of ["Export-OutlookToInbox.ps1", "OutlookMapping.ps1"]) {
+        assert.ok(existsSync(path.join(root, "pmo-intake", "scripts", name)), name);
       }
     });
 
@@ -132,6 +147,32 @@ describe("desktop packaging", () => {
       assert.deepEqual(pkg.build.extraResources, [
         { from: "build/python-runtime/python", to: "python" },
       ]);
+    });
+
+    it("leaves build-only weight out of the installer, including pnpm's real package folders", () => {
+      for (const pattern of [
+        "!node_modules/@next/swc-win32-x64-msvc/**",
+        "!node_modules/.pnpm/@next+swc-*/**",
+        "!node_modules/sharp/**",
+        "!node_modules/.pnpm/sharp@*/**",
+        "!node_modules/.pnpm/@img+*/**",
+        "!.next/**/*.map",
+      ]) {
+        assert.ok(files.includes(pattern), `${pattern} is excluded`);
+        assert.ok(
+          files.indexOf("node_modules/**/*") < files.indexOf(pattern),
+          `${pattern} trims node_modules`,
+        );
+      }
+      assert.deepEqual(pkg.build.electronLanguages, ["en-US"]);
+    });
+
+    it("stops an orphaned engine before an install, upgrade or uninstall", () => {
+      assert.equal(pkg.build.nsis.include, "build/installer.nsh");
+      const nsh = readFileSync(path.join(root, "build", "installer.nsh"), "utf8");
+      assert.match(nsh, /pythonw\.exe/);
+      assert.match(nsh, /!macro customInit/);
+      assert.match(nsh, /!macro customUnInit/);
     });
 
     it("builds the runtime before packaging", () => {

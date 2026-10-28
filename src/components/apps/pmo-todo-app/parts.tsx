@@ -65,14 +65,7 @@ export function ScrollBody({
 }
 
 export type ChipTone =
-  | "neutral"
-  | "accent"
-  | "strong"
-  | "outline"
-  | "warning"
-  | "success"
-  | "info"
-  | "danger";
+  "neutral" | "accent" | "strong" | "outline" | "warning" | "success" | "info" | "danger";
 
 /** `strong` is the view-logic's "must be seen first" tone (an overdue to-do, a
  *  declined sign-off); it is drawn in the danger colours. */

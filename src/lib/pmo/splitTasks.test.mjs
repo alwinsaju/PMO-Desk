@@ -2,8 +2,17 @@
 // (splitTasks.ts) and the model-answer schema, with mocked model output only.
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { asTaskList, isNearDuplicate, selectTasks } from "./splitTasks.ts";
-import { AiModelTasksSchema, AiStructuredSchema, MAX_TASKS_PER_MESSAGE } from "./types.ts";
+import {
+  asTaskList,
+  isPossibleDuplicate,
+  isSameTask,
+  selectTasks,
+} from "./splitTasks.ts";
+import {
+  AiModelTasksSchema,
+  AiStructuredSchema,
+  MAX_TASKS_PER_MESSAGE,
+} from "./types.ts";
 import { siblingProposalId } from "./dedupe.ts";
 import { isSafeId } from "./server/paths.ts";
 
@@ -35,7 +44,10 @@ describe("asTaskList", () => {
 
 describe("selectTasks", () => {
   const report = task();
-  const room = task({ title: "Book the room for Thursday's review", quote: "book the room" });
+  const room = task({
+    title: "Book the room for Thursday's review",
+    quote: "book the room",
+  });
   const chase = task({ title: "Chase Dev about the invoice", quote: "chase Dev" });
 
   it("keeps independent tasks in the model's order", () => {
@@ -68,15 +80,49 @@ describe("selectTasks", () => {
     assert.equal(pick([fyi, report]).kept[0].title, report.title);
   });
 
-  it("merges near-identical tasks", () => {
-    const dup = task({ title: "Send weekly report to Rahul" });
+  it("merges identical tasks and names every merged-away title in the notes", () => {
+    const dup = task({
+      title: "send the WEEKLY report, to Rahul!",
+      quote: "another quote",
+    });
     const r = pick([report, dup, room]);
     assert.deepEqual(
       r.kept.map((t) => t.title),
       [report.title, room.title],
     );
-    assert.match(r.notes.join(" "), /near-identical/);
-    assert.equal(isNearDuplicate(report, room), false);
+    assert.match(
+      r.notes.join(" "),
+      /Merged 1 identical task\(s\).*"send the WEEKLY report, to Rahul!"/,
+    );
+    assert.equal(isSameTask(report, room), false);
+  });
+
+  it("merges titles that differ only by filler words when quote and due date agree", () => {
+    const dup = task({ title: "Send weekly report to Rahul" });
+    assert.equal(isSameTask(report, dup), true);
+    assert.equal(pick([report, dup]).kept.length, 1);
+    // Same titles but a different quote or due date is not enough evidence.
+    const otherQuote = task({ title: "Send weekly report to Rahul", quote: "elsewhere" });
+    assert.equal(isSameTask(report, otherQuote), false);
+    const otherDue = task({ title: "Send weekly report to Rahul", dueAt: "2026-10-30" });
+    assert.equal(isSameTask(report, otherDue), false);
+    const r = pick([report, otherDue]);
+    assert.equal(r.kept.length, 2);
+    assert.deepEqual(r.possibleDuplicateOf, [null, 0]);
+  });
+
+  it("keeps two tasks that differ in one name and flags the second as a possible duplicate", () => {
+    const rahul = task({ title: "Send weekly status report to Rahul" });
+    const meera = task({ title: "Send weekly status report to Meera" }); // same quote and due date
+    assert.equal(isSameTask(rahul, meera), false);
+    assert.equal(isPossibleDuplicate(rahul, meera), true);
+    const r = pick([rahul, meera, room]);
+    assert.deepEqual(
+      r.kept.map((t) => t.title),
+      [rahul.title, meera.title, room.title],
+    );
+    assert.deepEqual(r.possibleDuplicateOf, [null, 0, null]);
+    assert.deepEqual(r.notes, []);
   });
 
   it("folds a task that is only a step already listed under an earlier task", () => {
@@ -87,10 +133,13 @@ describe("selectTasks", () => {
         { text: "Send it to Anna for sign-off", owner: null, dueAt: null },
       ],
     });
-    const step = task({ title: "Update the budget slide", quote: "update the budget slide" });
+    const step = task({
+      title: "Update the budget slide",
+      quote: "update the budget slide",
+    });
     const r = pick([deck, step]);
     assert.equal(r.kept.length, 1);
-    assert.match(r.notes.join(" "), /sub-step/);
+    assert.match(r.notes.join(" "), /sub-step.*"Update the budget slide"/);
   });
 
   it("caps the number of tasks", () => {
@@ -99,7 +148,8 @@ describe("selectTasks", () => {
     );
     const r = pick(many);
     assert.equal(r.kept.length, MAX_TASKS_PER_MESSAGE);
-    assert.match(r.notes.join(" "), /Kept the first 5 of 9/);
+    assert.match(r.notes.join(" "), /Kept the first 5 of 9 .*left out/);
+    assert.equal(r.possibleDuplicateOf.length, MAX_TASKS_PER_MESSAGE);
   });
 });
 
@@ -130,7 +180,9 @@ describe("AiModelTasksSchema", () => {
   });
 
   it("caps an over-eager answer", () => {
-    const r = AiModelTasksSchema.parse({ tasks: Array.from({ length: 12 }, () => lean()) });
+    const r = AiModelTasksSchema.parse({
+      tasks: Array.from({ length: 12 }, () => lean()),
+    });
     assert.equal(r.tasks.length, MAX_TASKS_PER_MESSAGE + 2);
   });
 });

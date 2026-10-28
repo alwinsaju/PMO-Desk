@@ -42,8 +42,11 @@ export interface OllamaInstallDeps {
   fetchImpl: typeof fetch;
   /** A fresh, empty folder for the download; returns its path. */
   makeTempDir: () => Promise<string>;
-  /** Opens `path` for writing. */
-  openWrite: (path: string) => Promise<{
+  /** Opens `path` for writing; `append` keeps what is already there (a resumed download). */
+  openWrite: (
+    path: string,
+    options?: { append?: boolean },
+  ) => Promise<{
     write: (chunk: Uint8Array) => Promise<void>;
     close: () => Promise<void>;
   }>;
@@ -91,15 +94,89 @@ export function isOllamaSignature(signature: {
   return signature.valid && signature.publisher === OLLAMA_PUBLISHER;
 }
 
-async function download(deps: OllamaInstallDeps, destination: string): Promise<void> {
-  const { fetchImpl, signal, onProgress } = deps;
-  const response = await fetchImpl(OLLAMA_INSTALLER_URL, { signal, redirect: "follow" });
-  if (!response.ok || !response.body) {
-    throw new Error(`The download server answered HTTP ${response.status}.`);
+/** Network failures Node reports as `error.cause.code`; shown to help the person (or IT) diagnose. */
+const NETWORK_CODES = [
+  "ECONNRESET",
+  "ETIMEDOUT",
+  "ENOTFOUND",
+  "ECONNREFUSED",
+  "EAI_AGAIN",
+  "CERT_HAS_EXPIRED",
+  "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+  "SELF_SIGNED_CERT_IN_CHAIN",
+  "DEPTH_ZERO_SELF_SIGNED_CERT",
+  "UND_ERR_CONNECT_TIMEOUT",
+];
+
+/** The network error code behind a failed fetch (`TypeError: fetch failed` hides it in `cause`). */
+export function networkErrorCode(error: unknown): string | undefined {
+  let current: unknown = error;
+  for (let depth = 0; depth < 5 && current && typeof current === "object"; depth++) {
+    const { code, cause } = current as { code?: unknown; cause?: unknown };
+    if (typeof code === "string" && NETWORK_CODES.includes(code)) return code;
+    current = cause;
   }
-  const total = Number(response.headers.get("content-length")) || null;
-  const out = await deps.openWrite(destination);
+  return undefined;
+}
+
+export function describeDownloadFailure(error: unknown): string {
+  const detail = error instanceof Error ? error.message : String(error);
+  const code = networkErrorCode(error);
+  return (
+    `Could not download Ollama (${detail}${code ? `, ${code}` : ""}). ` +
+    "A company network or proxy may be blocking ollama.com. " +
+    "If your company uses a proxy, set HTTPS_PROXY and restart AI OS."
+  );
+}
+
+/** Resume attempts after a connection drops part-way. */
+const MAX_RESUMES = 3;
+
+class HttpStatusError extends Error {}
+
+async function download(deps: OllamaInstallDeps, destination: string): Promise<void> {
+  const { signal } = deps;
   let downloaded = 0;
+  for (let resumes = 0; ; resumes++) {
+    try {
+      await fetchInto(deps, destination, {
+        offset: downloaded,
+        onBytes: (n) => {
+          downloaded = n;
+        },
+      });
+      return;
+    } catch (error) {
+      // Resume only a transfer that had started; a refusal or a first failure is final.
+      const resumable = downloaded > 0 && !(error instanceof HttpStatusError);
+      if (signal?.aborted || !resumable || resumes >= MAX_RESUMES) throw error;
+    }
+  }
+}
+
+/** One request, writing to `destination` from `offset` (a Range request when offset > 0). */
+async function fetchInto(
+  deps: OllamaInstallDeps,
+  destination: string,
+  state: { offset: number; onBytes: (downloaded: number) => void },
+): Promise<void> {
+  const { fetchImpl, signal, onProgress } = deps;
+  const headers: Record<string, string> = {};
+  if (state.offset > 0) headers.Range = `bytes=${state.offset}-`;
+  const response = await fetchImpl(OLLAMA_INSTALLER_URL, {
+    signal,
+    redirect: "follow",
+    ...(state.offset > 0 ? { headers } : {}),
+  });
+  if (!response.ok || !response.body) {
+    throw new HttpStatusError(`The download server answered HTTP ${response.status}.`);
+  }
+  // 206 continues the file; a plain 200 means the server ignored Range: start over.
+  const resumed = state.offset > 0 && response.status === 206;
+  let downloaded = resumed ? state.offset : 0;
+  const length = Number(response.headers.get("content-length")) || null;
+  const total = length === null ? null : resumed ? state.offset + length : length;
+  const out = await deps.openWrite(destination, resumed ? { append: true } : undefined);
   let lastReport = 0;
   const reader = response.body.getReader();
   try {
@@ -108,6 +185,7 @@ async function download(deps: OllamaInstallDeps, destination: string): Promise<v
       if (done) break;
       await out.write(value);
       downloaded += value.byteLength;
+      state.onBytes(downloaded);
       if (downloaded - lastReport >= 4 * 1024 * 1024 || downloaded === total) {
         lastReport = downloaded;
         onProgress({
@@ -162,10 +240,7 @@ export async function installOllama(deps: OllamaInstallDeps): Promise<InstallPro
       await download(deps, installer);
     } catch (error) {
       if (deps.signal?.aborted) return fail("The installation was cancelled.", false);
-      const detail = error instanceof Error ? error.message : String(error);
-      return fail(
-        `Could not download Ollama (${detail}). A company network or proxy may be blocking ollama.com.`,
-      );
+      return fail(describeDownloadFailure(error));
     }
 
     emit({

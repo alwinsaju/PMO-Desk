@@ -102,7 +102,10 @@ export function SnoozeMenu({
             if (customValid) pick(customInstant);
           }}
         >
-          <label className="text-ink text-[13.5px] font-semibold" htmlFor="pmo-snooze-custom">
+          <label
+            className="text-ink text-[13.5px] font-semibold"
+            htmlFor="pmo-snooze-custom"
+          >
             Pick a date and time
           </label>
           <div className="flex gap-2">

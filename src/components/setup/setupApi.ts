@@ -25,10 +25,14 @@ export type SetupAction =
 
 const TIMEOUT_MS = 20_000;
 
-/** The current report and job progress, or null when the server cannot say. */
-export async function fetchSetupStatus(fresh = false): Promise<SetupStatus | null> {
+/** The current report and job progress, or null when the server cannot say.
+ *  `launch` is the passive check at app start; `true` re-reads the slow facts. */
+export async function fetchSetupStatus(
+  fresh: boolean | "launch" = false,
+): Promise<SetupStatus | null> {
   try {
-    const res = await fetch(fresh ? "/api/setup?fresh=1" : "/api/setup", {
+    const query = fresh === "launch" ? "?launch=1" : fresh ? "?fresh=1" : "";
+    const res = await fetch(`/api/setup${query}`, {
       cache: "no-store",
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });

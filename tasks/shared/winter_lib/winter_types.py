@@ -29,7 +29,6 @@ DISPLAY: dict[str, str] = {
     codes.ELEVEN_TO_EIGHT: "11AM-8PM",
     codes.MX_8_5: "8am-5pm CST",
 }
-SHIFT_CODES = tuple(DISPLAY)  # the codes a person can be planned on
 LANES = (codes.Lane.MORNING, codes.Lane.EVENING, codes.Lane.NIGHT_US)
 LANE_LABEL = {codes.Lane.MORNING: "Morning", codes.Lane.EVENING: "Evening", codes.Lane.NIGHT_US: "Night/US"}
 

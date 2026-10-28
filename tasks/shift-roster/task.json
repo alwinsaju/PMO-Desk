@@ -12,6 +12,15 @@
       "required": true
     },
     {
+      "id": "rotation_config",
+      "label": "Rotation settings (rotation-config.json)",
+      "type": "file",
+      "accept": [".json"],
+      "dest": "config/rotation-config.json",
+      "required": true,
+      "persist": true
+    },
+    {
       "id": "holidays",
       "label": "Holiday Roster (optional - the reference file is used if you don't upload one)",
       "type": "file",
@@ -42,7 +51,7 @@
   },
   "prepare": {
     "cmd": "scripts/prepare_options.py",
-    "after": ["roster"]
+    "after": ["roster", "rotation_config"]
   },
   "steps": [
     {

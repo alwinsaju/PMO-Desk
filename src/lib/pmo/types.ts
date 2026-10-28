@@ -3,7 +3,12 @@
 // import it, and `pnpm test` can load it under plain Node.
 import { z } from "zod";
 import type { Attention } from "./due.ts";
-import { isValidTimeZone } from "./time.ts";
+import {
+  DEFAULT_TIME_ZONE as TIME_ZONE_DEFAULT,
+  isRealIsoDay,
+  isRealIsoInstant,
+  isValidTimeZone,
+} from "./time.ts";
 
 export const INTAKE_SCHEMA_ID = "pmo-intake/1";
 export const SOURCES = ["outlook", "teams", "manual"] as const;
@@ -45,9 +50,14 @@ export const IntakeSchema = z.object({
   schema: z.literal(INTAKE_SCHEMA_ID),
   producer: optText.transform((value) => value ?? "other"),
   source: z.enum(SOURCES),
-  sourceId: z.string().trim().min(1),
-  receivedAt: z.string().refine((value) => !Number.isNaN(Date.parse(value)), {
-    message: "receivedAt must be an ISO 8601 date-time",
+  // Required, but may be blank (or null): ingest then derives a stable id from
+  // the content (dedupe.ts deriveSourceId), as the intake contract says.
+  sourceId: z
+    .string()
+    .nullable()
+    .transform((value) => value?.trim() ?? ""),
+  receivedAt: z.string().refine(isRealIsoInstant, {
+    message: "receivedAt must be an ISO 8601 date-time on a real calendar day",
   }),
   // Teams gives a display name only, so neither field is required on its own.
   sender: IntakePerson,
@@ -135,8 +145,13 @@ export const PRIORITIES = ["low", "normal", "high"] as const;
 export type Priority = (typeof PRIORITIES)[number];
 
 const isoDay = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
-const isoInstant = z.string().refine((value) => !Number.isNaN(Date.parse(value)), {
-  message: "Not an ISO 8601 date-time",
+/** For what a person submits: a day that really exists. Stored records keep the
+ *  lenient `isoDay`, so an older file with a bad date is still readable. */
+const realIsoDay = isoDay.refine(isRealIsoDay, {
+  message: "Not a real calendar date (for example 2026-02-30 does not exist).",
+});
+const isoInstant = z.string().refine(isRealIsoInstant, {
+  message: "Not an ISO 8601 date-time on a real calendar day",
 });
 
 /** Longest "Repeats" text (the model's and the person's). */
@@ -144,6 +159,7 @@ export const RECURRENCE_MAX = 80;
 
 export const DEFAULT_CHASER_DAYS = 2;
 export const MAX_CHASER_DAYS = 30;
+export const MAX_LEAD_WORKING_DAYS = 5;
 
 const OwnerSchema = z.object({
   name: z.string().nullable(),
@@ -157,32 +173,41 @@ const RequesterSchema = z.object({
 export type Owner = z.infer<typeof OwnerSchema>;
 export type Requester = z.infer<typeof RequesterSchema>;
 
-export const ActionItemDraftSchema = z.object({
-  text: z.string().trim().min(1).max(200),
-  owner: z.string().nullable(),
-  dueAt: isoDay.nullable(),
-});
+const actionItemDraftWith = (day: typeof isoDay) =>
+  z.object({
+    text: z.string().trim().min(1).max(200),
+    owner: z.string().nullable(),
+    dueAt: day.nullable(),
+  });
+/** What a person submits (a real calendar date is required). */
+export const ActionItemDraftSchema = actionItemDraftWith(realIsoDay);
 export type ActionItemDraft = z.infer<typeof ActionItemDraftSchema>;
 
-/** What the human reviews and approves; becomes a Todo. */
-export const TodoDraftSchema = z.object({
-  title: z.string().trim().min(1).max(200),
-  description: z.string().max(4000),
-  owner: OwnerSchema,
-  requester: RequesterSchema,
-  dueAt: isoDay.nullable(),
-  priority: z.enum(PRIORITIES),
-  actionItems: z.array(ActionItemDraftSchema).max(30),
-  checkpointTemplate: z.enum(CHECKPOINT_TEMPLATE_IDS),
-  waitingOn: z.string().nullable(),
-  /** When the waiting started; absent = the moment of approval. */
-  waitingSince: isoInstant.nullable().optional(),
-  tags: z.array(z.string()).max(10),
-  /** "weekly, before Tuesday": informational only for now (nothing re-creates
-   *  or re-reminds a repeating to-do). null = a one-off. */
-  recurrence: z.string().trim().max(RECURRENCE_MAX).nullable().default(null),
-});
+const todoDraftWith = (day: typeof isoDay) =>
+  z.object({
+    title: z.string().trim().min(1).max(200),
+    description: z.string().max(4000),
+    owner: OwnerSchema,
+    requester: RequesterSchema,
+    dueAt: day.nullable(),
+    priority: z.enum(PRIORITIES),
+    actionItems: z.array(actionItemDraftWith(day)).max(30),
+    checkpointTemplate: z.enum(CHECKPOINT_TEMPLATE_IDS),
+    waitingOn: z.string().nullable(),
+    /** When the waiting started; absent = the moment of approval. */
+    waitingSince: isoInstant.nullable().optional(),
+    tags: z.array(z.string()).max(10),
+    /** "weekly, before Tuesday": informational only for now (nothing re-creates
+     *  or re-reminds a repeating to-do). null = a one-off. */
+    recurrence: z.string().trim().max(RECURRENCE_MAX).nullable().default(null),
+  });
+
+/** What the human reviews and approves; becomes a Todo. Strict about dates. */
+export const TodoDraftSchema = todoDraftWith(realIsoDay);
 export type TodoDraft = z.infer<typeof TodoDraftSchema>;
+/** The same shape as stored in `proposal.edits`: lenient about dates so an
+ *  older record is never refused on read. */
+const StoredTodoDraftSchema = todoDraftWith(isoDay);
 
 export const ActionItemSchema = z.object({
   id: z.string(),
@@ -406,8 +431,7 @@ const dayOrNull = z
   .meta({ pattern: "^\\d{4}-\\d{2}-\\d{2}$" })
   .nullable()
   .transform((value) => {
-    if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
-    return Number.isNaN(Date.parse(`${value}T00:00:00Z`)) ? null : value;
+    return value && isRealIsoDay(value) ? value : null;
   });
 
 export const AiOwnerSchema = z.object({
@@ -481,7 +505,9 @@ export const AiStructuredSchema = z.object({
     .number()
     .nullable()
     .transform((value) =>
-      value === null ? null : Math.min(1, Math.max(0, Number.isFinite(value) ? value : 0)),
+      value === null
+        ? null
+        : Math.min(1, Math.max(0, Number.isFinite(value) ? value : 0)),
     )
     .default(null),
   title: clip(90),
@@ -586,6 +612,9 @@ export const AiUpdateSchema = z.object({
   signoffQuoteVerified: z.boolean().optional(),
   /** Why the server lowered the model's classification, when it did. */
   signoffGuard: z.string().nullish(),
+  /** The message carries wording aimed at the assistant (looksLikeInjection);
+   *  set by the server, so the card opens with every suggestion unticked. */
+  suspicious: z.boolean().optional(),
 });
 export type AiUpdate = z.output<typeof AiUpdateSchema>;
 
@@ -596,6 +625,9 @@ export type AiUpdate = z.output<typeof AiUpdateSchema>;
 export const PROPOSAL_STATUSES = [
   "pending",
   "structuring",
+  // One task of a multi-task message, written before its group is complete:
+  // hidden and not approvable until the whole group flips to "ready".
+  "splitting",
   "ready",
   "failed",
   "approved",
@@ -619,7 +651,7 @@ export const ProposalSchema = z.object({
    *  equals `draft`. */
   rawDraft: AiStructuredSchema.nullable().optional(),
   /** The user's staged edits; null until they change something. */
-  edits: TodoDraftSchema.nullable(),
+  edits: StoredTodoDraftSchema.nullable(),
   isActionable: z.boolean().nullable(),
   confidence: z.number().nullable(),
   /** Is `draft.quote` really in the message? false -> "check against original". */
@@ -635,12 +667,20 @@ export const ProposalSchema = z.object({
     adjustments: z.array(z.string()).optional(),
   }),
   todoId: z.string().nullable().optional(),
+  /** The message was longer than the intake limit and only its start was kept. */
+  messageShortened: z.boolean().nullish(),
+  /** The sender's real text was under the quoted chain (bottom-posted or inline
+   *  reply), so it was kept; the card says the request may be below the quote. */
+  replyBelowQuote: z.boolean().optional(),
   /** Set when one message held several independent tasks: this proposal is the
    *  `index`-th (1-based) of `total` made from the same intake. Absent on a
    *  message that produced a single to-do. */
   part: z
     .object({ index: z.number().int().min(1), total: z.number().int().min(2) })
     .nullish(),
+  /** Id of an earlier proposal from the same message that this one looks like
+   *  but is not identical to; the card shows "Possible duplicate". */
+  possibleDuplicateOf: z.string().nullish(),
   /** Set when the message belongs to the thread of an open to-do: this is an
    *  "update to existing to-do" card, not a new proposal. `draft` stays null. */
   update: z
@@ -660,14 +700,6 @@ export type Proposal = z.infer<typeof ProposalSchema>;
 // Config
 // ---------------------------------------------------------------------------
 
-export const DEFAULT_INBOX_DIR =
-  "C:\\Users\\alsaju\\OneDrive - Deloitte (O365D)\\PMO-Inbox";
-/** Earlier defaults, which first run wrote into config.json; store.loadConfig
- *  migrates a saved value that is exactly one of these to DEFAULT_INBOX_DIR. */
-export const LEGACY_DEFAULT_INBOX_DIRS = [
-  "C:\\Users\\alsaju\\OneDrive - Deloitte\\PMO-Inbox",
-];
-
 export const DEFAULT_RETENTION_DAYS = 90;
 export const MIN_RETENTION_DAYS = 7;
 export const MAX_RETENTION_DAYS = 3650;
@@ -676,7 +708,7 @@ const stringList = (fallback: string[]) => z.array(z.string()).default(fallback)
 
 // --- reminder preferences (src/lib/pmo/due.ts reads these) ----------------------
 
-export const DEFAULT_TIME_ZONE = "Asia/Kolkata";
+export const DEFAULT_TIME_ZONE = TIME_ZONE_DEFAULT;
 export const DEFAULT_WORK_DAYS = [1, 2, 3, 4, 5]; // Mon-Fri; 0 = Sunday
 
 const clockTime = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use a time like 09:00.");
@@ -691,6 +723,8 @@ export const ReminderPrefsSchema = z.object({
   workDays: z.array(z.number().int().min(0).max(6)).default(DEFAULT_WORK_DAYS),
   /** Hold reminders until working hours instead of firing at night/weekends. */
   quietOutsideHours: z.boolean().default(true),
+  /** The advance reminder lands this many working days before the due day; 0 = none. */
+  leadWorkingDays: z.number().int().min(0).max(MAX_LEAD_WORKING_DAYS).default(1),
   /** A to-do with "waiting on" set and untouched this many working days gets a chaser. */
   chaserDays: z.number().int().min(1).max(MAX_CHASER_DAYS).default(DEFAULT_CHASER_DAYS),
   /** One 09:00 summary of the open items. */
@@ -719,23 +753,28 @@ export type ReportPrefs = z.output<typeof ReportPrefsSchema>;
 
 export const defaultReportPrefs = (): ReportPrefs => ReportPrefsSchema.parse({});
 
+// Production defaults are neutral: nobody's name, domains or folder. The first-run
+// wizard (firstRun.ts) fills them in; developerDefaults.ts holds the fixtures tests use.
 export const PmoConfigSchema = z.object({
-  inboxDir: z.string().default(DEFAULT_INBOX_DIR),
+  /** Empty = not configured: nothing is ingested until the person picks a folder. */
+  inboxDir: z.string().default(""),
+  /** The first-run wizard finished. Nothing is ingested before this is true. */
+  setupComplete: z.boolean().default(false),
+  /** The person's own time zone, chosen in the wizard (reminders.timeZone follows it). */
+  timeZone: z.string().default(DEFAULT_TIME_ZONE),
   /** Teams is default-deny: an item passes only if its tenant or chat is listed. */
   allowedTenantIds: stringList([]),
   teamsChatAllowlist: stringList([]),
-  allowedSenderDomains: stringList(["deloitte.com"]),
-  blockedDomains: stringList(["takeda.com"]),
+  /** Empty = not configured (an Outlook message is then filtered, never taken in). */
+  allowedSenderDomains: stringList([]),
+  blockedDomains: stringList([]),
   blockedTerms: stringList([]),
   me: z
     .object({
-      names: stringList(["Alwin Saju", "Saju", "Alwin"]),
-      emails: stringList(["alsaju@deloitte.com"]),
+      names: stringList([]),
+      emails: stringList([]),
     })
-    .default({
-      names: ["Alwin Saju", "Saju", "Alwin"],
-      emails: ["alsaju@deloitte.com"],
-    }),
+    .default({ names: [], emails: [] }),
   /** Logs, and the raw text of closed to-dos and rejected proposals, are
    *  deleted after this many days (server/retention.ts). Open to-dos keep theirs. */
   retentionDays: z.number().int().default(DEFAULT_RETENTION_DAYS),
@@ -757,6 +796,9 @@ const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DOMAIN = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i;
 const EMAIL = /^[^\s@<>"']+@(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i;
 const MAX_LIST = 200;
+
+export const isDomainName = (value: string) => DOMAIN.test(value.replace(/^@/, ""));
+export const isEmailAddress = (value: string) => EMAIL.test(value);
 
 const listOf = (item: z.ZodType<string>) =>
   z.array(item).max(MAX_LIST, "At most 200 entries.");
@@ -787,6 +829,11 @@ export const ReminderPrefsEditSchema = z
       .min(1, "Pick at least one working day.")
       .max(7),
     quietOutsideHours: z.boolean(),
+    leadWorkingDays: z
+      .number("Enter a number of working days.")
+      .int("Whole days only.")
+      .min(0, "At least 0 working days.")
+      .max(MAX_LEAD_WORKING_DAYS, `At most ${MAX_LEAD_WORKING_DAYS} working days.`),
     chaserDays: z
       .number("Enter a number of working days.")
       .int("Whole days only.")
@@ -844,6 +891,8 @@ export type PmoConfigPatch = z.infer<typeof PmoConfigPatchSchema>;
 export interface IngestStatus {
   /** The folder being polled (env override applied). */
   inboxDir: string;
+  /** false until the first-run wizard is finished and an inbox is chosen: the scanner is idle. */
+  configured: boolean;
   inboxExists: boolean;
   scanIntervalMs: number;
   lastScanAt: string | null;
@@ -882,6 +931,9 @@ export interface RuntimeSummary {
   task?: string | null;
   /** When the loaded model is unloaded if nothing else asks (ISO). */
   unloadsAt?: string | null;
+  /** Calls ahead of a structuring call that is waiting its turn in the model
+   *  queue (the running call counts). Absent when nothing is ahead. */
+  waitingBehind?: number;
 }
 
 export interface StructuringInfo {
@@ -936,15 +988,67 @@ export interface ReportNarrativeJob {
   promptVersion: number;
 }
 
+/** Everything that needs a person's attention beyond the reminder badge. One
+ *  strip in the UI reads this (see attentionView.ts). Each `*Names` list
+ *  holds at most MAX_ATTENTION_NAMES entries. */
+export interface AttentionSummary {
+  /** Record files moved to <data>/corrupt/ because they could not be read. */
+  corruptRecords: number;
+  /** Inbox files over the size limit that could not be taken in. */
+  oversizedFiles: number;
+  /** Inbox files the last scan could not read (locked, permission, ...). */
+  erroredFiles: number;
+  /** Producer files parked in rejected-files/ after failing validation. */
+  parkedFiles: number;
+  queuePaused: boolean;
+  modelMissing: boolean;
+  /** Names of the quarantined record files (`<kind>/<file>`), newest last. */
+  corruptFileNames: string[];
+  oversizedFileNames: string[];
+  erroredFileNames: string[];
+  parkedFileNames: string[];
+  /** Files in the inbox folder that are not PMO messages (other JSON, any
+   *  non-JSON file). Left exactly where they are; only counted. */
+  foreignFiles: number;
+  foreignFileNames: string[];
+  /** Exact repeats of an already-seen message dropped since the app started. */
+  duplicatesIgnored: number;
+  /** `reminders.timeZone` in config.json is not a real zone: the default is in use. */
+  badTimeZone: boolean;
+}
+
+export const MAX_ATTENTION_NAMES = 20;
+
+export const emptyAttentionSummary = (): AttentionSummary => ({
+  corruptRecords: 0,
+  oversizedFiles: 0,
+  erroredFiles: 0,
+  parkedFiles: 0,
+  queuePaused: false,
+  modelMissing: false,
+  corruptFileNames: [],
+  oversizedFileNames: [],
+  erroredFileNames: [],
+  parkedFileNames: [],
+  foreignFiles: 0,
+  foreignFileNames: [],
+  duplicatesIgnored: 0,
+  badTimeZone: false,
+});
+
 export interface PmoState {
   ok: true;
   serverTime: string;
-  /** Today in IST, YYYY-MM-DD, so "overdue" agrees with the model's dates. */
+  /** Today in the reminder time zone (IST by default), YYYY-MM-DD, so "overdue" agrees with the model's dates. */
   today: string;
   queue: Proposal[];
+  /** Rejected proposals still on disk (newest first, capped): what Restore lists. */
+  rejected: Proposal[];
   todos: Todo[];
   /** What needs a look right now (the dock badge number), per the reminder prefs. */
   attention: Attention;
+  /** Unreadable records, unreadable or held-back files and paused work. */
+  needsAttention: AttentionSummary;
   filtered: QuarantineRecord[];
   ingest: IngestStatus;
   structuring: StructuringInfo;

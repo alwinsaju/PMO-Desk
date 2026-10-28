@@ -1,4 +1,14 @@
 .next
 .next-live*
+.claude
+agent-apps
+build
+release
+out
+tasks
+tasks-engine
+docs/qa
+*.py
+public/sw.js
 node_modules
 pnpm-lock.yaml

@@ -84,6 +84,7 @@ export function UrlPage({ url, knownEmbeddable, onEmbeddableResolved }: UrlPageP
       >
         <EmbedBlocked
           name={host}
+          reason={check.reason}
           onOpenInNewTab={() => window.open(url, "_blank", "noopener,noreferrer")}
         />
       </motion.div>

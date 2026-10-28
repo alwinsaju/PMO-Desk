@@ -310,8 +310,7 @@ def read_selected_window(paths: Paths, cfg: WinterConfig) -> str:
 
 def _read_config_json(path: Path, what: str) -> dict[str, Any]:
     if not path.exists():
-        raise TaskError(f"the {what} config is missing (config/{path.name}); it is created once, "
-                        "see README.md")
+        raise TaskError(f"the {what} config is missing (config/{path.name}): upload it in the Tasks app")
     try:
         data = json.loads(path.read_text(encoding="utf-8-sig"))
     except (OSError, ValueError):
@@ -854,7 +853,3 @@ def archive_previous(paths: Paths, moment: datetime | None = None) -> tuple[Path
 
 def draft_meta(paths: Paths) -> dict[str, Any]:
     return read_json(paths.meta, "the draft record (draft-meta.json)")
-
-
-def label_of(code: str | None) -> str:
-    return display_code(code)

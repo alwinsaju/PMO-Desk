@@ -23,6 +23,7 @@ import {
   type GenerateTextOptions,
   type OllamaClient,
 } from "./core";
+import { markAiUsed } from "./aiUsed";
 import { createRuntimeControls, type RuntimeControls } from "./controls";
 import {
   ensureOllamaServer,
@@ -31,6 +32,7 @@ import {
   type EnsureServerResult,
 } from "./lifecycle";
 import { cleanText, type AiLogEvent } from "./log";
+import { createModelResolver, type ModelResolver } from "./modelChoice";
 import { getAiLogState } from "./modelWatch";
 import { readServerLogTail, resolveServerLog, type ServerLogTail } from "./serverLog";
 import type { AiRuntimeLogResponse, AiRuntimeStatus } from "./types";
@@ -45,6 +47,7 @@ export {
 export type {
   AiRuntimeConfig,
   AiRuntimeErrorCode,
+  CallPriority,
   GenerateJsonOptions,
   GenerateTextOptions,
 } from "./core";
@@ -79,6 +82,7 @@ interface AiRuntime {
   config: AiRuntimeConfig;
   client: OllamaClient;
   controls: RuntimeControls;
+  models: ModelResolver;
 }
 
 let instance: AiRuntime | undefined;
@@ -89,6 +93,7 @@ function runtime(): AiRuntime {
     const queue = shared().queue;
     const state = getAiLogState();
     const keepAlive = () => pickKeepAlive(config, getProcessState().owned);
+    const models = createModelResolver();
     // eslint-disable-next-line prefer-const -- referenced lazily by the client's hooks
     let controls: RuntimeControls;
     const client: OllamaClient = createOllamaClient({
@@ -98,11 +103,13 @@ function runtime(): AiRuntime {
       // Before every job: if the server went away (or was never started,
       // e.g. plain `next start`), bring it back or fail as runtime-down.
       ensure: async () => {
+        markAiUsed();
         const result = await ensureOllamaServer(config, client);
         if (!result.running) throw new AiRuntimeError("runtime-down", result.reason);
       },
       keepAlive,
       log: state.ring,
+      models,
       // A plain GET of /api/ps: tells the log whether this call has to wake the
       // model, and notices a sleep that happened since the last look.
       observe: async (model) => {
@@ -120,14 +127,21 @@ function runtime(): AiRuntime {
       state,
       processState: getProcessState,
       keepAlive,
+      models,
     });
-    instance = { config, client, controls };
+    instance = { config, client, controls, models };
   }
   return instance;
 }
 
 export function getAiRuntimeConfig(): AiRuntimeConfig {
   return runtime().config;
+}
+
+/** The model calls use right now: OLLAMA_MODEL, else Setup's saved choice,
+ *  else the default, or the one allowed model that is installed. */
+export function getActiveModel(): string {
+  return runtime().models.current().model;
 }
 
 /** The keep_alive every request to Ollama should carry right now (2 minutes by
@@ -208,6 +222,12 @@ export function getLiveActivity(): Pick<
     loadInFlight: getAiLogState().loadInFlight,
     queue: { waiting: queue.waiting, active: queue.active },
   };
+}
+
+/** How many calls (the running one included) are ahead of the next waiting call
+ *  whose task kind is in `tasks`; null if none of them is waiting. In memory only. */
+export function getQueueAhead(tasks: readonly string[]): number | null {
+  return shared().queue.aheadOf(tasks);
 }
 
 /** POST /api/ai/runtime/load: wake the model in the background. */
@@ -298,7 +318,16 @@ export async function startExternalCall(meta: {
   label?: string;
   think?: boolean;
 }) {
-  const { config, controls } = runtime();
+  const { client, controls, models: resolver, config } = runtime();
+  // Ollama is no longer started at launch for someone who has not used AI yet.
+  markAiUsed();
+  await ensureOllamaServer(config, client);
+  try {
+    resolver.observeInstalled(await client.listInstalled(2_000));
+  } catch {
+    resolver.observeInstalled(null);
+  }
+  const model = resolver.current().model;
   const { ring } = getAiLogState();
   const call = ring.nextCallId();
   const keepAlive = getKeepAlive();
@@ -309,9 +338,7 @@ export async function startExternalCall(meta: {
     loaded =
       models === null
         ? null
-        : models.some(
-            (m) => normalizeModelName(m.name) === normalizeModelName(config.defaultModel),
-          );
+        : models.some((m) => normalizeModelName(m.name) === normalizeModelName(model));
   } catch {
     // A log detail only.
   }
@@ -321,7 +348,7 @@ export async function startExternalCall(meta: {
     call,
     task: meta.task,
     label,
-    model: config.defaultModel,
+    model,
     keepAlive,
     ...(meta.think === undefined ? {} : { think: meta.think }),
     modelLoaded: loaded,
@@ -333,7 +360,7 @@ export async function startExternalCall(meta: {
       call,
       task: meta.task,
       label,
-      model: config.defaultModel,
+      model,
       durationMs: Date.now() - startedAt,
       attempts: 1,
       ...rest,
@@ -342,6 +369,8 @@ export async function startExternalCall(meta: {
   };
   return {
     keepAlive,
+    /** The model this call must ask Ollama for. */
+    model,
     /** Was the model in memory when the call started? null = could not tell. */
     modelLoaded: loaded,
     /** The call succeeded: `payload` is Ollama's parsed reply (only its

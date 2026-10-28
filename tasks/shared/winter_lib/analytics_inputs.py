@@ -91,10 +91,6 @@ def _text(v: Any) -> str:
     return "" if v is None else " ".join(str(v).split())
 
 
-def _is_date(v: Any) -> bool:
-    return isinstance(v, (datetime, date))
-
-
 def _day_columns(ws, header_row: int, first_col: int) -> Optional[list[int]]:
     """Columns of the longest run of consecutive date cells on a row above the header."""
     best: list[int] = []

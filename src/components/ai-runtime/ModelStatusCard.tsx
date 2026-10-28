@@ -4,8 +4,8 @@ import { useEffect, useState, type ReactNode } from "react";
 import { ArrowDownIcon, LightningIcon } from "@phosphor-icons/react";
 import { Badge, Button, type BadgeVariant } from "@/components/ui";
 import { cn } from "@/lib/cn";
+import { MEMORY_SIZE, formatBytes } from "@/lib/format";
 import {
-  formatBytes,
   formatKeepAlive,
   modelStateOf,
   taskNoun,
@@ -136,10 +136,14 @@ export function ModelStatusCard({
         </div>
       </div>
 
+      {status.modelNote && (
+        <p className="text-ink-muted text-[13px]">{status.modelNote}</p>
+      )}
+
       <dl className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3">
         <Fact label="Memory held">
           {info.sizeBytes > 0
-            ? `${formatBytes(info.sizeBytes)} (as Ollama reports it)`
+            ? `${formatBytes(info.sizeBytes, MEMORY_SIZE)} (as Ollama reports it)`
             : info.state === "down"
               ? "unknown"
               : "none (asleep)"}

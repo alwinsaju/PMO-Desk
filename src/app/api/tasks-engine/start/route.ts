@@ -3,9 +3,11 @@ import { closeSync, existsSync, openSync, readFileSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { NextResponse } from "next/server";
+import { getEngineAuth } from "../../../../lib/tasks-engine/engineAuth.ts";
 import { resolvePython } from "../python";
 import {
   configuredEngineUrl,
+  engineEnv,
   engineUrlFor,
   findRunningEngine,
   hasConfiguredEngine,
@@ -39,7 +41,7 @@ const ENGINE_DIR = path.join(process.cwd(), "tasks-engine");
 /** Bounded window to confirm the engine actually came up before giving up
  *  and reporting failure — long enough for a cold `uvicorn` boot, short
  *  enough that the frontend's loading screen never spins forever. */
-const START_TIMEOUT_MS = 20_000;
+const START_TIMEOUT_MS = 60_000;
 const POLL_INTERVAL_MS = 750;
 const DESKTOP_MODE = process.env.AI_OS_DESKTOP_MODE === "1";
 
@@ -126,8 +128,8 @@ async function attemptStart(): Promise<StartResult> {
       detached: !DESKTOP_MODE,
       stdio: ["ignore", outFd, errFd],
       windowsHide: true,
-      // Nothing from a user-level Python install may leak into the engine's imports.
-      env: { ...process.env, PYTHONNOUSERSITE: "1" },
+      // No stray PYTHON* settings; carries this server's engine token and instance id.
+      env: engineEnv(),
     });
     // The child gets its own duplicated handles at spawn time; drop our
     // copies right away so a long-lived dev server doesn't accumulate open
@@ -222,7 +224,7 @@ async function attemptStart(): Promise<StartResult> {
       console.error(`[tasks-engine] spawn error: ${spawnError}`);
       return { ok: false, reason: `Couldn't launch the engine: ${spawnError}` };
     }
-    if (await isTasksEngine(url)) {
+    if (await isTasksEngine(url, getEngineAuth().instance)) {
       rememberEngineUrl(url);
       console.log(`[tasks-engine] engine is up at ${url}`);
       return { ok: true, alreadyRunning: false, url };

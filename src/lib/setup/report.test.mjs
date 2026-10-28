@@ -116,6 +116,36 @@ describe("Ollama and the model", () => {
     assert.match(c.steps[0], /large download.*12 GB.*carries on where it stopped/);
   });
 
+  it("names the real download size of the model that will be downloaded", () => {
+    const stepFor = (defaultModel) =>
+      check(
+        buildReport(facts({ ollama: { installedModels: [], defaultModel } }), NOW),
+        "model",
+      ).steps[0];
+    assert.match(stepFor("qwen3.5:9b"), /about 6\.6 GB for qwen3\.5:9b/);
+    assert.doesNotMatch(stepFor("qwen3.5:9b"), /12 GB/);
+    assert.match(stepFor("llama3.2"), /of unknown size for llama3\.2/);
+  });
+
+  it("shows why the model differs from the one asked for", () => {
+    const note = "Using qwen3.5:9b because gemma4:12b is not installed.";
+    const c = check(
+      buildReport(
+        facts({
+          ollama: {
+            installedModels: ["qwen3.5:9b"],
+            defaultModel: "qwen3.5:9b",
+            modelNote: note,
+          },
+        }),
+        NOW,
+      ),
+      "model",
+    );
+    assert.equal(c.state, "ok");
+    assert.deepEqual(c.details, [note]);
+  });
+
   it("cannot tell when Ollama is not answering, but still offers the download", () => {
     const c = check(
       buildReport(facts({ ollama: { running: false, installedModels: null } }), NOW),

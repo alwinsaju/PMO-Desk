@@ -3,12 +3,7 @@
 // chaser clock (waitingSince, else the last update), history and its cap. Pure.
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import {
-  attentionSummary,
-  chaserClockStart,
-  computeDue,
-  waitingState,
-} from "./due.ts";
+import { attentionSummary, chaserClockStart, computeDue, waitingState } from "./due.ts";
 import {
   TodoPatchSchema,
   appendHistory,
@@ -31,11 +26,14 @@ const SOURCE = {
   threadKey: null,
 };
 const build = (draft = {}, now = "2026-10-19T06:30:00.000Z") =>
-  buildTodo({ ...emptyDraft("Chase the figures"), ...draft }, {
-    now,
-    approvedBy: "tester",
-    source: SOURCE,
-  });
+  buildTodo(
+    { ...emptyDraft("Chase the figures"), ...draft },
+    {
+      now,
+      approvedBy: "tester",
+      source: SOURCE,
+    },
+  );
 const patch = (todo, p, now = "2026-10-21T06:30:00.000Z") =>
   applyTodoPatch(todo, TodoPatchSchema.parse(p), now);
 
@@ -86,7 +84,11 @@ describe("mark and clear waiting (PATCH)", () => {
     assert.equal(marked.waitingSince, "2026-10-14T04:00:00.000Z");
     const again = patch(marked, { waitingOn: "Priya Nair" }, "2026-10-22T06:30:00.000Z");
     assert.equal(again.todo.waitingSince, "2026-10-14T04:00:00.000Z");
-    assert.equal(again.todo.history.length, marked.history.length, "no new timeline line");
+    assert.equal(
+      again.todo.history.length,
+      marked.history.length,
+      "no new timeline line",
+    );
     assert.ok(!again.kinds.includes("waiting"));
     // Moving the since-date alone (the to-do is waiting) just moves it.
     const moved = patch(marked, { waitingSince: "2026-10-16T04:00:00.000Z" }).todo;
@@ -95,17 +97,28 @@ describe("mark and clear waiting (PATCH)", () => {
 
   it("waiting on someone else restarts the clock", () => {
     const first = patch(build(), { waitingOn: "Priya Nair" }).todo;
-    const second = patch(first, { waitingOn: "Sam Example" }, "2026-10-23T06:30:00.000Z").todo;
+    const second = patch(
+      first,
+      { waitingOn: "Sam Example" },
+      "2026-10-23T06:30:00.000Z",
+    ).todo;
     assert.equal(second.waitingSince, "2026-10-23T06:30:00.000Z");
   });
 
   it("clearing ('got a reply') drops the since-date and is on the timeline", () => {
     const waiting = patch(build(), { waitingOn: "Priya Nair" }).todo;
-    const { todo, kinds } = patch(waiting, { waitingOn: null }, "2026-10-22T06:30:00.000Z");
+    const { todo, kinds } = patch(
+      waiting,
+      { waitingOn: null },
+      "2026-10-22T06:30:00.000Z",
+    );
     assert.equal(todo.waitingOn, null);
     assert.equal(todo.waitingSince, null);
     assert.ok(kinds.includes("waiting"));
-    assert.match(todo.history.at(-1).text, /no longer waiting \(was waiting on Priya Nair\)/);
+    assert.match(
+      todo.history.at(-1).text,
+      /no longer waiting \(was waiting on Priya Nair\)/,
+    );
     // A blank string clears too.
     assert.equal(patch(waiting, { waitingOn: "  " }).todo.waitingOn, null);
   });
@@ -137,14 +150,20 @@ describe("the chaser clock", () => {
 
   it("starts at waitingSince, and falls back to the last update for an older to-do", () => {
     assert.equal(
-      chaserClockStart({ waitingSince: "2026-10-19T06:30:00.000Z", updatedAt: "2026-10-25T00:00:00.000Z" }),
+      chaserClockStart({
+        waitingSince: "2026-10-19T06:30:00.000Z",
+        updatedAt: "2026-10-25T00:00:00.000Z",
+      }),
       "2026-10-19T06:30:00.000Z",
     );
     assert.equal(
       chaserClockStart({ waitingSince: null, updatedAt: "2026-10-25T00:00:00.000Z" }),
       "2026-10-25T00:00:00.000Z",
     );
-    assert.equal(chaserClockStart({ waitingSince: undefined, updatedAt: "nonsense" }), null);
+    assert.equal(
+      chaserClockStart({ waitingSince: undefined, updatedAt: "nonsense" }),
+      null,
+    );
   });
 
   it("an edit after marking waiting does not restart the clock", () => {
@@ -164,7 +183,10 @@ describe("the chaser clock", () => {
     assert.deepEqual(computeDue([base], at, prefs()), []);
     assert.equal(computeDue([{ ...base, chaserDays: 1 }], at, prefs()).length, 1);
     const later = ist("2026-10-22T10:00"); // 3 working days
-    assert.deepEqual(computeDue([{ ...base, chaserDays: 5 }], later, prefs({ chaserDays: 1 })), []);
+    assert.deepEqual(
+      computeDue([{ ...base, chaserDays: 5 }], later, prefs({ chaserDays: 1 })),
+      [],
+    );
     assert.equal(computeDue([base], later, prefs({ chaserDays: 1 })).length, 1);
     // Each repeat is another N days, so the dedupe key moves with the cadence.
     const round = (n) =>
@@ -173,7 +195,10 @@ describe("the chaser clock", () => {
   });
 
   it("describes the waiting state for the row and the panel", () => {
-    const todo = waiting({ waitingSince: ist("2026-10-19T12:00").toISOString(), chaserDays: 3 });
+    const todo = waiting({
+      waitingSince: ist("2026-10-19T12:00").toISOString(),
+      chaserDays: 3,
+    });
     const state = waitingState(todo, ist("2026-10-23T10:00"), prefs());
     assert.deepEqual(
       { ...state },
@@ -186,8 +211,14 @@ describe("the chaser clock", () => {
         sinceDay: "2026-10-19",
       },
     );
-    assert.equal(waitingState({ ...todo, waitingOn: null }, ist("2026-10-23T10:00"), prefs()), null);
-    assert.equal(waitingState({ ...todo, status: "done" }, ist("2026-10-23T10:00"), prefs()), null);
+    assert.equal(
+      waitingState({ ...todo, waitingOn: null }, ist("2026-10-23T10:00"), prefs()),
+      null,
+    );
+    assert.equal(
+      waitingState({ ...todo, status: "done" }, ist("2026-10-23T10:00"), prefs()),
+      null,
+    );
   });
 
   it("the badge counts a to-do once it passes its own cadence", () => {
@@ -202,7 +233,10 @@ describe("history", () => {
   it("keeps the first entry and the newest ones within the cap", () => {
     let history = [historyEntry("created", "first", "2026-10-01T00:00:00Z")];
     for (let i = 0; i < MAX_HISTORY + 20; i++) {
-      history = appendHistory(history, historyEntry("message", `m${i}`, "2026-10-02T00:00:00Z"));
+      history = appendHistory(
+        history,
+        historyEntry("message", `m${i}`, "2026-10-02T00:00:00Z"),
+      );
     }
     assert.equal(history.length, MAX_HISTORY);
     assert.equal(history[0].text, "first");

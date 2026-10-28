@@ -15,14 +15,14 @@ import time
 from datetime import datetime, timezone
 
 import pytest
-from fastapi.testclient import TestClient
+from conftest import make_client
 
 import main as backend
 from test_platform import FORM_SCHEMA, at_gate, make_link, make_platform_task, upload, write
 
 
 def client():
-    return TestClient(backend.app, raise_server_exceptions=False)
+    return make_client()
 
 
 def compact(obj) -> bytes:

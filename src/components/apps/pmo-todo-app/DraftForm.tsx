@@ -110,8 +110,8 @@ export function DraftForm({ draft, onChange, dueBasis, disabled }: DraftFormProp
         />
         {draft.recurrence && (
           <span className="text-ink-muted text-[12px]">
-            Shown on the to-do for reference. The app does not repeat it or remind you again
-            by itself.
+            Shown on the to-do for reference. The app does not repeat it or remind you
+            again by itself.
           </span>
         )}
       </Field>

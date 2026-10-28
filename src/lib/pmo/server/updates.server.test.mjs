@@ -22,6 +22,7 @@ import {
   updateConfig,
 } from "./actions.ts";
 import { createPmo } from "./create.ts";
+import { developerConfig } from "../developerDefaults.ts";
 import { purgeExpired } from "./retention.ts";
 import { buildState } from "./state.ts";
 import { createStubGenerator } from "./stubGenerator.ts";
@@ -133,7 +134,13 @@ beforeEach(async () => {
   inboxDir = await mkdtemp(path.join(os.tmpdir(), "pmo-upd-inbox-"));
   clock = new Date("2026-10-26T05:00:00.000Z"); // Monday 10:30 IST
   ai = fakeModel();
-  pmo = await createPmo({ dataDir, inboxDir, generator: ai, now: () => clock });
+  pmo = await createPmo({
+    dataDir,
+    inboxDir,
+    seedConfig: developerConfig(),
+    generator: ai,
+    now: () => clock,
+  });
 });
 
 afterEach(async () => {
@@ -172,8 +179,15 @@ const updateProposals = async () => (await proposals()).filter((p) => p.update);
 describe("thread-aware intake: which messages become update cards", () => {
   it("stores the thread key of the source message when a to-do is approved", async () => {
     const { todo } = await todoFromThread();
-    assert.equal(todo.source.threadKey, "outlook|alsaju@deloitte.com|aaqkagexampleconv1=");
-    assert.equal(todo.waitingOn, "Jordan Sample", "the AI proposal's waitingOn is carried over");
+    assert.equal(
+      todo.source.threadKey,
+      "outlook|alsaju@deloitte.com|aaqkagexampleconv1=",
+    );
+    assert.equal(
+      todo.waitingOn,
+      "Jordan Sample",
+      "the AI proposal's waitingOn is carried over",
+    );
     assert.ok(todo.waitingSince);
     assert.equal(todo.history[0].kind, "created");
     assert.equal(todo.history[0].intakeId, todo.source.intakeId);
@@ -192,7 +206,10 @@ describe("thread-aware intake: which messages become update cards", () => {
     assert.equal(updates[0].update.todoTitle, todo.title);
     assert.equal(updates[0].status, "pending");
     assert.equal(updates[0].update.result, null);
-    assert.equal((await proposals()).filter((p) => !p.update && p.status === "pending").length, 0);
+    assert.equal(
+      (await proposals()).filter((p) => !p.update && p.status === "pending").length,
+      0,
+    );
 
     await pmo.worker.kick();
     await pmo.worker.idle();
@@ -201,7 +218,11 @@ describe("thread-aware intake: which messages become update cards", () => {
     assert.equal(ready.update.result.kind, "reply");
     assert.equal(ready.quoteVerified, true);
     assert.equal(ai.updateCalls.length, 1);
-    assert.equal(ai.structureCalls.length, 1, "only the first message was structured as a to-do");
+    assert.equal(
+      ai.structureCalls.length,
+      1,
+      "only the first message was structured as a to-do",
+    );
 
     // The update prompt carries the to-do and the new message, delimited.
     const { system, prompt } = ai.updateCalls[0];
@@ -265,7 +286,10 @@ describe("thread-aware intake: which messages become update cards", () => {
     );
     await drop(
       "foreign.json",
-      await reply({ sender: { name: "Sam", address: "sam@example.org" }, sourceId: "b2" }),
+      await reply({
+        sender: { name: "Sam", address: "sam@example.org" },
+        sourceId: "b2",
+      }),
     );
     const report = await pmo.ingestor.scan();
     assert.equal(report.filtered, 2);
@@ -279,10 +303,11 @@ describe("thread-aware intake: which messages become update cards", () => {
     await todoFromThread();
     await updateConfig(pmo, { allowedTenantIds: [TENANT] });
     const teams = await example("teams-selected-message.json");
-    await drop(
-      "t.json",
-      { ...teams, sourceId: "t-1", thread: { conversationId: "AAQkAGExampleConv1=" } },
-    );
+    await drop("t.json", {
+      ...teams,
+      sourceId: "t-1",
+      thread: { conversationId: "AAQkAGExampleConv1=" },
+    });
     const report = await pmo.ingestor.scan();
     assert.equal(report.ingested, 1);
     assert.equal(report.updates, 0);
@@ -306,12 +331,19 @@ describe("thread-aware intake: which messages become update cards", () => {
     const created = await approveProposal(pmo, first.id, {
       draft: draftFromAi(first.draft, "x"),
     });
-    assert.equal(created.todo.source.threadKey, `teams|chat|${TENANT}|19:example0000000000000000000000000000@thread.v2`);
+    assert.equal(
+      created.todo.source.threadKey,
+      `teams|chat|${TENANT}|19:example0000000000000000000000000000@thread.v2`,
+    );
 
     const link = (chat, tenant, id) =>
       `https://teams.microsoft.com/l/message/${chat}/${id}?tenantId=${tenant}`;
     const chat = "19:example0000000000000000000000000000@thread.v2";
-    await drop("t2.json", { ...teams, sourceId: "t2", link: link(chat, TENANT, "1729999999999") });
+    await drop("t2.json", {
+      ...teams,
+      sourceId: "t2",
+      link: link(chat, TENANT, "1729999999999"),
+    });
     await drop("t3.json", {
       ...teams,
       sourceId: "t3",
@@ -326,7 +358,10 @@ describe("thread-aware intake: which messages become update cards", () => {
     const report = await pmo.ingestor.scan();
     assert.equal(report.ingested, 3);
     assert.equal(report.updates, 1);
-    assert.equal((await updateProposals())[0].summary.link, link(chat, TENANT, "1729999999999"));
+    assert.equal(
+      (await updateProposals())[0].summary.link,
+      link(chat, TENANT, "1729999999999"),
+    );
   });
 
   it("a closed to-do is not matched; the reply is a normal proposal", async () => {
@@ -347,7 +382,11 @@ describe("thread-aware intake: which messages become update cards", () => {
   it("a paste never matches, even in a known conversation", async () => {
     await todoFromThread();
     const paste = await example("manual-paste.json");
-    await drop("p.json", { ...paste, sourceId: "p", thread: { conversationId: "AAQkAGExampleConv1=" } });
+    await drop("p.json", {
+      ...paste,
+      sourceId: "p",
+      thread: { conversationId: "AAQkAGExampleConv1=" },
+    });
     assert.equal((await pmo.ingestor.scan()).updates, 0);
   });
 });
@@ -373,16 +412,21 @@ describe("the update card: approve, reject, separate", () => {
     assert.equal(next.waitingOn, null);
     assert.equal(next.waitingSince, null);
     assert.equal(next.dueAt, "2026-11-03");
-    assert.deepEqual(next.actionItems.map((i) => i.text), [
-      "Export the log",
-      "Review the log Jordan sent",
-    ]);
-    assert.match(next.description, /Update Mon, 26 Oct 2026: Jordan sent the consolidated log\./);
+    assert.deepEqual(
+      next.actionItems.map((i) => i.text),
+      ["Export the log", "Review the log Jordan sent"],
+    );
+    assert.match(
+      next.description,
+      /Update Mon, 26 Oct 2026: Jordan sent the consolidated log\./,
+    );
     const message = next.history.find((h) => h.kind === "message");
     assert.equal(message.intakeId, proposal.intakeId);
     assert.equal(message.from, "Jordan Sample");
     assert.match(message.text, /Applied: cleared waiting; due date now Tue, 3 Nov 2026/);
-    assert.ok(next.history.some((h) => h.kind === "waiting" && /no longer waiting/.test(h.text)));
+    assert.ok(
+      next.history.some((h) => h.kind === "waiting" && /no longer waiting/.test(h.text)),
+    );
 
     const after = await pmo.store.getProposal(proposal.id);
     assert.equal(after.status, "approved");
@@ -408,7 +452,10 @@ describe("the update card: approve, reject, separate", () => {
     assert.equal(next.dueAt, "2026-11-03");
     assert.equal(next.waitingOn, "Jordan Sample", "waiting was not ticked");
     assert.equal(next.actionItems.length, 1);
-    assert.match(next.history.find((h) => h.kind === "message").text, /3 suggested changes skipped/);
+    assert.match(
+      next.history.find((h) => h.kind === "message").text,
+      /3 suggested changes skipped/,
+    );
   });
 
   it("without a selection it uses the card's defaults (clear waiting only for a matching sender)", async () => {
@@ -474,8 +521,16 @@ describe("the update card: approve, reject, separate", () => {
     assert.equal(after.status, "ready");
     assert.ok(after.draft, "structured as a new to-do");
     assert.equal(ai.structureCalls.length, 2);
-    assert.deepEqual(await pmo.store.getTodo(todo.id), todo, "the existing to-do is untouched");
-    assert.ok((await readAudit()).some((a) => a.action === "update-separate" && a.why === "chosen"));
+    assert.deepEqual(
+      await pmo.store.getTodo(todo.id),
+      todo,
+      "the existing to-do is untouched",
+    );
+    assert.ok(
+      (await readAudit()).some(
+        (a) => a.action === "update-separate" && a.why === "chosen",
+      ),
+    );
 
     // It can now be approved like any proposal, and is a second to-do.
     const created = await approveProposal(pmo, proposal.id, {
@@ -494,7 +549,9 @@ describe("the update card: approve, reject, separate", () => {
       updateOutput({ kind: "unrelated", reason: "Different topic." }),
     );
     assert.equal((await updateProposals()).length, 0);
-    const [proposal] = (await proposals()).filter((p) => p.summary.subject.startsWith("RE:"));
+    const [proposal] = (await proposals()).filter((p) =>
+      p.summary.subject.startsWith("RE:"),
+    );
     assert.equal(proposal.status, "ready");
     assert.ok(proposal.draft);
     assert.equal(ai.updateCalls.length, 1);
@@ -510,14 +567,18 @@ describe("the update card: approve, reject, separate", () => {
     await patchTodo(pmo, made.todo.id, { status: "done" });
     await pmo.worker.kick();
     await pmo.worker.idle();
-    const [proposal] = (await proposals()).filter((p) => p.summary.subject.startsWith("RE:"));
+    const [proposal] = (await proposals()).filter((p) =>
+      p.summary.subject.startsWith("RE:"),
+    );
     assert.equal(proposal.update, null);
     assert.equal(proposal.status, "ready");
     assert.equal(ai.updateCalls.length, 0);
   });
 
   it("flags a quote that is not in the message, without rejecting the update", async () => {
-    const { proposal } = await readyUpdate(async () => updateOutput({ quote: "an invented sentence" }));
+    const { proposal } = await readyUpdate(async () =>
+      updateOutput({ quote: "an invented sentence" }),
+    );
     assert.equal(proposal.status, "ready");
     assert.equal(proposal.quoteVerified, false);
   });
@@ -687,7 +748,11 @@ describe("chaser drafts (local, copy-only)", () => {
     const started = await startChaserDraft(pmo, todo.id);
     assert.equal(started.ok, true);
     assert.equal(started.job.status, "drafting");
-    assert.equal(started.job.to, "jordan.sample@deloitte.com", "found in the original message's recipients");
+    assert.equal(
+      started.job.to,
+      "jordan.sample@deloitte.com",
+      "found in the original message's recipients",
+    );
     assert.equal(started.job.subject, "Re: Q4 programme status pack - input needed");
 
     await pmo.chaser.settled();
@@ -729,7 +794,8 @@ describe("chaser drafts (local, copy-only)", () => {
   it("a second click while drafting shares the job instead of queueing another model call", async () => {
     const todo = await waitingTodo();
     let release;
-    ai.chaserHandler = () => new Promise((resolve) => (release = () => resolve("Hi Jordan,\nPing.")));
+    ai.chaserHandler = () =>
+      new Promise((resolve) => (release = () => resolve("Hi Jordan,\nPing.")));
     const a = await startChaserDraft(pmo, todo.id);
     const b = await startChaserDraft(pmo, todo.id);
     assert.equal(a.job.id, b.job.id);
@@ -761,7 +827,10 @@ describe("chaser drafts (local, copy-only)", () => {
     assert.equal(down.text, null);
     assert.match((await failWith(runtimeError("timeout"))).error, /took too long/);
     assert.match((await failWith(runtimeError("invalid-output"))).error, /usable draft/);
-    assert.match((await failWith(runtimeError("model-missing", "ollama pull x"))).error, /ollama pull x/);
+    assert.match(
+      (await failWith(runtimeError("model-missing", "ollama pull x"))).error,
+      /ollama pull x/,
+    );
     assert.match((await failWith(new Error("boom"))).error, /boom/);
 
     // An empty answer is a failure, not an empty draft.
@@ -775,7 +844,11 @@ describe("chaser drafts (local, copy-only)", () => {
     await startChaserDraft(pmo, todo.id);
     await pmo.chaser.settled();
     assert.equal(pmo.chaser.snapshot()[todo.id].status, "ready");
-    assert.equal((await pmo.store.getTodo(todo.id)).history.filter((h) => h.kind === "chaser").length, 1);
+    assert.equal(
+      (await pmo.store.getTodo(todo.id)).history.filter((h) => h.kind === "chaser")
+        .length,
+      1,
+    );
   });
 
   it("keeps the original message's instructions out of the instructions", async () => {
@@ -877,8 +950,16 @@ describe("nothing is ever sent", () => {
     ];
     for (const file of files) {
       const text = await readFile(path.join(root, file), "utf8");
-      assert.ok(!/tasks-engine|nodemailer|smtp|sendmail|ActiveX|Outlook\.Application/i.test(text), file);
-      assert.ok(!/\bfetch\(|XMLHttpRequest|child_process|WebSocket/.test(text.replace(/\/\/.*$/gm, "")) || file.endsWith("ChaserDialog.tsx") === false, file);
+      assert.ok(
+        !/tasks-engine|nodemailer|smtp|sendmail|ActiveX|Outlook\.Application/i.test(text),
+        file,
+      );
+      assert.ok(
+        !/\bfetch\(|XMLHttpRequest|child_process|WebSocket/.test(
+          text.replace(/\/\/.*$/gm, ""),
+        ) || file.endsWith("ChaserDialog.tsx") === false,
+        file,
+      );
     }
     // The only external hand-off is the mailto: link, which opens an unsent compose window.
     const dialog = await readFile(
@@ -886,7 +967,10 @@ describe("nothing is ever sent", () => {
       "utf8",
     );
     assert.match(dialog, /href=\{mailto\.url\}/);
-    assert.ok(!/dangerouslySetInnerHTML/.test(dialog), "model text is shown as plain text");
+    assert.ok(
+      !/dangerouslySetInnerHTML/.test(dialog),
+      "model text is shown as plain text",
+    );
     const names = await readdir(path.join(root, "src/app/api/pmo/todos/[id]"));
     assert.deepEqual(names.sort(), ["chaser", "route.ts", "signoff"]);
   });

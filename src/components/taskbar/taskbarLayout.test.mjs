@@ -10,10 +10,13 @@ import {
   defaultPinnedIds,
   isDefaultPinnedIds,
   migrateLegacyPinned,
+  migrateOldDefaultOrder,
   pinId,
   placeId,
   reconcileBuiltIns,
   sanitizeIds,
+  showAppStoreShortcut,
+  tileClickAction,
   unpinId,
 } from "./taskbarLayout.ts";
 
@@ -254,5 +257,93 @@ describe("appIdForWindow", () => {
     );
     assert.equal(appIdForWindow({ appId: "web-app" }, byUrl, known), undefined);
     assert.equal(appIdForWindow({ appId: "mystery" }, byUrl, known), undefined);
+  });
+});
+
+describe("migrateOldDefaultOrder (PMO To-Do and Tasks first)", () => {
+  const NEW_DEFAULT = ["pmo-todo", "tasks", "files", "notes", "browser", "app-store"];
+  const OLD_DEFAULT = ["files", "notes", "browser", "tasks", "app-store", "pmo-todo"];
+
+  it("moves a layout that equals the old default to the new default", () => {
+    const layout = { pinnedIds: OLD_DEFAULT, knownBuiltInIds: OLD_DEFAULT };
+    assert.deepEqual(
+      migrateOldDefaultOrder(layout, NEW_DEFAULT),
+      defaultLayout(NEW_DEFAULT),
+    );
+  });
+
+  it("also upgrades the five-app default saved before PMO To-Do existed", () => {
+    const old5 = OLD_DEFAULT.slice(0, 5);
+    const layout = { pinnedIds: old5, knownBuiltInIds: old5 };
+    assert.deepEqual(
+      migrateOldDefaultOrder(layout, NEW_DEFAULT),
+      defaultLayout(NEW_DEFAULT),
+    );
+  });
+
+  it("leaves a customised layout alone (same reference)", () => {
+    for (const pinnedIds of [
+      ["notes", "files", "browser", "tasks", "app-store", "pmo-todo"],
+      OLD_DEFAULT.slice(0, 4),
+      [...OLD_DEFAULT, "gmail"],
+      [],
+    ]) {
+      const layout = { pinnedIds, knownBuiltInIds: OLD_DEFAULT };
+      assert.equal(migrateOldDefaultOrder(layout, NEW_DEFAULT), layout);
+    }
+  });
+
+  it("leaves an already-new default alone", () => {
+    const layout = defaultLayout(NEW_DEFAULT);
+    assert.equal(migrateOldDefaultOrder(layout, NEW_DEFAULT), layout);
+  });
+});
+
+describe("tileClickAction", () => {
+  const win = (id, over = {}) => ({
+    id,
+    isMinimized: false,
+    isFocused: false,
+    zIndex: 1,
+    ...over,
+  });
+
+  it("minimises the focused window of a running app", () => {
+    assert.deepEqual(tileClickAction([win("a", { isFocused: true })]), {
+      type: "minimize",
+      windowId: "a",
+    });
+  });
+
+  it("restores the topmost minimised window when none is focused", () => {
+    const windows = [
+      win("a", { isMinimized: true, zIndex: 2 }),
+      win("b", { isMinimized: true, zIndex: 5 }),
+    ];
+    assert.deepEqual(tileClickAction(windows), { type: "restore", windowId: "b" });
+  });
+
+  it("launches when the app has no windows or only unfocused visible ones", () => {
+    assert.deepEqual(tileClickAction([]), { type: "launch" });
+    assert.deepEqual(tileClickAction([win("a")]), { type: "launch" });
+  });
+
+  it("a focused window wins over an older minimised one", () => {
+    const windows = [
+      win("a", { isMinimized: true, zIndex: 9 }),
+      win("b", { isFocused: true }),
+    ];
+    assert.deepEqual(tileClickAction(windows), { type: "minimize", windowId: "b" });
+  });
+});
+
+describe("showAppStoreShortcut", () => {
+  it("hides the + while the App Store has its own tile", () => {
+    assert.equal(showAppStoreShortcut([{ id: "app-store", pinned: true }]), false);
+    assert.equal(showAppStoreShortcut([{ id: "app-store", pinned: false }]), false);
+  });
+  it("shows it when the App Store tile is unpinned and closed", () => {
+    assert.equal(showAppStoreShortcut([{ id: "files", pinned: true }]), true);
+    assert.equal(showAppStoreShortcut([]), true);
   });
 });

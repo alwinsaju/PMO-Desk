@@ -5,6 +5,7 @@ import { describe, it } from "node:test";
 import {
   OLLAMA_INSTALLER_ARGS,
   OLLAMA_INSTALLER_URL,
+  describeDownloadFailure,
   installOllama,
   isOllamaSignature,
   manualInstallSteps,
@@ -216,5 +217,127 @@ describe("installOllama", () => {
     const outcome = await installOllama(deps);
     assert.equal(outcome.message, "The installation was cancelled.");
     assert.equal(outcome.manualSteps, undefined);
+  });
+});
+
+describe("download failures", () => {
+  const withCode = (code) =>
+    new TypeError("fetch failed", { cause: Object.assign(new Error("inner"), { code }) });
+
+  it("names the network cause and the proxy setting", () => {
+    for (const code of ["ECONNRESET", "CERT_HAS_EXPIRED", "ENOTFOUND", "ETIMEDOUT"]) {
+      const message = describeDownloadFailure(withCode(code));
+      assert.match(message, new RegExp(`fetch failed, ${code}\\)`));
+      assert.match(
+        message,
+        /If your company uses a proxy, set HTTPS_PROXY and restart AI OS\./,
+      );
+    }
+    assert.doesNotMatch(describeDownloadFailure(new Error("boom")), /, [A-Z_]{5,}\)/);
+  });
+
+  it("shows the cause in the install result", async () => {
+    const { deps } = setup({
+      fetchImpl: async () => {
+        throw withCode("ECONNRESET");
+      },
+    });
+    const outcome = await installOllama(deps);
+    assert.match(outcome.message, /ECONNRESET/);
+    assert.ok(outcome.manualSteps);
+  });
+});
+
+describe("resuming an interrupted download", () => {
+  const bytes = new Uint8Array(20).map((_, i) => i);
+  const dropAfter = (count) => {
+    let offset = 0;
+    return new ReadableStream({
+      pull(controller) {
+        if (offset >= count) {
+          return controller.error(
+            Object.assign(new TypeError("terminated"), {
+              cause: { code: "ECONNRESET" },
+            }),
+          );
+        }
+        controller.enqueue(bytes.slice(offset, offset + 4));
+        offset += 4;
+      },
+    });
+  };
+  const track = (log) => ({
+    openWrite: async (path, options) => {
+      log.opens = [...(log.opens ?? []), options?.append === true];
+      return {
+        write: async (chunk) => log.writes.push([path, chunk.length]),
+        close: async () => {},
+      };
+    },
+  });
+
+  it("asks for the rest with a Range request and appends it", async () => {
+    const { deps, log } = setup();
+    const requests = [];
+    deps.fetchImpl = async (url, init) => {
+      requests.push(init?.headers?.Range);
+      return requests.length === 1
+        ? new Response(dropAfter(8), { headers: { "content-length": "20" } })
+        : new Response(body(bytes.slice(8)), {
+            status: 206,
+            headers: { "content-length": "12" },
+          });
+    };
+    Object.assign(deps, track(log));
+    const outcome = await installOllama(deps);
+
+    assert.equal(outcome.phase, "done");
+    assert.deepEqual(requests, [undefined, "bytes=8-"]);
+    assert.deepEqual(log.opens, [false, true]);
+    assert.equal(
+      log.writes.reduce((n, [, size]) => n + size, 0),
+      20,
+    );
+  });
+
+  it("starts over when the server ignores Range", async () => {
+    const { deps, log } = setup();
+    let calls = 0;
+    deps.fetchImpl = async () =>
+      ++calls === 1
+        ? new Response(dropAfter(8), { headers: { "content-length": "20" } })
+        : new Response(body(bytes), { headers: { "content-length": "20" } });
+    Object.assign(deps, track(log));
+    const outcome = await installOllama(deps);
+
+    assert.equal(outcome.phase, "done");
+    assert.deepEqual(log.opens, [false, false]);
+  });
+
+  it("gives up after a few resumes and reports the cause", async () => {
+    const { deps, log } = setup();
+    let calls = 0;
+    deps.fetchImpl = async () => {
+      calls++;
+      return new Response(dropAfter(8), { headers: { "content-length": "20" } });
+    };
+    Object.assign(deps, track(log));
+    const outcome = await installOllama(deps);
+
+    assert.equal(outcome.phase, "error");
+    assert.equal(calls, 4);
+    assert.match(outcome.message, /HTTPS_PROXY/);
+    assert.deepEqual(log.runs, []);
+  });
+
+  it("does not resume a refusal", async () => {
+    const { deps } = setup();
+    let calls = 0;
+    deps.fetchImpl = async () => {
+      calls++;
+      return new Response("no", { status: 407 });
+    };
+    await installOllama(deps);
+    assert.equal(calls, 1);
   });
 });

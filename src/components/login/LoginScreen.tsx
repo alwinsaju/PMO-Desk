@@ -1,9 +1,17 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type KeyboardEvent,
+} from "react";
 import { motion } from "motion/react";
 import { ArrowRightIcon, UserIcon } from "@phosphor-icons/react";
 import { cn } from "@/lib/cn";
+import { trapTarget } from "@/lib/focusKeys";
 import { easeEntrance, easeExit, springSnappy, springWindow } from "@/lib/motion";
 import { Wallpaper } from "@/components/desktop/Wallpaper";
 
@@ -75,9 +83,10 @@ export interface LoginScreenProps {
 }
 
 /**
- * The mocked lock screen shown before the desktop — there is no real user
- * or auth backend anywhere in this project, and the password field
- * intentionally accepts anything. The goal is purely the *feeling* of
+ * The lock screen shown before the desktop — there is no real user or auth
+ * backend anywhere in this project, so it asks for nothing: just
+ * "Press Enter or click Continue" (a password field here would look like
+ * security it does not provide). The goal is the *feeling* of
  * unlocking a real desktop OS (macOS/Windows lock-screen conventions): the
  * real `<Wallpaper />` tinted and heavily blurred behind a huge clock and a
  * frosted "sign in" card (avatar, name, a translucent password pill with a
@@ -105,8 +114,27 @@ export interface LoginScreenProps {
  * transition is actually done, so it can hide this screen for good.
  */
 export function LoginScreen({ isUnlocking, onUnlock, onExitComplete }: LoginScreenProps) {
-  const [password, setPassword] = useState("");
   const rootRef = useRef<HTMLDivElement>(null);
+  const continueRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    continueRef.current?.focus();
+  }, []);
+
+  // Tab/Shift+Tab cycle through the lock screen's own controls only.
+  function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.key !== "Tab") return;
+    const items = Array.from(
+      event.currentTarget.querySelectorAll<HTMLElement>("input, button"),
+    ).filter((el) => !(el as HTMLInputElement | HTMLButtonElement).disabled);
+    const next = trapTarget(
+      items.indexOf(document.activeElement as HTMLElement),
+      items.length,
+      event.shiftKey,
+    );
+    event.preventDefault();
+    if (next !== null) items[next].focus();
+  }
 
   // The blur-in leaves `filter: blur(0px)` on this full-screen element, and a
   // filtered full-viewport layer is re-rendered on every frame by a software
@@ -125,6 +153,10 @@ export function LoginScreen({ isUnlocking, onUnlock, onExitComplete }: LoginScre
   return (
     <motion.div
       ref={rootRef}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Lock screen"
+      onKeyDown={handleKeyDown}
       initial={{ opacity: 0, scale: 1.02, filter: "blur(16px)" }}
       animate={
         isUnlocking
@@ -223,47 +255,24 @@ export function LoginScreen({ isUnlocking, onUnlock, onExitComplete }: LoginScre
             <UserIcon size={40} weight="fill" />
           </span>
           <p className="text-xl font-semibold [text-shadow:0_2px_14px_rgba(40,30,80,0.3)]">
-            AI OS
+            Welcome
           </p>
 
-          <div
+          <button
+            type="submit"
+            ref={continueRef}
+            disabled={isUnlocking}
             className={cn(
-              "rounded-bar flex h-[52px] w-full items-center gap-2.5 py-0 pr-[7px] pl-[22px]",
-              "border border-white/45 bg-white/20",
-              "shadow-[inset_0_1px_0_rgba(255,255,255,0.4)]",
-              "ease-smooth transition-[box-shadow,background-color] duration-300",
-              "focus-within:bg-white/30 focus-within:shadow-[0_0_0_5px_rgba(255,255,255,0.2)]",
+              "rounded-bar flex h-[52px] w-full items-center justify-center gap-2.5 bg-white text-base font-semibold text-[#14302b]",
+              "ease-spring transition-transform duration-[400ms] hover:scale-[1.03]",
+              "focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-black/40 focus-visible:outline-none",
+              "disabled:opacity-60",
             )}
           >
-            <input
-              type="password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              disabled={isUnlocking}
-              autoFocus
-              placeholder="Password"
-              aria-label="Password"
-              className={cn(
-                "h-full min-w-0 flex-1 bg-transparent text-base tracking-[0.18em] text-white outline-none",
-                "placeholder:tracking-normal placeholder:text-white/80",
-                "disabled:cursor-not-allowed disabled:opacity-60",
-              )}
-            />
-            <button
-              type="submit"
-              aria-label="Unlock"
-              disabled={isUnlocking}
-              className={cn(
-                "rounded-orb grid h-[38px] w-[38px] shrink-0 place-items-center bg-white text-[#14302b]",
-                "ease-spring transition-transform duration-[400ms] hover:translate-x-0.5 hover:scale-110",
-                "focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-black/40 focus-visible:outline-none",
-                "disabled:opacity-60",
-              )}
-            >
-              <ArrowRightIcon size={18} weight="bold" />
-            </button>
-          </div>
-          <p className="text-[13px] text-white/85">Press Enter to unlock</p>
+            Continue
+            <ArrowRightIcon size={18} weight="bold" />
+          </button>
+          <p className="text-[13px] text-white/85">Press Enter or click Continue</p>
         </form>
       </motion.div>
     </motion.div>

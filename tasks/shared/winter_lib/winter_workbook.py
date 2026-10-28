@@ -49,7 +49,6 @@ MAX_FORMULA_CHARS = 8000
 
 # Winter Plan column positions (0-based)
 C_INDEX, C_NAME, C_LOC, C_TEAM, C_USUAL, C_LANE, C_DAY0 = 0, 1, 2, 3, 4, 5, 6
-PLAN_HEADER_ROWS = (3, 4, 5)  # 0-based rows of the plan header block
 PLAN_FIRST_ROW = 7  # 1-based first group-header row
 
 
@@ -181,10 +180,6 @@ def _title_date(d: date) -> str:
 
 def _subtitle(cfg: WinterConfig, what: str) -> str:
     return f"{what}  ·  {_title_date(cfg.start)} – {_title_date(cfg.end)}"
-
-
-def _n_text(n: float) -> str:
-    return str(int(n)) if float(n) == int(n) else str(n)
 
 
 def _fair_cols(plan: WinterPlan, cfg: WinterConfig) -> list[int]:

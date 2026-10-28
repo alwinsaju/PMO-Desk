@@ -619,7 +619,10 @@ describe("generateText and model control", () => {
   });
 
   it("keeps `think` on the repair round-trip too", async () => {
-    const replies = ['{"title":"","priority":"urgent"}', '{"title":"ok","priority":"low"}'];
+    const replies = [
+      '{"title":"","priority":"urgent"}',
+      '{"title":"ok","priority":"low"}',
+    ];
     const { client, calls } = makeClient(() => chatReply(replies.shift()));
     await client.generateJson({ prompt: "x", schema: todoSchema, think: false });
     assert.equal(calls.length, 2);

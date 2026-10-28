@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { checkOrigin, factsFromRequest } from "@/lib/pmo/server/originCheck";
+import { parseStatusContext } from "@/lib/setup/background";
 import {
   cancel,
   getStatus,
@@ -22,14 +23,20 @@ function refuse(request: Request): NextResponse | null {
 
 /** GET /api/setup -> { ok, report, jobs }: what first-run setup found on this
  *  computer, plus the progress of the install / model download / self-test.
- *  Read-only: it never installs, downloads or starts anything. */
+ *  Never installs or downloads anything; once Setup is open it may start an
+ *  installed Ollama so the model check can answer. */
 export async function GET(request: Request) {
   const refused = refuse(request);
   if (refused) return refused;
   try {
-    // ?fresh=1 (the "Check again" button) re-reads the slow Outlook facts too.
-    const fresh = new URL(request.url).searchParams.get("fresh") === "1";
-    return NextResponse.json({ ok: true, ...(await getStatus(fresh)) });
+    // ?launch=1 is the passive check at app start; ?fresh=1 (Setup opened, or the
+    // "Check again" button) re-reads the slow Outlook facts too.
+    const params = new URL(request.url).searchParams;
+    const context = parseStatusContext({
+      fresh: params.get("fresh"),
+      launch: params.get("launch"),
+    });
+    return NextResponse.json({ ok: true, ...(await getStatus(context)) });
   } catch (error) {
     console.error("[setup] status failed:", error);
     return NextResponse.json({
@@ -47,12 +54,17 @@ export async function GET(request: Request) {
  * background; the screen follows them through GET.
  *
  *   install-ollama | cancel-install | pull-model { model? } | pull-fallback-model |
- *   cancel-pull | run-selftest | choose-inbox { path }
+ *   cancel-pull | run-selftest | choose-inbox { path, confirmNonEmpty? }
  */
 export async function POST(request: Request) {
   const refused = refuse(request);
   if (refused) return refused;
-  let body: { action?: unknown; model?: unknown; path?: unknown };
+  let body: {
+    action?: unknown;
+    model?: unknown;
+    path?: unknown;
+    confirmNonEmpty?: unknown;
+  };
   try {
     body = await request.json();
   } catch {
@@ -84,7 +96,9 @@ export async function POST(request: Request) {
         result = startSelfTest();
         break;
       case "choose-inbox":
-        result = await saveInbox(body.path);
+        result = await saveInbox(body.path, {
+          confirmNonEmpty: body.confirmNonEmpty === true,
+        });
         break;
       default:
         result = { ok: false, reason: "Unknown action." };

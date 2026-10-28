@@ -126,6 +126,26 @@ export function reconcileBuiltIns(
   return { pinnedIds: [...layout.pinnedIds, ...fresh], knownBuiltInIds: known };
 }
 
+/** Pinned orders earlier releases shipped as the default taskbar. */
+const OLD_DEFAULT_PINNED_IDS: readonly (readonly string[])[] = [
+  ["files", "notes", "browser", "tasks", "app-store"],
+  ["files", "notes", "browser", "tasks", "app-store", "pmo-todo"],
+];
+
+/** A saved layout that is exactly an OLD default moves to the current
+ *  default order; any customised layout is returned untouched (same ref). */
+export function migrateOldDefaultOrder(
+  layout: TaskbarLayout,
+  builtInIds: readonly string[],
+): TaskbarLayout {
+  const isOldDefault = OLD_DEFAULT_PINNED_IDS.some((old) =>
+    isDefaultPinnedIds(layout.pinnedIds, old),
+  );
+  return isOldDefault && !isDefaultPinnedIds(layout.pinnedIds, builtInIds)
+    ? defaultLayout(builtInIds)
+    : layout;
+}
+
 /**
  * Upgrades the first persisted shape (`{ pinnedIds }` holding ONLY the extra
  * App Store pins, with the 5 built-ins implicitly always present before
@@ -177,4 +197,37 @@ export function appIdForWindow(
     return window.url === undefined ? undefined : appIdByUrl.get(window.url);
   }
   return knownAppIds.has(window.appId) ? window.appId : undefined;
+}
+
+export interface TileWindow {
+  id: string;
+  isMinimized: boolean;
+  isFocused: boolean;
+  zIndex: number;
+}
+
+export type TileClickAction =
+  | { type: "minimize"; windowId: string }
+  | { type: "restore"; windowId: string }
+  | { type: "launch" };
+
+/** What clicking a PINNED tile does, given the windows of its app: a focused
+ *  window is minimised, a minimised one is brought back, else a new one opens. */
+export function tileClickAction(windows: readonly TileWindow[]): TileClickAction {
+  const topmost = (list: readonly TileWindow[]) =>
+    list.reduce<TileWindow | undefined>(
+      (best, w) => (!best || w.zIndex >= best.zIndex ? w : best),
+      undefined,
+    );
+  const focused = topmost(windows.filter((w) => w.isFocused && !w.isMinimized));
+  if (focused) return { type: "minimize", windowId: focused.id };
+  const minimized = topmost(windows.filter((w) => w.isMinimized));
+  if (minimized) return { type: "restore", windowId: minimized.id };
+  return { type: "launch" };
+}
+
+/** The dock's "+" is a second door to the App Store; it is only shown while
+ *  the App Store has no tile of its own. */
+export function showAppStoreShortcut(items: readonly TaskbarItem[]): boolean {
+  return !items.some((item) => item.id === "app-store");
 }

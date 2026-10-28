@@ -18,6 +18,7 @@ import {
   Tooltip,
 } from "@/components/ui";
 import { cn } from "@/lib/cn";
+import { FILE_SIZE, formatBytes } from "@/lib/format";
 import { getInputs, prepare, saveParams, uploadInput } from "./api";
 import { SectionLabel, SeverityChip } from "./GateParts";
 import {
@@ -28,7 +29,6 @@ import {
   defaultChoice,
   emptyFileHint,
   fileInputs,
-  formatBytes,
   formatUploaded,
   hasPrepare,
   holidaySourceLine,
@@ -472,7 +472,7 @@ function FileInput({
               <span className="min-w-0 truncate">{status?.filename ?? "Uploaded"}</span>
               {status?.size != null && (
                 <span className="text-ink-muted shrink-0">
-                  {formatBytes(status.size)}
+                  {formatBytes(status.size, FILE_SIZE)}
                 </span>
               )}
               <span className="text-ink-muted shrink-0">

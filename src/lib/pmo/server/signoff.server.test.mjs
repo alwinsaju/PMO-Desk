@@ -14,6 +14,7 @@ import { afterEach, beforeEach, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { approveProposal, approveUpdate, patchTodo } from "./actions.ts";
 import { createPmo } from "./create.ts";
+import { developerConfig } from "../developerDefaults.ts";
 import {
   confirmSignoffConditionsAction,
   discardSignoffDraft,
@@ -132,7 +133,13 @@ beforeEach(async () => {
   inboxDir = await mkdtemp(path.join(os.tmpdir(), "pmo-so-inbox-"));
   clock = new Date("2026-10-26T05:00:00.000Z"); // Monday 10:30 IST
   ai = fakeModel();
-  pmo = await createPmo({ dataDir, inboxDir, generator: ai, now: () => clock });
+  pmo = await createPmo({
+    dataDir,
+    inboxDir,
+    seedConfig: developerConfig(),
+    generator: ai,
+    now: () => clock,
+  });
 });
 
 afterEach(async () => {
@@ -604,6 +611,7 @@ describe("reply detection through the normal inbox", () => {
     assert.equal(result.signoff, "approved");
     assert.equal(result.signoffQuoteVerified, true);
     assert.equal(result.signoffGuard ?? null, null);
+    assert.equal(result.suspicious, false);
     const plan = await planFor(proposal, await getTodo(todo.id));
     const change = plan.changes.find((c) => c.id === "signoff");
     assert.equal(change.defaultOn, true);
@@ -690,7 +698,13 @@ describe("reply detection through the normal inbox", () => {
       dataDir = await mkdtemp(path.join(os.tmpdir(), "pmo-so-data-"));
       inboxDir = await mkdtemp(path.join(os.tmpdir(), "pmo-so-inbox-"));
       ai = fakeModel();
-      pmo = await createPmo({ dataDir, inboxDir, generator: ai, now: () => clock });
+      pmo = await createPmo({
+        dataDir,
+        inboxDir,
+        seedConfig: developerConfig(),
+        generator: ai,
+        now: () => clock,
+      });
       ai.updateHandler = async () =>
         updateOutput({ signoff, signoffQuote: quote, quote });
       const todo = await requested();
@@ -714,7 +728,13 @@ describe("reply detection through the normal inbox", () => {
     dataDir = await mkdtemp(path.join(os.tmpdir(), "pmo-so-data-"));
     inboxDir = await mkdtemp(path.join(os.tmpdir(), "pmo-so-inbox-"));
     ai = fakeModel();
-    pmo = await createPmo({ dataDir, inboxDir, generator: ai, now: () => clock });
+    pmo = await createPmo({
+      dataDir,
+      inboxDir,
+      seedConfig: developerConfig(),
+      generator: ai,
+      now: () => clock,
+    });
     const quote = "Approved, but only once the risk table is added.";
     ai.updateHandler = async () =>
       updateOutput({ signoff: "approved_with_conditions", signoffQuote: quote, quote });
@@ -777,6 +797,7 @@ describe("reply detection through the normal inbox", () => {
     const proposal = await updateProposal();
     const { result } = proposal.update;
     assert.equal(result.signoff, "unclear");
+    assert.equal(result.suspicious, true);
     assert.match(result.signoffGuard, /wording aimed at the assistant/);
     const plan = await planFor(proposal, await getTodo(todo.id));
     assert.equal(

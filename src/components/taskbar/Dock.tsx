@@ -14,6 +14,7 @@ import { springSnappy } from "@/lib/motion";
 import { AppMenu } from "./AppMenu";
 import { DockTile, dockTileClassName, type TileRunState } from "./DockTile";
 import { builtInAppIds, builtInApps } from "./pinnedApps";
+import { launchBuiltInApp } from "./launchBuiltInApp";
 import { useDockBadgeStore } from "./dockBadgeStore";
 import { APP_DRAG_MIME_TYPE, usePinnedAppsStore } from "./pinnedAppsStore";
 import {
@@ -21,6 +22,8 @@ import {
   buildTaskbarItems,
   defaultPinnedIds,
   isDefaultPinnedIds,
+  showAppStoreShortcut,
+  tileClickAction,
 } from "./taskbarLayout";
 
 /** Everything the dock needs to draw and launch one app, whether it is a
@@ -36,15 +39,10 @@ interface TaskbarApp {
 // sources are static data.
 const taskbarApps = new Map<string, TaskbarApp>();
 for (const app of builtInApps) {
-  const IconGlyph = app.icon;
   taskbarApps.set(app.id, {
     label: app.title,
     icon: app.icon,
-    launch: () =>
-      useWindowStore.getState().openWindow(app.id, {
-        title: app.title,
-        icon: <IconGlyph />,
-      }),
+    launch: () => void launchBuiltInApp(app.id),
   });
 }
 for (const app of appCatalog) {
@@ -79,19 +77,18 @@ function focusAppWindow(appId: string) {
   else taskbarApps.get(appId)?.launch();
 }
 
-/** If `appId` has a MINIMIZED window, brings the topmost one back (restore +
- *  focus) and returns true. A pinned tile's click uses this so it doesn't
- *  pile a new window on top of one the user just tucked away; with no
- *  minimized window it returns false and the click launches as before. */
-function restoreMinimizedAppWindow(appId: string): boolean {
-  const { windows, restoreWindow } = useWindowStore.getState();
-  const minimized = Object.values(windows)
-    .filter((w) => w.isMinimized && appIdForWindow(w, appIdByUrl, knownAppIds) === appId)
-    .sort((a, b) => a.zIndex - b.zIndex)
-    .at(-1);
-  if (!minimized) return false;
-  restoreWindow(minimized.id);
-  return true;
+/** A pinned tile's click: minimises the app's focused window, restores a
+ *  minimised one, and only opens a new window when there is neither (so it
+ *  never piles windows up). "New window" in the tile's menu forces one. */
+function clickPinnedTile(appId: string) {
+  const { windows, restoreWindow, minimizeWindow } = useWindowStore.getState();
+  const own = Object.values(windows).filter(
+    (w) => appIdForWindow(w, appIdByUrl, knownAppIds) === appId,
+  );
+  const action = tileClickAction(own);
+  if (action.type === "minimize") minimizeWindow(action.windowId);
+  else if (action.type === "restore") restoreWindow(action.windowId);
+  else taskbarApps.get(appId)?.launch();
 }
 
 const subscribeNever = () => () => {};
@@ -277,15 +274,11 @@ export function Dock() {
               onDrop={pinned ? (event) => handleTileDrop(event, id) : undefined}
             >
               <DockTile
+                appId={id}
                 label={app.label}
                 icon={app.icon}
-                onClick={
-                  pinned
-                    ? () => {
-                        if (!restoreMinimizedAppWindow(id)) app.launch();
-                      }
-                    : () => focusAppWindow(id)
-                }
+                onClick={pinned ? () => clickPinnedTile(id) : () => focusAppWindow(id)}
+                onNewWindow={app.launch}
                 running={runStateOf(id)}
                 pinned={pinned}
                 onTogglePinned={() => (pinned ? unpinApp(id) : pinApp(id))}
@@ -328,16 +321,18 @@ export function Dock() {
 
         <AppMenu />
 
-        <Tooltip label="App Store" side="bottom" sideOffset={16}>
-          <button
-            type="button"
-            aria-label="Open App Store"
-            onClick={openAppStore}
-            className={dockTileClassName}
-          >
-            <PlusIcon size={23} />
-          </button>
-        </Tooltip>
+        {showAppStoreShortcut(items) && (
+          <Tooltip label="Get more apps" side="bottom" sideOffset={16}>
+            <button
+              type="button"
+              aria-label="Open App Store"
+              onClick={openAppStore}
+              className={dockTileClassName}
+            >
+              <PlusIcon size={23} />
+            </button>
+          </Tooltip>
+        )}
       </div>
     </nav>
   );

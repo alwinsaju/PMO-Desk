@@ -13,6 +13,7 @@ import {
   type RecordableOutcome,
 } from "./signoff.ts";
 import { istDate } from "./time.ts";
+import { looksLikeInjection } from "./signoff.ts";
 import { looksLikeReplyFrom } from "./thread.ts";
 import type { TodoPatch } from "./todoLogic.ts";
 import type { AiUpdate, SignoffClass, Todo, UpdateKind } from "./types.ts";
@@ -78,7 +79,21 @@ export interface UpdateContext {
   sender: UpdateSender;
   /** When the new message arrived (for the dated note). */
   receivedAt: string;
+  /** The reminder time zone for the dated note; blank or unknown means the default. */
+  timeZone?: string;
+  /** The message's subject and text, when the caller has them, for the
+   *  injection check (the server stores the result as `result.suspicious`). */
+  messageText?: string;
 }
+
+/** Why a card opens with every suggestion unticked. */
+export type UntickedReason = "sender" | "injection";
+
+export const UNTICKED_REASON_TEXT: Record<UntickedReason, string> = {
+  sender: "Not ticked: the sender is not part of this to-do",
+  injection:
+    "Not ticked: the message contains wording that looks like instructions to the assistant",
+};
 
 export interface UpdatePlan {
   changes: UpdateChange[];
@@ -90,6 +105,9 @@ export interface UpdatePlan {
   kind: UpdateKind;
   /** Set when the to-do was awaiting a sign-off and the model read a reply to it. */
   signoff: SignoffSuggestion | null;
+  /** Set when there are changes but none is ticked because of who sent the
+   *  message or what it says. */
+  untickedReason: UntickedReason | null;
 }
 
 const dayLabel = (day: string) =>
@@ -101,13 +119,29 @@ const dayLabel = (day: string) =>
     year: "numeric",
   }).format(new Date(`${day}T00:00:00Z`));
 
-const squash = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+const squash = (text: string) =>
+  text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
 
 const senderLabel = (sender: UpdateSender) =>
   sender.name?.trim() || sender.address?.trim() || "the sender";
 
 /** The most a to-do description can hold (TodoPatchSchema). */
 const MAX_DESCRIPTION = 4000;
+
+/** Is the sender the requester, the owner or the person waited on? */
+const senderIsParty = (todo: Todo, sender: UpdateSender): boolean => {
+  const named = [
+    todo.waitingOn,
+    todo.requester?.name,
+    todo.requester?.email,
+    todo.owner?.name,
+    todo.owner?.email,
+  ];
+  return named.some((person) => !!person && looksLikeReplyFrom(person, sender));
+};
 
 /**
  * What approving this update would change in `todo`. Checks that make it
@@ -120,7 +154,8 @@ export function planUpdate(todo: Todo, result: AiUpdate, ctx: UpdateContext): Up
   const changes: UpdateChange[] = [];
   const sender = senderLabel(ctx.sender);
   const waitingOn = todo.waitingOn?.trim() || null;
-  const replyFrom = waitingOn && looksLikeReplyFrom(waitingOn, ctx.sender) ? sender : null;
+  const replyFrom =
+    waitingOn && looksLikeReplyFrom(waitingOn, ctx.sender) ? sender : null;
   let signoff: SignoffSuggestion | null = null;
 
   if (result.kind !== "unrelated") {
@@ -247,7 +282,7 @@ export function planUpdate(todo: Todo, result: AiUpdate, ctx: UpdateContext): Up
     if (note) {
       const received = Number.isNaN(Date.parse(ctx.receivedAt))
         ? null
-        : istDate(ctx.receivedAt);
+        : istDate(ctx.receivedAt, ctx.timeZone);
       const line = `Update${received ? ` ${dayLabel(received)}` : ""}: ${note}`;
       const description = todo.description.trimEnd();
       const next = description ? `${description}\n\n${line}` : line;
@@ -265,13 +300,26 @@ export function planUpdate(todo: Todo, result: AiUpdate, ctx: UpdateContext): Up
     }
   }
 
+  const injected =
+    result.suspicious === true ||
+    (ctx.messageText !== undefined && looksLikeInjection(ctx.messageText));
+  const outsider =
+    !senderIsParty(todo, ctx.sender) &&
+    !(
+      awaitingSignoff(todo) &&
+      senderIsApprover(awaitingSignoff(todo)!.approver, ctx.sender)
+    );
+  const untickedReason: UntickedReason | null =
+    changes.length === 0 ? null : injected ? "injection" : outsider ? "sender" : null;
+  if (untickedReason) for (const change of changes) change.defaultOn = false;
+
   const kind: UpdateKind =
     result.kind === "unrelated"
       ? "unrelated"
       : changes.length === 0
         ? "nothing"
         : result.kind;
-  return { changes, replyFrom, kind, signoff };
+  return { changes, replyFrom, kind, signoff, untickedReason };
 }
 
 /** Merge the patches of the ticked changes into one patch (an action item list
@@ -316,7 +364,12 @@ export function describeApplied(
         return `recorded the sign-off (${(change.after ?? "").toLowerCase()})`;
     }
   });
-  const did = parts.length ? `Applied: ${parts.join("; ")}.` : "Linked, no changes applied.";
-  const skipped = declined > 0 ? ` (${declined} suggested change${declined === 1 ? "" : "s"} skipped.)` : "";
+  const did = parts.length
+    ? `Applied: ${parts.join("; ")}.`
+    : "Linked, no changes applied.";
+  const skipped =
+    declined > 0
+      ? ` (${declined} suggested change${declined === 1 ? "" : "s"} skipped.)`
+      : "";
   return `${summary ? `${summary.replace(/\s+$/, "")} ` : ""}${did}${skipped}`.trim();
 }

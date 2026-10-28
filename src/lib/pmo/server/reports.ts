@@ -210,7 +210,13 @@ export const SaveReportBodySchema = z.object({
 export type SaveReportBody = z.infer<typeof SaveReportBodySchema>;
 
 export type SaveResult =
-  | { ok: true; id: string; revision: number; savedAt: string; summary: SavedReportSummary }
+  | {
+      ok: true;
+      id: string;
+      revision: number;
+      savedAt: string;
+      summary: SavedReportSummary;
+    }
   | { ok: false; reason: string };
 
 const fail = (reason: string): { ok: false; reason: string } => ({ ok: false, reason });
@@ -277,7 +283,7 @@ export async function saveReport(
       end: body.period.end,
     });
     if (!request.success) return fail("That period is not valid.");
-    const built = buildReport(await store.listTodos(), deps.now, request.data, config);
+    const built = buildReport(await store.listAllTodos(), deps.now, request.data, config);
     if (!built.ok) return fail(built.reason);
     const { data } = built;
     const kind: PeriodKind = body.period.kind ?? "custom";

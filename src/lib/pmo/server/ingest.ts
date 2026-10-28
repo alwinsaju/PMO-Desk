@@ -3,11 +3,14 @@
 // folder, and turns each into a pending proposal or a quarantine record.
 // Polling readdir, not fs.watch: a OneDrive-synced folder delivers files in
 // ways file watchers miss. Read-only toward everything except deleting the
-// files it has dealt with; it sends nothing anywhere.
+// files it has dealt with; it sends nothing anywhere. It only ever moves a file
+// that is a failed pmo-intake message (see intakeProbe.ts); any other file in
+// the folder is left exactly where it is and merely counted.
 import { readFile, readdir, stat, unlink } from "node:fs/promises";
 import path from "node:path";
-import { dedupeKey, idsForKey } from "../dedupe.ts";
+import { dedupeKey, deriveSourceId, idsForKey } from "../dedupe.ts";
 import { filterIntake, teamsIdsOf } from "../filter.ts";
+import { looksLikeIntake } from "../intakeProbe.ts";
 import { pickMatchingTodo, threadKeyOf } from "../thread.ts";
 import {
   IntakeSchema,
@@ -21,13 +24,19 @@ import type { Store } from "./store.ts";
 
 /** A file younger than this may still be mid-write by its producer. */
 export const MIN_FILE_AGE_MS = 3_000;
-export const MAX_FILE_BYTES = 1_000_000;
+/** A file above this is not read at all; it is reported as too large. The body
+ *  of a smaller one is shortened to MAX_BODY_CHARS. */
+export const HARD_MAX_FILE_BYTES = 20_000_000;
+/** Only this much of a message body is kept; `Proposal.messageShortened` says so. */
+export const MAX_BODY_CHARS = 1_000_000;
 /** An unparsable file is retried on this many scans before it is parked. */
 export const MAX_PARSE_FAILURES = 3;
 
 export interface ScanReport {
   at: string;
   inboxDir: string;
+  /** false = first-run setup is not finished or no inbox is chosen: the scan did nothing. */
+  configured: boolean;
   inboxExists: boolean;
   ingested: number;
   duplicates: number;
@@ -39,6 +48,30 @@ export interface ScanReport {
   /** Too new, too large or otherwise left for a later scan. */
   skipped: number;
   errors: string[];
+  /** Names of files in the inbox that are not PMO messages: left untouched. */
+  foreign: string[];
+  /** Names of files too large to take in: left untouched. */
+  oversized: string[];
+  /** Names of files this scan could not read. */
+  errored: string[];
+}
+
+/** Names the sync client or an editor leaves beside real files; never worth a count. */
+export function isIncidentalName(name: string): boolean {
+  return (
+    name.startsWith(".") ||
+    name.startsWith("~$") ||
+    /\.(tmp|part|crdownload|partial)$/i.test(name) ||
+    /^(desktop\.ini|thumbs\.db)$/i.test(name)
+  );
+}
+
+function clipBody(text: string): { text: string; shortened: boolean } {
+  if (text.length <= MAX_BODY_CHARS) return { text, shortened: false };
+  const cut = text.charCodeAt(MAX_BODY_CHARS - 1);
+  // Do not end on half of a surrogate pair.
+  const end = cut >= 0xd800 && cut <= 0xdbff ? MAX_BODY_CHARS - 1 : MAX_BODY_CHARS;
+  return { text: text.slice(0, end), shortened: true };
 }
 
 export function summarise(intake: Intake): IntakeSummary {
@@ -64,8 +97,16 @@ export class Ingestor {
   private readonly inboxDir: IngestorOptions["inboxDir"];
   private readonly now: () => number;
   private failures = new Map<string, number>();
+  /** Files that are not PMO messages, by `name:mtime:size`, so an unchanged one
+   *  is not read again on every scan. Rebuilt each scan from the files still there. */
+  private leftAlone = new Map<string, "foreign" | "oversized">();
+  /** Repeat files already counted in `duplicatesIgnored`, so a file that cannot
+   *  be removed is counted once. */
+  private countedDuplicates = new Set<string>();
   private inFlight: Promise<ScanReport> | null = null;
   last: ScanReport | null = null;
+  /** Exact repeats of an already-seen message dropped since the app started. */
+  duplicatesIgnored = 0;
 
   constructor(options: IngestorOptions) {
     this.store = options.store;
@@ -87,6 +128,7 @@ export class Ingestor {
     const report: ScanReport = {
       at: new Date(this.now()).toISOString(),
       inboxDir: dir,
+      configured: true,
       inboxExists: true,
       ingested: 0,
       duplicates: 0,
@@ -95,11 +137,26 @@ export class Ingestor {
       updates: 0,
       skipped: 0,
       errors: [],
+      foreign: [],
+      oversized: [],
+      errored: [],
     };
 
-    let names: string[];
+    let names: string[] = [];
+    // Nothing is read, filtered or created until the person has finished the
+    // first-run wizard and an inbox folder is chosen.
+    if (config.setupComplete !== true || !dir) {
+      report.configured = false;
+      report.inboxExists = false;
+      this.last = report;
+      return report;
+    }
     try {
-      names = (await readdir(dir)).filter((name) => /\.json$/i.test(name));
+      for (const entry of await readdir(dir, { withFileTypes: true })) {
+        if (!entry.isFile() || isIncidentalName(entry.name)) continue;
+        if (/\.json$/i.test(entry.name)) names.push(entry.name);
+        else report.foreign.push(entry.name); // never touched, only counted
+      }
     } catch (error) {
       // Never create the folder: it is where the producer's sync lives.
       report.inboxExists = false;
@@ -112,12 +169,14 @@ export class Ingestor {
       return report;
     }
 
-    names.sort();
+    names = names.sort();
+    const stillThere = new Map<string, "foreign" | "oversized">();
     for (const name of names) {
       try {
-        await this.handleFile(path.join(dir, name), name, config, report);
+        await this.handleFile(path.join(dir, name), name, config, report, stillThere);
       } catch (error) {
         report.errors.push(`${name}: ${(error as Error).message}`);
+        report.errored.push(name);
         await this.store.logIngest({
           file: name,
           outcome: "error",
@@ -125,8 +184,41 @@ export class Ingestor {
         });
       }
     }
+    this.leftAlone = stillThere;
+    report.foreign.sort();
     this.last = report;
     return report;
+  }
+
+  /** A file that is not (or cannot be taken in as) a PMO message: report it, leave it alone. */
+  private async leaveAlone(
+    kind: "foreign" | "oversized",
+    name: string,
+    info: { size: number; mtimeMs: number },
+    report: ScanReport,
+    stillThere: Map<string, "foreign" | "oversized">,
+  ): Promise<void> {
+    stillThere.set(`${name}:${info.mtimeMs}:${info.size}`, kind);
+    if (kind === "oversized") {
+      report.skipped++;
+      report.oversized.push(name);
+    } else {
+      report.foreign.push(name);
+    }
+    await this.once(`${kind}:${name}:${info.mtimeMs}:${info.size}`, () =>
+      this.store.logIngest({
+        file: name,
+        outcome: kind === "oversized" ? "skipped-too-large" : "ignored-not-intake",
+        bytes: info.size,
+      }),
+    );
+  }
+
+  private countDuplicate(signature: string): void {
+    if (this.countedDuplicates.has(signature)) return;
+    if (this.countedDuplicates.size > 5_000) this.countedDuplicates.clear();
+    this.countedDuplicates.add(signature);
+    this.duplicatesIgnored++;
   }
 
   private async handleFile(
@@ -134,18 +226,12 @@ export class Ingestor {
     name: string,
     config: PmoConfig,
     report: ScanReport,
+    stillThere: Map<string, "foreign" | "oversized">,
   ): Promise<void> {
     const info = await stat(filePath);
     if (!info.isFile()) return;
-    if (info.size > MAX_FILE_BYTES) {
-      report.skipped++;
-      await this.once(`large:${name}:${info.mtimeMs}`, () =>
-        this.store.logIngest({
-          file: name,
-          outcome: "skipped-too-large",
-          bytes: info.size,
-        }),
-      );
+    if (info.size > HARD_MAX_FILE_BYTES) {
+      await this.leaveAlone("oversized", name, info, report, stillThere);
       return;
     }
     if (this.now() - info.mtimeMs < MIN_FILE_AGE_MS) {
@@ -153,10 +239,25 @@ export class Ingestor {
       return;
     }
 
+    const signature = `${name}:${info.mtimeMs}:${info.size}`;
+    const known = this.leftAlone.get(signature);
+    if (known) {
+      await this.leaveAlone(known, name, info, report, stillThere);
+      return;
+    }
+
+    // A read error is not the file's content: it is reported, never counted
+    // towards parking.
+    const text = (await readFile(filePath, "utf8")).replace(/^\uFEFF/, "");
+    if (!looksLikeIntake(text)) {
+      await this.leaveAlone("foreign", name, info, report, stillThere);
+      return;
+    }
+
     const failureKey = `${name}:${info.mtimeMs}`;
     let intake: Intake;
+    let shortened = false;
     try {
-      const text = (await readFile(filePath, "utf8")).replace(/^﻿/, "");
       const parsed = IntakeSchema.safeParse(JSON.parse(text));
       if (!parsed.success) {
         throw new Error(
@@ -166,7 +267,15 @@ export class Ingestor {
             .join("; "),
         );
       }
-      intake = parsed.data;
+      // A blank sourceId is allowed (contract): the content hash stands in.
+      intake = parsed.data.sourceId
+        ? parsed.data
+        : { ...parsed.data, sourceId: deriveSourceId(parsed.data) };
+      const body = clipBody(intake.body.text);
+      if (body.shortened) {
+        shortened = true;
+        intake = { ...intake, body: { ...intake.body, text: body.text } };
+      }
     } catch (error) {
       const reason =
         error instanceof SyntaxError
@@ -199,6 +308,7 @@ export class Ingestor {
       await this.removeInboxFile(filePath, name);
       await this.store.logIngest({ file: name, outcome: "duplicate", intakeId });
       report.duplicates++;
+      this.countDuplicate(signature);
       return;
     }
 
@@ -268,6 +378,7 @@ export class Ingestor {
             : null,
           createdAt: nowIso,
           updatedAt: nowIso,
+          ...(shortened ? { messageShortened: true } : {}),
         };
         await this.store.putProposal(proposal);
       }

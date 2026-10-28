@@ -23,6 +23,10 @@ OUTPUT_DIR = os.path.join(AGENT_DIR, "output")
 sys.path.insert(0, os.path.join(WORKSPACE_DIR, "shared", "roster"))
 from name_matching import load_roster  # noqa: E402
 
+# Draft addressing lives here so create_draft.ps1 and the 'Confirm & send' dialog show the same values.
+MAIL_TO = "USPDTOperate <uspdtoperate@deloitte.com>"
+MAIL_CC = "Peethambaram, Sreela <speethambaram@deloitte.com>; Atchula, Rupavani <ratchula@deloitte.com>; Sarab, Mani Deep <msarab@deloitte.com>"
+
 
 def main():
     sidecar_path = os.path.join(OUTPUT_DIR, "pivot-input.json")
@@ -67,6 +71,10 @@ def main():
 
     data = {
         "workbook_path": workbook_path,
+        "to": MAIL_TO,
+        "cc": MAIL_CC,
+        "subject": f"Backlog Incidents | {sidecar['date_str']}",
+        "attachments": [os.path.basename(workbook_path)],
         "date_str": sidecar["date_str"],
         "grand_total": grand_total_row["total"],
         "rows": rows,

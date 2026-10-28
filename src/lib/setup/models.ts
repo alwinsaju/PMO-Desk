@@ -1,6 +1,7 @@
 // What the first-run setup knows about the local AI models: which ones it may
 // pull, roughly how big they are, and what to warn about before a multi-GB
 // download starts. Pure: no I/O, so `pnpm test` covers it directly.
+import { MODEL_SIZE, formatBytes } from "../format.ts";
 
 /** Used when the default model does not fit this computer (see core.ts). */
 export const FALLBACK_MODEL = "qwen3.5:9b";
@@ -20,11 +21,23 @@ export const MODEL_NEEDS: Readonly<Record<string, ModelNeeds>> = {
   "qwen3.5:9b": { sizeBytes: 6.6 * GB, minRamBytes: 12 * 1024 ** 3 },
 };
 
-export function formatBytes(bytes: number): string {
-  if (!Number.isFinite(bytes) || bytes < 0) return "unknown";
-  if (bytes < 1_000_000) return `${Math.max(1, Math.round(bytes / 1_000))} KB`;
-  if (bytes < GB) return `${Math.round(bytes / 1_000_000)} MB`;
-  return `${(bytes / GB).toFixed(bytes < 10 * GB ? 1 : 0)} GB`;
+/** "about 6.6 GB" for a model in the size table, else "of unknown size" (reads
+ *  after "a download"). The table is MODEL_NEEDS: one place for both. */
+export function downloadSizeText(model: string): string {
+  const needs = Object.entries(MODEL_NEEDS).find(([tag]) => sameModel(tag, model));
+  return needs
+    ? `about ${formatBytes(needs[1].sizeBytes, MODEL_SIZE)}`
+    : "of unknown size";
+}
+
+/** The model a download request is for: the smaller one when asked, else the
+ *  one named, else the one in use. */
+export function modelToPull(input: {
+  requested: string | undefined;
+  fallback: boolean;
+  active: string;
+}): string {
+  return input.fallback ? FALLBACK_MODEL : input.requested?.trim() || input.active;
 }
 
 /** Only the configured default model and the fallback may be pulled from the UI. */
@@ -70,11 +83,11 @@ export function preflight({
   if (freeDiskBytes !== null) {
     if (freeDiskBytes < needs.sizeBytes * 1.05) {
       blocked =
-        `There is not enough free disk space: ${model} needs about ${formatBytes(needs.sizeBytes)} ` +
-        `and only ${formatBytes(freeDiskBytes)} is free. Free up space and try again.`;
+        `There is not enough free disk space: ${model} needs about ${formatBytes(needs.sizeBytes, MODEL_SIZE)} ` +
+        `and only ${formatBytes(freeDiskBytes, MODEL_SIZE)} is free. Free up space and try again.`;
     } else if (freeDiskBytes < needs.sizeBytes + 5 * GB) {
       warnings.push(
-        `Disk space is tight: ${formatBytes(freeDiskBytes)} free for a ${formatBytes(needs.sizeBytes)} download.`,
+        `Disk space is tight: ${formatBytes(freeDiskBytes, MODEL_SIZE)} free for a ${formatBytes(needs.sizeBytes, MODEL_SIZE)} download.`,
       );
     }
   }

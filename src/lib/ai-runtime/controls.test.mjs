@@ -3,6 +3,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { DEFAULT_AI_RUNTIME_CONFIG, loadAiRuntimeConfig } from "./core.ts";
+import { waitFor } from "../testUtils.mjs";
 import { makeRuntime } from "./testkit.mjs";
 
 const settle = async (state) => {
@@ -266,7 +267,7 @@ describe("Unload now", () => {
     let release;
     rt.ollama.st.chatDelay = new Promise((resolve) => (release = resolve));
     const running = rt.client.generateText({ prompt: "x", log: { task: "chaser" } });
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await waitFor(() => rt.ollama.st.calls.some((c) => c.route === "/api/chat"));
     const reply = await rt.controls.unloadNow();
     assert.equal(reply.ok, false);
     assert.match(reply.reason, /busy/);

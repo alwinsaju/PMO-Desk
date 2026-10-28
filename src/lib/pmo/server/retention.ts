@@ -9,11 +9,18 @@
 //       cancelled) or a REJECTED proposal, once the decision is older than
 //       retentionDays. Never for an open to-do, and never for a proposal that
 //       is still undecided.
+//   queue/ -> archive/queue    approved or rejected proposals older than 30 days
+//   todos/ -> archive/todos    done or cancelled to-dos older than 30 days
+//       (moved, never deleted, so the live folders and every poll stay small;
+//       reports and the raw-text rule above still read the archive)
 //
 // Not touched: reports/ (saved weekly reports: a person deletes those),
 // audit.jsonl (the accountability trail), config, open to-dos,
-// the proposal and to-do records themselves, and state/seen.json (hashes only;
-// it is what keeps a deleted message from being re-imported as new).
+// the proposal and to-do records' content. state/seen.json (hashes only; it is
+// what keeps a deleted message from being re-imported as new) loses entries
+// older than retentionDays, with the archived proposals of those messages,
+// unless the message is still in the queue, behind an open to-do, or its text
+// is still stored.
 //
 // A log is rewritten with a temp file and a rename. A line appended between
 // the read and the rename is lost; these are diagnostic logs, so that is
@@ -26,6 +33,7 @@ import type { Store } from "./store.ts";
 
 export const QUARANTINE_MAX_AGE_DAYS = 30;
 export const REJECTED_FILES_MAX_AGE_DAYS = 30;
+export const ARCHIVE_AFTER_DAYS = 30;
 export const PURGE_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -37,6 +45,12 @@ export interface PurgeReport {
   rejectedFilesDeleted: number;
   quarantineDeleted: number;
   rawDeleted: number;
+  proposalsArchived: number;
+  todosArchived: number;
+  /** Dedupe entries (state/seen.json) older than the retention window. */
+  seenPruned: number;
+  /** Archived proposals of those messages, deleted with them. */
+  archivedProposalsDeleted: number;
   /** Raw snapshots kept on purpose, by reason. */
   rawKept: { openTodo: number; undecided: number; unknown: number };
   errors: string[];
@@ -102,6 +116,10 @@ export async function purgeExpired(
     rejectedFilesDeleted: 0,
     quarantineDeleted: 0,
     rawDeleted: 0,
+    proposalsArchived: 0,
+    todosArchived: 0,
+    seenPruned: 0,
+    archivedProposalsDeleted: 0,
     rawKept: { openTodo: 0, undecided: 0, unknown: 0 },
     errors: [],
   };
@@ -149,17 +167,20 @@ export async function purgeExpired(
 
   await attempt("raw", () =>
     store.withLock(async () => {
-      const [raws, proposals, todos] = await Promise.all([
+      const [raws, live, archived, todos] = await Promise.all([
         store.listRaw(),
         store.listProposals(),
-        store.listTodos(),
+        store.listArchivedProposals(),
+        store.listAllTodos(),
       ]);
+      const proposals = [...live, ...archived];
       // A message that held several tasks has several proposals: it counts as
       // undecided while any of them is, otherwise by the latest decision.
       const proposalByIntake = new Map<string, Proposal>();
       for (const p of proposals) {
         const seen = proposalByIntake.get(p.intakeId);
-        const decided = (q: Proposal) => q.status === "approved" || q.status === "rejected";
+        const decided = (q: Proposal) =>
+          q.status === "approved" || q.status === "rejected";
         if (
           !seen ||
           (decided(seen) && !decided(p)) ||
@@ -211,11 +232,75 @@ export async function purgeExpired(
     }),
   );
 
+  await attempt("archive", () =>
+    store.withLock(async () => {
+      const cutoff = nowMs - ARCHIVE_AFTER_DAYS * DAY_MS;
+      const older = (iso: string | null | undefined) => {
+        const at = Date.parse(iso ?? "");
+        return !Number.isNaN(at) && at < cutoff;
+      };
+      for (const proposal of await store.listProposals()) {
+        const decided = proposal.status === "approved" || proposal.status === "rejected";
+        if (!decided || !older(proposal.updatedAt)) continue;
+        await store.archiveRecord("queue", proposal.id);
+        report.proposalsArchived++;
+      }
+      for (const todo of await store.listTodos()) {
+        if (todo.status === "open" || !older(todo.completedAt ?? todo.updatedAt))
+          continue;
+        await store.archiveRecord("todos", todo.id);
+        report.todosArchived++;
+      }
+    }),
+  );
+
+  // The dedupe index must not grow for ever: a message first seen longer ago
+  // than the retention window can be imported again as new. Entries whose
+  // message is still in the queue or behind an open to-do are kept.
+  await attempt("dedupe", () =>
+    store.withLock(async () => {
+      const [live, archived, todos, raws] = await Promise.all([
+        store.listProposals(),
+        store.listArchivedProposals(),
+        store.listAllTodos(),
+        store.listRaw(),
+      ]);
+      // A message whose text is still stored (it follows the raw-text rule
+      // above) keeps its record and its entry until the text is gone.
+      const inUse = new Set<string>([
+        ...live.map((p) => p.intakeId),
+        ...raws.map((r) => r.intakeId),
+      ]);
+      for (const todo of todos) {
+        if (todo.status === "open" && todo.source.intakeId)
+          inUse.add(todo.source.intakeId);
+      }
+      const dropped = new Set(
+        await store.pruneSeen((entry) => {
+          const at = Date.parse(entry.at);
+          return !Number.isNaN(at) && at < retentionCutoff && !inUse.has(entry.intakeId);
+        }),
+      );
+      report.seenPruned = dropped.size;
+      for (const proposal of archived) {
+        const at = Date.parse(proposal.updatedAt);
+        if (!dropped.has(proposal.intakeId) || Number.isNaN(at) || at >= retentionCutoff)
+          continue;
+        await store.removeArchivedProposal(proposal.id);
+        report.archivedProposalsDeleted++;
+      }
+    }),
+  );
+
   const changed =
+    report.seenPruned +
+    report.archivedProposalsDeleted +
     report.logLinesDropped +
     report.rejectedFilesDeleted +
     report.quarantineDeleted +
-    report.rawDeleted;
+    report.rawDeleted +
+    report.proposalsArchived +
+    report.todosArchived;
   if (changed > 0 || report.errors.length > 0) {
     await store.logIngest({
       ts: report.at,
@@ -225,6 +310,10 @@ export async function purgeExpired(
       rejectedFilesDeleted: report.rejectedFilesDeleted,
       quarantineDeleted: report.quarantineDeleted,
       rawDeleted: report.rawDeleted,
+      proposalsArchived: report.proposalsArchived,
+      todosArchived: report.todosArchived,
+      seenPruned: report.seenPruned,
+      archivedProposalsDeleted: report.archivedProposalsDeleted,
       errors: report.errors,
     });
   }

@@ -4,6 +4,7 @@
 // (see toolbarView.test.mjs).
 import { taskNoun, unloadCountdown } from "../../../lib/ai-runtime/logView.ts";
 import { WAKE_NOTE } from "../../../lib/pmo/runtimeSummary.ts";
+import { DEFAULT_TIME_ZONE } from "../../../lib/pmo/time.ts";
 import type {
   PmoState,
   RuntimeSummary,
@@ -119,19 +120,22 @@ export function modelStatus(
 
 /** The line in the proposal dialog while a message waits for the model. */
 export function proposalWaitNote(
-  runtime: Pick<RuntimeSummary, "state">,
+  runtime: Pick<RuntimeSummary, "state" | "waitingBehind">,
   paused: StructuringInfo["paused"],
 ): string {
   if (paused) {
     return "Waiting for the local model to come back. This will be structured automatically.";
   }
+  const behind = runtime.waitingBehind ?? 0;
+  const queue =
+    behind > 0 ? ` Waiting behind ${behind} ${plural(behind, "item", "items")}.` : "";
   if (runtime.state === "loading") {
-    return `The local model is waking up to read this message. ${WAKE_NOTE}`;
+    return `The local model is waking up to read this message. ${WAKE_NOTE}${queue}`;
   }
   if (runtime.state === "asleep") {
-    return `The local model is asleep and will wake up to read this message. ${WAKE_NOTE}`;
+    return `The local model is asleep and will wake up to read this message. ${WAKE_NOTE}${queue}`;
   }
-  return "The local model has not finished with this message yet.";
+  return `The local model has not finished with this message yet.${queue}`;
 }
 
 // --- notices -------------------------------------------------------------------------
@@ -151,13 +155,23 @@ const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
 /** What needs the user's attention under the toolbar, most urgent first.
  *  Nothing is returned for a healthy system. */
 export function buildNotices(
-  state: Pick<PmoState, "ingest" | "runtime" | "structuring">,
+  state: Pick<PmoState, "ingest" | "runtime" | "structuring"> & {
+    needsAttention?: Pick<PmoState["needsAttention"], "badTimeZone">;
+  },
   offline: boolean,
 ): Notice[] {
   const { ingest, runtime, structuring } = state;
   const { paused } = structuring;
   const out: Notice[] = [];
 
+  if (state.needsAttention?.badTimeZone) {
+    out.push({
+      id: "time-zone",
+      level: "attention",
+      text: `The time zone in the settings file is not a real zone, so ${DEFAULT_TIME_ZONE} is being used for dates and reminders.`,
+      action: "settings",
+    });
+  }
   if (offline) {
     out.push({
       id: "offline",

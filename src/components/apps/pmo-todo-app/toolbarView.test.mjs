@@ -160,6 +160,23 @@ describe("buildNotices", () => {
     assert.deepEqual(buildNotices(state(), false), []);
   });
 
+  it("flags a bad hand-edited time zone and says which one is in use", () => {
+    const notices = buildNotices(
+      { ...state(), needsAttention: { badTimeZone: true } },
+      false,
+    );
+    assert.deepEqual(
+      notices.map((n) => n.id),
+      ["time-zone"],
+    );
+    assert.equal(notices[0].action, "settings");
+    assert.match(notices[0].text, /Asia\/Kolkata/);
+    assert.deepEqual(
+      buildNotices({ ...state(), needsAttention: { badTimeZone: false } }, false),
+      [],
+    );
+  });
+
   it("lists attention items before information, with stable ids", () => {
     const notices = buildNotices(
       state({
@@ -283,6 +300,21 @@ describe("proposalWaitNote", () => {
         { code: "runtime-down", message: "m", since: "x" },
       ),
       /Waiting for the local model to come back/,
+    );
+  });
+
+  it("says how many items are ahead in the model queue, only when there are some", () => {
+    assert.equal(
+      proposalWaitNote({ state: "ready", waitingBehind: 1 }, null),
+      "The local model has not finished with this message yet. Waiting behind 1 item.",
+    );
+    assert.match(
+      proposalWaitNote({ state: "asleep", waitingBehind: 3 }, null),
+      /waking up\. Waiting behind 3 items\.$/,
+    );
+    assert.doesNotMatch(
+      proposalWaitNote({ state: "ready", waitingBehind: 0 }, null),
+      /behind/,
     );
   });
 });

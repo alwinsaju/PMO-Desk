@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { defaultWindowGeometry } from "./windowGeometry.ts";
+import {
+  clampToViewport,
+  defaultWindowGeometry,
+  fitRectToViewport,
+  maximizedRect,
+} from "./windowGeometry.ts";
 
 const config = {
   size: { width: 1120, height: 680 },
@@ -59,4 +64,91 @@ test("without a viewport (server render) nothing is clamped", () => {
   const g = defaultWindowGeometry(2, null, config);
   assert.deepEqual(g.size, { width: 1120, height: 680 });
   assert.deepEqual(g.position, { x: 12 + 48, y: 88 + 48 });
+});
+
+test("at the app minimum 1024x720 the default window fits entirely on screen", () => {
+  const vp = { width: 1024, height: 720 };
+  const g = defaultWindowGeometry(0, vp, config);
+  assert.deepEqual(g.size, { width: 1000, height: 720 - 88 - 96 });
+  inside(g, vp);
+});
+
+const clampCfg = { titlebarHeight: 54, minVisibleX: 80, bottomReserve: 84 };
+const vp = { width: 1280, height: 720 };
+const rect = (x, y, width = 600, height = 400) => ({ x, y, width, height });
+
+test("clampToViewport leaves a reachable window alone", () => {
+  assert.deepEqual(clampToViewport(rect(100, 100), vp, clampCfg), rect(100, 100));
+});
+
+test("clampToViewport never lets the title bar go above y=0", () => {
+  assert.equal(clampToViewport(rect(100, -50), vp, clampCfg).y, 0);
+});
+
+test("clampToViewport keeps 80px of the title bar on screen on either side", () => {
+  assert.equal(clampToViewport(rect(-900, 100), vp, clampCfg).x, 80 - 600);
+  assert.equal(clampToViewport(rect(5000, 100), vp, clampCfg).x, 1280 - 80);
+});
+
+test("clampToViewport keeps the title bar above the command bar", () => {
+  const g = clampToViewport(rect(100, 5000), vp, clampCfg);
+  assert.equal(g.y, 720 - 84 - 54);
+});
+
+test("clampToViewport copes with windows narrower than the reach and tiny viewports", () => {
+  const g = clampToViewport(rect(-500, 100, 50, 100), vp, clampCfg);
+  assert.equal(g.x, 50 - 50);
+  const tiny = clampToViewport(rect(900, 900), { width: 60, height: 100 }, clampCfg);
+  assert.ok(Number.isFinite(tiny.x) && Number.isFinite(tiny.y));
+  assert.equal(tiny.y, 0);
+});
+
+const fitCfg = { ...clampCfg, insets: config.insets };
+const min = { width: 360, height: 240 };
+
+test("fitRectToViewport shrinks an oversized window to the keep-clear area", () => {
+  const g = fitRectToViewport(
+    rect(0, 0, 1120, 680),
+    { width: 1024, height: 720 },
+    fitCfg,
+    min,
+  );
+  assert.equal(g.width, 1000);
+  assert.equal(g.height, 720 - 88 - 96);
+});
+
+test("fitRectToViewport never shrinks below the window's minimum", () => {
+  const g = fitRectToViewport(
+    rect(0, 0, 1120, 680),
+    { width: 200, height: 200 },
+    fitCfg,
+    min,
+  );
+  assert.equal(g.width, 360);
+  assert.equal(g.height, 240);
+});
+
+test("fitRectToViewport also pulls a stranded window back on screen", () => {
+  const g = fitRectToViewport(rect(2000, 900), { width: 1024, height: 720 }, fitCfg, min);
+  assert.equal(g.x, 1024 - 80);
+  assert.equal(g.y, 720 - 84 - 54);
+});
+
+test("fitRectToViewport returns the same object when nothing changes", () => {
+  const r = rect(100, 100);
+  assert.equal(fitRectToViewport(r, vp, fitCfg, min), r);
+});
+
+test("maximizedRect fills the viewport inside the keep-clear insets", () => {
+  assert.deepEqual(maximizedRect({ width: 1280, height: 720 }, config.insets), {
+    x: 12,
+    y: 88,
+    width: 1256,
+    height: 720 - 88 - 96,
+  });
+});
+
+test("maximizedRect never collapses on a tiny viewport", () => {
+  const r = maximizedRect({ width: 10, height: 10 }, config.insets);
+  assert.ok(r.width >= 0 && r.height >= 0);
 });

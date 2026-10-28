@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo, useState } from "react";
 import { ScrollArea, Tabs, TabsList, TabsTrigger } from "@/components/ui";
+import { EngineDownNotice } from "./EngineDownNotice";
 import { TaskCard } from "./TaskCard";
 import { TaskDetailDialog } from "./TaskDetailDialog";
 import { useTasksData } from "./useTasksData";
@@ -78,7 +79,7 @@ export function TasksApp({ windowId }: { windowId: string }) {
         className="flex h-full w-full items-center justify-center p-6"
       >
         {connection === "offline" ? (
-          <EngineUnreachableNotice />
+          <EngineDownNotice />
         ) : (
           <p className="text-ink-muted text-sm">Loading tasks…</p>
         )}
@@ -88,15 +89,7 @@ export function TasksApp({ windowId }: { windowId: string }) {
 
   return (
     <div data-window-id={windowId} className="flex h-full w-full flex-col">
-      {connection === "offline" && (
-        <div
-          role="status"
-          className="rounded-card bg-amber-soft text-amber mx-6 mb-2 px-3.5 py-2.5 text-center text-[13px]"
-        >
-          Can&apos;t reach the Tasks engine right now — showing the last known
-          state.
-        </div>
-      )}
+      {connection === "offline" && <EngineDownNotice compact />}
 
       <ScrollArea className="min-h-0 flex-1">
         {tasks.length === 0 ? (
@@ -153,20 +146,6 @@ export function TasksApp({ windowId }: { windowId: string }) {
         onSettled={refetch}
         onOpenChange={handleDetailOpenChange}
       />
-    </div>
-  );
-}
-
-function EngineUnreachableNotice() {
-  return (
-    <div className="flex max-w-sm flex-col items-center gap-2 text-center">
-      <p className="text-ink font-headline text-lg">
-        Can&apos;t reach the Tasks engine
-      </p>
-      <p className="text-ink-muted text-[13.5px]">
-        It starts with AI OS, so this is usually a moment&apos;s wait. This will
-        connect automatically once it&apos;s available.
-      </p>
     </div>
   );
 }

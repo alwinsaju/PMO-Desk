@@ -1,23 +1,65 @@
 # AI OS
 
-## Current behavior
+A local, desktop-style "AI Operating System": a virtual desktop in which a person and a
+local AI can drive the same windows and apps, with handoff between them. It runs entirely
+on the user's computer (loopback only; the AI is a local Ollama model, no cloud model).
 
-The desktop includes a dock, demo apps, and an AI command bar. The AI can take
-over desktop window operations (open, focus, minimize, maximize, and close)
-with a visible cursor and ownership handoff. When Notes is focused, it can also
-create, update, and delete notes.
+## What it is today
 
-## Historical foundation scope
+- **Desktop shell**: wallpaper, a dock, a window manager (drag, resize, minimize, maximize,
+  per-window human/AI control), light/dark and Deloitte themes, a tray icon, and a Settings
+  menu (gear) with _Setup and health check_ and _Restart Tasks engine_.
+- **Command bar with a local AI**: the AI can open, focus, minimize, maximize and close windows
+  with a visible cursor and ownership handoff, and create, update and delete notes when Notes
+  is focused. It uses Ollama on `127.0.0.1`.
+- **PMO To-Do**: turns messages dropped in a PMO inbox folder (Power Automate, an Outlook
+  export script, or the Paste button) into reviewed to-dos with reminders, chasers, sign-off
+  tracking and a weekly report. Nothing becomes a to-do without a human approving it.
+- **Tasks engine** (`tasks-engine/`, Python/FastAPI) and the **Tasks app**: runs the task
+  folders under `tasks/` (Shift Roster, December Disconnect, the weekly and monthly reports,
+  the deployment mailer) through prepare, review, approve and send gates.
+- **First-run Setup screen**: checks and installs what a new computer lacks (Ollama, the AI
+  model, the PMO inbox folder, classic Outlook, the Tasks engine).
+- Demo apps (Notes, Browser, web apps) and an app store.
 
-A browser-based "AI Operating System" — a virtual desktop where a human and an AI
-agent can both drive the same windows and apps, with seamless handoff between them.
+[`ARCHITECTURE.md`](./ARCHITECTURE.md) has the module boundaries, contracts and the security
+model in detail.
 
-This repository currently contains the **foundation layer** only: the design
-token system, the window manager, a Radix-based UI primitives kit, and an
-empty desktop shell. No dock, command bar, presence avatars, demo apps, or app
-store yet — see [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the module
-boundaries, public contracts, and the four parallel workstreams that build on
-top of this.
+## Security model
+
+- **Loopback only.** The UI server and the Tasks engine listen on `127.0.0.1` (the engine on
+  the first free port of 8000-8019). Every `/api/*` request must carry a loopback `Host`
+  header (DNS-rebinding defence), and a request that changes something must not come from
+  another origin (`src/middleware.ts`). The engine applies the same Host/Origin rules.
+- **Per-launch engine token and instance id.** The server generates a random token and an
+  instance id when it starts, and gives them to the engine it launches
+  (`AI_OS_ENGINE_TOKEN`, `AI_OS_ENGINE_INSTANCE`). The engine rejects any request without
+  `X-AI-OS-Token` (only `GET /health` is open). The Tasks app fetches the token from this
+  app's own `/api/tasks-engine/token` route, which only answers its own origin. The desktop
+  app adopts only an engine whose `/health` reports its instance id.
+- **Content-Security-Policy and headers** (`next.config.mjs`): `frame-ancestors 'none'`,
+  `X-Frame-Options: DENY`, `nosniff`, a restrictive `connect-src` (this app and loopback).
+  The Browser app deliberately allows framing arbitrary sites; its embeddability check refuses
+  private, loopback and link-local targets.
+- **Child processes** never inherit `NODE_TLS_REJECT_UNAUTHORIZED` or `PYTHON*` settings.
+- **Review gates**: the mail-sending tasks never send without an explicit approval, and the
+  PMO inbox never creates a to-do on its own.
+- Dependencies are audited with `pnpm audit --prod`.
+
+## Where data lives
+
+Everything the installed app writes is under `%APPDATA%\ai-os` (Electron's user-data folder),
+never in the install folder, so a reinstall keeps it: `tasks-engine\` (task inputs, outputs,
+config, run history), `pmo\` (the PMO data folder: to-dos, queue, audit log, reports),
+`desktop.log`, and the app's settings files. The first-run Setup screen and `docs/clean-machine-test.md`
+describe how to test this on a new computer.
+
+## Installing (unsigned build)
+
+The installer (`AI OS Setup x.y.z.exe`) and `AI OS.exe` are **not code-signed**. Windows
+SmartScreen will warn on the first run: choose **More info > Run anyway**. On a managed
+computer where Smart App Control, AppLocker or Windows Defender Application Control blocks
+it, ask IT to allow the installer / the folder `%LOCALAPPDATA%\Programs\AI OS`.
 
 ## Stack
 
@@ -62,7 +104,7 @@ pnpm desktop:package
 The command first builds the private Python the installer carries (`pnpm runtime:python`; it needs any
 Python 3.9+ with pip on this machine and network access the first time, and reuses its download cache after).
 See `scripts/build-python-runtime.py` for how it is pinned. The installer is built from the working tree, so the gitignored files the tasks need (`tasks/*/templates`, `tasks/*/config`, `tasks/shared/roster-reference`, `tasks/shared/roster/Names.xlsx`) must be present on the machine that builds it; a fresh clone does not have them. The Version 2 installer is written to
-`release/AI OS Setup 2.0.0.exe`. Run it
+`release/AI OS Setup 3.0.0.exe`. Run it
 once to install AI OS under `%LOCALAPPDATA%\Programs\AI OS` (or select a
 different folder in the installer). The installer creates Start-menu and
 desktop shortcuts; pin either to the Windows taskbar. The installed app does
@@ -74,8 +116,8 @@ The installer carries the app, the Tasks engine, its task folders and a private 
 straight away. The local AI is not in the installer: on first start the **Set up AI OS** screen checks
 Ollama, the AI model (about 12 GB), the PMO inbox folder (is OneDrive signed in?), classic Outlook (the four
 mail tasks need it; report only) and the Tasks engine, and installs or downloads what is missing. It opens by
-itself while something required is open and from the gear menu > *Setup and health check* at any time. Task
-inputs, outputs, config and run history live in `%APPDATA%\AI OS\tasks-engine`, not in the install folder, so a
+itself while something required is open and from the gear menu > _Setup and health check_ at any time. Task
+inputs, outputs, config and run history live in `%APPDATA%\ai-os\tasks-engine`, not in the install folder, so a
 reinstall keeps them. How to test all of this on a clean machine: [`docs/clean-machine-test.md`](./docs/clean-machine-test.md).
 
 ### Getting fixes without reinstalling
@@ -86,11 +128,11 @@ shipped with the app. A live mode that runs the UI from the project folder
 `node_modules`) is opt-in. A run from source (`pnpm desktop`, i.e. `electron .`)
 instead defaults to `live-dev` when the project folder is usable.
 
-| Mode | What runs | When to use |
-| --- | --- | --- |
-| `live-dev` (default for `pnpm desktop` from source; opt-in for an installed build) | `next dev` (Turbopack, as `pnpm dev`) from the project folder, on the first free port from 3100 | Development: edits to `src/**` hot-reload in the open window |
-| `live-build` | `next start` from the project folder's own `.next` | Run `pnpm build`, then View > Reload (or Developer > Restart UI server) |
-| `bundled` (default for an installed build) | `next start` from the copy installed with the app | Normal installed use, and the fallback when a live mode is unusable |
+| Mode                                                                               | What runs                                                                                       | When to use                                                             |
+| ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `live-dev` (default for `pnpm desktop` from source; opt-in for an installed build) | `next dev` (Turbopack, as `pnpm dev`) from the project folder, on the first free port from 3100 | Development: edits to `src/**` hot-reload in the open window            |
+| `live-build`                                                                       | `next start` from the project folder's own `.next`                                              | Run `pnpm build`, then View > Reload (or Developer > Restart UI server) |
+| `bundled` (default for an installed build)                                         | `next start` from the copy installed with the app                                               | Normal installed use, and the fallback when a live mode is unusable     |
 
 Choose the mode and folder with, in order of priority: the environment
 variables `AI_OS_MODE` (`live-dev`, `live-build`, `bundled`) and
@@ -106,9 +148,9 @@ reason in `%APPDATA%\ai-os\desktop.log` and starts the bundled app instead
 (Help > About AI OS shows the reason). The window title shows the active mode,
 for example `AI OS (live-dev: C:\Projects\AI OS)`.
 
-The **Developer** menu has *Restart UI server* (stops and respawns the server
+The **Developer** menu has _Restart UI server_ (stops and respawns the server
 and the Tasks engine it owns, then reloads; it warns first if a task is running),
-*Open project folder* and *Open logs folder*. If the UI server crashes, AI OS
+_Open project folder_ and _Open logs folder_. If the UI server crashes, AI OS
 offers to restart it. Do not run `pnpm dev` or `pnpm build` against the same
 folder while a live mode is running (they share `.next`); live mode replaces
 the dev server.

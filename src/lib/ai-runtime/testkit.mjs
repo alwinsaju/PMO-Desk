@@ -124,7 +124,7 @@ export function makeLogState(now = Date.now) {
  * the watch timers the controls armed (fire one with `timers.shift()()`).
  * `owned` picks which keep_alive is sent, like index.ts does.
  */
-export function makeRuntime(overrides = {}, ollamaOptions = {}, owned = false) {
+export function makeRuntime(overrides = {}, ollamaOptions = {}, owned = false, models) {
   const ollama = fakeOllama(ollamaOptions);
   const clock = ollama.st.clock;
   const now = () => clock.now;
@@ -141,6 +141,7 @@ export function makeRuntime(overrides = {}, ollamaOptions = {}, owned = false) {
     keepAlive,
     log: state.ring,
     now,
+    models,
     observe: async (model) => {
       const loaded = await controls.observeModels();
       return loaded === null ? null : loaded.some((m) => m.name === model);
@@ -154,6 +155,7 @@ export function makeRuntime(overrides = {}, ollamaOptions = {}, owned = false) {
     state,
     processState: () => ({ owned, adopted: false }),
     keepAlive,
+    models,
     now,
     sleep: async () => {},
     setTimer: (fn) => {

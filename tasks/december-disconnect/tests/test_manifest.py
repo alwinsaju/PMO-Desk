@@ -38,11 +38,16 @@ def test_manifest_shape():
 
 def test_inputs_and_prepare():
     inputs = {i["id"]: i for i in MANIFEST["inputs"]}
-    assert list(inputs) == ["roster", "staff", "analytics_a", "analytics_b", "window"]
+    assert list(inputs) == ["roster", "staff", "winter_config", "analytics_config", "analytics_a",
+                            "analytics_b", "window"]
     for key in ("roster", "staff", "analytics_a", "analytics_b"):
         i = inputs[key]
         assert i["type"] == "file" and i["accept"] == [".xlsx"] and i["dest"].startswith("input/")
-    assert [inputs[k]["required"] for k in inputs] == [True, True, False, False, True]
+    for key, path in (("winter_config", PATHS.winter_config), ("analytics_config", PATHS.analytics_config)):
+        i = inputs[key]
+        assert (i["type"], i["accept"], i["required"], i["persist"]) == ("file", [".json"], True, True)
+        assert TASK / i["dest"] == path
+    assert [inputs[k]["required"] for k in inputs] == [True, True, True, True, False, False, True]
     # the destinations are the files the scripts read
     assert TASK / inputs["roster"]["dest"] == PATHS.roster
     assert TASK / inputs["staff"]["dest"] == PATHS.staff
@@ -53,7 +58,7 @@ def test_inputs_and_prepare():
     assert TASK / window["optionsFile"] == PATHS.options
     prepare = MANIFEST["prepare"]
     assert (TASK / prepare["cmd"]).is_file() and prepare["cmd"] == "scripts/prepare_options.py"
-    assert prepare["after"] == ["roster", "staff"]
+    assert prepare["after"] == ["roster", "staff", "winter_config", "analytics_config"]
     assert set(prepare["after"]) <= {k for k, v in inputs.items() if v["type"] == "file"}
 
 
@@ -145,7 +150,7 @@ def test_engine_reads_the_manifest():
     assert done.returncode == 0, done.stderr[-800:]
     info = json.loads(done.stdout.strip().splitlines()[-1])
     assert info["id"] == "december-disconnect"
-    assert info["prepare"] is True and info["inputs"] == ["roster", "staff", "analytics_a", "analytics_b", "window"]
+    assert info["prepare"] is True and info["inputs"] == ["roster", "staff", "winter_config", "analytics_config", "analytics_a", "analytics_b", "window"]
     assert info["steps"] == [["analyze", "python", None], ["answers", "review", "form"],
                              ["build_draft", "python", None], ["review_draft", "review", "flags"],
                              ["diff_draft", "python", None], ["confirm_diff", "confirm", "diff"],
@@ -156,4 +161,4 @@ def test_engine_reads_the_manifest():
 def test_cleanup_flag_and_no_persisted_input():
     assert MANIFEST["cleanup"] == {"onComplete": True}
     # every upload is per-run; config/ and output/ are the engine's untouchable areas
-    assert not any(i.get("persist") for i in MANIFEST["inputs"])
+    assert not any(i.get("persist") for i in MANIFEST["inputs"] if i.get("dest", "").startswith("input/"))

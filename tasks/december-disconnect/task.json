@@ -20,6 +20,24 @@
       "required": true
     },
     {
+      "id": "winter_config",
+      "label": "Winter settings (winter-config.json)",
+      "type": "file",
+      "accept": [".json"],
+      "dest": "config/winter-config.json",
+      "required": true,
+      "persist": true
+    },
+    {
+      "id": "analytics_config",
+      "label": "Analytics settings (analytics-config.json)",
+      "type": "file",
+      "accept": [".json"],
+      "dest": "config/analytics-config.json",
+      "required": true,
+      "persist": true
+    },
+    {
       "id": "analytics_a",
       "label": "Analytics roster, first month (optional)",
       "type": "file",
@@ -49,7 +67,7 @@
   },
   "prepare": {
     "cmd": "scripts/prepare_options.py",
-    "after": ["roster", "staff"]
+    "after": ["roster", "staff", "winter_config", "analytics_config"]
   },
   "steps": [
     {

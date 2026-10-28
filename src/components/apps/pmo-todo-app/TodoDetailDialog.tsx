@@ -15,6 +15,7 @@ import {
   TabsTrigger,
 } from "@/components/ui";
 import { addDays, describeInstant, isSnoozed, nextMondayAfter } from "@/lib/pmo/due";
+import { nextTodoDraft } from "@/lib/pmo/recurrence";
 import {
   allCheckpointsComplete,
   checkpointProgress,
@@ -29,7 +30,7 @@ import {
   type Todo,
 } from "@/lib/pmo/types";
 import { ChaserDialog } from "./ChaserDialog";
-import { patchTodo, startChaser } from "./api";
+import { createTodo, patchTodo, startChaser, type NextOffer } from "./api";
 import { OriginalMessage } from "./OriginalMessage";
 import { SignoffRequestDialog } from "./SignoffRequestDialog";
 import { SnoozeMenu } from "./SnoozeMenu";
@@ -61,6 +62,9 @@ interface TodoDetailDialogProps {
   chaser?: ChaserJob;
   /** The AI-improved sign-off request text for this to-do, if one was started. */
   signoffDraft?: ChaserJob;
+  /** The next round of a repeating to-do that was just marked done, if any. */
+  nextOffer?: NextOffer | null;
+  onNextOffer?: (offer: NextOffer | null) => void;
   /** Who "me" is, for the sign-off of a request text. */
   me: PmoConfig["me"];
   onSettled: () => void;
@@ -105,6 +109,8 @@ export function TodoDetailDialog({
   nowIso,
   chaser,
   signoffDraft,
+  nextOffer,
+  onNextOffer,
   me,
   onSettled,
   onOpenChange,
@@ -141,11 +147,34 @@ export function TodoDetailDialog({
         setError(reply.reason);
         return false;
       }
+      if (reply.nextOccurrence) {
+        onNextOffer?.({ todo: reply.todo, dueAt: reply.nextOccurrence.dueAt });
+      }
       onSettled();
       return true;
     } catch {
       setError("Could not reach the app server.");
       return false;
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** "Create next one": a new to-do through the ordinary create action. */
+  const createNext = async () => {
+    if (!nextOffer) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const reply = await createTodo(nextTodoDraft(nextOffer.todo, nextOffer.dueAt));
+      if (!reply.ok) {
+        setError(reply.reason);
+        return;
+      }
+      onNextOffer?.(null);
+      onSettled();
+    } catch {
+      setError("Could not reach the app server.");
     } finally {
       setBusy(false);
     }
@@ -273,6 +302,26 @@ export function TodoDetailDialog({
           />
         )}
 
+        {nextOffer && nextOffer.todo.id === shown.id && shown.status === "done" && (
+          <Note
+            role="status"
+            tone="accent"
+            className="mt-3.5 flex shrink-0 flex-wrap items-center justify-between gap-x-3 gap-y-2"
+          >
+            <p data-testid="next-offer" className="text-ink text-[13px] font-semibold">
+              Marked done. This to-do repeats ({repeats}).
+            </p>
+            <div className="flex shrink-0 gap-2">
+              <Button variant="ghost" size="sm" onClick={() => onNextOffer?.(null)}>
+                Not now
+              </Button>
+              <Button size="sm" disabled={busy} onClick={() => void createNext()}>
+                Create next one (due {formatDay(nextOffer.dueAt, today)})
+              </Button>
+            </div>
+          </Note>
+        )}
+
         {offer && open && (
           <Note
             tone="accent"
@@ -317,7 +366,11 @@ export function TodoDetailDialog({
               >
                 Checkpoints
               </TabsTrigger>
-              <TabsTrigger value="timeline" className={TAB} count={shown.history?.length ?? 0}>
+              <TabsTrigger
+                value="timeline"
+                className={TAB}
+                count={shown.history?.length ?? 0}
+              >
                 Timeline
               </TabsTrigger>
               <TabsTrigger value="original" className={TAB}>
@@ -383,7 +436,10 @@ export function TodoDetailDialog({
                     />
                     <span className="mt-1.5 flex flex-wrap gap-1.5">
                       {dueChips.map((chip) => (
-                        <QuickChip key={chip.label} onClick={() => edit({ dueAt: chip.value })}>
+                        <QuickChip
+                          key={chip.label}
+                          onClick={() => edit({ dueAt: chip.value })}
+                        >
                           {chip.label}
                         </QuickChip>
                       ))}

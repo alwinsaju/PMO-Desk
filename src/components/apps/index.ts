@@ -17,8 +17,7 @@ import "./notes-app";
 import "./files-app";
 import "./browser-app";
 import "./tasks-app";
-// PMO To-Do registers lazily from here (not via ./pmo-todo-app/index.ts, which
-// stays an unused eager registration) so its code is not in the first bundle.
+// PMO To-Do registers lazily from here so its code is not in the first bundle.
 import { registerLazyApp } from "./registry";
 import "./web-app"; // generic window every REAL App Store catalog entry opens into
 import "../app-store"; // the App Store is also opened as a window

@@ -9,6 +9,8 @@ export interface AiOsDesktopBridge {
   onOpenTodo: (callback: (todoId: string | null) => void) => () => void;
   /** Tell the shell how many items need attention (taskbar overlay, tray tip). */
   setBadge: (count: number) => void;
+  /** Folder picker over the main window; null when cancelled. */
+  chooseFolder?: () => Promise<string | null>;
 }
 
 declare global {

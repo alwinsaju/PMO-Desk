@@ -169,7 +169,10 @@ describe("resolveLaunchConfig: packaged builds", () => {
     const live = { ...withBuild, ...cfgFile({ mode: "live-dev" }) };
     assert.equal(resolve(live, { AI_OS_MODE: "bundled" }, packaged).mode, "bundled");
     const bundled = { ...withBuild, ...cfgFile({ mode: "bundled" }) };
-    assert.equal(resolve(bundled, { AI_OS_MODE: "live-build" }, packaged).mode, "live-build");
+    assert.equal(
+      resolve(bundled, { AI_OS_MODE: "live-build" }, packaged).mode,
+      "live-build",
+    );
     // Same precedence when unpackaged.
     assert.equal(resolve(live, { AI_OS_MODE: "bundled" }).mode, "bundled");
     assert.equal(resolve(bundled, { AI_OS_MODE: "live-build" }).mode, "live-build");
@@ -261,7 +264,7 @@ describe("labels and timeouts", () => {
 
   it("gives live modes the longer start timeout", () => {
     assert.equal(cfg.startTimeoutMs("live-dev"), 90_000);
-    assert.equal(cfg.startTimeoutMs("bundled"), 30_000);
+    assert.equal(cfg.startTimeoutMs("bundled"), 90_000);
   });
 });
 

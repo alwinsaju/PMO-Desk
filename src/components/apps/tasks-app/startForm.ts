@@ -6,6 +6,7 @@
  * runs ("persist") reads, and the "Clear input files" rules. Imports are type-only so
  * taskPlatform.test.mjs runs it under plain Node.
  */
+import { FILE_SIZE, formatBytes } from "../../../lib/format.ts";
 import type {
   Cleanable,
   CleanupPayload,
@@ -58,12 +59,6 @@ export function canPrepare(task: Task, statuses: InputStatus[]): boolean {
   return after.length > 0 && after.every((id) => isPresent(statuses, id));
 }
 
-export function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(bytes < 10240 ? 1 : 0)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
 /** Client-side guard mirroring the engine's checks, so a bad file is
  *  refused with a readable message before the upload starts. The engine
  *  re-validates everything; this is only for fast feedback. */
@@ -80,7 +75,7 @@ export function validateFile(
     }
   }
   if (file.size > MAX_UPLOAD_BYTES) {
-    return `${file.name} is ${formatBytes(file.size)} — the limit is ${formatBytes(MAX_UPLOAD_BYTES)}.`;
+    return `${file.name} is ${formatBytes(file.size, FILE_SIZE)} — the limit is ${formatBytes(MAX_UPLOAD_BYTES, FILE_SIZE)}.`;
   }
   if (file.size === 0) return `${file.name} is empty.`;
   return null;
@@ -224,15 +219,15 @@ export function formatYears(years: number[]): string {
   if (sorted.length === 0) return "";
   if (sorted.length === 1) return String(sorted[0]);
   const consecutive = sorted.every((y, i) => i === 0 || y === sorted[i - 1] + 1);
-  return consecutive
-    ? `${sorted[0]}-${sorted[sorted.length - 1]}`
-    : sorted.join(", ");
+  return consecutive ? `${sorted[0]}-${sorted[sorted.length - 1]}` : sorted.join(", ");
 }
 
 /** The quiet line under the Check area about which Holiday Roster the run
  *  will use, read from options.json's `holiday_source`; null when the task's
  *  options don't carry one (or it is malformed). */
-export function holidaySourceLine(options: OptionsFile | null | undefined): string | null {
+export function holidaySourceLine(
+  options: OptionsFile | null | undefined,
+): string | null {
   const raw = options?.holiday_source;
   if (!raw || typeof raw !== "object") return null;
   const { kind, covers_years: years } = raw as { kind?: unknown; covers_years?: unknown };
@@ -351,12 +346,12 @@ export function canClearInputs(
 
 /** "Clear input files (3 files, 12.0 MB)". */
 export function clearButtonLabel(cleanable: Cleanable): string {
-  return `Clear input files (${plural(cleanable.files, "file")}, ${formatBytes(cleanable.bytes)})`;
+  return `Clear input files (${plural(cleanable.files, "file")}, ${formatBytes(cleanable.bytes, FILE_SIZE)})`;
 }
 
 /** The confirmation sentence shown before anything is deleted. */
 export function clearConfirmText(cleanable: Cleanable, keepsSome: boolean): string {
-  return `Delete ${plural(cleanable.files, "input file")} (${formatBytes(cleanable.bytes)}) from this computer? This can't be undone.${keepsSome ? " Files kept on file for future runs stay." : ""}`;
+  return `Delete ${plural(cleanable.files, "input file")} (${formatBytes(cleanable.bytes, FILE_SIZE)}) from this computer? This can't be undone.${keepsSome ? " Files kept on file for future runs stay." : ""}`;
 }
 
 /** True when some of the task's inputs stay on disk across runs. */
@@ -374,7 +369,7 @@ export function cleanupResultText(result: Partial<CleanupPayload>): string {
   const skipped = result.skipped ?? 0;
   const head =
     removed > 0
-      ? `Removed ${plural(removed, "file")}, freed ${formatBytes(result.bytes ?? 0)}`
+      ? `Removed ${plural(removed, "file")}, freed ${formatBytes(result.bytes ?? 0, FILE_SIZE)}`
       : "No files were removed";
   if (skipped === 0) return `${head}.`;
   return `${head}; ${plural(skipped, "file")} skipped — ${skipped === 1 ? "it" : "they"} may be open in another program.`;

@@ -1,14 +1,21 @@
 // Assembles the one document the UI polls (GET /api/pmo/state).
 import { attentionSummary } from "../due.ts";
-import { istDate } from "../time.ts";
+import { isValidTimeZone, istDate } from "../time.ts";
 import { teamsIsFiltering } from "../filter.ts";
-import type { PmoState, RuntimeSummary } from "../types.ts";
+import {
+  emptyAttentionSummary,
+  MAX_ATTENTION_NAMES,
+  type PmoState,
+  type RuntimeSummary,
+} from "../types.ts";
 import type { Pmo } from "./actions.ts";
 import { resolveInboxDir } from "./paths.ts";
 
 /** Decided to-dos and filtered items beyond these counts stay on disk only. */
 const MAX_CLOSED_TODOS = 200;
 const MAX_FILTERED_SHOWN = 200;
+/** Rejected proposals offered for Restore. */
+const MAX_REJECTED_SHOWN = 50;
 
 export const SCAN_INTERVAL_MS = 15_000;
 
@@ -21,15 +28,16 @@ export async function buildState(
   },
 ): Promise<PmoState> {
   const { store, ingestor, worker } = pmo;
-  const [config, proposals, todos, quarantine, rejectedFileCount, runtime] =
-    await Promise.all([
-      store.loadConfig(),
-      store.listProposals(),
-      store.listTodos(),
-      store.listQuarantine(),
-      store.countRejectedFiles(),
-      deps.runtime(),
-    ]);
+  const [config, proposals, todos, quarantine, parked, runtime] = await Promise.all([
+    store.loadConfig(),
+    store.listProposals(),
+    store.listTodos(),
+    store.listQuarantine(),
+    store.listRejectedFiles(MAX_ATTENTION_NAMES),
+    deps.runtime(),
+  ]);
+  // After the listings above: reading is what moves unreadable files aside.
+  const corrupt = await store.listCorrupt();
 
   const open = todos.filter((todo) => todo.status === "open");
   const closed = todos
@@ -39,18 +47,43 @@ export async function buildState(
 
   const last = ingestor.last;
   const now = pmo.now();
+  const paused = worker.state().paused;
+  const names = (list: readonly string[] | undefined) =>
+    (list ?? []).slice(0, MAX_ATTENTION_NAMES);
   return {
     ok: true,
     serverTime: now.toISOString(),
-    today: istDate(now),
+    today: istDate(now, config.reminders.timeZone),
     queue: proposals.filter((p) =>
       ["pending", "structuring", "ready", "failed"].includes(p.status),
     ),
+    rejected: proposals
+      .filter((p) => p.status === "rejected")
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+      .slice(0, MAX_REJECTED_SHOWN),
     todos: [...open, ...closed],
     attention: attentionSummary(open, now, config.reminders),
+    needsAttention: {
+      ...emptyAttentionSummary(),
+      corruptRecords: corrupt.length,
+      corruptFileNames: corrupt.slice(-MAX_ATTENTION_NAMES),
+      oversizedFiles: last?.oversized.length ?? 0,
+      oversizedFileNames: names(last?.oversized),
+      erroredFiles: last?.errored.length ?? 0,
+      erroredFileNames: names(last?.errored),
+      parkedFiles: parked.count,
+      parkedFileNames: parked.names,
+      foreignFiles: last?.foreign.length ?? 0,
+      foreignFileNames: names(last?.foreign),
+      duplicatesIgnored: ingestor.duplicatesIgnored,
+      badTimeZone: !isValidTimeZone(config.reminders.timeZone),
+      queuePaused: paused !== null,
+      modelMissing: paused?.code === "model-missing",
+    },
     filtered: quarantine.slice(0, MAX_FILTERED_SHOWN),
     ingest: {
       inboxDir: last?.inboxDir ?? resolveInboxDir(config.inboxDir),
+      configured: last?.configured ?? false,
       inboxExists: last?.inboxExists ?? false,
       scanIntervalMs: deps.scanIntervalMs ?? SCAN_INTERVAL_MS,
       lastScanAt: last?.at ?? null,
@@ -64,7 +97,7 @@ export async function buildState(
           }
         : null,
       filteredCount: quarantine.length,
-      rejectedFileCount,
+      rejectedFileCount: parked.count,
       teamsFiltering: teamsIsFiltering(config),
     },
     structuring: worker.state(),

@@ -14,6 +14,8 @@ import { HomePage } from "./HomePage";
 import { WikiPage } from "./WikiPage";
 import { AboutPage } from "./AboutPage";
 import { UrlPage } from "./UrlPage";
+import { SearchOpenedPage } from "./SearchOpenedPage";
+import { resolveBrowserInput } from "./resolveBrowserInput";
 import { LoadBar } from "../web-app/EmbedStates";
 
 /** One history entry is either one of the 3 static "Pathfinder" mock
@@ -22,7 +24,10 @@ import { LoadBar } from "../web-app/EmbedStates";
  *  history stack below — there is no separate mock-only vs. url-only
  *  history, so e.g. home -> a real site -> back correctly lands you on
  *  home again either way. */
-type NavEntry = { kind: "mock"; id: MockPageId } | { kind: "url"; url: string };
+type NavEntry =
+  | { kind: "mock"; id: MockPageId }
+  | { kind: "url"; url: string }
+  | { kind: "search"; url: string; query: string };
 
 interface NavState {
   history: NavEntry[];
@@ -42,17 +47,9 @@ function findMockPageByUrl(value: string): MockPageId | null {
   return match ?? null;
 }
 
-/** Turns whatever a person actually types into an address bar into a
- *  loadable url: left alone if it already has a scheme (covers real
- *  `https://…` urls as well as the mock pages' own `pathfinder://…`
- *  ones), otherwise assumed to be a bare host/path and given `https://` —
- *  the same assumption every real browser's address bar makes for e.g.
- *  "en.wikipedia.org/wiki/Cat". Returns null for blank input. */
-function normalizeAddressInput(raw: string): string | null {
-  const trimmed = raw.trim();
-  if (!trimmed) return null;
-  if (/^[a-z][a-z0-9+.-]*:/i.test(trimmed)) return trimmed;
-  return `https://${trimmed}`;
+/** A search runs in the OS browser: search engines refuse to be framed. */
+function openInOsBrowser(url: string) {
+  window.open(url, "_blank", "noopener,noreferrer");
 }
 
 /**
@@ -101,6 +98,7 @@ export function BrowserApp({ windowId }: { windowId: string }) {
   const canGoForward = nav.index < nav.history.length - 1;
 
   const [addressDraft, setAddressDraft] = useState(currentUrl);
+  const [addressError, setAddressError] = useState<string | null>(null);
   // The address bar shows whatever was typed while it's being edited, but
   // snaps back to the real current url whenever navigation happens through
   // any OTHER means (back/forward, reload, a mock page's own in-page
@@ -121,10 +119,25 @@ export function BrowserApp({ windowId }: { windowId: string }) {
   }
 
   function navigateToAddress(raw: string) {
-    const normalized = normalizeAddressInput(raw);
-    if (!normalized) return;
-    const mockId = findMockPageByUrl(normalized);
-    pushEntry(mockId ? { kind: "mock", id: mockId } : { kind: "url", url: normalized });
+    const mockId = findMockPageByUrl(raw.trim());
+    if (mockId) {
+      setAddressError(null);
+      pushEntry({ kind: "mock", id: mockId });
+      return;
+    }
+    const input = resolveBrowserInput(raw);
+    if (input.kind === "empty") return;
+    if (input.kind === "blocked") {
+      setAddressError(input.reason);
+      return;
+    }
+    setAddressError(null);
+    if (input.kind === "search") {
+      openInOsBrowser(input.url);
+      pushEntry({ kind: "search", url: input.url, query: input.query });
+      return;
+    }
+    pushEntry({ kind: "url", url: input.url });
   }
 
   function goBack() {
@@ -152,7 +165,8 @@ export function BrowserApp({ windowId }: { windowId: string }) {
   }
 
   const handleEmbeddableResolved = useCallback((url: string, embeddable: boolean) => {
-    embedCacheRef.current.set(url, embeddable);
+    // Only successes are cached: a refusal's reason is shown from a fresh check.
+    if (embeddable) embedCacheRef.current.set(url, true);
   }, []);
 
   return (
@@ -214,6 +228,11 @@ export function BrowserApp({ windowId }: { windowId: string }) {
           />
         </form>
       </div>
+      {addressError && (
+        <p role="alert" className="text-red px-gutter pb-2 text-[12.5px]">
+          {addressError}
+        </p>
+      )}
 
       {/* Page area. The loading bar hugs its top edge (right under the
           toolbar): a real url's own check/iframe load draws it inside
@@ -235,6 +254,11 @@ export function BrowserApp({ windowId }: { windowId: string }) {
               </div>
             </ScrollArea>
           </>
+        ) : currentEntry.kind === "search" ? (
+          <SearchOpenedPage
+            query={currentEntry.query}
+            onOpenAgain={() => openInOsBrowser(currentEntry.url)}
+          />
         ) : (
           <UrlPage
             key={`${currentEntry.url}::${reloadNonce}`}

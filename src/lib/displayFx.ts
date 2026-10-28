@@ -28,6 +28,8 @@ export interface DesktopDisplayState {
   /** Chromium's gpu_compositing status ("enabled" = really on the GPU). */
   compositing: string;
   gpuCompositing: boolean;
+  /** The GPU was allowed but there is no hardware graphics acceleration. */
+  noHardwareAcceleration?: boolean;
   /** Set when saving the setting failed. */
   error?: string;
 }
@@ -102,9 +104,29 @@ export function getFxInitScript(): string {
   );
 }
 
+/** Up to this many open windows every window keeps the full look. */
+export const FULL_FX_MAX_WINDOWS = { rich: 4, lean: 4 } as const;
+
+export type WindowFx = "full" | "lean";
+
+/** Per-window style: with many windows open the unfocused ones drop heavy
+ *  shadows (and blur, in rich mode) — `data-fx-win` on the window, see tokens.css. */
+export function windowFxMode(input: {
+  openCount: number;
+  focused: boolean;
+  lean: boolean;
+}): WindowFx {
+  const { openCount, focused, lean } = input;
+  if (focused) return "full";
+  const max = lean ? FULL_FX_MAX_WINDOWS.lean : FULL_FX_MAX_WINDOWS.rich;
+  return openCount > max ? "lean" : "full";
+}
+
 export interface HardwareAccelerationView {
   /** The switch position. */
   checked: boolean;
+  /** The switch cannot be changed (no hardware acceleration on this machine). */
+  disabled: boolean;
   /** One short helper line under the title. */
   hint: string;
   /** Extra warning line, or null. */
@@ -115,6 +137,8 @@ export interface HardwareAccelerationView {
 
 export const HARDWARE_ACCELERATION_HINT =
   "GPU rendering and rich blur effects. Leave off on weak graphics.";
+export const NO_HARDWARE_ACCELERATION_REASON =
+  "This computer has no hardware graphics acceleration; the lean mode is used.";
 const WEB_HINT = "Rich blur effects. The browser manages the GPU itself.";
 const RESTART_HINT = "Restart AI OS to apply the GPU change.";
 export const GPU_UNAVAILABLE_WARNING =
@@ -131,7 +155,22 @@ export function describeHardwareAcceleration(input: {
   const { fx, desktop, state, error } = input;
   const checked = fx === "rich";
   if (!desktop) {
-    return { checked, hint: WEB_HINT, warning: null, restartNeeded: false };
+    return {
+      checked,
+      disabled: false,
+      hint: WEB_HINT,
+      warning: null,
+      restartNeeded: false,
+    };
+  }
+  if (state?.noHardwareAcceleration) {
+    return {
+      checked: false,
+      disabled: true,
+      hint: NO_HARDWARE_ACCELERATION_REASON,
+      warning: null,
+      restartNeeded: false,
+    };
   }
   const restartNeeded = Boolean(state && state.saved !== state.launchedWithGpu);
   let warning: string | null = error ?? null;
@@ -147,6 +186,7 @@ export function describeHardwareAcceleration(input: {
   }
   return {
     checked,
+    disabled: false,
     hint: restartNeeded ? RESTART_HINT : HARDWARE_ACCELERATION_HINT,
     warning,
     restartNeeded,

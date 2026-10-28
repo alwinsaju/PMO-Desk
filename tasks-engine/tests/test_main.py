@@ -6,7 +6,7 @@ import shutil
 from pathlib import Path
 
 import pytest
-from fastapi.testclient import TestClient
+from conftest import make_client
 
 import main as backend
 
@@ -80,14 +80,14 @@ def test_pipeline_surfaces_subprocess_launch_failure(tmp_path):
 
 @pytest.mark.parametrize("action", ["start", "approve", "reject", "send", "reset"])
 def test_unknown_task_state_endpoints_return_ok_false(action):
-    client = TestClient(backend.app, raise_server_exceptions=False)
+    client = make_client()
     resp = client.post(f"/tasks/ghost/{action}")
     assert resp.status_code == 200
     assert resp.json() == {"ok": False, "reason": "unknown task"}
 
 
 def test_unknown_task_open_notification_returns_ok_false():
-    client = TestClient(backend.app, raise_server_exceptions=False)
+    client = make_client()
     resp = client.post("/tasks/ghost/notifications/whatever/open")
     assert resp.status_code == 200
     assert resp.json() == {"ok": False, "reason": "unknown task"}
@@ -427,7 +427,7 @@ def test_open_notification_rejects_notification_without_output(tmp_path):
     task = backend.tasks["task-a"]
     backend.push_notification(task, "task.completed", "t", "b")
     notif_id = task.notifications[0]["id"]
-    client = TestClient(backend.app, raise_server_exceptions=False)
+    client = make_client()
 
     resp = client.post(f"/tasks/task-a/notifications/{notif_id}/open")
 
@@ -442,7 +442,7 @@ def test_open_notification_rejects_path_outside_task_folder(tmp_path):
     outside.write_text("x")
     backend.push_notification(task, "task.completed", "t", "b", str(outside))
     notif_id = task.notifications[0]["id"]
-    client = TestClient(backend.app, raise_server_exceptions=False)
+    client = make_client()
 
     resp = client.post(f"/tasks/task-a/notifications/{notif_id}/open")
 
@@ -459,7 +459,7 @@ def test_open_notification_launches_file_inside_task_folder(tmp_path, monkeypatc
     notif_id = task.notifications[0]["id"]
     opened = []
     monkeypatch.setattr(backend.os, "startfile", opened.append)
-    client = TestClient(backend.app, raise_server_exceptions=False)
+    client = make_client()
 
     resp = client.post(f"/tasks/task-a/notifications/{notif_id}/open")
 
@@ -488,7 +488,7 @@ class _FakeOllamaResponse:
 def test_list_endpoint_serializes_tasks(tmp_path):
     make_task_folder(tmp_path, "task-a", "task-a")
     backend.discover_tasks()
-    client = TestClient(backend.app, raise_server_exceptions=False)
+    client = make_client()
 
     (task,) = client.get("/tasks").json()
 
@@ -549,7 +549,7 @@ def test_open_notification_without_output_path_returns_ok_false(tmp_path):
     backend.push_notification(task, "task.completed", "done", "body")  # no output_path
     notif_id = task.notifications[0]["id"]
 
-    client = TestClient(backend.app, raise_server_exceptions=False)
+    client = make_client()
     resp = client.post(f"/tasks/task-a/notifications/{notif_id}/open")
 
     assert resp.status_code == 200
@@ -568,7 +568,7 @@ def test_open_notification_happy_path_opens_file(tmp_path, monkeypatch):
     opened = []
     monkeypatch.setattr(backend, "_open_with_default_app", opened.append)
 
-    client = TestClient(backend.app, raise_server_exceptions=False)
+    client = make_client()
     resp = client.post(f"/tasks/task-a/notifications/{notif_id}/open")
 
     assert resp.status_code == 200
@@ -603,7 +603,7 @@ def test_approve_with_stale_gate_returns_ok_false(tmp_path):
         {"id": "task-a", "steps": [{"id": "noop", "type": "python", "cmd": "scripts/noop.py"}]}))
     task.apply_manifest(json.loads((folder / "task.json").read_text()))
 
-    client = TestClient(backend.app, raise_server_exceptions=False)
+    client = make_client()
     resp = client.post("/tasks/task-a/approve")
 
     assert resp.status_code == 200
@@ -635,7 +635,7 @@ def test_task_log_endpoint_and_unknown_task(tmp_path):
     task = backend.tasks["task-a"]
     task.log_step("build", "stdout", "line one")
 
-    client = TestClient(backend.app, raise_server_exceptions=False)
+    client = make_client()
     resp = client.get("/tasks/task-a/log")
     assert resp.status_code == 200
     assert resp.json() == [{"step": "build", "stream": "stdout", "text": "line one"}]
@@ -718,8 +718,8 @@ def test_new_run_after_force_reset_runs_every_step_itself(tmp_path):
 
     async def scenario():
         await backend.start_task("task-a")
-        for _ in range(100):
-            if task.current_step == "pivot" and task.active_proc is not None:
+        for _ in range(300):  # the marker proves the first pivot is really running, not just spawned
+            if (folder / "second-run").exists():
                 break
             await asyncio.sleep(0.1)
         await backend.reset_task("task-a")

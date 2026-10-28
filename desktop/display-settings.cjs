@@ -60,8 +60,10 @@ function shouldDisableHardwareAcceleration(settings) {
   return normalizeSettings(settings).hardwareAcceleration !== true;
 }
 
-/** The page-facing visual mode that goes with a setting. */
-function fxModeFor(settings) {
+/** The page-facing visual mode that goes with a setting. A machine without
+ *  hardware graphics acceleration (`gpu`, from describeGpu) is always lean. */
+function fxModeFor(settings, gpu) {
+  if (gpu && gpu.noHardwareAcceleration) return "lean";
   return normalizeSettings(settings).hardwareAcceleration ? "rich" : "lean";
 }
 
@@ -80,6 +82,10 @@ function describeGpu({ featureStatus, launchedWithGpu }) {
     launchedWithGpu: Boolean(launchedWithGpu),
     compositing,
     gpuCompositing: compositing === "enabled",
+    // Only meaningful when the GPU was allowed: a launch with it switched off
+    // is software on purpose and the user may still try turning it on.
+    noHardwareAcceleration:
+      Boolean(launchedWithGpu) && compositing !== "unknown" && compositing !== "enabled",
   };
 }
 

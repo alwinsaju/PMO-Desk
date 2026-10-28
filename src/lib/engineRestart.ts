@@ -8,6 +8,9 @@
 //            POST /api/tasks-engine/start
 // It never calls a engine action endpoint (start/approve/send/reset/rescan).
 
+import { ENGINE_TOKEN_HEADER } from "./tasks-engine/engineHeader.ts";
+import { getEngineToken } from "./tasks-engine/engineClient.ts";
+
 /** Window event fired after a successful restart so the Tasks app can poll at
  *  once instead of waiting for its next tick. */
 export const ENGINE_RESTARTED_EVENT = "ai-os:engine-restarted";
@@ -21,7 +24,7 @@ export interface TaskLike {
 
 export type FetchLike = (
   input: string,
-  init?: { method?: string; signal?: AbortSignal },
+  init?: { method?: string; signal?: AbortSignal; headers?: Record<string, string> },
 ) => Promise<{ ok: boolean; status: number; json: () => Promise<unknown> }>;
 
 /** A task that is not "resting": a run in progress, waiting on the user, or
@@ -38,10 +41,13 @@ export async function probeEngine(
   fetchImpl: FetchLike,
   apiUrl: string,
   timeoutMs = 3_000,
+  tokenProvider: () => Promise<string | null> = getEngineToken,
 ): Promise<EngineProbe> {
   try {
+    const token = await tokenProvider();
     const res = await fetchImpl(`${apiUrl}/tasks`, {
       signal: AbortSignal.timeout(timeoutMs),
+      ...(token ? { headers: { [ENGINE_TOKEN_HEADER]: token } } : {}),
     });
     if (!res.ok) return { reachable: false };
     return { reachable: true, busy: busyTasks(await res.json()) };

@@ -10,6 +10,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { createManualTodo, patchTodo, updateConfig } from "./actions.ts";
 import { createPmo } from "./create.ts";
+import { developerConfig } from "../developerDefaults.ts";
 import {
   CLAIM_TTL_MS,
   acknowledgeDue,
@@ -42,7 +43,13 @@ beforeEach(async () => {
   dataDir = await mkdtemp(path.join(os.tmpdir(), "pmo-notify-"));
   inboxDir = await mkdtemp(path.join(os.tmpdir(), "pmo-notify-inbox-"));
   clock = ist("2026-10-26T10:00"); // Monday
-  pmo = await createPmo({ dataDir, inboxDir, generator: noModel, now: () => clock });
+  pmo = await createPmo({
+    dataDir,
+    inboxDir,
+    seedConfig: developerConfig(),
+    generator: noModel,
+    now: () => clock,
+  });
 });
 
 afterEach(async () => {
@@ -219,6 +226,7 @@ describe("reminder preferences", () => {
       workEnd: "18:00",
       workDays: [1, 2, 3, 4, 5],
       quietOutsideHours: true,
+      leadWorkingDays: 1,
       chaserDays: 2,
       digest: false,
       hideDetails: true,

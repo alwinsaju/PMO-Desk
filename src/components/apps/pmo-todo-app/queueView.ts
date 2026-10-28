@@ -67,6 +67,37 @@ export function reviewCount(queue: Proposal[]): number {
   ).length;
 }
 
+export interface RejectedRow {
+  id: string;
+  title: string;
+  /** "Rejected 5 min ago". */
+  when: string;
+  /** Why it was set aside, as far as the record says; null when the person simply rejected it. */
+  reason: string | null;
+}
+
+/** The "Rejected" list: newest rejection first. The record keeps no free-text
+ *  reason, so the only reason on offer is the model's "probably not a task". */
+export function rejectedRows(rejected: Proposal[], nowMs: number): RejectedRow[] {
+  return [...rejected]
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+    .map((p) => ({
+      id: p.id,
+      title: p.draft?.title || p.summary.subject || "(no subject)",
+      when: `Rejected ${relativeTime(p.updatedAt, nowMs)}`.trim(),
+      reason: p.isActionable === false ? "The model thought this was not a task." : null,
+    }));
+}
+
+/** How long the "Rejected. Undo" line stays. */
+export const UNDO_REJECT_MS = 10_000;
+
+/** What the "Rejected. Undo" line says about the item just rejected. */
+export function undoRejectText(title: string): string {
+  const name = title.trim();
+  return name ? `Rejected "${name}".` : "Rejected.";
+}
+
 /** What the badge on a queue row says. */
 export function statusLabel(proposal: Proposal, structuring: StructuringInfo): string {
   // While the model is down, an item flips between pending and structuring on

@@ -2,14 +2,18 @@
 // local model, one at a time. The model call is injected (`Generator`) so
 // tests and the PMO_AI_STUB switch never need Ollama; the real one is wired
 // in service.ts. Failures here are local state only: nothing is sent anywhere.
-import { prepareForModel, displayText } from "../preprocess.ts";
+import { prepareForModelDetailed, displayText } from "../preprocess.ts";
 import { siblingProposalId } from "../dedupe.ts";
 import { groundQuote } from "../quote.ts";
 import { sanitizeDraft } from "../sanitizeDraft.ts";
 import { asTaskList, selectTasks } from "../splitTasks.ts";
-import { awaitingSignoff, readSignoff } from "../signoff.ts";
+import { awaitingSignoff, looksLikeInjection, readSignoff } from "../signoff.ts";
 import type { AiNarrative } from "../reportNarrative.ts";
-import { PROMPT_VERSION, buildSystemPrompt, buildUserPrompt } from "../structurePrompt.ts";
+import {
+  PROMPT_VERSION,
+  buildSystemPrompt,
+  buildUserPrompt,
+} from "../structurePrompt.ts";
 import {
   UPDATE_PROMPT_VERSION,
   buildUpdateSystemPrompt,
@@ -141,9 +145,32 @@ export class StructuringWorker {
    */
   async start(): Promise<void> {
     await this.store.withLock(async () => {
-      for (const proposal of await this.store.listProposals()) {
+      const all = await this.store.listProposals();
+      for (const proposal of all) {
         if (proposal.status === "structuring") {
           await this.store.putProposal({ ...proposal, status: "pending" });
+        }
+      }
+      // A crash while publishing a multi-task split can leave hidden cards. They
+      // are published only once the message's first card ("1 of N") is itself
+      // published; while it is still to be structured (or failed) the re-run
+      // rewrites them, so "2 of 3" never shows without its first card.
+      const firstPublished = new Set(
+        all
+          .filter(
+            (p) =>
+              p.part?.index === 1 &&
+              !["pending", "structuring", "failed", "splitting"].includes(p.status),
+          )
+          .map((p) => p.intakeId),
+      );
+      for (const proposal of all) {
+        if (proposal.status === "splitting" && firstPublished.has(proposal.intakeId)) {
+          await this.store.putProposal({
+            ...proposal,
+            status: "ready",
+            updatedAt: new Date(this.now()).toISOString(),
+          });
         }
       }
     });
@@ -240,7 +267,7 @@ export class StructuringWorker {
     }
     const config = await this.store.loadConfig();
     const intake = raw.intake;
-    const bodyText = prepareForModel(intake);
+    const { text: bodyText, replyBelowQuote } = prepareForModelDetailed(intake);
 
     // Thread-aware branch: the message belongs to an open to-do.
     if (claimed.update) {
@@ -253,7 +280,12 @@ export class StructuringWorker {
       // A to-do that is awaiting a sign-off also gets the reply classified.
       const signoff = awaitingSignoff(todo) !== null;
       const system = buildUpdateSystemPrompt(config.me, { signoff });
-      const prompt = buildUpdateUserPrompt(todo, intake, bodyText);
+      const prompt = buildUpdateUserPrompt(
+        todo,
+        intake,
+        bodyText,
+        config.reminders.timeZone,
+      );
       return this.attempts<AiUpdate>({
         id,
         claimed,
@@ -273,7 +305,11 @@ export class StructuringWorker {
             return "requeue";
           }
           const grounded = groundQuote(displayText(intake), output.quote);
-          let result: AiUpdate = { ...output, quote: grounded.quote };
+          let result: AiUpdate = {
+            ...output,
+            quote: grounded.quote,
+            suspicious: looksLikeInjection(`${intake.subject}\n${bodyText}`),
+          };
           if (signoff) {
             // The sign-off quote is checked against what the model was shown (the
             // reply without its quoted chain), so a sentence of OUR earlier request
@@ -282,6 +318,9 @@ export class StructuringWorker {
             result = {
               ...result,
               ...readSignoff(output, bodyText, intake.subject),
+              // The text under the quote may be our own earlier request, so a
+              // sign-off read from it is never pre-ticked.
+              ...(replyBelowQuote ? { signoffQuoteVerified: false } : {}),
             };
           } else {
             result = {
@@ -297,6 +336,7 @@ export class StructuringWorker {
             update: p.update ? { ...p.update, result } : p.update,
             isActionable: output.kind !== "nothing",
             quoteVerified: grounded.verified,
+            replyBelowQuote: replyBelowQuote || undefined,
             ai: { model: this.generator.model(), durationMs, attempts, error: null },
           }));
           return "done";
@@ -304,8 +344,13 @@ export class StructuringWorker {
       });
     }
 
-    const system = buildSystemPrompt(config.me);
-    const prompt = buildUserPrompt(intake, bodyText, this.now());
+    const system = buildSystemPrompt(config.me, config.reminders.timeZone);
+    const prompt = buildUserPrompt(
+      intake,
+      bodyText,
+      this.now(),
+      config.reminders.timeZone,
+    );
     return this.attempts<AiStructured | AiStructured[]>({
       id,
       claimed,
@@ -324,6 +369,7 @@ export class StructuringWorker {
           // model said.
           const { draft, adjustments } = sanitizeDraft(rawDraft, {
             now: this.now(),
+            timeZone: config.reminders.timeZone,
             text: `${intake.subject}
 ${bodyText}`,
             me: config.me,
@@ -332,47 +378,97 @@ ${bodyText}`,
         });
         // One message can hold several independent tasks: drop duplicates,
         // FYIs and over-split sub-steps, cap the count.
-        const { kept, notes } = selectTasks(cleaned, (c) => c.draft);
+        const { kept, notes, possibleDuplicateOf } = selectTasks(cleaned, (c) => c.draft);
         const total = kept.length;
-        const fill = (p: Proposal, c: (typeof kept)[number], index: number): Proposal => ({
-          ...p,
-          status: "ready",
-          draft: c.draft,
-          rawDraft: c.rawDraft,
-          isActionable: c.task.isActionable,
-          confidence: c.task.confidence,
-          quoteVerified: c.grounded.verified,
-          part: total > 1 ? { index, total } : null,
-          ai: {
-            model: this.generator.model(),
-            durationMs,
-            attempts,
-            error: null,
-            adjustments: [...c.adjustments, ...notes],
-          },
-        });
-        const first = await this.setStatus(id, ["structuring"], (p) => fill(p, kept[0], 1));
-        if (!first || total < 2) return "done";
-        // Each extra task is its own review item, linked to the same message
-        // (same intakeId) and never overwriting a proposal already decided.
-        await this.store.withLock(async () => {
+        const idOf = (i: number) => (i === 0 ? id : siblingProposalId(id, i + 1));
+        const fill = (p: Proposal, c: (typeof kept)[number], index: number): Proposal => {
+          const twin = possibleDuplicateOf[index - 1];
+          return {
+            ...p,
+            status: "ready",
+            draft: c.draft,
+            rawDraft: c.rawDraft,
+            isActionable: c.task.isActionable,
+            confidence: c.task.confidence,
+            quoteVerified: c.grounded.verified,
+            replyBelowQuote: replyBelowQuote || undefined,
+            part: total > 1 ? { index, total } : null,
+            possibleDuplicateOf: twin == null ? null : idOf(twin),
+            ai: {
+              model: this.generator.model(),
+              durationMs,
+              attempts,
+              error: null,
+              adjustments: [
+                ...c.adjustments,
+                ...notes,
+                ...(twin == null
+                  ? []
+                  : [
+                      `Looks like "${kept[twin].draft.title}" from the same message, but is not identical: check it is not a duplicate.`,
+                    ]),
+              ],
+            },
+          };
+        };
+        if (total < 2) {
+          await this.setStatus(id, ["structuring"], (p) => fill(p, kept[0], 1));
+          return "done";
+        }
+        // Several tasks: write every extra card first, hidden ("splitting"), and
+        // only then publish them all together with card 1, so a crash can never
+        // leave "1 of 3" visible with its siblings missing. A leftover hidden
+        // card is published (or rewritten) by start(). A sibling that is already
+        // live or decided is never overwritten.
+        const published = await this.store.withLock(async () => {
+          const current = await this.store.getProposal(id);
+          if (!current || current.status !== "structuring") return false;
+          const stamp = () => new Date(this.now()).toISOString();
+          const hidden: Proposal[] = [];
           for (let i = 1; i < total; i++) {
-            const siblingId = siblingProposalId(id, i + 1);
-            if (await this.store.getProposal(siblingId)) continue;
+            const siblingId = idOf(i);
+            const existing = await this.store.getProposal(siblingId);
+            if (existing && existing.status !== "splitting") continue;
             const base: Proposal = {
-              ...first,
+              ...current,
               id: siblingId,
               edits: null,
               todoId: null,
               update: null,
             };
-            await this.store.putProposal({
+            const sibling: Proposal = {
               ...fill(base, kept[i], i + 1),
-              updatedAt: new Date(this.now()).toISOString(),
-            });
+              status: "splitting",
+              updatedAt: stamp(),
+            };
+            await this.store.putProposal(sibling);
+            hidden.push(sibling);
           }
+          // Hidden cards of an earlier, larger split of this message are closed.
+          const wanted = new Set(Array.from({ length: total }, (_, i) => idOf(i)));
+          for (const other of await this.store.listProposals()) {
+            if (
+              other.intakeId === current.intakeId &&
+              other.status === "splitting" &&
+              !wanted.has(other.id)
+            ) {
+              await this.store.putProposal({
+                ...other,
+                status: "rejected",
+                updatedAt: stamp(),
+              });
+            }
+          }
+          await this.store.putProposal({
+            ...fill(current, kept[0], 1),
+            updatedAt: stamp(),
+          });
+          for (const sibling of hidden) {
+            await this.store.putProposal({ ...sibling, status: "ready" });
+          }
+          return true;
         });
-        await this.store.audit("split", { proposalId: id, tasks: total });
+        if (published) await this.store.audit("split", { proposalId: id, tasks: total });
         return "done";
       },
     });
@@ -397,9 +493,11 @@ ${bodyText}`,
     let retriedTimeout = false;
     for (;;) {
       const started = this.now();
+      let output: T;
+      let durationMs: number;
       try {
-        const output = await job.call();
-        const durationMs = this.now() - started;
+        output = await job.call();
+        durationMs = this.now() - started;
         attempts++;
         await this.store.logAiCall({
           intakeId: claimed.intakeId,
@@ -411,9 +509,8 @@ ${bodyText}`,
           outcome: "ok",
         });
         this.paused = null;
-        return await job.onOk(output, durationMs, attempts);
       } catch (error) {
-        const durationMs = this.now() - started;
+        const failedAfter = this.now() - started;
         const { kind, message } = classify(error);
         await this.store.logAiCall({
           intakeId: claimed.intakeId,
@@ -421,7 +518,7 @@ ${bodyText}`,
           bytes: job.bytes,
           promptVersion: job.promptVersion,
           task: job.task,
-          durationMs,
+          durationMs: failedAfter,
           outcome: kind,
         });
 
@@ -447,7 +544,21 @@ ${bodyText}`,
           retriedTimeout = true; // one automatic retry, then it is 'failed'
           continue;
         }
-        await this.fail(id, attempts, message, durationMs);
+        await this.fail(id, attempts, message, failedAfter);
+        return "done";
+      }
+      // The model answered. A failure from here on is ours (storage), not the
+      // model's: no second log line, no attempt used, and a message that says so.
+      try {
+        return await job.onOk(output, durationMs, attempts);
+      } catch (error) {
+        console.error(`[pmo] saving the model's answer for ${id} failed:`, error);
+        await this.fail(
+          id,
+          claimed.ai.attempts,
+          `The model answered, but its answer could not be saved (${(error as Error).message}). Retry, or create the to-do by hand.`,
+          durationMs,
+        );
         return "done";
       }
     }

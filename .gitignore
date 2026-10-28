@@ -20,7 +20,8 @@
 /out/
 
 # production
-/build
+/build/*
+!/build/installer.nsh
 /release
 /dist
 

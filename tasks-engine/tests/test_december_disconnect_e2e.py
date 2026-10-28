@@ -39,7 +39,7 @@ from getpass import getuser
 from pathlib import Path
 
 import pytest
-from fastapi.testclient import TestClient
+from conftest import make_client
 
 import main as backend
 
@@ -169,7 +169,7 @@ def env(monkeypatch, world_template):
 def client(env):
     # the context manager keeps ONE event loop alive across requests, so the
     # fire-and-forget pipeline task created by /start survives between calls
-    with TestClient(backend.app, raise_server_exceptions=False) as c:
+    with make_client() as c:
         yield c
 
 
@@ -435,11 +435,14 @@ def test_full_lifecycle(env, client):
     assert {"id", "displayName", "state", "error", "currentStep", "steps",
             "notifications", "inputs", "prepare"} <= set(t)
     assert (t["state"], t["prepare"]) == ("resting", True)
-    assert [i["id"] for i in t["inputs"]] == ["roster", "staff", "analytics_a", "analytics_b", "window"]
+    assert [i["id"] for i in t["inputs"]] == [
+        "roster", "staff", "winter_config", "analytics_config", "analytics_a", "analytics_b", "window"]
     assert {i["id"]: i["required"] for i in t["inputs"]} == {
-        "roster": True, "staff": True, "analytics_a": False, "analytics_b": False, "window": True}
+        "roster": True, "staff": True, "winter_config": True, "analytics_config": True,
+        "analytics_a": False, "analytics_b": False, "window": True}
     assert {i["id"]: i["type"] for i in t["inputs"]} == {
-        "roster": "file", "staff": "file", "analytics_a": "file", "analytics_b": "file", "window": "select"}
+        "roster": "file", "staff": "file", "winter_config": "file", "analytics_config": "file",
+        "analytics_a": "file", "analytics_b": "file", "window": "select"}
     assert all(i["label"] for i in t["inputs"])
     assert [(s["id"], s["type"]) for s in t["steps"]] == [
         ("analyze", "python"), ("answers", "review"), ("build_draft", "python"), ("review_draft", "review"),
@@ -460,7 +463,8 @@ def test_full_lifecycle(env, client):
     inputs = get(c, "/inputs")
     assert inputs["ok"] and inputs["params"] == {}
     assert {i["id"]: i["present"] for i in inputs["inputs"]} == {
-        "roster": False, "staff": False, "analytics_a": False, "analytics_b": False, "window": False}
+        "roster": False, "staff": False, "winter_config": True, "analytics_config": True,
+        "analytics_a": False, "analytics_b": False, "window": False}
     refused = post(c, "/start")
     assert refused["ok"] is False and refused["missing"] == ["roster", "staff", "window"]
     assert task_json(c)["state"] == "resting"

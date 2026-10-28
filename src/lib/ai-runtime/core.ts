@@ -289,20 +289,39 @@ export function isAiRuntimeError(error: unknown): error is AiRuntimeError {
 // FIFO queue (concurrency 1)
 // ---------------------------------------------------------------------------
 
+/** Which lane a call waits in. Interactive calls (a person is waiting on the
+ *  answer) are served before queued background ones; a running call is never
+ *  pre-empted. Calls that don't say are background. */
+export type CallPriority = "interactive" | "background";
+
+export interface EnqueueOptions {
+  priority?: CallPriority;
+  /** What the job is (the log's task kind), so aheadOf() can find it. */
+  tag?: string;
+}
+
 interface QueuedJob {
+  tag?: string;
   start: () => void;
   fail: (error: unknown) => void;
 }
 
-/** Runs one async task at a time, strictly in arrival order. A task that
- *  rejects does not block the ones behind it. */
+/** Runs one async task at a time. Two lanes, each strictly in arrival order;
+ *  the interactive lane is served first. A task that rejects does not block
+ *  the ones behind it. */
 export class FifoQueue {
-  private jobs: QueuedJob[] = [];
+  private interactive: QueuedJob[] = [];
+  private background: QueuedJob[] = [];
   private busy = false;
 
-  /** Tasks waiting behind the running one. */
+  /** Tasks waiting behind the running one, both lanes. */
   get waiting(): number {
-    return this.jobs.length;
+    return this.interactive.length + this.background.length;
+  }
+
+  /** Interactive tasks among the waiting ones. */
+  get interactiveWaiting(): number {
+    return this.interactive.length;
   }
 
   /** Is a task running right now? */
@@ -310,9 +329,25 @@ export class FifoQueue {
     return this.busy;
   }
 
-  enqueue<T>(task: () => Promise<T>): Promise<T> {
+  /** Tasks (running one included) that would run before a task enqueued now. */
+  aheadOfNew(priority: CallPriority = "background"): number {
+    const lane = priority === "interactive" ? 0 : this.background.length;
+    return (this.busy ? 1 : 0) + this.interactive.length + lane;
+  }
+
+  /** Tasks (running one included) ahead of the next waiting task whose tag is
+   *  in `tags`; null if none is waiting. */
+  aheadOf(tags: readonly string[]): number | null {
+    const order = [...this.interactive, ...this.background];
+    const at = order.findIndex((job) => job.tag !== undefined && tags.includes(job.tag));
+    return at < 0 ? null : at + (this.busy ? 1 : 0);
+  }
+
+  enqueue<T>(task: () => Promise<T>, options: EnqueueOptions = {}): Promise<T> {
+    const lane = options.priority === "interactive" ? this.interactive : this.background;
     return new Promise<T>((resolve, reject) => {
-      this.jobs.push({
+      lane.push({
+        tag: options.tag,
         start: () => {
           const settle = (done: () => void) => {
             this.busy = false;
@@ -334,14 +369,14 @@ export class FifoQueue {
 
   /** Reject everything still waiting (not the running task). Used on shutdown. */
   rejectWaiting(error: unknown): number {
-    const dropped = this.jobs.splice(0);
+    const dropped = [...this.interactive.splice(0), ...this.background.splice(0)];
     for (const job of dropped) job.fail(error);
     return dropped.length;
   }
 
   private pump(): void {
     if (this.busy) return;
-    const next = this.jobs.shift();
+    const next = this.interactive.shift() ?? this.background.shift();
     if (!next) return;
     this.busy = true;
     next.start();
@@ -603,7 +638,15 @@ export interface OllamaClientDeps {
   observe?: (model: string) => Promise<boolean | null>;
   /** Runs after every call, successful or not (index.ts re-checks /api/ps). */
   afterCall?: () => void;
+  /** Picks the model for calls that do not name one (see modelChoice.ts). */
+  models?: ModelPicker;
   now?: () => number;
+}
+
+/** The slice of modelChoice.ts's resolver the client needs. */
+export interface ModelPicker {
+  current(): { model: string };
+  observeInstalled(installed: string[] | null): void;
 }
 
 export interface GenerateJsonOptions<S extends z.ZodType> {
@@ -620,6 +663,9 @@ export interface GenerateJsonOptions<S extends z.ZodType> {
    *  minutes. Do not pass `true` for a model without thinking support:
    *  Ollama answers HTTP 400. */
   think?: boolean;
+  /** `interactive` = a person is waiting; served before queued background work
+   *  (never pre-empting the running call). Default: background. */
+  priority?: CallPriority;
   /** What this call is, for the model log (task kind + short label). */
   log?: AiCallLogOptions<z.output<S>>;
 }
@@ -632,6 +678,8 @@ export interface GenerateTextOptions {
   temperature?: number;
   /** See GenerateJsonOptions.think. */
   think?: boolean;
+  /** See GenerateJsonOptions.priority. */
+  priority?: CallPriority;
   /** See GenerateJsonOptions.log. */
   log?: AiCallLogOptions<string>;
 }
@@ -771,6 +819,20 @@ export function createOllamaClient(deps: OllamaClientDeps) {
     };
   }
 
+  /** The model for this call: the caller's, else env > saved > default, or the
+   *  one allowed model that is installed (GET /api/tags, never loads anything). */
+  async function pickModel(explicit?: string): Promise<string> {
+    if (explicit) return explicit;
+    const picker = deps.models;
+    if (!picker) return config.defaultModel;
+    try {
+      picker.observeInstalled(await listInstalled());
+    } catch {
+      picker.observeInstalled(null);
+    }
+    return picker.current().model;
+  }
+
   /**
    * Every generate call goes through the one queue slot, and every one is
    * logged here: queued (when something is ahead), start, and end with its
@@ -778,14 +840,21 @@ export function createOllamaClient(deps: OllamaClientDeps) {
    * label, durations and counts are logged, never `prompt` or a reply.
    */
   function enqueue<R>(
-    meta: { model: string; think?: boolean; log: AiCallLogOptions<R> },
-    run: (trace: CallTrace) => Promise<R>,
+    meta: {
+      model?: string;
+      think?: boolean;
+      priority?: CallPriority;
+      log: AiCallLogOptions<R>;
+    },
+    run: (trace: CallTrace, model: string) => Promise<R>,
   ): Promise<R> {
     const { log } = deps;
+    // Best guess until the slot runs; then the installed models are known.
+    let model = meta.model ?? deps.models?.current().model ?? config.defaultModel;
     const id = log?.nextCallId();
     const { task, label } = meta.log;
     if (log) {
-      const ahead = queue.waiting + (queue.active ? 1 : 0);
+      const ahead = queue.aheadOfNew(meta.priority);
       if (ahead > 0) {
         log.emit({
           kind: "call-queued",
@@ -798,6 +867,7 @@ export function createOllamaClient(deps: OllamaClientDeps) {
       }
     }
 
+    const lane: EnqueueOptions = { priority: meta.priority, tag: task };
     return queue.enqueue(async () => {
       const trace = newTrace(id);
       let startedAt = now();
@@ -810,7 +880,7 @@ export function createOllamaClient(deps: OllamaClientDeps) {
           call: id as string,
           task,
           label,
-          model: meta.model,
+          model,
           keepAlive: keepAlive(),
           ...(meta.think === undefined ? {} : { think: meta.think }),
           modelLoaded,
@@ -819,14 +889,15 @@ export function createOllamaClient(deps: OllamaClientDeps) {
       };
       try {
         await deps.ensure?.();
+        model = await pickModel(meta.model);
         let loaded: boolean | null = null;
         try {
-          loaded = (await deps.observe?.(meta.model)) ?? null;
+          loaded = (await deps.observe?.(model)) ?? null;
         } catch {
           // Only a log detail: never let it fail a call.
         }
         start(loaded);
-        const result = await run(trace);
+        const result = await run(trace, model);
         let note: string | undefined;
         try {
           note = meta.log.note?.(result) ?? undefined;
@@ -838,7 +909,7 @@ export function createOllamaClient(deps: OllamaClientDeps) {
           call: id as string,
           task,
           label,
-          model: meta.model,
+          model,
           ok: true,
           durationMs: now() - startedAt,
           attempts: trace.attempts,
@@ -855,7 +926,7 @@ export function createOllamaClient(deps: OllamaClientDeps) {
             call: id as string,
             task,
             label,
-            model: meta.model,
+            model,
             ok: false,
             durationMs: now() - startedAt,
             attempts: trace.attempts,
@@ -872,7 +943,7 @@ export function createOllamaClient(deps: OllamaClientDeps) {
           // Best effort.
         }
       }
-    });
+    }, lane);
   }
 
   /**
@@ -883,7 +954,6 @@ export function createOllamaClient(deps: OllamaClientDeps) {
   function generateJson<S extends z.ZodType>(
     options: GenerateJsonOptions<S>,
   ): Promise<z.output<S>> {
-    const model = options.model ?? config.defaultModel;
     const timeoutMs = options.timeoutMs ?? config.requestTimeoutMs;
     const format = toOllamaFormat(options.schema);
 
@@ -897,8 +967,13 @@ export function createOllamaClient(deps: OllamaClientDeps) {
       .join("\n\n");
 
     return enqueue(
-      { model, think: options.think, log: options.log ?? { task: "json" } },
-      async (trace) => {
+      {
+        model: options.model,
+        think: options.think,
+        priority: options.priority,
+        log: options.log ?? { task: "json" },
+      },
+      async (trace, model) => {
         const messages: ChatMessage[] = [
           { role: "system", content: system },
           { role: "user", content: options.prompt },
@@ -961,7 +1036,6 @@ export function createOllamaClient(deps: OllamaClientDeps) {
   }
 
   function generateText(options: GenerateTextOptions): Promise<string> {
-    const model = options.model ?? config.defaultModel;
     const timeoutMs = options.timeoutMs ?? config.requestTimeoutMs;
     const messages: ChatMessage[] = [
       ...(options.system?.trim()
@@ -970,8 +1044,13 @@ export function createOllamaClient(deps: OllamaClientDeps) {
       { role: "user", content: options.prompt },
     ];
     return enqueue(
-      { model, think: options.think, log: options.log ?? { task: "text" } },
-      async (trace) => {
+      {
+        model: options.model,
+        think: options.think,
+        priority: options.priority,
+        log: options.log ?? { task: "text" },
+      },
+      async (trace, model) => {
         const reply = await chat(
           {
             model,
@@ -992,10 +1071,10 @@ export function createOllamaClient(deps: OllamaClientDeps) {
    *  allocates the model: the first real call then still spent 60-90 s paging
    *  the weights in. A tiny real chat touches them, so this is one. */
   function warm(
-    model: string = config.defaultModel,
+    model?: string,
     log: AiCallLogOptions<void> = { task: "load" },
   ): Promise<void> {
-    return enqueue({ model, think: false, log }, async (trace) => {
+    return enqueue({ model, think: false, log }, async (trace, model) => {
       await chat(
         {
           model,

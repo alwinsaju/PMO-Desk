@@ -19,6 +19,7 @@ import {
   updateConfig,
 } from "./actions.ts";
 import { createPmo } from "./create.ts";
+import { developerConfig } from "../developerDefaults.ts";
 import { checkOrigin } from "./originCheck.ts";
 import { MAX_REPORT_CHARS } from "./reports.ts";
 import { purgeExpired } from "./retention.ts";
@@ -91,7 +92,13 @@ beforeEach(async () => {
   inboxDir = await mkdtemp(path.join(os.tmpdir(), "pmo-rep-inbox-"));
   clock = new Date("2026-10-24T06:30:00.000Z"); // Saturday 12:00 IST
   ai = fakeModel();
-  pmo = await createPmo({ dataDir, inboxDir, generator: ai, now: () => clock });
+  pmo = await createPmo({
+    dataDir,
+    inboxDir,
+    seedConfig: developerConfig(),
+    generator: ai,
+    now: () => clock,
+  });
 });
 
 afterEach(async () => {

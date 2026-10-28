@@ -31,6 +31,10 @@ INPUT_DIR = os.path.join(AGENT_DIR, "input")
 OUTPUT_DIR = os.path.join(AGENT_DIR, "output")
 ROSTER_PATH = os.path.join(WORKSPACE_DIR, "shared", "roster", "Names.xlsx")
 
+# Draft addressing lives here so create_draft.ps1 and the 'Confirm & send' dialog show the same values.
+MAIL_TO = "USPDTOperate <uspdtoperate@deloitte.com>"
+MAIL_CC = "Peethambaram, Sreela <speethambaram@deloitte.com>; Sarab, Mani Deep <msarab@deloitte.com>; Atchula, Rupavani <ratchula@deloitte.com>"
+
 ORDINAL_SUFFIXES = {1: "st", 2: "nd", 3: "rd"}
 
 
@@ -319,6 +323,10 @@ def main():
 
     data = {
         "workbook_path": workbook_path,
+        "to": MAIL_TO,
+        "cc": MAIL_CC,
+        "subject": f"Deployment and POC Details {date_str} & DEP Team Schedule",
+        "attachments": [],
         "block_title": block_title,
         "date_str": date_str,
         "body_date": body_date,

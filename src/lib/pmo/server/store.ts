@@ -4,7 +4,7 @@
 // those sequences in this process.
 import os from "node:os";
 import { z } from "zod";
-import { mkdir, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readdir, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
   PmoConfigSchema,
@@ -20,14 +20,18 @@ import {
 } from "../types.ts";
 import {
   appendJsonl,
+  appendJsonlRotating,
   listFiles,
   moveFile,
   mutexFor,
   readJson,
+  readJsonSafe,
   writeJsonAtomic,
   type Mutex,
 } from "./fsx.ts";
-import { isSafeId, migratedInboxDir, pmoPaths, type PmoPaths } from "./paths.ts";
+import { migrateProposal, migrateTodo } from "./migrate.ts";
+import { isSafeId, pmoPaths, type PmoPaths } from "./paths.ts";
+import { inferSetupComplete } from "../firstRun.ts";
 
 export interface SeenEntry {
   at: string;
@@ -37,6 +41,7 @@ export interface SeenEntry {
 export type AuditAction =
   | "approve"
   | "reject"
+  | "restore"
   | "edit"
   | "complete"
   | "cancel"
@@ -90,14 +95,30 @@ export const NotifyStateSchema = z.object({
 });
 export type NotifyState = z.output<typeof NotifyStateSchema>;
 
+type Parse<T> = (value: unknown) => { success: boolean; data?: T };
+
+/** Which record directory a file came from; names the folder under corrupt/. */
+type RecordKind =
+  "raw" | "quarantine" | "queue" | "todos" | "archive-queue" | "archive-todos";
+
+interface CacheEntry {
+  mtimeMs: number;
+  size: number;
+  value: unknown;
+}
+
 export class Store {
   readonly paths: PmoPaths;
   private readonly mutex: Mutex;
   private seen: Record<string, SeenEntry> | null = null;
-  /** Records skipped because their file was unreadable; surfaced in state. */
+  /** Records moved to corrupt/ by this process (the folder itself is the
+   *  durable count: see listCorrupt). */
   corruptFiles = 0;
-  /** The one-time inbox path migration, run on first config load (see loadConfig). */
-  private inboxMigration: Promise<void> | null = null;
+  /** Parsed records by path, valid while (mtimeMs, size) are unchanged, so a
+   *  poll re-reads only the files that changed. */
+  private readonly cache = new Map<string, CacheEntry>();
+  /** Files actually read from disk (cache misses); exposed for tests. */
+  readonly stats = { fileReads: 0 };
 
   readonly root: string;
 
@@ -111,7 +132,8 @@ export class Store {
     return this.mutex.run(fn);
   }
 
-  async init(): Promise<void> {
+  /** `seed` is the config written when none exists yet (tests; production starts neutral). */
+  async init(seed?: PmoConfig): Promise<void> {
     const p = this.paths;
     await Promise.all(
       [
@@ -126,44 +148,22 @@ export class Store {
     );
     // Write the defaults out once so the file is there to edit by hand.
     if ((await readJson(p.config)) === null) {
-      await writeJsonAtomic(p.config, PmoConfigSchema.parse({}));
+      await writeJsonAtomic(p.config, seed ?? PmoConfigSchema.parse({}));
     }
   }
 
   // --- config ---------------------------------------------------------------
 
-  /** If config.json still holds a former default inboxDir (first run wrote the
-   *  then-default into it, which would override the new one), swap in the current
-   *  default and persist. Only an exact match of a known old default (loosely
-   *  compared) is touched; a custom path never is. Unknown keys are kept as they
-   *  are. Runs once per Store; a failed attempt is retried on the next load. */
-  private migrateInboxDir(): Promise<void> {
-    this.inboxMigration ??= (async () => {
-      try {
-        const raw = await readJson<Record<string, unknown>>(this.paths.config);
-        if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
-          this.inboxMigration = null; // no config file yet: check again once it exists
-          return;
-        }
-        const next = migratedInboxDir(raw.inboxDir);
-        if (next === null) return;
-        await writeJsonAtomic(this.paths.config, { ...raw, inboxDir: next });
-        await this.audit("config", {
-          migrated: "inboxDir",
-          from: String(raw.inboxDir),
-          to: next,
-        });
-      } catch {
-        this.inboxMigration = null; // unreadable or unwritable now; try again next load
-      }
-    })();
-    return this.inboxMigration;
-  }
-
   async loadConfig(): Promise<PmoConfig> {
-    await this.migrateInboxDir();
     try {
-      return PmoConfigSchema.parse((await readJson(this.paths.config)) ?? {});
+      const raw = (await readJson(this.paths.config)) ?? {};
+      // A file from before the first-run wizard counts as set up when it already
+      // has an owner email and an inbox (see inferSetupComplete).
+      const saved =
+        typeof raw === "object" && !Array.isArray(raw)
+          ? { ...raw, setupComplete: inferSetupComplete(raw) }
+          : raw;
+      return PmoConfigSchema.parse(saved);
     } catch {
       // A hand-edit gone wrong must not stop ingest; fall back to the
       // defaults (which are the strict ones) until the file is fixed.
@@ -192,19 +192,99 @@ export class Store {
 
   // --- generic record dirs ----------------------------------------------------
 
-  private async readAll<T>(
-    dir: string,
-    parse: (value: unknown) => { success: boolean; data?: T },
-  ): Promise<T[]> {
+  /** Move a record file that cannot be read or validated to
+   *  corrupt/<kind>/<name>.<timestamp>. Never deleted. */
+  private async quarantineFile(
+    file: string,
+    kind: RecordKind,
+    reason: string,
+  ): Promise<void> {
+    this.cache.delete(file);
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    try {
+      await moveFile(
+        file,
+        path.join(this.paths.corrupt, kind, `${path.basename(file)}.${stamp}`),
+      );
+    } catch (error) {
+      // Another reader got there first; anything else leaves the file in place.
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+      this.corruptFiles++;
+      return;
+    }
+    this.corruptFiles++;
+    await this.logIngest({
+      outcome: "record-quarantined",
+      kind,
+      file: path.basename(file),
+      reason: reason.slice(0, 300),
+    });
+  }
+
+  /** One record file: from the cache when (mtimeMs, size) are unchanged, else
+   *  read, migrated to the current shape and validated. Unparsable or invalid
+   *  content quarantines the file; an I/O error (a locked file) skips it for
+   *  now without moving it. undefined = nothing to return. */
+  private async loadRecord<T>(
+    file: string,
+    kind: RecordKind,
+    parse: Parse<T>,
+  ): Promise<T | undefined> {
+    let info;
+    try {
+      info = await stat(file);
+    } catch (error) {
+      this.cache.delete(file);
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") this.corruptFiles++;
+      return undefined;
+    }
+    const cached = this.cache.get(file);
+    if (cached && cached.mtimeMs === info.mtimeMs && cached.size === info.size) {
+      return structuredClone(cached.value) as T;
+    }
+    this.stats.fileReads++;
+    let read;
+    try {
+      read = await readJsonSafe(file);
+    } catch {
+      this.corruptFiles++;
+      return undefined;
+    }
+    if (read.kind === "missing") {
+      this.cache.delete(file);
+      return undefined;
+    }
+    if (read.kind === "corrupt") {
+      await this.quarantineFile(file, kind, read.reason);
+      return undefined;
+    }
+    const migrate =
+      kind === "queue" || kind === "archive-queue"
+        ? migrateProposal
+        : kind === "todos" || kind === "archive-todos"
+          ? migrateTodo
+          : (value: unknown) => value;
+    const result = parse(migrate(read.value));
+    if (!result.success || result.data === undefined) {
+      await this.quarantineFile(file, kind, "does not match the record format");
+      return undefined;
+    }
+    this.cache.set(file, { mtimeMs: info.mtimeMs, size: info.size, value: result.data });
+    return structuredClone(result.data);
+  }
+
+  private async readAll<T>(dir: string, kind: RecordKind, parse: Parse<T>): Promise<T[]> {
     const out: T[] = [];
-    for (const name of await listFiles(dir)) {
-      try {
-        const result = parse(await readJson(path.join(dir, name)));
-        if (result.success && result.data !== undefined) out.push(result.data);
-        else this.corruptFiles++;
-      } catch {
-        this.corruptFiles++;
-      }
+    const names = await listFiles(dir);
+    const live = new Set<string>();
+    for (const name of names) {
+      const file = path.join(dir, name);
+      live.add(file);
+      const record = await this.loadRecord(file, kind, parse);
+      if (record !== undefined) out.push(record);
+    }
+    for (const key of this.cache.keys()) {
+      if (path.dirname(key) === dir && !live.has(key)) this.cache.delete(key);
     }
     return out;
   }
@@ -212,47 +292,80 @@ export class Store {
   private async readOne<T>(
     dir: string,
     id: string,
-    parse: (value: unknown) => { success: boolean; data?: T },
+    kind: RecordKind,
+    parse: Parse<T>,
   ): Promise<T | null> {
     if (!isSafeId(id)) return null;
-    const value = await readJson(path.join(dir, `${id}.json`));
-    if (value === null) return null;
-    const result = parse(value);
-    return result.success && result.data !== undefined ? result.data : null;
+    return (await this.loadRecord(path.join(dir, `${id}.json`), kind, parse)) ?? null;
+  }
+
+  /** Write a record and forget what was cached for it. */
+  private async writeRecord(file: string, value: unknown): Promise<void> {
+    this.cache.delete(file);
+    await writeJsonAtomic(file, value);
+    this.cache.delete(file);
+  }
+
+  /** Record files moved aside as unreadable, as `<kind>/<file>`, oldest first. */
+  async listCorrupt(): Promise<string[]> {
+    const names: string[] = [];
+    let kinds: string[] = [];
+    try {
+      kinds = await readdir(this.paths.corrupt);
+    } catch {
+      return [];
+    }
+    for (const kind of kinds) {
+      try {
+        for (const name of await readdir(path.join(this.paths.corrupt, kind))) {
+          names.push(`${kind}/${name}`);
+        }
+      } catch {
+        // not a directory
+      }
+    }
+    const stampOf = (name: string) => name.slice(name.lastIndexOf(".") + 1);
+    return names.sort((a, b) => stampOf(a).localeCompare(stampOf(b)));
   }
 
   // --- raw snapshots (immutable) ----------------------------------------------
 
   async writeRaw(record: RawRecord): Promise<void> {
-    await writeJsonAtomic(path.join(this.paths.raw, `${record.intakeId}.json`), record);
+    await this.writeRecord(path.join(this.paths.raw, `${record.intakeId}.json`), record);
   }
 
   readRaw(intakeId: string): Promise<RawRecord | null> {
-    return this.readOne(this.paths.raw, intakeId, (v) => RawRecordSchema.safeParse(v));
+    return this.readOne(this.paths.raw, intakeId, "raw", (v) =>
+      RawRecordSchema.safeParse(v),
+    );
   }
 
   async listRaw(): Promise<RawRecord[]> {
-    return this.readAll(this.paths.raw, (v) => RawRecordSchema.safeParse(v));
+    return this.readAll(this.paths.raw, "raw", (v) => RawRecordSchema.safeParse(v));
   }
 
   async removeRaw(intakeId: string): Promise<void> {
     if (!isSafeId(intakeId)) return;
-    await unlink(path.join(this.paths.raw, `${intakeId}.json`)).catch(() => undefined);
+    const file = path.join(this.paths.raw, `${intakeId}.json`);
+    this.cache.delete(file);
+    await unlink(file).catch(() => undefined);
   }
 
   // --- quarantine -------------------------------------------------------------
 
   async writeQuarantine(record: QuarantineRecord): Promise<void> {
-    await writeJsonAtomic(path.join(this.paths.quarantine, `${record.id}.json`), record);
+    await this.writeRecord(path.join(this.paths.quarantine, `${record.id}.json`), record);
   }
 
   async removeQuarantine(id: string): Promise<void> {
     if (!isSafeId(id)) return;
-    await unlink(path.join(this.paths.quarantine, `${id}.json`)).catch(() => undefined);
+    const file = path.join(this.paths.quarantine, `${id}.json`);
+    this.cache.delete(file);
+    await unlink(file).catch(() => undefined);
   }
 
   async listQuarantine(): Promise<QuarantineRecord[]> {
-    const all = await this.readAll(this.paths.quarantine, (v) =>
+    const all = await this.readAll(this.paths.quarantine, "quarantine", (v) =>
       QuarantineRecordSchema.safeParse(v),
     );
     return all.sort((a, b) => b.at.localeCompare(a.at));
@@ -261,30 +374,68 @@ export class Store {
   // --- proposals (queue/) -----------------------------------------------------
 
   async putProposal(proposal: Proposal): Promise<void> {
-    await writeJsonAtomic(path.join(this.paths.queue, `${proposal.id}.json`), proposal);
+    await this.writeRecord(path.join(this.paths.queue, `${proposal.id}.json`), proposal);
   }
 
   getProposal(id: string): Promise<Proposal | null> {
-    return this.readOne(this.paths.queue, id, (v) => ProposalSchema.safeParse(v));
+    return this.readOne(this.paths.queue, id, "queue", (v) =>
+      ProposalSchema.safeParse(v),
+    );
   }
 
   async listProposals(): Promise<Proposal[]> {
-    const all = await this.readAll(this.paths.queue, (v) => ProposalSchema.safeParse(v));
+    const all = await this.readAll(this.paths.queue, "queue", (v) =>
+      ProposalSchema.safeParse(v),
+    );
     return all.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+
+  /** Decided proposals moved out of queue/ by the retention sweep. */
+  listArchivedProposals(): Promise<Proposal[]> {
+    return this.readAll(this.paths.archiveQueue, "archive-queue", (v) =>
+      ProposalSchema.safeParse(v),
+    );
   }
 
   // --- todos ------------------------------------------------------------------
 
   async putTodo(todo: Todo): Promise<void> {
-    await writeJsonAtomic(path.join(this.paths.todos, `${todo.id}.json`), todo);
+    await this.writeRecord(path.join(this.paths.todos, `${todo.id}.json`), todo);
   }
 
   getTodo(id: string): Promise<Todo | null> {
-    return this.readOne(this.paths.todos, id, (v) => TodoSchema.safeParse(v));
+    return this.readOne(this.paths.todos, id, "todos", (v) => TodoSchema.safeParse(v));
   }
 
   async listTodos(): Promise<Todo[]> {
-    return this.readAll(this.paths.todos, (v) => TodoSchema.safeParse(v));
+    return this.readAll(this.paths.todos, "todos", (v) => TodoSchema.safeParse(v));
+  }
+
+  /** Closed to-dos moved out of todos/ by the retention sweep. */
+  listArchivedTodos(): Promise<Todo[]> {
+    return this.readAll(this.paths.archiveTodos, "archive-todos", (v) =>
+      TodoSchema.safeParse(v),
+    );
+  }
+
+  /** Live and archived to-dos together (reports and retention need the history). */
+  async listAllTodos(): Promise<Todo[]> {
+    return [...(await this.listTodos()), ...(await this.listArchivedTodos())];
+  }
+
+  /** Move a decided proposal / closed to-do into archive/ (callers hold the lock). */
+  async archiveRecord(kind: "queue" | "todos", id: string): Promise<void> {
+    if (!isSafeId(id)) return;
+    const from = path.join(
+      kind === "queue" ? this.paths.queue : this.paths.todos,
+      `${id}.json`,
+    );
+    const to = path.join(
+      kind === "queue" ? this.paths.archiveQueue : this.paths.archiveTodos,
+      `${id}.json`,
+    );
+    this.cache.delete(from);
+    await moveFile(from, to);
   }
 
   // --- dedupe index -----------------------------------------------------------
@@ -306,8 +457,31 @@ export class Store {
 
   async markSeen(key: string, entry: SeenEntry): Promise<void> {
     const seen = await this.loadSeen();
+    if (seen[key]?.intakeId === entry.intakeId) return; // nothing to write
     seen[key] = entry;
     await writeJsonAtomic(this.paths.seen, seen);
+  }
+
+  /** Drop the dedupe entries `shouldDrop` picks (callers hold the lock); returns
+   *  the intake ids that went. */
+  async pruneSeen(shouldDrop: (entry: SeenEntry) => boolean): Promise<string[]> {
+    const seen = await this.loadSeen();
+    const dropped: string[] = [];
+    for (const [key, entry] of Object.entries(seen)) {
+      if (!shouldDrop(entry)) continue;
+      delete seen[key];
+      dropped.push(entry.intakeId);
+    }
+    if (dropped.length > 0) await writeJsonAtomic(this.paths.seen, seen);
+    return dropped;
+  }
+
+  /** Delete one archived proposal (retention only). */
+  async removeArchivedProposal(id: string): Promise<void> {
+    if (!isSafeId(id)) return;
+    const file = path.join(this.paths.archiveQueue, `${id}.json`);
+    this.cache.delete(file);
+    await unlink(file).catch(() => undefined);
   }
 
   // --- rejected producer files, logs, audit -----------------------------------
@@ -326,6 +500,22 @@ export class Store {
     return (await listFiles(this.paths.rejectedFiles, ".reason.txt")).length;
   }
 
+  /** The parked producer files: how many, and the newest `limit` by their
+   *  original name (the timestamp moveToRejected put in front is dropped). */
+  async listRejectedFiles(limit: number): Promise<{ count: number; names: string[] }> {
+    const reasons = await listFiles(this.paths.rejectedFiles, ".reason.txt");
+    const names = reasons
+      .sort()
+      .reverse()
+      .slice(0, limit)
+      .map((name) =>
+        name
+          .replace(/\.reason\.txt$/i, "")
+          .replace(/^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z_/, ""),
+      );
+    return { count: reasons.length, names };
+  }
+
   logIngest(entry: Record<string, unknown>): Promise<void> {
     return appendJsonl(this.paths.ingestLog, {
       ts: new Date().toISOString(),
@@ -341,7 +531,7 @@ export class Store {
   }
 
   audit(action: AuditAction, details: Record<string, unknown>): Promise<void> {
-    return appendJsonl(this.paths.audit, {
+    return appendJsonlRotating(this.paths.audit, {
       ts: new Date().toISOString(),
       action,
       user: osUser(),

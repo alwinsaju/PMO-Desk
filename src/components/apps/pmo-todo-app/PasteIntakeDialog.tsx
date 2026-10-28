@@ -72,9 +72,16 @@ export function PasteIntakeDialog({
     setOutcome(null);
   }
 
-  async function send() {
+  async function send(allowDuplicate = false) {
     setServerError(null);
-    const parsed = ManualPasteSchema.safeParse({ subject, from, body, origin, link });
+    const parsed = ManualPasteSchema.safeParse({
+      subject,
+      from,
+      body,
+      origin,
+      link,
+      allowDuplicate,
+    });
     if (!parsed.success) {
       const next: Record<string, string> = {};
       for (const issue of parsed.error.issues) {
@@ -119,8 +126,8 @@ export function PasteIntakeDialog({
           <div className="mt-4 flex flex-col gap-3">
             {outcome.kind === "duplicate" ? (
               <p className="text-ink-soft text-[13.5px] leading-relaxed">
-                This exact text is already in the system, so nothing was added. (Pasting
-                the same message twice is recognised and counted once.)
+                This looks identical to an earlier message, so nothing was added. If you
+                want it in the queue again anyway, import it as a new item.
               </p>
             ) : (
               <>
@@ -137,7 +144,17 @@ export function PasteIntakeDialog({
                 )}
               </>
             )}
+            {serverError && <ErrorLine>{serverError}</ErrorLine>}
             <div className="flex justify-end gap-2">
+              {outcome.kind === "duplicate" && (
+                <Button
+                  variant="secondary"
+                  disabled={busy}
+                  onClick={() => void send(true)}
+                >
+                  Import anyway
+                </Button>
+              )}
               <Button variant="ghost" onClick={reset}>
                 Paste another
               </Button>
@@ -219,7 +236,9 @@ export function PasteIntakeDialog({
                 </p>
               </div>
             </ScrollBody>
-            {serverError && <ErrorLine className="mt-3 shrink-0">{serverError}</ErrorLine>}
+            {serverError && (
+              <ErrorLine className="mt-3 shrink-0">{serverError}</ErrorLine>
+            )}
             <div className="border-line mt-4 flex shrink-0 justify-end gap-2.5 border-t pt-4">
               <Button variant="ghost" onClick={() => close(false)}>
                 Cancel

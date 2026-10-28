@@ -27,7 +27,9 @@ import {
   isAnswered,
   isEdited,
   isTextField,
+  gatePending,
   localPending,
+  requiredQuestionsText,
   TEXT_MAX_CHARS,
 } from "./formGate";
 import { notifyGateChanged, type GateData } from "./useGateData";
@@ -170,6 +172,7 @@ export const FormGatePanel = memo(function FormGatePanel({
   }
 
   const required = schema.fields.filter((f) => f.required).length;
+  const shownPending = gatePending(schema, form.pending, edits);
   const unsavedDefaults = needsSave && !dirty;
 
   const focusNextPending = () => {
@@ -186,20 +189,10 @@ export const FormGatePanel = memo(function FormGatePanel({
     <div className="flex min-h-0 flex-1 flex-col gap-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-ink-muted text-[13px]" aria-live="polite">
-          {required === 0 ? (
-            "No required questions."
-          ) : pendingLocal.length === 0 ? (
-            <>
-              <span className="text-ink font-semibold">All {required}</span> required
-              answered
-              {needsSave ? " — save to record them" : ""}
-            </>
-          ) : (
-            <>
-              <span className="text-ink font-semibold">{pendingLocal.length}</span> of{" "}
-              {required} required still need an answer
-            </>
-          )}
+          {requiredQuestionsText(shownPending.length, required)}
+          {required > 0 && needsSave && shownPending.length === 0
+            ? " — save to record them"
+            : ""}
         </p>
         <Button onClick={save} disabled={!needsSave || saving}>
           {saving ? "Saving…" : needsSave ? "Save answers" : "Saved"}

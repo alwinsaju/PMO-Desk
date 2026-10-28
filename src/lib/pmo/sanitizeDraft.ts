@@ -12,8 +12,10 @@ export const MAX_ACTION_ITEMS_KEPT = 6;
 export const MAX_TAGS_KEPT = 4;
 
 export interface SanitizeContext {
-  /** The moment the message is being read: "today" (IST) comes from this. */
+  /** The moment the message is being read: "today" comes from this. */
   now: Date | string | number;
+  /** The reminder time zone; blank or unknown means the default (IST). */
+  timeZone?: string;
   /** The words of the message as the model saw them, subject included. */
   text: string;
   me: PmoConfig["me"];
@@ -36,7 +38,15 @@ export const WAITING_WORDS =
   /\b(asked|waiting for|waiting on|awaiting|chase[ds]?|chasing|follow(?:ing)? up|reminder|pending from|get back|revert)\b/i;
 
 const GROUP_OWNER = /^(everyone|everybody|all|both|team|the team|all of you)$/i;
-const GROUP_WORDS = new Set(["team", "group", "department", "dept", "office", "desk", "committee"]);
+const GROUP_WORDS = new Set([
+  "team",
+  "group",
+  "department",
+  "dept",
+  "office",
+  "desk",
+  "committee",
+]);
 
 const squash = (value: string) => value.replace(/\s+/g, " ").trim();
 const lower = (value: string) => squash(value).toLowerCase();
@@ -72,8 +82,12 @@ function waitingNeedles(waitingOn: string): string[] {
   const personLike =
     tokens.length >= 2 &&
     tokens.length <= 4 &&
-    tokens.every((t) => /^\p{Lu}[\p{L}'.-]+$/u.test(t) && !GROUP_WORDS.has(t.toLowerCase()));
-  return personLike && tokens[0].length >= 3 ? [squash(waitingOn), tokens[0]] : [squash(waitingOn)];
+    tokens.every(
+      (t) => /^\p{Lu}[\p{L}'.-]+$/u.test(t) && !GROUP_WORDS.has(t.toLowerCase()),
+    );
+  return personLike && tokens[0].length >= 3
+    ? [squash(waitingOn), tokens[0]]
+    : [squash(waitingOn)];
 }
 
 /** Does the message use waiting wording within ~100 characters of a mention? */
@@ -82,7 +96,11 @@ function waitingWordingNear(text: string, needles: string[]): boolean {
   for (const needle of needles) {
     const target = needle.toLowerCase();
     if (!target) continue;
-    for (let at = haystack.indexOf(target); at !== -1; at = haystack.indexOf(target, at + 1)) {
+    for (
+      let at = haystack.indexOf(target);
+      at !== -1;
+      at = haystack.indexOf(target, at + 1)
+    ) {
       const window = text.slice(Math.max(0, at - 100), at + target.length + 100);
       if (WAITING_WORDS.test(window)) return true;
     }
@@ -111,7 +129,7 @@ export function sanitizeDraft(input: AiStructured, ctx: SanitizeContext): Saniti
     tags: [...input.tags],
   };
   const adjustments: string[] = [];
-  const today = istDate(ctx.now);
+  const today = istDate(ctx.now, ctx.timeZone);
   const tomorrow = addIsoDays(today, 1);
 
   // (a) A deadline that had already passed when the message was read. Relative
@@ -122,7 +140,9 @@ export function sanitizeDraft(input: AiStructured, ctx: SanitizeContext): Saniti
   } else if (draft.dueAt && draft.dueAt < today) {
     const stated = draft.dueAt;
     const note = `(Stated deadline ${stated} had already passed when this was read.)`;
-    draft.description = draft.description.trim() ? `${draft.description.trim()} ${note}` : note;
+    draft.description = draft.description.trim()
+      ? `${draft.description.trim()} ${note}`
+      : note;
     draft.dueAt = null;
     draft.dueBasis = "none";
     adjustments.push(
@@ -198,11 +218,14 @@ export function sanitizeDraft(input: AiStructured, ctx: SanitizeContext): Saniti
   const waitingOn = draft.waitingOn ? squash(draft.waitingOn) : "";
   if (waitingOn) {
     const ownerIsMe =
-      draft.owner.isMe === true || isMe(draft.owner.name, ctx.me) || isMe(draft.owner.email, ctx.me);
+      draft.owner.isMe === true ||
+      isMe(draft.owner.name, ctx.me) ||
+      isMe(draft.owner.email, ctx.me);
     if (
       isMe(waitingOn, ctx.me) ||
       (ownerIsMe &&
-        (sameOwner(waitingOn, draft.owner.name) || sameOwner(waitingOn, draft.owner.email)))
+        (sameOwner(waitingOn, draft.owner.name) ||
+          sameOwner(waitingOn, draft.owner.email)))
     ) {
       draft.waitingOn = null;
       adjustments.push(`Cleared "waiting on ${waitingOn}": that is you.`);
@@ -211,7 +234,9 @@ export function sanitizeDraft(input: AiStructured, ctx: SanitizeContext): Saniti
       const mine = draft.actionItems.filter(
         (item) => isMe(item.owner, ctx.me) || (!item.owner && draft.owner.isMe === true),
       );
-      const ownStep = mine.some((item) => needles.some((n) => containsWord(item.text, n)));
+      const ownStep = mine.some((item) =>
+        needles.some((n) => containsWord(item.text, n)),
+      );
       if (ownStep && !waitingWordingNear(ctx.text, needles)) {
         draft.waitingOn = null;
         adjustments.push(
@@ -225,7 +250,8 @@ export function sanitizeDraft(input: AiStructured, ctx: SanitizeContext): Saniti
   const tags: string[] = [];
   for (const tag of draft.tags) {
     const clean = squash(tag);
-    if (clean && !tags.some((t) => t.toLowerCase() === clean.toLowerCase())) tags.push(clean);
+    if (clean && !tags.some((t) => t.toLowerCase() === clean.toLowerCase()))
+      tags.push(clean);
   }
   draft.tags = tags.slice(0, MAX_TAGS_KEPT);
 

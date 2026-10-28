@@ -6,6 +6,7 @@ and resolves the input's `dest`."""
 
 import fnmatch
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -26,6 +27,8 @@ PREVIOUS_STEPS = [{'id': 'prepare_data', 'type': 'python', 'cmd': 'scripts/prepa
  {'id': 'review_workbook', 'type': 'review'}]
 
 INPUT_ID = 'incident'
+ROSTER_ID = 'roster'
+HISTORY_ID = 'history'
 DEST = 'input/incident.xlsx'
 # the file-name patterns the script really globs for (checked against its source below)
 SCRIPT = 'scripts/prepare_data.py'
@@ -40,7 +43,7 @@ def test_steps_are_unchanged():
 
 def test_one_required_file_input_opens_the_upload_dialog():
     inputs = MANIFEST["inputs"]
-    assert [i["id"] for i in inputs] == [INPUT_ID]
+    assert [i["id"] for i in inputs] == [INPUT_ID, ROSTER_ID, HISTORY_ID]
     inp = inputs[0]
     assert inp["type"] == "file" and inp["accept"] == [".xlsx"] and inp["required"] is True
     assert inp["dest"] == DEST and inp["label"]
@@ -48,6 +51,15 @@ def test_one_required_file_input_opens_the_upload_dialog():
     assert all(i["type"] == "file" for i in inputs)
     # the weekly/monthly upload is cleaned after each run, so it is never a persisted input
     assert not inp.get("persist")
+
+
+def test_previous_workbook_upload_is_found_by_the_script_pattern():
+    history = MANIFEST["inputs"][2]
+    assert history["required"] is False and history["persist"] is True
+    folder, name = history["dest"].split("/", 1)
+    assert folder == "reference"
+    pattern = re.search(r'MONTHLY_WORKBOOK_PATTERN = "([^"]+)"', (TASK / SCRIPT).read_text(encoding="utf-8")).group(1)
+    assert fnmatch.fnmatch(name, pattern)
 
 
 def test_dest_matches_the_pattern_the_script_looks_for():
@@ -84,7 +96,7 @@ def test_engine_reads_the_manifest_and_accepts_the_dest():
                     + done.stderr.strip().splitlines()[-1])
     assert done.returncode == 0, done.stderr[-800:]
     info = json.loads(done.stdout.strip().splitlines()[-1])
-    assert info["id"] == 'monthly-report-deck' and info["inputs"] == [[INPUT_ID, True]]
+    assert info["id"] == 'monthly-report-deck' and info["inputs"] == [[INPUT_ID, True], [ROSTER_ID, True], [HISTORY_ID, False]]
     assert info["prepare"] is False
     assert info["steps"] == [[s["id"], s["type"]] for s in PREVIOUS_STEPS]
     assert info["dest"] == DEST

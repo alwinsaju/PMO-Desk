@@ -6,12 +6,15 @@ import { motion } from "motion/react";
 import { animate } from "motion";
 import { cn } from "@/lib/cn";
 import { springWindow } from "@/lib/motion";
+import { windowFxMode } from "@/lib/displayFx";
+import { firstUsable, windowShortcut } from "@/lib/focusKeys";
 import { getAppComponent } from "@/components/apps/registry";
 import { useWindowStore } from "./windowStore";
 import { WindowTitleBar } from "./WindowTitleBar";
 import { ResizeHandles } from "./ResizeHandles";
 import { AIGlowBorder } from "./AIGlowBorder";
-import { sizes } from "@/lib/tokens";
+import { sizes, windowDefaults } from "@/lib/tokens";
+import { maximizedRect } from "./windowGeometry";
 import type { WindowState } from "./types";
 
 interface WindowProps {
@@ -25,12 +28,11 @@ interface Rect {
   height: number;
 }
 
-/** px — matches the `inset-3` Tailwind utility applied to OUTER when
- *  `isMaximized` (0.75rem at the default 16px root font size). Needed here
- *  as a plain number because the maximize/restore animation below has to
- *  compute an explicit target rect to spring toward — `inset-3` alone only
- *  describes the CSS end state, not a set of numbers `motion` can animate. */
-const MAXIMIZE_INSET = 12;
+/** OUTER's inline top/left/right/bottom when `isMaximized` — the same
+ *  keep-clear insets new windows use (dock above, command bar and presence
+ *  avatars below). The maximize/restore animation springs toward the same
+ *  numbers via `maximizedRect`. */
+const MAXIMIZED_INSETS = windowDefaults.insets;
 
 /** `--ease-smooth` as a motion tuple (src/lib/motion.ts has no twin yet). */
 const easeSmooth = [0.22, 0.9, 0.28, 1] as const;
@@ -50,12 +52,10 @@ function rectFromElement(el: HTMLElement): Rect {
 }
 
 function computeMaximizedRect(): Rect {
-  return {
-    x: MAXIMIZE_INSET,
-    y: MAXIMIZE_INSET,
-    width: window.innerWidth - MAXIMIZE_INSET * 2,
-    height: window.innerHeight - MAXIMIZE_INSET * 2,
-  };
+  return maximizedRect(
+    { width: window.innerWidth, height: window.innerHeight },
+    MAXIMIZED_INSETS,
+  );
 }
 
 /**
@@ -103,7 +103,13 @@ export function Window({ id }: WindowProps) {
   const maximizeWindow = useWindowStore((s) => s.maximizeWindow);
   const closeWindow = useWindowStore((s) => s.closeWindow);
   const focusWindow = useWindowStore((s) => s.focusWindow);
-
+  const fxMode = useWindowStore((s) =>
+    windowFxMode({
+      openCount: Object.keys(s.windows).length,
+      focused: s.windows[id]?.isFocused ?? false,
+      lean: document.documentElement.getAttribute("data-fx") !== "rich",
+    }),
+  );
   const outerRef = useRef<HTMLDivElement>(null);
 
   // A window can be asked to close/minimize while its exit animation is
@@ -156,12 +162,6 @@ export function Window({ id }: WindowProps) {
     return () => document.removeEventListener("focusin", handleFocusIn);
   }, [id, focusWindow]);
 
-  const data = liveWindow ?? snapshot;
-  if (!data) return null;
-
-  const isExiting = exitIntent !== "none";
-  const AppComponent = getAppComponent(data.appId);
-
   function requestClose() {
     if (liveWindow) setSnapshot(liveWindow);
     setExitIntent("closing");
@@ -182,6 +182,62 @@ export function Window({ id }: WindowProps) {
     }
     setExitIntent("minimizing");
   }
+
+  // Ctrl+W / Ctrl+M act on the focused window (through the same animated
+  // exit as the title-bar buttons), wherever the keyboard focus is.
+  const shortcutRef = useRef<(action: "close" | "minimize") => void>(() => {});
+  useEffect(() => {
+    shortcutRef.current = (action) => {
+      if (exitIntent !== "none" || transitionRect) return;
+      if (action === "close") requestClose();
+      else requestMinimize();
+    };
+  });
+  const isFocusedWindow = liveWindow?.isFocused ?? false;
+  useEffect(() => {
+    if (!isFocusedWindow) return;
+    function handleKeyDown(event: KeyboardEvent) {
+      const action = windowShortcut(event);
+      if (!action) return;
+      event.preventDefault();
+      shortcutRef.current(action);
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [isFocusedWindow]);
+
+  // Focus moves into the window when it opens (unless its app already took
+  // focus) and goes back to where it was, else the app's dock tile, when it
+  // goes away.
+  const appId = liveWindow?.appId ?? snapshot?.appId;
+  // Read in the first render, before the app's own content can take focus.
+  const [openedFrom] = useState<Element | null>(() =>
+    typeof document === "undefined" ? null : document.activeElement,
+  );
+  useEffect(() => {
+    const root = outerRef.current;
+    if (!root) return;
+    if (!root.contains(document.activeElement)) root.focus({ preventScroll: true });
+    return () => {
+      const active = document.activeElement;
+      if (active && active !== document.body) return;
+      const target = firstUsable<Element>(
+        [
+          openedFrom,
+          appId ? document.querySelector(`[data-dock-app="${CSS.escape(appId)}"]`) : null,
+        ],
+        (el) => el.isConnected && el !== document.body && "focus" in el,
+      );
+      (target as HTMLElement | null)?.focus({ preventScroll: true });
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per mount
+  }, []);
+
+  const data = liveWindow ?? snapshot;
+  if (!data) return null;
+
+  const isExiting = exitIntent !== "none";
+  const AppComponent = getAppComponent(data.appId);
 
   function handleExitAnimationComplete() {
     if (exitIntent === "closing") closeWindow(id);
@@ -271,7 +327,13 @@ export function Window({ id }: WindowProps) {
         transform: `translate3d(${transitionRect.x}px, ${transitionRect.y}px, 0)`,
       }
     : data.isMaximized
-      ? { zIndex: data.zIndex }
+      ? {
+          zIndex: data.zIndex,
+          top: MAXIMIZED_INSETS.top,
+          bottom: MAXIMIZED_INSETS.bottom,
+          left: MAXIMIZED_INSETS.side,
+          right: MAXIMIZED_INSETS.side,
+        }
       : {
           zIndex: data.zIndex,
           width: data.size.width,
@@ -294,11 +356,12 @@ export function Window({ id }: WindowProps) {
       data-window-chrome={id}
       data-focused={data.isFocused}
       data-controlled-by={data.controlledBy}
+      role="dialog"
+      aria-modal="false"
+      aria-label={data.title}
+      tabIndex={-1}
       style={outerStyle}
-      className={cn(
-        "pointer-events-auto absolute",
-        !transitionRect && data.isMaximized && "inset-3",
-      )}
+      className="pointer-events-auto absolute outline-none"
       onPointerDown={() => focusWindow(id)}
     >
       <motion.div
@@ -316,6 +379,7 @@ export function Window({ id }: WindowProps) {
         }
         onAnimationComplete={handleExitAnimationComplete}
         data-focused={data.isFocused}
+        data-fx-win={fxMode}
         className={cn(
           "group/win glass-win brand-bar rounded-surface flex h-full w-full flex-col overflow-hidden",
           "transition-shadow duration-[400ms]",

@@ -35,7 +35,7 @@ const DEFAULT_DEV_ARGS = ["--turbopack"];
 
 /** How long a live server may take to answer before falling back to bundled. */
 const LIVE_START_TIMEOUT_MS = 90_000;
-const BUNDLED_START_TIMEOUT_MS = 30_000;
+const BUNDLED_START_TIMEOUT_MS = 90_000;
 
 function isMode(value) {
   return typeof value === "string" && MODES.includes(value);

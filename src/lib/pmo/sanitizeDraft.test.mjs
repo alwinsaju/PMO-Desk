@@ -70,7 +70,10 @@ describe("(a) deadlines that had already passed", () => {
   it("uses the IST calendar day for 'today' whatever offset the clock string has", () => {
     // 19:00 UTC on the 24th is 00:30 IST on the 25th.
     const lateUtc = "2026-10-24T19:00:00Z";
-    assert.equal(run({ dueAt: "2026-10-24", dueBasis: "explicit" }, "x", lateUtc).draft.dueAt, null);
+    assert.equal(
+      run({ dueAt: "2026-10-24", dueBasis: "explicit" }, "x", lateUtc).draft.dueAt,
+      null,
+    );
     assert.equal(
       run({ dueAt: "2026-10-25", dueBasis: "explicit" }, "x", lateUtc).draft.dueAt,
       "2026-10-25",
@@ -82,16 +85,32 @@ describe("(a) deadlines that had already passed", () => {
       "2026-10-24",
     );
     // The same instant written in other offsets gives the same answer.
-    for (const now of ["2026-10-25T12:00:00+05:30", "2026-10-25T06:30:00Z", "2026-10-24T22:30:00-08:00"]) {
-      assert.equal(run({ dueAt: "2026-10-25", dueBasis: "explicit" }, "x", now).draft.dueAt, "2026-10-25");
-      assert.equal(run({ dueAt: "2026-10-24", dueBasis: "explicit" }, "x", now).draft.dueAt, null);
+    for (const now of [
+      "2026-10-25T12:00:00+05:30",
+      "2026-10-25T06:30:00Z",
+      "2026-10-24T22:30:00-08:00",
+    ]) {
+      assert.equal(
+        run({ dueAt: "2026-10-25", dueBasis: "explicit" }, "x", now).draft.dueAt,
+        "2026-10-25",
+      );
+      assert.equal(
+        run({ dueAt: "2026-10-24", dueBasis: "explicit" }, "x", now).draft.dueAt,
+        null,
+      );
     }
   });
 
   it("accepts a Date and a number as the clock", () => {
     const at = new Date(NOW);
-    assert.equal(run({ dueAt: "2026-10-24", dueBasis: "explicit" }, "x", at).draft.dueAt, null);
-    assert.equal(run({ dueAt: "2026-10-24", dueBasis: "explicit" }, "x", at.getTime()).draft.dueAt, null);
+    assert.equal(
+      run({ dueAt: "2026-10-24", dueBasis: "explicit" }, "x", at).draft.dueAt,
+      null,
+    );
+    assert.equal(
+      run({ dueAt: "2026-10-24", dueBasis: "explicit" }, "x", at.getTime()).draft.dueAt,
+      null,
+    );
   });
 
   it("clears past action-item dates and keeps current ones", () => {
@@ -161,9 +180,21 @@ describe("(b) priority", () => {
   });
 
   it("keeps high for a deadline of today or tomorrow counted from today", () => {
-    assert.equal(run({ priority: "high", dueAt: "2026-10-25", dueBasis: "explicit" }, "Send it.").draft.priority, "high");
-    assert.equal(run({ priority: "high", dueAt: "2026-10-26", dueBasis: "explicit" }, "Send it.").draft.priority, "high");
-    assert.equal(run({ priority: "high", dueAt: "2026-10-27", dueBasis: "explicit" }, "Send it.").draft.priority, "normal");
+    assert.equal(
+      run({ priority: "high", dueAt: "2026-10-25", dueBasis: "explicit" }, "Send it.")
+        .draft.priority,
+      "high",
+    );
+    assert.equal(
+      run({ priority: "high", dueAt: "2026-10-26", dueBasis: "explicit" }, "Send it.")
+        .draft.priority,
+      "high",
+    );
+    assert.equal(
+      run({ priority: "high", dueAt: "2026-10-27", dueBasis: "explicit" }, "Send it.")
+        .draft.priority,
+      "normal",
+    );
   });
 
   it("never touches normal or low, and does not raise anything", () => {
@@ -180,7 +211,10 @@ describe("(b) priority", () => {
   });
 
   it("does not match inside other words", () => {
-    assert.equal(run({ priority: "high" }, "The criticality matrix, the todays-list").draft.priority, "normal");
+    assert.equal(
+      run({ priority: "high" }, "The criticality matrix, the todays-list").draft.priority,
+      "normal",
+    );
   });
 });
 
@@ -188,10 +222,22 @@ describe("(c) duplicate action items", () => {
   it("merges the same step listed per person and joins the owners", () => {
     const { draft, adjustments } = run({
       actionItems: [
-        { text: "Leave any comments in the last column.", owner: "Alwin Saju", dueAt: null },
+        {
+          text: "Leave any comments in the last column.",
+          owner: "Alwin Saju",
+          dueAt: null,
+        },
         { text: "Consolidate the open items", owner: "Alwin Saju", dueAt: null },
-        { text: "leave any comments in the LAST column", owner: "Karthik Rao", dueAt: null },
-        { text: "  Leave any   comments in the last column!! ", owner: "Alwin Saju", dueAt: null },
+        {
+          text: "leave any comments in the LAST column",
+          owner: "Karthik Rao",
+          dueAt: null,
+        },
+        {
+          text: "  Leave any   comments in the last column!! ",
+          owner: "Alwin Saju",
+          dueAt: null,
+        },
       ],
     });
     assert.equal(draft.actionItems.length, 2);
@@ -257,7 +303,10 @@ describe("(d) waiting on", () => {
   });
 
   it("clears a waitingOn that equals the owner when the owner is the user", () => {
-    const { draft } = run({ owner: { name: "Pat Sample", email: "pat@x.example", isMe: true }, waitingOn: "pat sample" });
+    const { draft } = run({
+      owner: { name: "Pat Sample", email: "pat@x.example", isMe: true },
+      waitingOn: "pat sample",
+    });
     assert.equal(draft.waitingOn, null);
   });
 
@@ -271,19 +320,33 @@ describe("(d) waiting on", () => {
   });
 
   const connect = {
-    actionItems: [{ text: "Connect with Rohan Iyer to learn what the slide needs", owner: "Alwin Saju", dueAt: null }],
+    actionItems: [
+      {
+        text: "Connect with Rohan Iyer to learn what the slide needs",
+        owner: "Alwin Saju",
+        dueAt: null,
+      },
+    ],
     waitingOn: "Rohan Iyer",
   };
 
   it("clears it when the user's own step is to contact that person and nothing says they wait", () => {
-    const { draft, adjustments } = run(connect, "Alwin - connect with Rohan Iyer to understand what the slide needs.");
+    const { draft, adjustments } = run(
+      connect,
+      "Alwin - connect with Rohan Iyer to understand what the slide needs.",
+    );
     assert.equal(draft.waitingOn, null);
     assert.match(adjustments[0], /own step/);
   });
 
   it("matches a first name against a full waitingOn name", () => {
     const { draft } = run(
-      { ...connect, actionItems: [{ text: "Connect with Rohan about the slide", owner: null, dueAt: null }] },
+      {
+        ...connect,
+        actionItems: [
+          { text: "Connect with Rohan about the slide", owner: null, dueAt: null },
+        ],
+      },
       "Connect with Rohan about the slide.",
     );
     assert.equal(draft.waitingOn, null);
@@ -310,7 +373,9 @@ describe("(d) waiting on", () => {
   it("keeps it when the matching action item belongs to somebody else", () => {
     const { draft } = run(
       {
-        actionItems: [{ text: "Connect with Rohan Iyer", owner: "Karthik Rao", dueAt: null }],
+        actionItems: [
+          { text: "Connect with Rohan Iyer", owner: "Karthik Rao", dueAt: null },
+        ],
         waitingOn: "Rohan Iyer",
       },
       "Karthik will connect with Rohan Iyer.",
@@ -320,7 +385,10 @@ describe("(d) waiting on", () => {
 
   it("keeps it when no action item mentions the name", () => {
     const { draft } = run(
-      { actionItems: [{ text: "Update the tracker", owner: "Alwin Saju", dueAt: null }], waitingOn: "Rohan Iyer" },
+      {
+        actionItems: [{ text: "Update the tracker", owner: "Alwin Saju", dueAt: null }],
+        waitingOn: "Rohan Iyer",
+      },
       "Rohan Iyer will send the numbers.",
     );
     assert.equal(draft.waitingOn, "Rohan Iyer");
@@ -328,7 +396,12 @@ describe("(d) waiting on", () => {
 
   it("does not take a group's first word for a person: 'Finance team' vs 'Update finance tracker'", () => {
     const { draft } = run(
-      { actionItems: [{ text: "Update the finance tracker", owner: "Alwin Saju", dueAt: null }], waitingOn: "Finance team" },
+      {
+        actionItems: [
+          { text: "Update the finance tracker", owner: "Alwin Saju", dueAt: null },
+        ],
+        waitingOn: "Finance team",
+      },
       "Update the finance tracker.",
     );
     assert.equal(draft.waitingOn, "Finance team");
@@ -336,7 +409,10 @@ describe("(d) waiting on", () => {
 
   it("treats an ownerless item of a to-do that is mine as mine", () => {
     const { draft } = run(
-      { actionItems: [{ text: "Talk to Rohan Iyer", owner: null, dueAt: null }], waitingOn: "Rohan Iyer" },
+      {
+        actionItems: [{ text: "Talk to Rohan Iyer", owner: null, dueAt: null }],
+        waitingOn: "Rohan Iyer",
+      },
       "Talk to Rohan Iyer.",
     );
     assert.equal(draft.waitingOn, null);
@@ -358,7 +434,9 @@ describe("(d) waiting on", () => {
 
 describe("(e) tags, and the function in general", () => {
   it("trims, drops blanks and duplicates, caps at four", () => {
-    const { draft, adjustments } = run({ tags: [" a ", "", "  ", "A", "b", "c", "d", "e"] });
+    const { draft, adjustments } = run({
+      tags: [" a ", "", "  ", "A", "b", "c", "d", "e"],
+    });
     assert.deepEqual(draft.tags, ["a", "b", "c", "d"]);
     assert.deepEqual(adjustments, []);
   });
@@ -372,7 +450,11 @@ describe("(e) tags, and the function in general", () => {
       tags: ["plan"],
     });
     const before = JSON.stringify(input);
-    const { draft, adjustments } = sanitizeDraft(input, { now: NOW, text: "Send it", me: ME });
+    const { draft, adjustments } = sanitizeDraft(input, {
+      now: NOW,
+      text: "Send it",
+      me: ME,
+    });
     assert.equal(JSON.stringify(input), before);
     assert.deepEqual(draft, input);
     assert.deepEqual(adjustments, []);

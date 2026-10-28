@@ -6,11 +6,13 @@ import {
   FX_STORAGE_KEY,
   GPU_UNAVAILABLE_WARNING,
   HARDWARE_ACCELERATION_HINT,
+  NO_HARDWARE_ACCELERATION_REASON,
   describeHardwareAcceleration,
   getDisplayBridge,
   getFxInitScript,
   getStoredFx,
   setFx,
+  windowFxMode,
 } from "./displayFx.ts";
 
 function fakeEnv({ stored = {}, throwing = false, shell } = {}) {
@@ -189,6 +191,35 @@ describe("describeHardwareAcceleration", () => {
     assert.equal(view.restartNeeded, false);
   });
 
+  it("disables the toggle and says why when the machine has no hardware acceleration", () => {
+    const view = describeHardwareAcceleration({
+      fx: "lean",
+      desktop: true,
+      state: desktopState({
+        compositing: "disabled_software",
+        gpuCompositing: false,
+        noHardwareAcceleration: true,
+      }),
+    });
+    assert.equal(view.disabled, true);
+    assert.equal(view.checked, false);
+    assert.equal(view.hint, NO_HARDWARE_ACCELERATION_REASON);
+    assert.equal(
+      NO_HARDWARE_ACCELERATION_REASON,
+      "This computer has no hardware graphics acceleration; the lean mode is used.",
+    );
+    assert.equal(view.warning, null);
+    assert.equal(view.restartNeeded, false);
+  });
+
+  it("leaves the toggle enabled otherwise", () => {
+    const view = describeHardwareAcceleration({
+      fx: "rich",
+      desktop: true,
+      state: desktopState(),
+    });
+    assert.equal(view.disabled, false);
+  });
   it("never warns when OFF, and shows a save error instead of the GPU warning", () => {
     const off = describeHardwareAcceleration({
       fx: "lean",
@@ -207,5 +238,24 @@ describe("describeHardwareAcceleration", () => {
       error: "Could not save the setting.",
     });
     assert.equal(failed.warning, "Could not save the setting.");
+  });
+});
+
+describe("windowFxMode", () => {
+  it("keeps the full look for up to four windows", () => {
+    for (let n = 0; n <= 4; n++) {
+      assert.equal(windowFxMode({ openCount: n, focused: false, lean: false }), "full");
+      assert.equal(windowFxMode({ openCount: n, focused: false, lean: true }), "full");
+    }
+  });
+
+  it("flattens unfocused windows once more than four are open", () => {
+    assert.equal(windowFxMode({ openCount: 5, focused: false, lean: false }), "lean");
+    assert.equal(windowFxMode({ openCount: 10, focused: false, lean: true }), "lean");
+  });
+
+  it("always leaves the focused window at the full look", () => {
+    assert.equal(windowFxMode({ openCount: 10, focused: true, lean: false }), "full");
+    assert.equal(windowFxMode({ openCount: 10, focused: true, lean: true }), "full");
   });
 });

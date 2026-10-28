@@ -62,12 +62,12 @@ export interface BuiltInApp {
  * now merged into one user-editable layout in pinnedAppsStore.ts.
  */
 export const builtInApps = [
+  { id: "pmo-todo", title: "PMO To-Do", icon: ClipboardTextIcon },
+  { id: "tasks", title: "Tasks", icon: ListChecksIcon },
   { id: "files", title: "Files", icon: FolderIcon },
   { id: "notes", title: "Notes", icon: NotePencilIcon },
   { id: "browser", title: "Browser", icon: GlobeIcon },
-  { id: "tasks", title: "Tasks", icon: ListChecksIcon },
   { id: "app-store", title: "App Store", icon: SquaresFourIcon },
-  { id: "pmo-todo", title: "PMO To-Do", icon: ClipboardTextIcon },
 ] satisfies readonly BuiltInApp[];
 
 export type PinnedApp = BuiltInApp;

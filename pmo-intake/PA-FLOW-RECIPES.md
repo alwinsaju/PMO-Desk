@@ -23,13 +23,13 @@ we deliberately do not.)
 
 ### What you have already confirmed in your own tenant
 
-| Thing                                                                | Result                                                                                                   |
-| -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| Cloud flows (no premium licence)                                     | work                                                                                                     |
-| OneDrive for Business **Create file**                                | standard connector; the file reaches the laptop in about 2 seconds                                       |
-| Outlook **When an email is flagged (V3)**                            | triggers                                                                                                 |
-| Teams **For a selected message (V2)**                                | triggers; a real capture of its output gives every field Recipe B uses, **including the tenant id**      |
-| Teams trigger: sender email address, created-time field              | **not present** (the created time is derived from the message id; the sender is a display name only)    |
+| Thing                                                   | Result                                                                                               |
+| ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Cloud flows (no premium licence)                        | work                                                                                                 |
+| OneDrive for Business **Create file**                   | standard connector; the file reaches the laptop in about 2 seconds                                   |
+| Outlook **When an email is flagged (V3)**               | triggers                                                                                             |
+| Teams **For a selected message (V2)**                   | triggers; a real capture of its output gives every field Recipe B uses, **including the tenant id**  |
+| Teams trigger: sender email address, created-time field | **not present** (the created time is derived from the message id; the sender is a display name only) |
 
 Everything below follows from that table. The exact Teams property paths are
 listed in Recipe B.
@@ -226,22 +226,22 @@ so `triggerBody()` is the `body`. **Property names are PascalCase and
 case-sensitive.** Everything useful is under
 `triggerBody()?['teamsFlowRunContext']`:
 
-| Path under `teamsFlowRunContext`        | What it holds                                                                                         |
-| --------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| `MessagePayload.Id`                     | Message id: 13 digits, the message's **creation time in epoch milliseconds**                          |
-| `MessagePayload.From.User.DisplayName`  | Sender's display name, in the form `Last, First`                                                      |
-| `MessagePayload.From.User.Id`           | The sender's Entra (AAD) object id. **No email address anywhere.**                                    |
-| `MessagePayload.Body.PlainText`         | The message as plain text (a mention shows as the person's name)                                      |
-| `MessagePayload.Body.Content`           | The same as HTML (a mention is `<at id="0">Name</at>`); `Body.ContentType` is `html`. Not used.       |
-| `MessagePayload.Subject`                | `null` for chat messages                                                                              |
-| `MessagePayload.LinkToMessage`          | `https://teams.microsoft.com/l/message/<conversationId>/<messageId>?context=...`                      |
-| `MessagePayload.ReplyToId`              | `null` unless the message is a reply                                                                  |
-| `Conversation.Id`                       | The chat id, for example `19:<32 hex>@thread.v2` for a group chat                                     |
-| `Conversation.Name`                     | The chat's name                                                                                       |
-| `Conversation.IsGroup`                  | `true` or `false`                                                                                     |
-| `ChannelData.Tenant.Id`                 | **The tenant GUID.** (Also in the header: `triggerOutputs()?['headers']?['x-ms-tenant-id']`.)         |
-| `ChannelData.Team`, `ChannelData.Channel` | `null` for chats                                                                                    |
-| `From.AadObjectId`                      | The user who ran the flow (you); not used                                                             |
+| Path under `teamsFlowRunContext`          | What it holds                                                                                   |
+| ----------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `MessagePayload.Id`                       | Message id: 13 digits, the message's **creation time in epoch milliseconds**                    |
+| `MessagePayload.From.User.DisplayName`    | Sender's display name, in the form `Last, First`                                                |
+| `MessagePayload.From.User.Id`             | The sender's Entra (AAD) object id. **No email address anywhere.**                              |
+| `MessagePayload.Body.PlainText`           | The message as plain text (a mention shows as the person's name)                                |
+| `MessagePayload.Body.Content`             | The same as HTML (a mention is `<at id="0">Name</at>`); `Body.ContentType` is `html`. Not used. |
+| `MessagePayload.Subject`                  | `null` for chat messages                                                                        |
+| `MessagePayload.LinkToMessage`            | `https://teams.microsoft.com/l/message/<conversationId>/<messageId>?context=...`                |
+| `MessagePayload.ReplyToId`                | `null` unless the message is a reply                                                            |
+| `Conversation.Id`                         | The chat id, for example `19:<32 hex>@thread.v2` for a group chat                               |
+| `Conversation.Name`                       | The chat's name                                                                                 |
+| `Conversation.IsGroup`                    | `true` or `false`                                                                               |
+| `ChannelData.Tenant.Id`                   | **The tenant GUID.** (Also in the header: `triggerOutputs()?['headers']?['x-ms-tenant-id']`.)   |
+| `ChannelData.Team`, `ChannelData.Channel` | `null` for chats                                                                                |
+| `From.AadObjectId`                        | The user who ran the flow (you); not used                                                       |
 
 There is **no separate created-time field**, but the message id is the creation
 time, so `receivedAt` can be derived from it (below), with `utcNow()` as the
@@ -254,20 +254,20 @@ the picker has no tenant id and no created time). Both ways are given below.
 
 ### How the trigger fills the intake
 
-| Intake field            | Typed expression (path under `triggerBody()?['teamsFlowRunContext']`)                  | Picker alternative                      | Notes                                                                                                                                       |
-| ----------------------- | -------------------------------------------------------------------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `source`                | constant `teams`                                                                       | (typed)                                 | Teams is default-deny until a chat or tenant is allowed (step 5).                                                                           |
-| `sourceId`              | `Conversation.Id` + `/` + `MessagePayload.Id`                                          | **Message ID**                          | The de-duplication key: running the flow twice on one message gives one item. Do not mix the two ways: they build different keys.            |
-| `receivedAt`            | derived from `MessagePayload.Id` (below)                                               | `utcNow()` (no created time in picker)  | The first derived date should be sanity-checked (step 4). Fallback `utcNow()` is when you clicked, which is fine; only an old message's age is lost. |
-| `sender.name`           | `MessagePayload.From.User.DisplayName`                                                 | **Sender User Display Name**            | `Last, First`. No address: leave `sender.address` out.                                                                                      |
-| `subject`               | `Conversation.Name`, else `Teams message`                                              | Conversation Name / Message Subject     | The chat's name is the title the app shows. An unnamed chat gets `Teams message`.                                                           |
-| `body.text`, `format`   | `MessagePayload.Body.PlainText`; `format` is `text`                                    | **Plain Text Message Content**          | Plain text, so there is no HTML to clean. A mention keeps the person's name, so the text can start with it.                                 |
-| `link`                  | `MessagePayload.LinkToMessage`                                                         | **Link to message**                     | "Open in Teams" in the app.                                                                                                                 |
-| `thread.conversationId` | `Conversation.Id`                                                                      | **Conversation ID**                     | Messages with the same id are one conversation, which is how a reply is tied to the to-do it is about.                                      |
-| `thread.parentId`       | `MessagePayload.ReplyToId`                                                             | **Reply to Message ID**                 | `null` unless a reply. The app treats `null` and empty text as "no parent".                                                                 |
-| `context.chatId`        | `Conversation.Id`                                                                      | **Conversation ID**                     | What the app's **chat allowlist** compares. An explicit value here wins over the chat id inside the link.                                   |
-| `context.chatType`      | `group` if `Conversation.IsGroup` is true, else `oneOnOne`                             | Is Group                                | Free text, informational (nothing in the app depends on it). Channel messages would need a third value; add one if you ever use channels.   |
-| `context.tenantId`      | `ChannelData.Tenant.Id`                                                                | (not in the picker)                     | Lets the whole tenant through the filter. Optional if you allow chats instead.                                                              |
+| Intake field            | Typed expression (path under `triggerBody()?['teamsFlowRunContext']`) | Picker alternative                     | Notes                                                                                                                                                |
+| ----------------------- | --------------------------------------------------------------------- | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `source`                | constant `teams`                                                      | (typed)                                | Teams is default-deny until a chat or tenant is allowed (step 5).                                                                                    |
+| `sourceId`              | `Conversation.Id` + `/` + `MessagePayload.Id`                         | **Message ID**                         | The de-duplication key: running the flow twice on one message gives one item. Do not mix the two ways: they build different keys.                    |
+| `receivedAt`            | derived from `MessagePayload.Id` (below)                              | `utcNow()` (no created time in picker) | The first derived date should be sanity-checked (step 4). Fallback `utcNow()` is when you clicked, which is fine; only an old message's age is lost. |
+| `sender.name`           | `MessagePayload.From.User.DisplayName`                                | **Sender User Display Name**           | `Last, First`. No address: leave `sender.address` out.                                                                                               |
+| `subject`               | `Conversation.Name`, else `Teams message`                             | Conversation Name / Message Subject    | The chat's name is the title the app shows. An unnamed chat gets `Teams message`.                                                                    |
+| `body.text`, `format`   | `MessagePayload.Body.PlainText`; `format` is `text`                   | **Plain Text Message Content**         | Plain text, so there is no HTML to clean. A mention keeps the person's name, so the text can start with it.                                          |
+| `link`                  | `MessagePayload.LinkToMessage`                                        | **Link to message**                    | "Open in Teams" in the app.                                                                                                                          |
+| `thread.conversationId` | `Conversation.Id`                                                     | **Conversation ID**                    | Messages with the same id are one conversation, which is how a reply is tied to the to-do it is about.                                               |
+| `thread.parentId`       | `MessagePayload.ReplyToId`                                            | **Reply to Message ID**                | `null` unless a reply. The app treats `null` and empty text as "no parent".                                                                          |
+| `context.chatId`        | `Conversation.Id`                                                     | **Conversation ID**                    | What the app's **chat allowlist** compares. An explicit value here wins over the chat id inside the link.                                            |
+| `context.chatType`      | `group` if `Conversation.IsGroup` is true, else `oneOnOne`            | Is Group                               | Free text, informational (nothing in the app depends on it). Channel messages would need a third value; add one if you ever use channels.            |
+| `context.tenantId`      | `ChannelData.Tenant.Id`                                               | (not in the picker)                    | Lets the whole tenant through the filter. Optional if you allow chats instead.                                                                       |
 
 The flow **sends nothing**: no email, no Teams post, no approval. Its only
 output is one file in your OneDrive. It uses only the Microsoft Teams trigger,
@@ -370,18 +370,18 @@ between the two quotes of each value and pick the field from **Dynamic content**
 }
 ```
 
-| Between the quotes of | Pick                                                                                          |
-| --------------------- | --------------------------------------------------------------------------------------------- |
-| `sourceId`            | **Message ID**                                                                                |
-| `receivedAt`          | **Expression** tab: `utcNow()` -> **Add** (the picker has no created time)                    |
-| `name`                | **Sender User Display Name**                                                                  |
-| `subject`             | **Conversation Name** (an unnamed chat then has an empty subject, which is allowed)          |
-| `text`                | **Plain Text Message Content**                                                                |
-| `conversationId`      | **Conversation ID**                                                                           |
-| `parentId`            | **Reply to Message ID**                                                                       |
-| `chatId`              | **Conversation ID**                                                                           |
+| Between the quotes of | Pick                                                                                                                      |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `sourceId`            | **Message ID**                                                                                                            |
+| `receivedAt`          | **Expression** tab: `utcNow()` -> **Add** (the picker has no created time)                                                |
+| `name`                | **Sender User Display Name**                                                                                              |
+| `subject`             | **Conversation Name** (an unnamed chat then has an empty subject, which is allowed)                                       |
+| `text`                | **Plain Text Message Content**                                                                                            |
+| `conversationId`      | **Conversation ID**                                                                                                       |
+| `parentId`            | **Reply to Message ID**                                                                                                   |
+| `chatId`              | **Conversation ID**                                                                                                       |
 | `chatType`            | **Expression** tab: `if(equals(<Is Group>, true), 'group', 'oneOnOne')`, with `<Is Group>` added from **Dynamic content** |
-| `link`                | **Link to message**                                                                           |
+| `link`                | **Link to message**                                                                                                       |
 
 Each pick must be the **whole** value of its field (nothing typed around it).
 There is no tenant id in the picker; add `"tenantId": ""` to `context` and fill

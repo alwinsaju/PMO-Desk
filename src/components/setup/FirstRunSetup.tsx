@@ -21,6 +21,7 @@ import {
 } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import type { SetupActionId, SetupCheck } from "@/lib/setup/report";
+import { FALLBACK_MODEL, downloadSizeText } from "@/lib/setup/models";
 import { fetchSetupStatus, postSetupAction, type SetupStatus } from "./setupApi";
 import { useSetupUi } from "./setupStore";
 import {
@@ -93,7 +94,7 @@ export function FirstRunSetup() {
         await new Promise((resolve) => setTimeout(resolve, 600));
       }
       if (cancelled) return;
-      let next = await fetchSetupStatus();
+      let next = await fetchSetupStatus("launch");
       // The engine self-test is part of "required"; run it before judging.
       if (
         next?.report.checks.some(
@@ -107,7 +108,7 @@ export function FirstRunSetup() {
         await postSetupAction({ action: "run-selftest" });
         for (let i = 0; i < 90 && !cancelled; i++) {
           await new Promise((resolve) => setTimeout(resolve, 1_000));
-          next = await fetchSetupStatus();
+          next = await fetchSetupStatus("launch");
           const engine = next?.report.checks.find((c) => c.id === "engine");
           if (engine && engine.summary !== "Running the self-test…") break;
         }
@@ -130,8 +131,11 @@ export function FirstRunSetup() {
     }
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout>;
+    let first = true;
     const tick = async () => {
-      const next = await refresh();
+      // Opening Setup is when the slow Outlook check runs; later polls reuse it.
+      const next = await refresh(first);
+      first = false;
       if (cancelled) return;
       const busy =
         next?.jobs.install.running ||
@@ -235,7 +239,7 @@ export function FirstRunSetup() {
           </p>
         )}
 
-        <div className="mt-6 flex items-center justify-between gap-3">
+        <div className="bg-surface border-line sticky bottom-0 z-10 -mx-7 mt-6 -mb-7 flex items-center justify-between gap-3 border-t px-7 py-4">
           <Button variant="ghost" onClick={() => void refresh(true)}>
             Check again
           </Button>
@@ -256,7 +260,7 @@ export function FirstRunSetup() {
 const ACTION_LABEL: Record<SetupActionId, string> = {
   "install-ollama": "Install Ollama",
   "pull-model": "Download model",
-  "pull-fallback-model": "Download the smaller model",
+  "pull-fallback-model": `Download the smaller model (${downloadSizeText(FALLBACK_MODEL)})`,
   "choose-inbox": "Use this folder",
   "run-selftest": "Run self-test again",
 };

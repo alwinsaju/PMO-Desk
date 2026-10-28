@@ -94,7 +94,7 @@ export function AppMenu() {
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <Tooltip label="All apps" side="bottom" sideOffset={16}>
+      <Tooltip label="Installed apps" side="bottom" sideOffset={16}>
         <PopoverTrigger asChild>
           <button
             type="button"
@@ -110,11 +110,11 @@ export function AppMenu() {
       <PopoverContent
         align="center"
         sideOffset={14}
-        aria-label="All apps"
+        aria-label="Installed apps"
         className="w-[min(27rem,calc(100vw-1.5rem))] p-4"
       >
         <p className="text-ink-muted px-3 pt-1 pb-1.5 text-[11.5px] font-bold tracking-[0.08em] uppercase">
-          All apps
+          Installed apps
         </p>
         <div className="scroll-thin max-h-[21.25rem] overflow-y-auto overscroll-contain">
           <div className="grid grid-cols-[repeat(4,minmax(0,1fr))] gap-1.5">

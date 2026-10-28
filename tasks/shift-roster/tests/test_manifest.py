@@ -36,10 +36,13 @@ def test_manifest_shape():
 
 def test_inputs_and_prepare():
     inputs = {i["id"]: i for i in MANIFEST["inputs"]}
-    assert list(inputs) == ["roster", "holidays", "pto", "cycle"]
+    assert list(inputs) == ["roster", "rotation_config", "holidays", "pto", "cycle"]
     for key in ("roster", "holidays", "pto"):
         i = inputs[key]
         assert i["type"] == "file" and i["accept"] == [".xlsx"] and i["dest"].startswith("input/")
+    config = inputs["rotation_config"]
+    assert (config["type"], config["accept"], config["required"], config["persist"]) == ("file", [".json"], True, True)
+    assert TASK / config["dest"] == PATHS.config
     assert (inputs["roster"]["required"], inputs["holidays"]["required"],
             inputs["pto"]["required"], inputs["cycle"]["required"]) == (True, False, False, True)
     # the destinations are the files the scripts read
@@ -52,7 +55,7 @@ def test_inputs_and_prepare():
     prepare = MANIFEST["prepare"]
     assert (TASK / prepare["cmd"]).is_file() and prepare["cmd"] == "scripts/prepare_options.py"
     # the optional Holiday Roster must not gate Check inputs or Start
-    assert prepare["after"] == ["roster"]
+    assert prepare["after"] == ["roster", "rotation_config"]
 
 
 def test_gates_point_at_the_files_the_scripts_write():

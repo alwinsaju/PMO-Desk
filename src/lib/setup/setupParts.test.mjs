@@ -12,22 +12,39 @@ import {
 import { Job, JobRegistry } from "./jobs.ts";
 import {
   FALLBACK_MODEL,
-  formatBytes,
+  downloadSizeText,
   isPullable,
+  modelToPull,
   preflight,
   sameModel,
 } from "./models.ts";
+import { MODEL_SIZE, formatBytes } from "../format.ts";
 import { probeOutlook } from "./outlook.ts";
 
 const GB = 1_000_000_000;
 
 describe("models", () => {
   it("formats sizes people can read", () => {
-    assert.equal(formatBytes(500), "1 KB");
-    assert.equal(formatBytes(42_000_000), "42 MB");
-    assert.equal(formatBytes(6.6 * GB), "6.6 GB");
-    assert.equal(formatBytes(12 * GB), "12 GB");
-    assert.equal(formatBytes(-1), "unknown");
+    assert.equal(formatBytes(500, MODEL_SIZE), "1 KB");
+    assert.equal(formatBytes(42_000_000, MODEL_SIZE), "42 MB");
+    assert.equal(formatBytes(6.6 * GB, MODEL_SIZE), "6.6 GB");
+    assert.equal(formatBytes(12 * GB, MODEL_SIZE), "12 GB");
+    assert.equal(formatBytes(-1, MODEL_SIZE), "unknown");
+  });
+
+  it("says how big each known model is, and admits when it does not know", () => {
+    assert.equal(downloadSizeText("gemma4:12b"), "about 12 GB");
+    assert.equal(downloadSizeText("qwen3.5:9b"), "about 6.6 GB");
+    assert.equal(downloadSizeText("QWEN3.5:9B:latest"), "about 6.6 GB");
+    assert.equal(downloadSizeText("llama3.3:70b"), "of unknown size");
+  });
+
+  it("picks the model to download: the fallback on request, else the active one", () => {
+    const pick = (requested, fallback, active) =>
+      modelToPull({ requested, fallback, active });
+    assert.equal(pick(undefined, true, "gemma4:12b"), FALLBACK_MODEL);
+    assert.equal(pick("  ", false, "qwen3.5:9b"), "qwen3.5:9b");
+    assert.equal(pick("gemma4:12b", false, "qwen3.5:9b"), "gemma4:12b");
   });
 
   it("only offers the configured default and the fallback", () => {
@@ -220,7 +237,8 @@ describe("OneDrive and the inbox folder", () => {
 describe("saving the inbox choice", () => {
   const FOLDER = "D:/Mail/PMO-Inbox";
   const isDir = (p) => p === FOLDER;
-  const abs = (p) => /^[A-Za-z]:[\\/]/.test(p);
+  const abs = (p) => /^([A-Za-z]:[\\/]?|\\\\)/.test(p) || /^[A-Za-z]:$/.test(p);
+  const SAFE = { home: "C:\\Users\\nobody", sampleJsonFiles: () => [] };
   const makeStore = () => {
     const saved = [];
     return {
@@ -238,6 +256,7 @@ describe("saving the inbox choice", () => {
       store,
       isDirectory: isDir,
       isAbsolute: abs,
+      safety: SAFE,
     });
     assert.deepEqual(result, { ok: true });
     assert.deepEqual(store.saved, [{ inboxDir: FOLDER, retentionDays: 90 }]);
@@ -251,6 +270,7 @@ describe("saving the inbox choice", () => {
       store,
       isDirectory: isDir,
       isAbsolute: abs,
+      safety: SAFE,
     });
     assert.equal(result.ok, false);
     assert.deepEqual(store.saved, []);
@@ -264,9 +284,103 @@ describe("saving the inbox choice", () => {
       store,
       isDirectory: isDir,
       isAbsolute: abs,
+      safety: SAFE,
     });
     assert.match(result.reason, /AI_OS_PMO_INBOX_DIR/);
     assert.deepEqual(store.saved, []);
+  });
+
+  describe("D-3: folders that cannot be the inbox", () => {
+    const HOME = "C:\\Users\\pat";
+    const intake = '{"schema":"pmo-intake/1","source":"outlook"}';
+    const attempt = async (raw, safety = {}, confirmNonEmpty = false) => {
+      const store = makeStore();
+      const result = await saveInboxChoice({
+        raw,
+        env: {},
+        store,
+        isDirectory: () => true,
+        isAbsolute: abs,
+        confirmNonEmpty,
+        safety: {
+          home: HOME,
+          protectedDirs: [
+            "C:\\Program Files\\AI OS",
+            "C:\\Users\\pat\\AppData\\Local\\AI OS",
+          ],
+          libraryRoots: ["C:\\Users\\pat\\OneDrive - Deloitte"],
+          sampleJsonFiles: () => [],
+          ...safety,
+        },
+      });
+      return { result, store };
+    };
+
+    for (const [label, raw, pattern] of [
+      ["a drive root", "D:\\", /whole drive/],
+      ["a drive root without slash", "D:", /whole drive/],
+      ["a network share", "\\\\server\\share", /whole drive|network share/],
+      ["the home folder", "c:/users/PAT/", /user folder/],
+      ["Documents", "C:\\Users\\pat\\Documents", /Documents/],
+      ["Desktop", "C:\\Users\\pat\\Desktop", /Desktop/],
+      ["Downloads", "C:\\Users\\pat\\Downloads", /Downloads/],
+      [
+        "OneDrive Documents",
+        "C:\\Users\\pat\\OneDrive - Deloitte\\Documents",
+        /Documents/,
+      ],
+      ["the install folder", "C:\\Program Files\\AI OS", /AI OS itself/],
+      [
+        "inside the data folder",
+        "C:\\Users\\pat\\AppData\\Local\\AI OS\\pmo\\inbox",
+        /AI OS itself/,
+      ],
+    ]) {
+      it(`refuses ${label} with a plain reason and saves nothing`, async () => {
+        const { result, store } = await attempt(raw);
+        assert.equal(result.ok, false);
+        assert.match(result.reason, pattern);
+        assert.equal(result.needsConfirmation, undefined);
+        assert.deepEqual(store.saved, []);
+      });
+    }
+
+    it("a folder inside Documents is fine", async () => {
+      const { result } = await attempt("C:\\Users\\pat\\Documents\\PMO-Inbox");
+      assert.deepEqual(result, { ok: true });
+    });
+
+    it("refuses a folder holding other JSON unless confirmed, and names the files", async () => {
+      const sample = () => [
+        { name: "settings.json", text: '{"a":1}' },
+        { name: "msg.json", text: intake },
+      ];
+      const first = await attempt("D:\\Stuff", { sampleJsonFiles: sample });
+      assert.equal(first.result.ok, false);
+      assert.equal(first.result.needsConfirmation, true);
+      assert.match(first.result.reason, /1 JSON file/);
+      assert.match(first.result.reason, /settings\.json/);
+      assert.doesNotMatch(first.result.reason, /msg\.json/);
+      assert.deepEqual(first.store.saved, []);
+
+      const confirmed = await attempt("D:\\Stuff", { sampleJsonFiles: sample }, true);
+      assert.deepEqual(confirmed.result, { ok: true });
+      assert.equal(confirmed.store.saved.length, 1);
+    });
+
+    it("accepts a folder that holds only intake files (even broken ones)", async () => {
+      const sample = () => [
+        { name: "a.json", text: intake },
+        { name: "b.json", text: '{"schema": "pmo-intake/1", "source": ' },
+      ];
+      const { result } = await attempt("D:\\Inbox", { sampleJsonFiles: sample });
+      assert.deepEqual(result, { ok: true });
+    });
+
+    it("never lets confirmNonEmpty override a drive root or a known folder", async () => {
+      const { result } = await attempt("D:\\", {}, true);
+      assert.equal(result.ok, false);
+    });
   });
 });
 

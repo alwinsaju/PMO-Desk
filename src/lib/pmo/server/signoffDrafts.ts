@@ -106,6 +106,7 @@ export class SignoffDrafts {
       approver,
       excerpt: raw ? prepareForModel(raw.intake) : null,
       nowIso: nowDate.toISOString(),
+      timeZone: config.reminders.timeZone,
     });
     const job: ChaserJob = {
       id: newId("so"),

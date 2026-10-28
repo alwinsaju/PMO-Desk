@@ -13,8 +13,10 @@
 import "@/components/apps";
 import { useEffect } from "react";
 import { preloadApps } from "@/components/apps/registry";
-import { useVisibleWindowIds } from "./windowStore";
+import { useVisibleWindowIds, useWindowStore } from "./windowStore";
 import { Window } from "./Window";
+
+const RECLAMP_DEBOUNCE_MS = 150;
 
 /**
  * Renders every open, non-minimized window. This is the only place that
@@ -44,6 +46,24 @@ import { Window } from "./Window";
  */
 export function WindowManager() {
   const ids = useVisibleWindowIds();
+
+  // Viewport/DPI changes: pull stranded windows back (debounced to one pass).
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const reclamp = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        useWindowStore
+          .getState()
+          .clampAllToViewport({ width: window.innerWidth, height: window.innerHeight });
+      }, RECLAMP_DEBOUNCE_MS);
+    };
+    window.addEventListener("resize", reclamp);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("resize", reclamp);
+    };
+  }, []);
 
   // Once the desktop has painted and the browser is idle, fetch the apps' code
   // in the background (they are not in the first bundle), Tasks first.

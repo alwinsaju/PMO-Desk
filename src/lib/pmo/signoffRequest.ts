@@ -144,6 +144,8 @@ export interface SignoffPromptInput {
   /** The original message, already cleaned (prepareForModel); null if gone. */
   excerpt: string | null;
   nowIso: string;
+  /** The reminder time zone; blank or unknown means the default. */
+  timeZone?: string;
 }
 
 const EXCERPT_CHARS = 1500;
@@ -156,7 +158,7 @@ export function buildSignoffUserPrompt(input: SignoffPromptInput): string {
     `Description: ${flat(todo.description, 400)}`,
     `Approver: ${flat(approverName(input.approver)) || "(not named)"}`,
     `Due date: ${todo.dueAt ? dayLabel(todo.dueAt, true) : "none"}`,
-    `Today: ${istStamp(input.nowIso)}`,
+    `Today: ${istStamp(input.nowIso, input.timeZone)}`,
     link ? `Link to the original message: ${link}` : "",
   ]
     .filter(Boolean)

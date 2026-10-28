@@ -3,10 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ENGINE_RESTARTED_EVENT } from "@/lib/engineRestart";
 import { fetchTasks } from "./api";
+import { isEngineDown, nextPollDelay } from "./pollBackoff";
 import type { Task } from "./types";
-
-/** How often the task list is re-read while the window is visible. */
-const POLL_INTERVAL_MS = 2000;
 
 /** Reflects only the OUTCOME of the most recent poll attempt — "offline"
  *  does not discard whatever tasks were last successfully loaded
@@ -21,14 +19,16 @@ export interface TasksData {
   hasLoadedOnce: boolean;
   /** Forces an immediate poll, bypassing whatever's left of the current
    *  wait — call after a state-machine action so its effect shows up
-   *  without waiting up to POLL_INTERVAL_MS for the next scheduled tick. */
+   *  without waiting for the next scheduled tick. */
   refetch: () => void;
 }
 
 /**
- * Polls GET /tasks every 2s against the Tasks engine
+ * Polls GET /tasks every 2s against the Tasks engine, backing off to 10s
+ * while it is unreachable (see pollBackoff.ts)
  * (see api.ts). Network failures never blank the UI: the last-known-good
- * tasks stay on screen and only `connection` flips to "offline", so
+ * tasks stay on screen and only `connection` flips to "offline" (after two
+ * failed polls in a row), so
  * the caller can show a small non-disruptive indicator instead of losing
  * the whole grid — mirroring main.js's `refresh()`, which does the same
  * (`setConnected(false)` on failure, without ever clearing already-rendered
@@ -61,6 +61,7 @@ export function useTasksData(): TasksData {
     // invocation's in-flight request can never block the surviving one.
     let cancelled = false;
     let inFlight = false;
+    let failures = 0;
 
     async function poll() {
       if (inFlight) return;
@@ -68,17 +69,19 @@ export function useTasksData(): TasksData {
       try {
         const nextTasks = await fetchTasks();
         if (cancelled) return;
+        failures = 0;
         setTasks(nextTasks);
         setConnection("online");
         setHasLoadedOnce(true);
       } catch {
-        if (!cancelled) setConnection("offline");
+        failures += 1;
+        if (!cancelled && isEngineDown(failures)) setConnection("offline");
       } finally {
         inFlight = false;
         // A hidden window (minimized / covered / another tab) stops polling;
         // the visibilitychange listener below resumes it with an immediate poll.
         if (!cancelled && !document.hidden) {
-          timerRef.current = setTimeout(poll, POLL_INTERVAL_MS);
+          timerRef.current = setTimeout(poll, nextPollDelay(failures));
         }
       }
     }

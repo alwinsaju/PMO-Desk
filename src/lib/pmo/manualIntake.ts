@@ -32,6 +32,8 @@ export const ManualPasteSchema = z.object({
     )
     .refine((value) => value.trim() !== "", { message: "Paste the message text." }),
   origin: z.enum(MANUAL_ORIGINS).optional().default("manual"),
+  /** "Import anyway": the same text as an earlier message is added again as a new item. */
+  allowDuplicate: z.boolean().optional().default(false),
   link: z
     .string()
     .trim()

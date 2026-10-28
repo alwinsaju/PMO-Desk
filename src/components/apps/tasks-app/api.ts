@@ -2,6 +2,7 @@ import type {
   ActionResult,
   CleanupPayload,
   DiffPayload,
+  DraftSummaryPayload,
   FlagsPayload,
   FormAnswerPatch,
   FormPayload,
@@ -15,6 +16,7 @@ import type {
   UploadPayload,
 } from "./types";
 import { getEngineUrl } from "./engineUrl.ts";
+import { engineFetch } from "../../../lib/tasks-engine/engineClient.ts";
 
 /** Every request is time-boxed so a half-dead connection (e.g. the engine
  *  restarting mid keep-alive) rejects promptly instead of hanging the poll
@@ -22,7 +24,7 @@ import { getEngineUrl } from "./engineUrl.ts";
 const REQUEST_TIMEOUT_MS = 8000;
 
 async function getJson<T>(path: string): Promise<T> {
-  const res = await fetch(`${await getEngineUrl()}${path}`, {
+  const res = await engineFetch(`${await getEngineUrl()}${path}`, {
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
   if (!res.ok) throw new Error(`GET ${path} failed: ${res.status}`);
@@ -44,7 +46,7 @@ const MAX_SHARED_PATHS = 64;
 const MAX_SHARED_TEXT = 2_000_000;
 
 async function getJsonShared<T>(path: string): Promise<T> {
-  const res = await fetch(`${await getEngineUrl()}${path}`, {
+  const res = await engineFetch(`${await getEngineUrl()}${path}`, {
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
   if (!res.ok) throw new Error(`GET ${path} failed: ${res.status}`);
@@ -66,7 +68,7 @@ async function readShared<T>(path: string, res: Response): Promise<T> {
 }
 
 async function postAction(path: string): Promise<ActionResult> {
-  const res = await fetch(`${await getEngineUrl()}${path}`, {
+  const res = await engineFetch(`${await getEngineUrl()}${path}`, {
     method: "POST",
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
@@ -194,7 +196,7 @@ export async function postReviewResolutions(
   taskId: string,
   resolutions: { number: string; subcategory2: string }[],
 ): Promise<ActionResult> {
-  const res = await fetch(
+  const res = await engineFetch(
     `${await getEngineUrl()}/tasks/${encodeURIComponent(taskId)}/review-resolutions`,
     {
       method: "POST",
@@ -241,7 +243,7 @@ async function callJson<T extends object>(
   { method = "GET", body, headers, timeoutMs = REQUEST_TIMEOUT_MS }: CallOptions = {},
 ): Promise<Reply<T>> {
   try {
-    const res = await fetch(`${await getEngineUrl()}${path}`, {
+    const res = await engineFetch(`${await getEngineUrl()}${path}`, {
       method,
       body,
       headers,
@@ -345,6 +347,11 @@ export function getDiff(taskId: string): Promise<Reply<DiffPayload>> {
 /** The draft review gate's flags.json (null if not written yet). */
 export function getFlags(taskId: string): Promise<Reply<FlagsPayload>> {
   return callJson<FlagsPayload>(`${taskPath(taskId)}/flags`);
+}
+
+/** Recipients, subject and attachments of the Outlook draft (null if unreadable). */
+export function getDraftSummary(taskId: string): Promise<Reply<DraftSummaryPayload>> {
+  return callJson<DraftSummaryPayload>(`${taskPath(taskId)}/draft-summary`);
 }
 
 /** Deletes the task's input files from disk (the engine keeps files its

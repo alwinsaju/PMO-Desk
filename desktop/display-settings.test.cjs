@@ -131,3 +131,57 @@ describe("describeGpu", () => {
     );
   });
 });
+
+describe("no hardware graphics acceleration", () => {
+  const status = (gpu_compositing) => ({ gpu_compositing });
+
+  it("is flagged when the GPU was allowed but compositing is not hardware", () => {
+    for (const value of [
+      "disabled_software",
+      "unavailable_software",
+      "unavailable_off",
+      "disabled_off",
+    ]) {
+      const gpu = settings.describeGpu({
+        featureStatus: status(value),
+        launchedWithGpu: true,
+      });
+      assert.equal(gpu.noHardwareAcceleration, true, value);
+    }
+  });
+
+  it("is not flagged when compositing really is on the GPU", () => {
+    const gpu = settings.describeGpu({
+      featureStatus: status("enabled"),
+      launchedWithGpu: true,
+    });
+    assert.equal(gpu.noHardwareAcceleration, false);
+  });
+
+  it("is not flagged while the status is unknown", () => {
+    const gpu = settings.describeGpu({ featureStatus: null, launchedWithGpu: true });
+    assert.equal(gpu.noHardwareAcceleration, false);
+  });
+
+  it("is not flagged when this launch had the GPU switched off on purpose", () => {
+    const gpu = settings.describeGpu({
+      featureStatus: status("disabled_software"),
+      launchedWithGpu: false,
+    });
+    assert.equal(gpu.noHardwareAcceleration, false);
+  });
+
+  it("forces the lean look whatever was saved when there is no hardware acceleration", () => {
+    const gpu = settings.describeGpu({
+      featureStatus: status("disabled_software"),
+      launchedWithGpu: true,
+    });
+    assert.equal(settings.fxModeFor({ hardwareAcceleration: true }, gpu), "lean");
+    assert.equal(settings.fxModeFor({ hardwareAcceleration: true }), "rich");
+    const ok = settings.describeGpu({
+      featureStatus: status("enabled"),
+      launchedWithGpu: true,
+    });
+    assert.equal(settings.fxModeFor({ hardwareAcceleration: true }, ok), "rich");
+  });
+});

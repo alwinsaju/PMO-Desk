@@ -1,13 +1,18 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui";
+import type { NextOffer } from "./api";
 import { FilteredList } from "./FilteredList";
+import { FirstRunWizard } from "./FirstRunWizard";
 import { NoticeStack, PmoToolbar } from "./IngestStatusBar";
+import { NeedsAttentionStrip } from "./NeedsAttentionStrip";
 import { NewTodoDialog } from "./NewTodoDialog";
 import { PasteIntakeDialog } from "./PasteIntakeDialog";
 import { useDockBadgeStore } from "@/components/taskbar/dockBadgeStore";
 import { getDesktopBridge } from "@/lib/pmo/desktopBridge";
+import { needsFirstRun } from "@/lib/pmo/firstRun";
+import type { Proposal } from "@/lib/pmo/types";
 import { PanelMessage, ScrollBody } from "./parts";
 import { ProposalDialog } from "./ProposalDialog";
 import { useRemindersStore } from "./remindersStore";
@@ -16,9 +21,9 @@ import { ReviewQueue } from "./ReviewQueue";
 import { SettingsDialog } from "./SettingsDialog";
 import { TodoDetailDialog } from "./TodoDetailDialog";
 import { TodoList } from "./TodoList";
+import { UndoRejectBar, type RejectedItem } from "./UndoRejectBar";
 import { reviewCount as countReview, type TodoFilter, type TodoSort } from "./queueView";
 import { initialReportView, type ReportViewState } from "./reportView";
-import { istDate } from "@/lib/pmo/time";
 import { usePmoData } from "./usePmoData";
 
 /**
@@ -51,9 +56,22 @@ export function PmoTodoApp({ windowId }: { windowId: string }) {
   // The weekly report's period choice and draft live here too: the tab's
   // content unmounts on a tab switch, and the person's edits must not.
   const [reportView, setReportView] = useState<ReportViewState>(() =>
-    initialReportView(istDate(new Date())),
+    initialReportView(new Date().toISOString().slice(0, 10)),
   );
+  // The first state brings "today" in the configured time zone: reseed the
+  // custom range from it, once.
+  const reportSeeded = useRef(false);
+  const serverToday = state?.today;
+  useEffect(() => {
+    if (!serverToday || reportSeeded.current) return;
+    reportSeeded.current = true;
+    setReportView((view) => (view.draft ? view : initialReportView(serverToday)));
+  }, [serverToday]);
   const [notTaskOpen, setNotTaskOpen] = useState(false);
+  const [nextOffer, setNextOffer] = useState<NextOffer | null>(null);
+  const [justRejected, setJustRejected] = useState<RejectedItem | null>(null);
+  const rememberRejected = (p: Proposal) =>
+    setJustRejected({ id: p.id, title: p.draft?.title || p.summary.subject });
 
   // A clicked reminder (desktop notification, web notification or the in-app
   // toast) asks for this window to open a to-do. It waits for the first state
@@ -86,6 +104,14 @@ export function PmoTodoApp({ windowId }: { windowId: string }) {
             ? "Can't reach the AI OS server. This will connect automatically once it's available."
             : "Loading PMO To-Do…"}
         </PanelMessage>
+      </div>
+    );
+  }
+
+  if (needsFirstRun(state.config)) {
+    return (
+      <div data-window-id={windowId} className="h-full w-full">
+        <FirstRunWizard windowId={windowId} onDone={refetch} />
       </div>
     );
   }
@@ -130,6 +156,12 @@ export function PmoTodoApp({ windowId }: { windowId: string }) {
           offline={offline}
           onSettings={() => setSettingsOpen(true)}
         />
+        <NeedsAttentionStrip state={state} />
+        <UndoRejectBar
+          item={justRejected}
+          onClear={() => setJustRejected(null)}
+          onSettled={refetch}
+        />
 
         <Panel value="review">
           <ReviewQueue
@@ -142,6 +174,7 @@ export function PmoTodoApp({ windowId }: { windowId: string }) {
               setTodoId(id);
             }}
             onSettled={refetch}
+            onRejected={rememberRejected}
           />
         </Panel>
         <Panel value="todos">
@@ -151,6 +184,7 @@ export function PmoTodoApp({ windowId }: { windowId: string }) {
             onViewChange={setTodoView}
             onOpen={setTodoId}
             onNew={() => setCreating(true)}
+            onNextOffer={setNextOffer}
             onSettled={refetch}
           />
         </Panel>
@@ -173,6 +207,7 @@ export function PmoTodoApp({ windowId }: { windowId: string }) {
         structuring={state.structuring}
         runtime={state.runtime}
         onSettled={refetch}
+        onRejected={rememberRejected}
         onOpenChange={(open) => {
           if (!open) setProposalId(null);
         }}
@@ -184,6 +219,8 @@ export function PmoTodoApp({ windowId }: { windowId: string }) {
         nowIso={state.serverTime}
         chaser={todo ? state.chasers?.[todo.id] : undefined}
         signoffDraft={todo ? state.signoffDrafts?.[todo.id] : undefined}
+        nextOffer={nextOffer}
+        onNextOffer={setNextOffer}
         me={state.config.me}
         onSettled={refetch}
         onOpenChange={(open) => {

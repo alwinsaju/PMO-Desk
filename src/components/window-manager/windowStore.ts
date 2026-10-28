@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { useShallow } from "zustand/react/shallow";
-import { windowDefaults, zIndex as zIndexTokens } from "@/lib/tokens";
+import { windowDefaults, sizes, zIndex as zIndexTokens } from "@/lib/tokens";
 import type {
   ControlledBy,
   OpenWindowOptions,
@@ -8,7 +8,20 @@ import type {
   WindowSize,
   WindowState,
 } from "./types";
-import { defaultWindowGeometry } from "./windowGeometry";
+import {
+  defaultWindowGeometry,
+  fitRectToViewport,
+  type FitConfig,
+  type Viewport,
+} from "./windowGeometry";
+
+/** Numbers behind every "keep the title bar reachable" clamp. */
+export const windowClampConfig: FitConfig = {
+  titlebarHeight: sizes.titlebarHeight,
+  minVisibleX: windowDefaults.titleBarReach,
+  bottomReserve: sizes.commandBarReserve,
+  insets: windowDefaults.insets,
+};
 
 export interface WindowStoreState {
   windows: Record<string, WindowState>;
@@ -26,6 +39,8 @@ export interface WindowStoreState {
   focusWindow: (id: string) => void;
   moveWindow: (id: string, position: WindowPosition) => void;
   resizeWindow: (id: string, size: WindowSize) => void;
+  /** Re-fits every non-maximised window to `viewport` (viewport/DPI change). */
+  clampAllToViewport: (viewport: Viewport) => void;
   minimizeWindow: (id: string) => void;
   restoreWindow: (id: string) => void;
   /** Toggles maximize on/off, restoring the pre-maximize bounds on toggle-off. */
@@ -182,6 +197,33 @@ export const useWindowStore = create<WindowStoreState>()((set) => ({
         height: Math.max(min.height, size.height),
       };
       return { windows: { ...state.windows, [id]: { ...w, size: clamped } } };
+    });
+  },
+
+  clampAllToViewport: (viewport) => {
+    set((state) => {
+      let next = state.windows;
+      for (const w of Object.values(state.windows)) {
+        const min = w.minSize ?? windowDefaults.minSize;
+        // A maximised window follows the viewport by itself; only its saved
+        // restore rect needs to stay reachable.
+        const current = w.isMaximized
+          ? w.restoreBounds
+          : { position: w.position, size: w.size };
+        if (!current) continue;
+        const rect = { ...current.position, ...current.size };
+        const fitted = fitRectToViewport(rect, viewport, windowClampConfig, min);
+        if (fitted === rect) continue;
+        const bounds = {
+          position: { x: fitted.x, y: fitted.y },
+          size: { width: fitted.width, height: fitted.height },
+        };
+        if (next === state.windows) next = { ...state.windows };
+        next[w.id] = w.isMaximized
+          ? { ...w, restoreBounds: bounds }
+          : { ...w, position: bounds.position, size: bounds.size };
+      }
+      return next === state.windows ? state : { windows: next };
     });
   },
 

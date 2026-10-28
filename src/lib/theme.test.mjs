@@ -8,6 +8,7 @@ import {
   getStoredBrand,
   getStoredTheme,
   getThemeInitScript,
+  restoreAppearanceFromServer,
   setBrand,
   setTheme,
 } from "./theme.ts";
@@ -81,6 +82,76 @@ describe("theme + brand persistence", () => {
     assert.equal(getStoredBrand(), "default");
     setBrand("deloitte"); // must not throw
     assert.equal(env.attrs.get("data-brand"), "deloitte");
+  });
+});
+
+describe("server mirror of the appearance", () => {
+  const serverWith = (value) => async (url, init) => {
+    serverWith.calls.push({ url, method: init?.method ?? "GET", body: init?.body });
+    return { ok: true, json: async () => ({ ok: true, value }) };
+  };
+  serverWith.calls = [];
+  afterEach(() => {
+    delete globalThis.fetch;
+    serverWith.calls = [];
+  });
+
+  it("setTheme / setBrand PUT both choices to the preferences key", () => {
+    const env = fakeEnv();
+    globalThis.window = { localStorage: env.localStorage, location: {} };
+    globalThis.document = { documentElement: env.documentElement };
+    globalThis.fetch = serverWith(null);
+    setTheme("dark");
+    setBrand("deloitte");
+    const puts = serverWith.calls.filter((c) => c.method === "PUT");
+    assert.deepEqual(
+      puts.map((c) => [c.url, JSON.parse(c.body)]),
+      [
+        ["/api/ui-state/preferences", { value: { theme: "dark", brand: "default" } }],
+        ["/api/ui-state/preferences", { value: { theme: "dark", brand: "deloitte" } }],
+      ],
+    );
+  });
+
+  it("a failing server never breaks setTheme", () => {
+    const env = fakeEnv();
+    globalThis.window = { localStorage: env.localStorage, location: {} };
+    globalThis.document = { documentElement: env.documentElement };
+    globalThis.fetch = () => Promise.reject(new Error("down"));
+    setTheme("dark");
+    assert.equal(env.attrs.get("data-theme"), "dark");
+  });
+
+  it("restores theme and brand from the server when localStorage has none", async () => {
+    const env = fakeEnv();
+    install(env);
+    await restoreAppearanceFromServer(serverWith({ theme: "dark", brand: "deloitte" }));
+    assert.equal(env.attrs.get("data-theme"), "dark");
+    assert.equal(env.attrs.get("data-brand"), "deloitte");
+    assert.equal(env.store.get(THEME_STORAGE_KEY), "dark");
+    assert.equal(serverWith.calls.filter((c) => c.method === "PUT").length, 0);
+  });
+
+  it("never overrides a choice localStorage already has", async () => {
+    const env = fakeEnv({ stored: { [THEME_STORAGE_KEY]: "light" } });
+    install(env);
+    await restoreAppearanceFromServer(serverWith({ theme: "dark", brand: "deloitte" }));
+    assert.equal(env.attrs.has("data-theme"), false);
+    assert.equal(env.store.get(THEME_STORAGE_KEY), "light");
+    assert.equal(env.attrs.get("data-brand"), "deloitte");
+  });
+
+  it("ignores junk values and an unreachable server", async () => {
+    const env = fakeEnv();
+    install(env);
+    await restoreAppearanceFromServer(serverWith({ theme: "purple", brand: 3 }));
+    await restoreAppearanceFromServer(serverWith(null));
+    await restoreAppearanceFromServer(() => Promise.reject(new Error("down")));
+    await restoreAppearanceFromServer(async () => ({
+      ok: false,
+      json: async () => ({}),
+    }));
+    assert.equal(env.attrs.size, 0);
   });
 });
 

@@ -28,6 +28,7 @@ export interface RemindersForm {
   timeZone: string;
   workStart: string;
   workEnd: string;
+  leadWorkingDays: string;
   chaserDays: string;
   /** 0 = Sunday. */
   workDays: number[];
@@ -55,6 +56,7 @@ export function formFromConfig(config: PmoConfig): FormText {
     reportProject: config.report.projectName,
     reminders: {
       ...config.reminders,
+      leadWorkingDays: String(config.reminders.leadWorkingDays),
       chaserDays: String(config.reminders.chaserDays),
       workDays: [...config.reminders.workDays],
     },
@@ -95,6 +97,10 @@ export function buildPatch(
     reminders: {
       ...form.reminders,
       timeZone: form.reminders.timeZone.trim(),
+      leadWorkingDays:
+        form.reminders.leadWorkingDays.trim() === ""
+          ? Number.NaN
+          : Number(form.reminders.leadWorkingDays),
       chaserDays:
         form.reminders.chaserDays.trim() === ""
           ? Number.NaN

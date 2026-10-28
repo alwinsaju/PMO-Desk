@@ -17,8 +17,6 @@ from pathlib import Path
 import openpyxl
 
 SUBCATEGORY2_HEADER = "Subcategory2"
-REVIEW_REASON_HEADER = "Review reason"
-RESOLVED_NOTE = "Resolved in app"
 
 
 def load_resolutions(resolutions_path):

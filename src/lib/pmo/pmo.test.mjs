@@ -9,6 +9,7 @@ import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { CHECKPOINT_TEMPLATES } from "./checkpointTemplates.ts";
 import { dedupeKey, idsForKey } from "./dedupe.ts";
+import { developerConfig } from "./developerDefaults.ts";
 import {
   domainMatches,
   domainOf,
@@ -22,6 +23,7 @@ import {
   htmlToText,
   prepareForModel,
   stripQuotedChain,
+  analyseQuotedChain,
   MAX_MODEL_CHARS,
 } from "./preprocess.ts";
 import { groundQuote, locateQuote, verifyQuote } from "./quote.ts";
@@ -66,7 +68,7 @@ import { toOllamaFormat } from "../ai-runtime/core.ts";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const examplesDir = path.resolve(here, "..", "..", "..", "pmo-intake", "examples");
 const example = (name) => JSON.parse(readFileSync(path.join(examplesDir, name), "utf8"));
-const config = PmoConfigSchema.parse({});
+const config = developerConfig();
 const intakeOf = (name, patch = {}) => IntakeSchema.parse({ ...example(name), ...patch });
 
 describe("intake contract (pmo-intake/1)", () => {
@@ -409,6 +411,56 @@ describe("message clean-up", () => {
     assert.equal(stripQuotedChain("a\n__________\nb"), "a\n__________\nb");
   });
 
+  it("keeps the reply below the quote when only a greeting sits above it", () => {
+    const older = "On Mon, 5 Oct 2026 at 10:00, Alwin Saju wrote:";
+    // Top-posted: real text above, the chain is cut, nothing flagged.
+    const top = analyseQuotedChain(
+      `Hi Alwin,\n\nPlease send the RAID log by Friday.\n\n${older}\n> Can you share status?\n> Thanks`,
+    );
+    assert.equal(top.text, "Hi Alwin,\n\nPlease send the RAID log by Friday.");
+    assert.equal(top.replyBelowQuote, false);
+
+    // Bottom-posted: the greeting is all that sits above the marker.
+    const bottom = analyseQuotedChain(
+      `Hi Alwin,\n\n${older}\n> Can you share status?\n\nPlease send the RAID log by Friday.\n\nThanks`,
+    );
+    assert.match(bottom.text, /Hi Alwin,/);
+    assert.match(bottom.text, /Please send the RAID log by Friday\./);
+    assert.doesNotMatch(bottom.text, /Can you share status/); // quoted lines stay out
+    assert.doesNotMatch(bottom.text, /wrote:/);
+    assert.equal(bottom.replyBelowQuote, true);
+
+    // Inline-interleaved answers between quoted lines.
+    const inline = analyseQuotedChain(
+      `Hello,\n\n${older}\n> Q1: when is it due?\nFriday 30 Oct.\n> Q2: who owns it?\nPriya owns it.`,
+    );
+    assert.match(inline.text, /Friday 30 Oct\./);
+    assert.match(inline.text, /Priya owns it\./);
+    assert.equal(inline.replyBelowQuote, true);
+
+    // Outlook style: the header block under the divider is skipped, the answer kept.
+    const outlook = analyseQuotedChain(
+      "Hi Alwin,\n\n________________________________\nFrom: Alwin <a@b.com>\nSent: Monday\nTo: Pat\nSubject: RE: X\n\nPlease do X by Friday.",
+    );
+    assert.match(outlook.text, /Please do X by Friday\./);
+    assert.doesNotMatch(outlook.text, /Subject:/);
+    assert.equal(outlook.replyBelowQuote, true);
+
+    // Greeting only, nothing real anywhere: unchanged behaviour, not flagged.
+    const greeting = analyseQuotedChain(
+      "Hi Alwin,\n\nThanks,\nPat\n-----Original Message-----\nFrom: x\nSent: y",
+    );
+    assert.equal(greeting.text, "Hi Alwin,\n\nThanks,\nPat");
+    assert.equal(greeting.replyBelowQuote, false);
+  });
+
+  it("caps a below-the-quote reply at the model's body limit", () => {
+    const huge = `Hi,\nOn Mon, 5 Oct 2026 at 10:00, Pat wrote:\n> q\n${"answer ".repeat(5000)}`;
+    const prepared = prepareForModel({ body: { text: huge, format: "text" } });
+    assert.ok(prepared.length <= MAX_MODEL_CHARS + 40);
+    assert.ok(analyseQuotedChain(huge).text.length <= MAX_MODEL_CHARS + 10);
+  });
+
   it("drops base64, tracking links and truncates long messages", () => {
     const cleaned = dropNoise(
       `see https://example.com/doc and ${"https://safelinks.protection.outlook.com/?url=" + "a".repeat(40)} and data:image/png;base64,${"QUJD".repeat(30)} end`,
@@ -568,7 +620,11 @@ describe("model schema (prompt version 3) and recurrence", () => {
     dueAt: null,
     dueBasis: "none",
     priority: "normal",
-    actionItems: Array.from({ length: 9 }, (_, i) => ({ text: `s${i}`, owner: null, dueAt: null })),
+    actionItems: Array.from({ length: 9 }, (_, i) => ({
+      text: `s${i}`,
+      owner: null,
+      dueAt: null,
+    })),
     checkpointTemplate: "simple",
     waitingOn: null,
     quote: "q",
@@ -578,20 +634,37 @@ describe("model schema (prompt version 3) and recurrence", () => {
     const format = toOllamaFormat(AiModelSchema);
     const keys = Object.keys(format.properties);
     assert.deepEqual(keys, [
-      "isActionable", "title", "description", "owner", "requester", "recurrence",
-      "dueAt", "dueBasis", "priority", "actionItems", "checkpointTemplate", "waitingOn", "quote",
+      "isActionable",
+      "title",
+      "description",
+      "owner",
+      "requester",
+      "recurrence",
+      "dueAt",
+      "dueBasis",
+      "priority",
+      "actionItems",
+      "checkpointTemplate",
+      "waitingOn",
+      "quote",
     ]);
     assert.equal(format.required.includes("recurrence"), true);
     assert.equal(format.properties.actionItems.maxItems, 6);
     assert.equal(format.properties.recurrence.anyOf[0].maxLength, 80);
-    assert.equal(keys.includes("reason") || keys.includes("confidence") || keys.includes("tags"), false);
+    assert.equal(
+      keys.includes("reason") || keys.includes("confidence") || keys.includes("tags"),
+      false,
+    );
   });
 
   it("clamps and trims the recurrence and caps the items at six", () => {
     const out = AiModelSchema.parse(answer);
     assert.equal(out.recurrence, "weekly, before Tuesday");
     assert.equal(out.actionItems.length, 6);
-    assert.equal(AiModelSchema.parse({ ...answer, recurrence: "x".repeat(200) }).recurrence.length, 80);
+    assert.equal(
+      AiModelSchema.parse({ ...answer, recurrence: "x".repeat(200) }).recurrence.length,
+      80,
+    );
     assert.equal(AiModelSchema.parse({ ...answer, recurrence: "   " }).recurrence, null);
     assert.equal(AiModelSchema.parse({ ...answer, recurrence: null }).recurrence, null);
   });
@@ -607,7 +680,12 @@ describe("model schema (prompt version 3) and recurrence", () => {
   it("still reads a record written by prompt version 2 (no recurrence, with reason/confidence/tags)", () => {
     const rest = { ...answer };
     delete rest.recurrence;
-    const old = AiStructuredSchema.parse({ ...rest, reason: "asks", confidence: 0.7, tags: ["a"] });
+    const old = AiStructuredSchema.parse({
+      ...rest,
+      reason: "asks",
+      confidence: 0.7,
+      tags: ["a"],
+    });
     assert.equal(old.recurrence, null);
     assert.equal(old.reason, "asks");
     assert.equal(old.confidence, 0.7);
@@ -622,10 +700,28 @@ describe("model schema (prompt version 3) and recurrence", () => {
 
   it("a to-do built from a draft keeps the recurrence (trimmed, blank = null); an old record parses with null", () => {
     const stored = AiStructuredSchema.parse(AiModelSchema.parse(answer));
-    const context = { now: "2026-10-23T05:00:00.000Z", approvedBy: "tester", source: { intakeId: null, source: "manual", link: null, subject: "", sender: null, receivedAt: null, threadKey: null } };
-    const todo = buildTodo({ ...draftFromAi(stored), recurrence: "  every Monday " }, context);
+    const context = {
+      now: "2026-10-23T05:00:00.000Z",
+      approvedBy: "tester",
+      source: {
+        intakeId: null,
+        source: "manual",
+        link: null,
+        subject: "",
+        sender: null,
+        receivedAt: null,
+        threadKey: null,
+      },
+    };
+    const todo = buildTodo(
+      { ...draftFromAi(stored), recurrence: "  every Monday " },
+      context,
+    );
     assert.equal(todo.recurrence, "every Monday");
-    assert.equal(buildTodo({ ...draftFromAi(stored), recurrence: "   " }, context).recurrence, null);
+    assert.equal(
+      buildTodo({ ...draftFromAi(stored), recurrence: "   " }, context).recurrence,
+      null,
+    );
     assert.equal(TodoSchema.parse(todo).recurrence, "every Monday");
     const legacy = { ...todo };
     delete legacy.recurrence;
@@ -633,7 +729,10 @@ describe("model schema (prompt version 3) and recurrence", () => {
     const legacyDraft = { ...draftFromAi(stored) };
     delete legacyDraft.recurrence;
     assert.equal(TodoDraftSchema.parse(legacyDraft).recurrence, null);
-    assert.equal(TodoDraftSchema.safeParse({ ...legacyDraft, recurrence: "x".repeat(81) }).success, false);
+    assert.equal(
+      TodoDraftSchema.safeParse({ ...legacyDraft, recurrence: "x".repeat(81) }).success,
+      false,
+    );
   });
 });
 
@@ -684,10 +783,16 @@ describe("prompts", () => {
     assert.match(system, /At most 6/);
     assert.match(system, /owner it names.*or null/);
     assert.match(system, /"normal" is the default/);
-    assert.match(system, /Choose "high" only if the message itself uses an urgency word.*today or tomorrow counted from TODAY/);
+    assert.match(
+      system,
+      /Choose "high" only if the message itself uses an urgency word.*today or tomorrow counted from TODAY/,
+    );
     assert.match(system, /Choose "low" only for a clearly optional/);
     assert.match(system, /Urgency is judged against TODAY/);
-    assert.match(system, /recurrence: null, unless the message asks for something that repeats/);
+    assert.match(
+      system,
+      /recurrence: null, unless the message asks for something that repeats/,
+    );
     assert.match(system, /NOT a one-off deadline/);
     assert.match(system, /waitingOn: set ONLY when I am waiting for somebody else/);
     assert.match(system, /that is MY step and waitingOn is null/);
@@ -704,7 +809,10 @@ describe("prompts", () => {
     const prompt = buildUserPrompt(intake, "Hello", "2026-10-25T12:00:00+05:30");
     assert.match(prompt, /^Today: Sun 2026-10-25 \(tomorrow is Mon 2026-10-26\)$/m);
     assert.match(prompt, /^Received: Thu 2026-10-22 \(3 days ago\)$/m);
-    assert.match(prompt, /^Next 14 days after it was received: Fri 2026-10-23 \(the day after it was received\), Sat 2026-10-24,/m);
+    assert.match(
+      prompt,
+      /^Next 14 days after it was received: Fri 2026-10-23 \(the day after it was received\), Sat 2026-10-24,/m,
+    );
     assert.ok(/<\/message>\n\nDate hints /.test(prompt));
   });
 
@@ -773,7 +881,11 @@ describe("date hints", () => {
     assert.equal(describeAge("2026-10-25", "2026-10-25"), "today");
     assert.equal(describeAge("2026-10-24", "2026-10-25"), "yesterday");
     assert.equal(describeAge("2026-10-13", "2026-10-25"), "12 days ago");
-    assert.equal(describeAge("2026-10-30", "2026-10-25"), "today", "a future received day reads as today");
+    assert.equal(
+      describeAge("2026-10-30", "2026-10-25"),
+      "today",
+      "a future received day reads as today",
+    );
     // 19:00 UTC on the 24th is already the 25th in IST.
     const hints = buildStructureDateHints("2026-10-24T05:00:00Z", "2026-10-24T19:00:00Z");
     assert.match(hints, /^Today: Sun 2026-10-25 /m);
@@ -1069,6 +1181,25 @@ describe("paste intake (manualIntake.ts)", () => {
     assert.equal(intake.body.format, "text");
     const noLink = buildManualIntake({ ...paste, link: "" }, "m", "2026-10-24T10:00:00Z");
     assert.equal("link" in noLink, false);
+  });
+});
+
+describe("config defaults", () => {
+  it("production defaults are neutral and not set up", () => {
+    const neutral = PmoConfigSchema.parse({});
+    assert.deepEqual(neutral.me, { names: [], emails: [] });
+    assert.deepEqual(neutral.allowedSenderDomains, []);
+    assert.deepEqual(neutral.blockedDomains, []);
+    assert.equal(neutral.inboxDir, "");
+    assert.equal(neutral.setupComplete, false);
+  });
+
+  it("the developer fixture is a complete config that still validates", () => {
+    assert.equal(config.setupComplete, true);
+    assert.deepEqual(PmoConfigSchema.parse(config), config);
+    assert.deepEqual(config.me.emails, ["alsaju@deloitte.com"]);
+    assert.deepEqual(config.blockedDomains, ["takeda.com"]);
+    assert.notEqual(config.inboxDir, "");
   });
 });
 

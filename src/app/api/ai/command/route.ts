@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getAiRuntimeConfig, startExternalCall } from "@/lib/ai-runtime";
+import { resolveWindowTarget } from "@/lib/ai-runtime/windowIntent";
 import type {
   AiCommandAppId,
   AiCommandRequest,
@@ -33,11 +34,7 @@ export const dynamic = "force-dynamic";
  * it needs `/api/chat` tool calling and the un-queued 60s latency behavior
  * below, which those helpers don't offer.
  */
-const {
-  baseUrl: OLLAMA_BASE_URL,
-  defaultModel: OLLAMA_MODEL,
-  numCtx,
-} = getAiRuntimeConfig();
+const { baseUrl: OLLAMA_BASE_URL, numCtx } = getAiRuntimeConfig();
 
 /**
  * Real local inference latency varies a LOT on this hardware. The model
@@ -291,7 +288,7 @@ export async function POST(request: Request) {
   const timeoutMs = call.modelLoaded === true ? REQUEST_TIMEOUT_MS : WAKE_TIMEOUT_MS;
 
   const ollamaRequest = {
-    model: OLLAMA_MODEL,
+    model: call.model,
     stream: false,
     keep_alive: call.keepAlive,
     // The shared default (gemma4:12b) is a reasoning model that thinks unless
@@ -343,7 +340,7 @@ export async function POST(request: Request) {
       kind: isTimeout ? "timeout" : "unreachable",
       message: isTimeout
         ? `The local AI model didn't respond within ${timeoutMs / 1000}s. It may be busy — try again.`
-        : `Couldn't reach the local AI model at ${OLLAMA_BASE_URL}. Make sure Ollama is running and that ${OLLAMA_MODEL} is pulled.`,
+        : `Couldn't reach the local AI model at ${OLLAMA_BASE_URL}. Make sure Ollama is running and that ${call.model} is pulled.`,
     } satisfies AiCommandResult);
   }
 
@@ -380,7 +377,7 @@ function buildSystemPrompt(
 ): string {
   const sections = [
     `You are the AI assistant built into this desktop OS's command bar. The user currently has the "${focusedAppTitle}" app focused.`,
-    "You can manage desktop windows with the provided tools. Call exactly one window tool when the user asks to open, launch, focus, minimize, maximize, restore, or close an app/window. To act on an existing window, use its exact id from the list below. Do not claim an action succeeded unless you called its tool.",
+    "You can manage desktop windows with the provided tools. Call exactly one window tool when the user asks to open, launch, focus, minimize, maximize, restore, or close an app/window. To act on an existing window, use its exact id from the list below. To bring up an app that has no open window, call open_app (never focus_window). Do not claim an action succeeded unless you called its tool.",
     windows.length > 0
       ? `Open windows:\n${windows.map((window) => `- id: ${window.id} - ${window.title} (${window.appId})`).join("\n")}`
       : "There are no open windows.",
@@ -576,14 +573,26 @@ function validateWindowAction(
       message: `The local AI model called ${name} with invalid arguments.`,
     };
   }
-  if (!windows.some((window) => window.id === parsed.data.id)) {
+  // The model sometimes passes an app name instead of a window id.
+  const target = resolveWindowTarget(parsed.data.id, windows);
+  if (!target) {
     return {
       type: "error",
       kind: "malformed",
       message: "The local AI model tried to control a window that doesn't exist.",
     };
   }
-  return { type: "action", name, arguments: parsed.data };
+  if (target.kind === "open-app") {
+    // Focusing an app that is not open opens it instead of refusing.
+    return name === "focus_window"
+      ? { type: "action", name: "open_app", arguments: { appId: target.appId } }
+      : {
+          type: "error",
+          kind: "malformed",
+          message: "That app isn't open, so there is no window to change.",
+        };
+  }
+  return { type: "action", name, arguments: { id: target.id } };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

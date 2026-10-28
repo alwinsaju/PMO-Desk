@@ -372,6 +372,31 @@ describe("links and times", () => {
     assert.equal(stampTime("2026-10-27T05:00:00.000Z"), "27 Oct 2026, 10:30 IST");
     assert.equal(stampTime("garbage"), "garbage");
   });
+
+  it("stamp times follow the configured zone, and a bad one means IST", () => {
+    assert.equal(
+      stampTime("2026-10-27T05:00:00.000Z", "America/New_York"),
+      "27 Oct 2026, 01:00 America/New_York",
+    );
+    assert.equal(
+      stampTime("2026-10-27T05:00:00.000Z", "Mars/Olympus"),
+      "27 Oct 2026, 10:30 IST",
+    );
+  });
+
+  it("the panel and the evidence list use the zone in the prefs", () => {
+    const ny = { ...prefs, timeZone: "America/New_York" };
+    const todo = requested();
+    const view = signoffPanelView(
+      todo,
+      approvalOf(todo),
+      ist("2026-10-27T11:00"),
+      ny,
+      true,
+    );
+    assert.match(view.requestedLine, /Marked as sent .* America\/New_York by alsaju/);
+    assert.doesNotMatch(view.requestedLine, /IST/);
+  });
 });
 
 describe("the list row", () => {
@@ -478,5 +503,10 @@ describe("the components", () => {
     assert.match(card, /Reasoning:/);
     assert.match(card, /Sign-off reply/);
     assert.match(card, /isOn\(change\.id, change\.defaultOn\)/);
+  });
+
+  it("the review card says why nothing is ticked", () => {
+    const card = read("UpdateCard.tsx");
+    assert.match(card, /UNTICKED_REASON_TEXT\[plan\.untickedReason\]/);
   });
 });

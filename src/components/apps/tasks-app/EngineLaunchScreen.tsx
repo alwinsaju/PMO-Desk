@@ -18,11 +18,7 @@ interface EngineLaunchScreenProps {
  * this IS an "AI/agent is doing something" moment — and the failed state takes
  * the status red (`red-soft` disc, `text-red` icon).
  */
-export function EngineLaunchScreen({
-  state,
-  reason,
-  onRetry,
-}: EngineLaunchScreenProps) {
+export function EngineLaunchScreen({ state, reason, onRetry }: EngineLaunchScreenProps) {
   return (
     <div className="glass-pop rounded-surface shadow-pop flex w-full max-w-sm flex-col items-center gap-4 p-8 text-center">
       {state === "launching" ? (

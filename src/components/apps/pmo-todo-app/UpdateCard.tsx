@@ -6,6 +6,7 @@ import { Button } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { MAX_AI_ATTEMPTS, type PmoState, type Proposal } from "@/lib/pmo/types";
 import {
+  UNTICKED_REASON_TEXT,
   UPDATE_KIND_LABEL,
   planUpdate,
   type SignoffSuggestion,
@@ -54,9 +55,17 @@ export function UpdateCard({ proposal, state, onOpenTodo, onSettled }: UpdateCar
         ? planUpdate(todo, result, {
             sender: { name: summary.senderName, address: summary.senderAddress },
             receivedAt: summary.receivedAt,
+            timeZone: state.config.reminders.timeZone,
           })
         : null,
-    [todo, result, summary.senderName, summary.senderAddress, summary.receivedAt],
+    [
+      todo,
+      result,
+      summary.senderName,
+      summary.senderAddress,
+      summary.receivedAt,
+      state.config.reminders.timeZone,
+    ],
   );
   const isOn = (id: string, fallback: boolean) => picked[id] ?? fallback;
   const ticked = plan ? plan.changes.filter((c) => isOn(c.id, c.defaultOn)) : [];
@@ -134,6 +143,11 @@ export function UpdateCard({ proposal, state, onOpenTodo, onSettled }: UpdateCar
                 Check original
               </Chip>
             )}
+            {ready && proposal.replyBelowQuote && (
+              <Chip title="The sender's text sat under the quoted mail, and was kept">
+                The reply may be below the quoted text
+              </Chip>
+            )}
             {!ready && (
               <ProposalStatusBadge proposal={proposal} structuring={state.structuring} />
             )}
@@ -182,6 +196,14 @@ export function UpdateCard({ proposal, state, onOpenTodo, onSettled }: UpdateCar
               className="bg-chip rounded-control flex flex-col gap-3 px-4 py-3.5"
               aria-label="Proposed changes"
             >
+              {plan.untickedReason && (
+                <li
+                  data-testid="unticked-reason"
+                  className="text-ink-muted text-[12px] font-semibold"
+                >
+                  {UNTICKED_REASON_TEXT[plan.untickedReason]}
+                </li>
+              )}
               {plan.changes.map((change) => {
                 const on = isOn(change.id, change.defaultOn);
                 return (
@@ -272,9 +294,7 @@ export function UpdateCard({ proposal, state, onOpenTodo, onSettled }: UpdateCar
         )}
       </div>
 
-      {error && (
-<ErrorLine>{error}</ErrorLine>
-      )}
+      {error && <ErrorLine>{error}</ErrorLine>}
 
       <div className="flex flex-wrap items-center justify-end gap-2">
         <Button

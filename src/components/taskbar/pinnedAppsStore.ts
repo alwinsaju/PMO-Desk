@@ -1,11 +1,13 @@
 "use client";
 
 import { create } from "zustand";
-import { createJSONStorage, persist, type StateStorage } from "zustand/middleware";
+import { createJSONStorage, persist } from "zustand/middleware";
+import { createServerBackedStorage } from "@/lib/persistedStorage";
 import { builtInAppIds } from "./pinnedApps";
 import {
   defaultLayout,
   migrateLegacyPinned,
+  migrateOldDefaultOrder,
   pinId,
   placeId,
   reconcileBuiltIns,
@@ -31,12 +33,14 @@ import {
  *
  * Shared, persisted, and reactive the same way `installedAppsStore.ts` is:
  * every Dock/AppMenu instance reads/writes this same state, and it survives
- * a reload via `persist` + `localStorage` (key `taskbar:pinned-apps`).
+ * a reload via `persist` + `createServerBackedStorage` (server key
+ * `pinned-apps`, localStorage name `taskbar:pinned-apps`). Hydration is
+ * async, so the first render shows the default taskbar and then updates.
  *
- * Persistence is deliberately forgiving: the storage wrapper below swallows
- * every storage failure (blocked/disabled storage, quota errors, corrupt
- * JSON) so the taskbar still works — it just doesn't survive a restart —
- * and `merge` below only trusts a persisted list that is actually an array
+ * Persistence is deliberately forgiving: the storage adapter swallows
+ * every storage failure (blocked/disabled storage, quota errors, server
+ * down) so the taskbar still works, and corrupt JSON is rejected by `merge`
+ * below, which only trusts a persisted list that is actually an array
  * of strings, falling back to the default taskbar otherwise. Persisted
  * shapes: v0 held ONLY the extra catalog pins (built-ins were implicit);
  * v1 holds the full layout and is what `migrate` upgrades v0 into.
@@ -72,31 +76,8 @@ export interface PinnedAppsStoreState {
   resetPinnedApps: () => void;
 }
 
-/** `localStorage`, minus its failure modes: never throws, and a missing
- *  storage object just means "nothing saved / can't save". */
-const safeLocalStorage: StateStorage = {
-  getItem: (name) => {
-    try {
-      return window.localStorage.getItem(name);
-    } catch {
-      return null;
-    }
-  },
-  setItem: (name, value) => {
-    try {
-      window.localStorage.setItem(name, value);
-    } catch {
-      // Quota exceeded / storage blocked — keep running in memory.
-    }
-  },
-  removeItem: (name) => {
-    try {
-      window.localStorage.removeItem(name);
-    } catch {
-      // Same as above.
-    }
-  },
-};
+/** The five built-ins a v0 layout implicitly had, before PMO To-Do existed. */
+const LEGACY_BASELINE_IDS = ["files", "notes", "browser", "tasks", "app-store"];
 
 export const usePinnedAppsStore = create<PinnedAppsStoreState>()(
   persist(
@@ -125,18 +106,28 @@ export const usePinnedAppsStore = create<PinnedAppsStoreState>()(
     }),
     {
       name: "taskbar:pinned-apps",
-      version: 1,
-      storage: createJSONStorage(() => safeLocalStorage),
+      version: 2,
+      storage: createJSONStorage(() => createServerBackedStorage("pinned-apps")),
       partialize: (state) => ({
         pinnedIds: state.pinnedIds,
         knownBuiltInIds: state.knownBuiltInIds,
       }),
+      // v2: a layout still equal to an old default moves to the new default order.
       migrate: (persisted, version) => {
         if (version === 0) {
           const legacy = (persisted as { pinnedIds?: unknown } | null)?.pinnedIds;
-          return migrateLegacyPinned(legacy, builtInAppIds);
+          return migrateOldDefaultOrder(
+            migrateLegacyPinned(legacy, LEGACY_BASELINE_IDS),
+            builtInAppIds,
+          );
         }
-        return persisted as TaskbarLayout;
+        const saved = persisted as Partial<TaskbarLayout> | null;
+        const pinnedIds = sanitizeIds(saved?.pinnedIds);
+        if (!pinnedIds) return persisted as TaskbarLayout;
+        return migrateOldDefaultOrder(
+          { pinnedIds, knownBuiltInIds: sanitizeIds(saved?.knownBuiltInIds) ?? [] },
+          builtInAppIds,
+        );
       },
       merge: (persisted, current) => {
         const saved = persisted as Partial<TaskbarLayout> | undefined;

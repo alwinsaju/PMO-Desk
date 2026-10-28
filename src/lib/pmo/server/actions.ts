@@ -19,6 +19,8 @@ import {
   signoffPatchProblem,
 } from "../signoff.ts";
 import { threadKeyOf } from "../thread.ts";
+import { nextOccurrence as nextOccurrenceOf } from "../recurrence.ts";
+import { todoIdForProposal } from "../dedupe.ts";
 import {
   appendHistory,
   applyTodoPatch,
@@ -158,11 +160,17 @@ export function approveProposal(
 
     const now = pmo.now().toISOString();
     const raw = await pmo.store.readRaw(proposal.intakeId);
-    const todo = buildTodo(draft, {
-      now,
-      approvedBy: osUser(),
-      source: sourceOf(proposal, raw?.intake ?? null),
-    });
+    // The to-do's id comes from the proposal's, and an existing one is kept: a
+    // crash between the two writes below cannot make a second to-do on re-approve.
+    const todoId = todoIdForProposal(proposal.id);
+    const todo =
+      (await pmo.store.getTodo(todoId)) ??
+      buildTodo(draft, {
+        id: todoId,
+        now,
+        approvedBy: osUser(),
+        source: sourceOf(proposal, raw?.intake ?? null),
+      });
     await pmo.store.putTodo(todo);
     await pmo.store.putProposal({
       ...proposal,
@@ -211,6 +219,36 @@ export function rejectProposal(pmo: Pmo, id: string): Promise<ActionResult> {
       updatedAt: pmo.now().toISOString(),
     });
     await pmo.store.audit("reject", { proposalId: proposal.id });
+    return { ok: true as const };
+  });
+}
+
+/** Undo of Reject: a rejected proposal goes back to `ready` when it already has
+ *  the model's answer, else to `pending` so it is structured again. An approved
+ *  one cannot be restored (its to-do exists); one the retention sweep archived
+ *  is no longer here to restore. */
+export function restoreProposal(pmo: Pmo, id: string): Promise<ActionResult> {
+  return pmo.store.withLock(async () => {
+    const proposal = await pmo.store.getProposal(id);
+    if (!proposal) return fail("That item can no longer be restored.");
+    if (proposal.status === "approved") {
+      return fail("That item was already approved, so there is nothing to restore.");
+    }
+    if (proposal.status !== "rejected") return { ok: true as const };
+    const answered = proposal.update
+      ? proposal.update.result !== null
+      : proposal.draft !== null;
+    if (!answered && !(await pmo.store.readRaw(proposal.intakeId))) {
+      return fail(
+        "The saved message text was already deleted, so this item cannot be restored.",
+      );
+    }
+    await pmo.store.putProposal({
+      ...proposal,
+      status: answered ? "ready" : "pending",
+      updatedAt: pmo.now().toISOString(),
+    });
+    await pmo.store.audit("restore", { proposalId: proposal.id });
     return { ok: true as const };
   });
 }
@@ -298,6 +336,7 @@ export function approveUpdate(
     const plan = planUpdate(todo, update.result, {
       sender,
       receivedAt: proposal.summary.receivedAt,
+      timeZone: (await pmo.store.loadConfig()).reminders.timeZone,
     });
     const include = new Set(input.data.include ?? defaultInclude(plan.changes));
     const applied = plan.changes.filter((change) => include.has(change.id));
@@ -454,7 +493,7 @@ async function buildFor(
   request: z.infer<typeof PeriodRequestSchema>,
 ): Promise<{ ok: true; data: ReportData } | { ok: false; reason: string }> {
   const [todos, config] = await Promise.all([
-    pmo.store.listTodos(),
+    pmo.store.listAllTodos(),
     pmo.store.loadConfig(),
   ]);
   return buildReport(todos, pmo.now(), request, config);
@@ -569,7 +608,14 @@ export async function patchTodo(
   pmo: Pmo,
   id: string,
   body: unknown,
-): Promise<ActionResult<{ todo: Todo; offerDone: boolean }>> {
+): Promise<
+  ActionResult<{
+    todo: Todo;
+    offerDone: boolean;
+    /** Set when this call marked a repeating to-do done; nothing is created. */
+    nextOccurrence: { dueAt: string; title: string } | null;
+  }>
+> {
   // The generic edit route can neither write a sign-off nor fake one: a body
   // that carries any sign-off field is refused outright (the schema below would
   // only drop it silently), and so is one that ticks a sign-off step as done.
@@ -607,7 +653,15 @@ export async function patchTodo(
       // Ticking boxes is progress, not an edit worth an audit line.
       if (kind !== "progress") await pmo.store.audit(kind, { todoId: id });
     }
-    return { ok: true as const, todo: next, offerDone };
+    const justDone = todo.status !== "done" && next.status === "done";
+    const nextOccurrence = justDone
+      ? nextOccurrenceOf(
+          next,
+          pmo.now(),
+          (await pmo.store.loadConfig()).reminders.timeZone,
+        )
+      : null;
+    return { ok: true as const, todo: next, offerDone, nextOccurrence };
   });
 }
 

@@ -811,6 +811,9 @@ export function signoffPatchProblem(
 const INJECTION: RegExp[] = [
   /\bignore\b[^.\n]{0,40}\b(rules?|instructions?|prompts?|guidelines?|above|previous|prior)\b/i,
   /\bdisregard\b[^.\n]{0,40}\b(rules?|instructions?|prompts?|above|previous|prior)\b/i,
+  /\bdisregard\b[^.\n]{0,20}\b(everything|all|your|system)\b/i,
+  /\bforget\b[^.\n]{0,20}\b(everything|all|your|previous|prior|above)\b/i,
+  /\byou are now (?:in |an? |the |my )?[^.\n]{0,30}\b(mode|role|persona|agent|assistant|expert|admin|developer)\b/i,
   /\b(mark|set|classify|record|label|treat|flag|log|register)\b[^.\n]{0,25}\b(this|it|that|the (item|task|request|message|reply|sign-?off|approval|step|pack))\b[^.\n]{0,25}\b(as )?(approved|signed[- ]?off|received|complete|completed|done|confirmed)\b/i,
   /\b(system|developer) (prompt|message|instructions?)\b|\[\s*system\s*\]|^\s*system\s*:/im,
   /\byou are (?:now )?(?:an? |the )?(?:ai|assistant|model|llm|bot|chatbot)\b/i,
@@ -825,12 +828,51 @@ const INJECTION: RegExp[] = [
   /\bnew (rules?|instructions?)\b/i,
 ];
 
+/** A link whose visible text names a host other than the one it points to
+ *  (markdown `[text](url)` or `<a href>text</a>`): a phishing tell. */
+function hasLinkHostMismatch(text: string): boolean {
+  const hostOf = (url: string): string | null => {
+    try {
+      return new URL(url.trim()).hostname.toLowerCase().replace(/^www\./, "");
+    } catch {
+      return null;
+    }
+  };
+  const textHost = (label: string): string | null => {
+    // A URL-looking label ("www.x.com/a", "https://x.com") or a label that is only
+    // a host; "report.xlsx" is a file name, not a claim about where the link goes.
+    const found =
+      label.match(/(?:https?:\/\/|\bwww\.)((?:[a-z0-9-]+\.)+[a-z]{2,})/i) ??
+      label.match(
+        /^\s*((?:[a-z0-9-]+\.)+(?!(?:xlsx?|docx?|pptx?|pdf|csv|txt|msg|zip|png|jpe?g|json|xml|html?)\b)[a-z]{2,})(?:[/:?#]\S*)?\s*$/i,
+      );
+    return found ? found[1].toLowerCase().replace(/^www\./, "") : null;
+  };
+  const pairs: [string, string][] = [];
+  for (const m of text.matchAll(
+    /\[([^\]\n]{1,200})\]\(\s*(https?:\/\/[^)\s]+)[^)]*\)/gi,
+  )) {
+    pairs.push([m[1], m[2]]);
+  }
+  for (const m of text.matchAll(
+    /<a\b[^>]*\bhref\s*=\s*["'](https?:\/\/[^"']+)["'][^>]*>([\s\S]{1,200}?)<\/a>/gi,
+  )) {
+    pairs.push([m[2], m[1]]);
+  }
+  return pairs.some(([label, url]) => {
+    const shown = textHost(label);
+    const real = hostOf(url);
+    return !!shown && !!real && shown !== real && !real.endsWith(`.${shown}`);
+  });
+}
+
 /** Does the text try to instruct the assistant? (Conservative: a real reply that
  *  says "please mark this as approved" is also flagged, and is then shown
- *  unticked for a person to read.) */
+ *  unticked for a person to read.) A link whose text names a different host
+ *  than its target counts too. */
 export function looksLikeInjection(text: string | null | undefined): boolean {
   const body = text ?? "";
-  return INJECTION.some((pattern) => pattern.test(body));
+  return INJECTION.some((pattern) => pattern.test(body)) || hasLinkHostMismatch(body);
 }
 
 const APPROVAL_WORDS =

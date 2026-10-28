@@ -29,7 +29,10 @@ type StartResult = { ok: true; job: ChaserJob } | { ok: false; reason: string };
 const KEEP_MS = 12 * 60 * 60 * 1000;
 
 /** What the person sees when a draft fails. Local and retryable. */
-export function chaserFailureMessage(kind: ReturnType<typeof classify>["kind"], raw: string) {
+export function chaserFailureMessage(
+  kind: ReturnType<typeof classify>["kind"],
+  raw: string,
+) {
   switch (kind) {
     case "runtime-down":
       return "The local model is not running. Start it (or wait a moment) and try again.";
@@ -67,7 +70,10 @@ export class ChaserDrafts {
   snapshot(): Record<string, ChaserJob> {
     const cutoff = this.now() - KEEP_MS;
     for (const [todoId, job] of this.jobs) {
-      if (job.status !== "drafting" && Date.parse(job.finishedAt ?? job.startedAt) < cutoff) {
+      if (
+        job.status !== "drafting" &&
+        Date.parse(job.finishedAt ?? job.startedAt) < cutoff
+      ) {
         this.jobs.delete(todoId);
       }
     }
@@ -102,7 +108,9 @@ export class ChaserDrafts {
     const config = await this.store.loadConfig();
     const nowDate = new Date(this.now());
     const waited = waitingState(todo, nowDate, config.reminders);
-    const raw = todo.source.intakeId ? await this.store.readRaw(todo.source.intakeId) : null;
+    const raw = todo.source.intakeId
+      ? await this.store.readRaw(todo.source.intakeId)
+      : null;
     const to = raw
       ? addressForWaitingOn(
           waitingOn,
@@ -117,8 +125,12 @@ export class ChaserDrafts {
       excerpt: raw ? prepareForModel(raw.intake) : null,
       waitedCalendarDays: waited?.calendarDays ?? 0,
       waitedQuietDays: waited?.quietDays ?? 0,
-      sinceStamp: istStamp(todo.waitingSince ?? todo.updatedAt),
+      sinceStamp: istStamp(
+        todo.waitingSince ?? todo.updatedAt,
+        config.reminders.timeZone,
+      ),
       nowIso: nowDate.toISOString(),
+      timeZone: config.reminders.timeZone,
       recipient: to,
     });
 

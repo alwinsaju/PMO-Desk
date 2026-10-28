@@ -28,6 +28,7 @@ import {
 import { cn } from "@/lib/cn";
 import { useSetupUi } from "@/components/setup/setupStore";
 import { useBrand } from "@/lib/useBrand";
+import { restoreAppearanceFromServer } from "@/lib/theme";
 import { useTheme } from "@/lib/useTheme";
 import { useEngineRestart, type EngineRestartStatus } from "./useEngineRestart";
 import { useHardwareAcceleration } from "./useHardwareAcceleration";
@@ -159,6 +160,7 @@ function HardwareAccelerationRow() {
       <DropdownMenuSwitchItem
         checked={view.checked}
         onCheckedChange={toggle}
+        disabled={view.disabled}
         className="group py-2.5"
       >
         <RowBody
@@ -326,6 +328,10 @@ const settingsRows: { id: string; Row: ComponentType }[] = [
 ];
 
 export function SettingsMenu() {
+  // A new origin (e.g. another port) has empty localStorage: pick the saved look up once.
+  useEffect(() => {
+    void restoreAppearanceFromServer();
+  }, []);
   return (
     <div
       className={cn(

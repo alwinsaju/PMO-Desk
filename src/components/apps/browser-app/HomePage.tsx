@@ -46,10 +46,10 @@ export function HomePage({ onNavigate }: MockPageProps) {
         <h1 className="font-headline from-ink to-accent-ink bg-linear-to-br bg-clip-text text-[58px] leading-[1.1] tracking-[-0.045em] text-transparent">
           Pathfinder
         </h1>
-        <p className="text-ink-muted mt-2 text-[16px]">Search the web, find your way.</p>
+        <p className="text-ink-muted mt-2 text-[16px]">Type a web address or a search.</p>
         <div className="rounded-bar bg-field border-line-strong text-ink-muted shadow-float-sm mx-auto mt-[26px] flex h-[52px] w-full max-w-[560px] items-center gap-3 border px-5 text-[15px]">
           <MagnifyingGlassIcon size={18} className="shrink-0" />
-          <span className="truncate">Search or type a URL</span>
+          <span className="truncate">Type a web address or a search</span>
         </div>
       </div>
 

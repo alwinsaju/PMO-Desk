@@ -4,6 +4,7 @@
 // node: imports, relative imports with the .ts extension, so `pnpm test` and the
 // browser both load it (see logView.test.mjs).
 import { LEVEL_RANK, type AiLogEvent, type AiLogLevel } from "./log.ts";
+import { MEMORY_SIZE, formatBytes } from "../format.ts";
 import type { AiRuntimeStatus } from "./types.ts";
 
 // --- small formatters -------------------------------------------------------------
@@ -20,18 +21,12 @@ export function formatDuration(ms: number): string {
   return s === 0 ? `${m} min` : `${m} min ${s} s`;
 }
 
-/** "8.1 GB", "420 MB". */
-export function formatBytes(bytes: number): string {
-  if (!Number.isFinite(bytes) || bytes <= 0) return "0 MB";
-  const gb = bytes / 1024 ** 3;
-  if (gb >= 1) return `${gb.toFixed(1)} GB`;
-  return `${Math.max(1, Math.round(bytes / 1024 ** 2))} MB`;
-}
-
 /** "about 8 GB": whole GB, for sentences where a decimal would be noise. */
 export function aboutBytes(bytes: number): string {
   const gb = bytes / 1024 ** 3;
-  return gb >= 1 ? `about ${Math.round(gb)} GB` : `about ${formatBytes(bytes)}`;
+  return gb >= 1
+    ? `about ${Math.round(gb)} GB`
+    : `about ${formatBytes(bytes, MEMORY_SIZE)}`;
 }
 
 /** "19:31" in `timeZone` (the viewer's own by default). */

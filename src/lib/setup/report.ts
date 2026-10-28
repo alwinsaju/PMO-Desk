@@ -2,7 +2,8 @@
 // first-run setup screen shows: for each thing AI OS needs, whether it is fine,
 // what is wrong in words a person can act on, and which button fixes it.
 // Pure: `buildReport(facts)` has no I/O, so every sentence is covered by tests.
-import { FALLBACK_MODEL, formatBytes, preflight, sameModel } from "./models.ts";
+import { FALLBACK_MODEL, downloadSizeText, preflight, sameModel } from "./models.ts";
+import { MODEL_SIZE, formatBytes } from "../format.ts";
 import { inboxSuggestions, type OneDriveFacts } from "./inbox.ts";
 import type { OutlookFacts } from "./outlook.ts";
 
@@ -57,7 +58,10 @@ export interface SetupFacts {
     version: string | null;
     /** Model names installed in Ollama, or null if it could not be asked. */
     installedModels: string[] | null;
+    /** The model AI OS uses (saved choice, or the only one installed). */
     defaultModel: string;
+    /** Why it is not the one originally asked for, when it is not. */
+    modelNote?: string;
   };
   hardware: { totalRamBytes: number; freeDiskBytes: number | null };
   inbox: {
@@ -153,7 +157,7 @@ function modelCheck(facts: SetupFacts): SetupCheck {
       state: "ok",
       summary: `The AI model ${defaultModel} is installed.`,
       steps: [],
-      details: [],
+      details: facts.ollama.modelNote ? [facts.ollama.modelNote] : [],
       actions: [],
     };
   }
@@ -165,12 +169,12 @@ function modelCheck(facts: SetupFacts): SetupCheck {
   const details = [
     facts.hardware.freeDiskBytes === null
       ? ""
-      : `${formatBytes(facts.hardware.freeDiskBytes)} free on the model drive`,
+      : `${formatBytes(facts.hardware.freeDiskBytes, MODEL_SIZE)} free on the model drive`,
     `${Math.round(facts.hardware.totalRamBytes / 1024 ** 3)} GB of memory`,
     ...pre.warnings,
   ].filter(Boolean);
   const steps = [
-    `Press Download model. It is a large download (about ${formatBytes(12_000_000_000)} for ${defaultModel}); if the connection drops it carries on where it stopped.`,
+    `Press Download model. It is a large download (${downloadSizeText(defaultModel)} for ${defaultModel}); if the connection drops it carries on where it stopped.`,
   ];
   if (hasFallback) {
     return {

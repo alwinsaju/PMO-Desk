@@ -62,6 +62,7 @@ describe("reminder preferences", () => {
       workEnd: "18:00",
       workDays: [1, 2, 3, 4, 5],
       quietOutsideHours: true,
+      leadWorkingDays: 1,
       chaserDays: 2,
       digest: false,
       hideDetails: true,
@@ -72,6 +73,9 @@ describe("reminder preferences", () => {
   it("rejects a malformed block (the config loader then falls back to defaults)", () => {
     assert.equal(ReminderPrefsSchema.safeParse({ workStart: "9am" }).success, false);
     assert.equal(ReminderPrefsSchema.safeParse({ chaserDays: 0 }).success, false);
+    assert.equal(ReminderPrefsSchema.safeParse({ leadWorkingDays: 6 }).success, false);
+    assert.equal(ReminderPrefsSchema.safeParse({ leadWorkingDays: 1.5 }).success, false);
+    assert.equal(ReminderPrefsSchema.safeParse({ leadWorkingDays: 0 }).success, true);
   });
 });
 
@@ -152,11 +156,69 @@ describe("computeDue: due-soon", () => {
     );
   });
 
-  it("stays silent on the weekend before a Monday due date, then goes overdue-on-the-day", () => {
+  it("reminds a Monday due date on the Friday before, then goes overdue-on-the-day", () => {
     const monday = todo({ dueAt: "2026-10-26" });
+    assert.deepEqual(computeDue([monday], ist("2026-10-22T11:00"), prefs()), []); // Thu
+    const friday = computeDue([monday], ist("2026-10-23T09:00"), prefs());
+    assert.deepEqual(kinds(friday), ["due-soon"]);
+    assert.equal(friday[0].key, `due-soon:${monday.id}:2026-10-26`);
+    assert.match(friday[0].body, /Due Mon 26 Oct/);
+    // Quiet hours hold the rest of the weekend back; the Friday reminder is not repeated by key.
     assert.deepEqual(computeDue([monday], ist("2026-10-24T11:00"), prefs()), []); // Sat
     assert.deepEqual(computeDue([monday], ist("2026-10-25T11:00"), prefs()), []); // Sun
-    // Quiet off: the Sunday heads-up is allowed.
+    const onTheDay = computeDue([monday], ist("2026-10-26T09:00"), prefs());
+    assert.deepEqual(kinds(onTheDay), ["overdue"]);
+    assert.equal(onTheDay[0].body, "Due today.");
+  });
+
+  it("reminds a mid-week due date on the previous working day", () => {
+    const thursday = todo({ dueAt: "2026-10-29" });
+    assert.deepEqual(computeDue([thursday], ist("2026-10-27T11:00"), prefs()), []);
+    assert.deepEqual(kinds(computeDue([thursday], ist("2026-10-28T11:00"), prefs())), [
+      "due-soon",
+    ]);
+  });
+
+  it("counts the lead in working days (lead 2 skips the weekend)", () => {
+    const lead2 = prefs({ leadWorkingDays: 2 });
+    const monday = todo({ dueAt: "2026-10-26" });
+    assert.deepEqual(computeDue([monday], ist("2026-10-21T11:00"), lead2), []); // Wed
+    assert.deepEqual(kinds(computeDue([monday], ist("2026-10-22T09:00"), lead2)), [
+      "due-soon",
+    ]); // Thu: Fri and Thu are the two working days before
+    const wednesday = todo({ dueAt: "2026-10-28" });
+    assert.deepEqual(computeDue([wednesday], ist("2026-10-25T11:00"), lead2), []);
+    assert.deepEqual(kinds(computeDue([wednesday], ist("2026-10-26T09:00"), lead2)), [
+      "due-soon",
+    ]);
+    const friday = todo({ dueAt: "2026-10-30" });
+    assert.deepEqual(computeDue([friday], ist("2026-10-27T11:00"), lead2), []);
+    assert.deepEqual(kinds(computeDue([friday], ist("2026-10-28T11:00"), lead2)), [
+      "due-soon",
+    ]);
+  });
+
+  it("lead 0 sends no advance reminder (the due day itself still does)", () => {
+    const p = prefs({ leadWorkingDays: 0 });
+    const tuesday = todo({ dueAt: "2026-10-27" });
+    assert.deepEqual(computeDue([tuesday], ist("2026-10-26T10:00"), p), []);
+    assert.deepEqual(kinds(computeDue([tuesday], ist("2026-10-27T09:00"), p)), [
+      "overdue",
+    ]);
+  });
+
+  it("defers a reminder that fell in quiet hours to the next allowed time instead of dropping it", () => {
+    const wednesday = todo({ dueAt: "2026-10-28" }); // reminder day Tue 27
+    // Tue evening and the next morning before the window: held back.
+    assert.deepEqual(computeDue([wednesday], ist("2026-10-27T19:00"), prefs()), []);
+    // Missed the whole of Tuesday (app closed): the heads-up is not lost on a
+    // later working day before the due day.
+    const lead3 = prefs({ leadWorkingDays: 3 });
+    const missed = computeDue([wednesday], ist("2026-10-27T09:00"), lead3);
+    assert.deepEqual(kinds(missed), ["due-soon"]); // reminder day was Fri 23
+    // A Sat/Sun reminder day cannot exist; with quiet off the Friday heads-up
+    // for Monday still shows on Sunday.
+    const monday = todo({ dueAt: "2026-10-26" });
     assert.deepEqual(
       kinds(
         computeDue(
@@ -167,9 +229,8 @@ describe("computeDue: due-soon", () => {
       ),
       ["due-soon"],
     );
-    const onTheDay = computeDue([monday], ist("2026-10-26T09:00"), prefs());
-    assert.deepEqual(kinds(onTheDay), ["overdue"]);
-    assert.equal(onTheDay[0].body, "Due today.");
+    // Quiet on: Friday evening is outside the window, Monday is the due day.
+    assert.deepEqual(computeDue([monday], ist("2026-10-23T19:00"), prefs()), []);
   });
 
   it("crosses a month and a year boundary", () => {

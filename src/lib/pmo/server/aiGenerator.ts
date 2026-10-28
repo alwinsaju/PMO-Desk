@@ -4,8 +4,9 @@ import {
   clampTimeoutMs,
   generateJson,
   generateText,
-  getAiRuntimeConfig,
+  getActiveModel,
   getLiveActivity,
+  getQueueAhead,
   getRuntimeStatus,
   type AiRuntimeStatus,
 } from "@/lib/ai-runtime";
@@ -39,7 +40,7 @@ const words = (text: string) => text.trim().split(/\s+/).filter(Boolean).length;
 // note about the result. The label stays in the in-memory session log.
 export function createRuntimeGenerator(): Generator {
   return {
-    model: () => getAiRuntimeConfig().defaultModel,
+    model: () => getActiveModel(),
     // think: false always. Reasoning makes a call 3-10x slower on this CPU and
     // it then truncates or times out; the structured output needs no
     // chain of thought.
@@ -88,6 +89,7 @@ export function createRuntimeGenerator(): Generator {
         timeoutMs: TIMEOUT_MS,
         temperature: 0.4,
         think: false,
+        priority: "interactive",
         log: {
           task: "chaser",
           label,
@@ -103,6 +105,7 @@ export function createRuntimeGenerator(): Generator {
         timeoutMs: TIMEOUT_MS,
         temperature: 0.4,
         think: false,
+        priority: "interactive",
         log: {
           task: "signoff-request",
           label,
@@ -118,6 +121,7 @@ export function createRuntimeGenerator(): Generator {
         schema: AiNarrativeSchema,
         timeoutMs: TIMEOUT_MS,
         think: false,
+        priority: "interactive",
         log: {
           task: "report",
           label,
@@ -134,6 +138,9 @@ export function createRuntimeGenerator(): Generator {
 
 let cached: { at: number; status: AiRuntimeStatus } | null = null;
 
+/** The background calls the structuring queue makes (the `log.task` kinds). */
+const STRUCTURING_TASKS = ["structure", "update", "update-signoff"] as const;
+
 /** Read-only probe of the local runtime for the status bar. Never starts or loads
  *  anything (only GET /api/version, /api/tags, /api/ps). The status is cached
  *  for two seconds because the UI polls every three. */
@@ -144,7 +151,14 @@ export async function runtimeSummary(): Promise<RuntimeSummary> {
     }
     // The Ollama half is two seconds old at most; what the runtime is doing
     // right now is read fresh, so "working" appears the moment a call starts.
-    return summarizeRuntime({ ...cached.status, ...getLiveActivity() }, Date.now());
+    const summary = summarizeRuntime(
+      { ...cached.status, ...getLiveActivity() },
+      Date.now(),
+    );
+    // Calls ahead of a structuring call that is waiting for its turn (an
+    // interactive draft goes first); left out when nothing is ahead.
+    const ahead = getQueueAhead(STRUCTURING_TASKS);
+    return ahead ? { ...summary, waitingBehind: ahead } : summary;
   } catch {
     return {
       state: "unknown",

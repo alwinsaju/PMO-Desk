@@ -52,6 +52,17 @@ describe("busyTasks / probeEngine", () => {
     assert.deepEqual(await probeEngine(up, API), { reachable: true, busy: [] });
     assert.deepEqual(up.calls, [`GET ${API}/tasks`]);
   });
+
+  it("sends the engine token when there is one", async () => {
+    const seen = [];
+    const fetchImpl = async (url, init = {}) => {
+      seen.push(init.headers);
+      return { ok: true, status: 200, json: async () => [] };
+    };
+    await probeEngine(fetchImpl, API, 1_000, async () => "tok");
+    await probeEngine(fetchImpl, API, 1_000, async () => null);
+    assert.deepEqual(seen, [{ "X-AI-OS-Token": "tok" }, undefined]);
+  });
 });
 
 describe("restartEngine", () => {

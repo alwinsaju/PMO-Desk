@@ -48,6 +48,8 @@ interface ProposalDialogProps {
   runtime: RuntimeSummary;
   /** Called after any change so the list can refetch right away. */
   onSettled: () => void;
+  /** The proposal was rejected from this dialog (the window offers an Undo). */
+  onRejected?: (proposal: Proposal) => void;
   onOpenChange: (open: boolean) => void;
 }
 
@@ -61,6 +63,7 @@ export function ProposalDialog({
   structuring,
   runtime,
   onSettled,
+  onRejected,
   onOpenChange,
 }: ProposalDialogProps) {
   // Keep showing the last proposal while the close animation runs.
@@ -128,7 +131,10 @@ export function ProposalDialog({
     if (done) onOpenChange(false);
   };
   const reject = async () => {
-    if (await run(() => rejectProposal(shown.id))) onOpenChange(false);
+    if (await run(() => rejectProposal(shown.id))) {
+      onRejected?.(shown);
+      onOpenChange(false);
+    }
   };
 
   return (
@@ -147,8 +153,19 @@ export function ProposalDialog({
             {shown.summary.subject || "(no subject)"}
           </DialogTitle>
           {partLabel(shown) && (
-            <Chip className="shrink-0" title="This message held several separate tasks; each has its own review item">
+            <Chip
+              className="shrink-0"
+              title="This message held several separate tasks; each has its own review item"
+            >
               {partLabel(shown)}
+            </Chip>
+          )}
+          {shown.possibleDuplicateOf && (
+            <Chip
+              className="shrink-0"
+              title="Looks like another task from the same message, but is not identical"
+            >
+              Possible duplicate
             </Chip>
           )}
           <ProposalStatusBadge proposal={shown} structuring={structuring} />
@@ -172,6 +189,12 @@ export function ProposalDialog({
               was not found in the message
               {shown.draft?.quote ? `: “${shown.draft.quote}”` : "."}
             </span>
+          </Note>
+        )}
+        {isReady && shown.replyBelowQuote && (
+          <Note className="mt-3.5 shrink-0">
+            The reply may be below the quoted text: the part under the quote was kept so
+            the request is not lost. Check it against the original.
           </Note>
         )}
         {isFailed && (

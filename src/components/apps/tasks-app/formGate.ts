@@ -226,13 +226,32 @@ export function filterFields(
   });
 }
 
+/** The one sentence the card and the dialog both show for the open count. */
+export function requiredQuestionsText(pending: number, total: number): string {
+  if (pending === 0) {
+    return total === 0
+      ? "No required questions"
+      : `All ${total} required question${total === 1 ? "" : "s"} answered`;
+  }
+  return `${pending} of ${total} required question${total === 1 ? "" : "s"} still need an answer`;
+}
+
+/** The engine's pending ids minus those the person has just answered but not
+ *  saved. Preselected defaults stay pending (as the engine counts them), so
+ *  the card and the dialog show the same number. */
+export function gatePending(
+  schema: FormSchema,
+  enginePending: string[],
+  edits: FormAnswers,
+): string[] {
+  return enginePending.filter((id) => {
+    const field = schema.fields.find((f) => f.id === id);
+    return !field || !isAnswered(field, validFor(field, edits[id]));
+  });
+}
+
 /** Card-level one-liner from the engine's own pending list. */
 export function formSummary(schema: FormSchema, pending: string[]): string {
   const required = schema.fields.filter((field) => field.required).length;
-  if (pending.length === 0) {
-    return required === 0
-      ? "No required questions"
-      : `All ${required} required question${required === 1 ? "" : "s"} answered`;
-  }
-  return `${pending.length} of ${required} required question${required === 1 ? "" : "s"} still need an answer`;
+  return requiredQuestionsText(pending.length, required);
 }

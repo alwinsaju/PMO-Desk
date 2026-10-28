@@ -14,6 +14,12 @@ import {
 import { cn } from "@/lib/cn";
 import { easeEntrance, easeExit } from "@/lib/motion";
 import { useWindowStore, type WindowState } from "@/components/window-manager";
+import { launchBuiltInApp } from "@/components/taskbar/launchBuiltInApp";
+import {
+  planOpenApp,
+  resolveOpenIntent,
+  resolveWindowTarget,
+} from "@/lib/ai-runtime/windowIntent";
 import {
   createNote,
   deleteNote,
@@ -53,6 +59,26 @@ const APP_TITLES = {
   "app-store": "App Store",
 } as const;
 
+/** Opens an app, or raises its existing window instead of piling up another. */
+function openOrFocusApp(appId: keyof typeof APP_TITLES): ApplyResult {
+  const windowStore = useWindowStore.getState();
+  const plan = planOpenApp(appId, Object.values(windowStore.windows));
+  if (plan.type === "focus") {
+    windowStore.restoreWindow(plan.windowId);
+    return {
+      ok: true,
+      summary: `Focusing ${APP_TITLES[appId]}…`,
+      targetWindowId: plan.windowId,
+    };
+  }
+  const targetWindowId =
+    launchBuiltInApp(appId) ??
+    windowStore.openWindow(appId, { title: APP_TITLES[appId] });
+  return { ok: true, summary: `Opening ${APP_TITLES[appId]}…`, targetWindowId };
+}
+
+/** Stands in for the focused window when the desktop is empty. */
+const DESKTOP_CONTEXT = { id: "desktop", title: "Desktop" } as const;
 /**
  * Applies a validated action decision to `notesStore` and returns a short,
  * human-readable summary of what actually happened (used for both the
@@ -69,7 +95,7 @@ const APP_TITLES = {
 function applyAgentAction(action: AiCommandAction): ApplyResult {
   if (action.name === "create_note") {
     const note = createNote(action.arguments.content);
-    return { ok: true, summary: `Creating a note: "${noteTitle(note)}"…` };
+    return { ok: true, summary: `Creating a note: "${noteTitle(note.content)}"…` };
   }
 
   if (action.name === "update_note") {
@@ -77,8 +103,8 @@ function applyAgentAction(action: AiCommandAction): ApplyResult {
     if (!existing) {
       return { ok: false, reason: "The note the AI tried to update no longer exists." };
     }
-    updateNote(action.arguments.id, action.arguments.content);
-    return { ok: true, summary: `Updating "${noteTitle(existing)}"…` };
+    updateNote(action.arguments.id, action.arguments.content, "assistant");
+    return { ok: true, summary: `Updating "${noteTitle(existing.content)}"…` };
   }
 
   if (action.name === "delete_note") {
@@ -86,29 +112,33 @@ function applyAgentAction(action: AiCommandAction): ApplyResult {
     if (!existing) {
       return { ok: false, reason: "The note the AI tried to delete no longer exists." };
     }
-    deleteNote(action.arguments.id);
-    return { ok: true, summary: `Deleting "${noteTitle(existing)}"…` };
-  }
-
-  const windowStore = useWindowStore.getState();
-  if (action.name === "open_app") {
-    const targetWindowId = windowStore.openWindow(action.arguments.appId, {
-      title: APP_TITLES[action.arguments.appId],
-    });
+    deleteNote(action.arguments.id, "assistant");
     return {
       ok: true,
-      summary: `Opening ${APP_TITLES[action.arguments.appId]}…`,
-      targetWindowId,
+      summary: `Deleting "${noteTitle(existing.content)}" (Undo in Notes)…`,
     };
   }
 
-  if (!windowStore.windows[action.arguments.id]) {
+  const windowStore = useWindowStore.getState();
+  if (action.name === "open_app") return openOrFocusApp(action.arguments.appId);
+
+  const target = resolveWindowTarget(
+    action.arguments.id,
+    Object.values(windowStore.windows),
+  );
+  if (!target) {
     return { ok: false, reason: "The window the AI tried to control no longer exists." };
   }
-  if (action.name === "focus_window") windowStore.focusWindow(action.arguments.id);
-  if (action.name === "minimize_window") windowStore.minimizeWindow(action.arguments.id);
-  if (action.name === "maximize_window") windowStore.maximizeWindow(action.arguments.id);
-  if (action.name === "close_window") windowStore.closeWindow(action.arguments.id);
+  if (target.kind === "open-app") {
+    return action.name === "focus_window"
+      ? openOrFocusApp(target.appId)
+      : { ok: false, reason: "That app isn't open." };
+  }
+  const windowId = target.id;
+  if (action.name === "focus_window") windowStore.focusWindow(windowId);
+  if (action.name === "minimize_window") windowStore.minimizeWindow(windowId);
+  if (action.name === "maximize_window") windowStore.maximizeWindow(windowId);
+  if (action.name === "close_window") windowStore.closeWindow(windowId);
 
   const labels = {
     focus_window: "Focusing",
@@ -119,7 +149,7 @@ function applyAgentAction(action: AiCommandAction): ApplyResult {
   return {
     ok: true,
     summary: `${labels[action.name]} a window…`,
-    targetWindowId: action.arguments.id,
+    targetWindowId: windowId,
   };
 }
 
@@ -274,16 +304,21 @@ export function CommandBar() {
     scheduleTimeout(() => setNotice(null), EMPTY_STATE_NOTICE_MS);
   }
 
-  async function runAgentCommand(win: WindowState, prompt: string) {
+  async function runAgentCommand(
+    win: WindowState | null,
+    prompt: string,
+    preset?: AiCommandResult,
+  ) {
     const token = ++taskTokenRef.current;
-    const task = startTask({ windowId: win.id, prompt });
+    const context = win ?? DESKTOP_CONTEXT;
+    const task = startTask({ windowId: context.id, prompt });
 
-    const notesEnabled = win.appId === "notes";
+    const notesEnabled = win?.appId === "notes";
     const requestBody: AiCommandRequest = {
       prompt,
-      focusedApp: { id: win.appId, title: win.title },
+      focusedApp: { id: win?.appId ?? context.id, title: context.title },
       notes: notesEnabled
-        ? getNotes().map((note) => ({ id: note.id, title: noteTitle(note) }))
+        ? getNotes().map((note) => ({ id: note.id, title: noteTitle(note.content) }))
         : undefined,
       windows: Object.values(useWindowStore.getState().windows).map((currentWindow) => ({
         id: currentWindow.id,
@@ -293,20 +328,24 @@ export function CommandBar() {
     };
 
     let result: AiCommandResult;
-    try {
-      const res = await fetch("/api/ai/command", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(requestBody),
-        signal: AbortSignal.timeout(CLIENT_TIMEOUT_MS),
-      });
-      result = (await res.json()) as AiCommandResult;
-    } catch {
-      result = {
-        type: "error",
-        kind: "unreachable",
-        message: "Couldn't reach the local AI model.",
-      };
+    if (preset) {
+      result = preset;
+    } else {
+      try {
+        const res = await fetch("/api/ai/command", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(requestBody),
+          signal: AbortSignal.timeout(CLIENT_TIMEOUT_MS),
+        });
+        result = (await res.json()) as AiCommandResult;
+      } catch {
+        result = {
+          type: "error",
+          kind: "unreachable",
+          message: "Couldn't reach the local AI model.",
+        };
+      }
     }
 
     // A newer submit already started its own task while this one was in
@@ -342,12 +381,14 @@ export function CommandBar() {
     }
 
     setTaskStatus("working");
-    const targetWindowId = applied.targetWindowId ?? win.id;
-    const targetWindow = useWindowStore.getState().windows[targetWindowId];
-    if (targetWindow) {
+    const targetWindowId = applied.targetWindowId ?? win?.id;
+    const targetWindow = targetWindowId
+      ? useWindowStore.getState().windows[targetWindowId]
+      : undefined;
+    if (targetWindow && targetWindowId) {
       useWindowStore.getState().setWindowControlledBy(targetWindowId, "ai", task.id);
     }
-    const cursorWindow = targetWindow ?? (targetWindowId === win.id ? win : undefined);
+    const cursorWindow = targetWindow ?? (targetWindowId === win?.id ? win : undefined);
     const center = {
       x: cursorWindow
         ? cursorWindow.position.x + cursorWindow.size.width / 2
@@ -364,7 +405,7 @@ export function CommandBar() {
 
     scheduleTimeout(() => {
       completeCurrentTask(applied.summary);
-      if (targetWindow) {
+      if (targetWindow && targetWindowId) {
         useWindowStore.getState().setWindowControlledBy(targetWindowId, "human");
       }
       setAnnotation(null);
@@ -383,13 +424,21 @@ export function CommandBar() {
     // now — a one-off, non-reactive read via getState(), not a subscribed
     // selector, since this only matters at the moment of submit.
     const windows = useWindowStore.getState().windows;
-    const focused = Object.values(windows).find((w) => w.isFocused);
-    if (!focused) {
-      showNotice("Open an app first, then ask again.");
+    const focused = Object.values(windows).find((w) => w.isFocused) ?? null;
+
+    if (clearInput) setValue("");
+
+    // "Open Notes" (the starter chips) needs no model: open it directly.
+    const quickApp = resolveOpenIntent(prompt);
+    if (quickApp) {
+      void runAgentCommand(focused, prompt, {
+        type: "action",
+        name: "open_app",
+        arguments: { appId: quickApp },
+      });
       return;
     }
 
-    if (clearInput) setValue("");
     void runAgentCommand(focused, prompt);
   }
 

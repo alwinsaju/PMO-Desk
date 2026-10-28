@@ -21,7 +21,8 @@ import { describe, it, before, after } from "node:test";
 import { fileURLToPath } from "node:url";
 import { dedupeKey } from "./dedupe.ts";
 import { filterIntake } from "./filter.ts";
-import { IntakeSchema, PmoConfigSchema } from "./types.ts";
+import { IntakeSchema } from "./types.ts";
+import { developerConfig } from "./developerDefaults.ts";
 import { createPmo } from "./server/create.ts";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -298,7 +299,7 @@ describe(
       assert.ok(c.warnings.some((w) => /could not be resolved to SMTP/.test(w)));
       assert.equal(c.guardDenied, false);
       // The app still accepts it; its filter then quarantines it with a clear reason.
-      const config = PmoConfigSchema.parse({});
+      const config = developerConfig();
       const verdict = filterIntake(IntakeSchema.parse(doc), config);
       assert.equal(verdict.pass, false);
       assert.equal(verdict.code, "sender-domain-not-allowed");
@@ -406,6 +407,7 @@ describe(
         const pmo = await createPmo({
           dataDir,
           inboxDir,
+          seedConfig: developerConfig(),
           now: () => now,
           generator: {
             model: () => "unused",

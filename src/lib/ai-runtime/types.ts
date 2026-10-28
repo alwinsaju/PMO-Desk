@@ -15,6 +15,11 @@ export interface AiRuntimeStatus {
   version?: string;
   baseUrl: string;
   defaultModel: string;
+  /** Where `defaultModel` came from: the environment, Setup's saved choice,
+   *  the built-in default, or the only allowed model that is installed. */
+  modelSource: "env" | "saved" | "default" | "only-installed";
+  /** One plain sentence when the model is not the one asked for. */
+  modelNote?: string;
   /** null when the server can't be asked. */
   modelInstalled: boolean | null;
   /** Is the default model resident in memory right now? */

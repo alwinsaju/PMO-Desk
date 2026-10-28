@@ -87,6 +87,28 @@ group, wraps after 8 so a long session doesn't walk new windows off the edge of
 the screen). The numbers live in `src/lib/tokens.ts`'s `windowDefaults`; the
 placement maths is the pure `window-manager/windowGeometry.ts` (unit-tested).
 
+**Keep-clear and clamping**: `windowDefaults.insets` (also the maximised rect)
+leaves room for the dock above and, below, the larger of `sizes.commandBarReserve`
+and `sizes.presenceReserve` plus `sizes.bottomClearance`. `clampToViewport` keeps
+the title bar reachable (top >= 0, `titleBarReach` px on screen, above the
+command bar); it runs on drag/resize commit and, via the store's
+`clampAllToViewport` (debounced in `WindowManager.tsx`), on every viewport change.
+
+**Effects**: `windowFxMode` (`src/lib/displayFx.ts`) sets `data-fx-win` on each
+window — with more than 4 windows open the unfocused ones drop blur and the
+heavy shadow (tokens.css); the window being dragged/resized (`data-gesture`)
+alone gets `will-change: transform`. Lean mode paints window bodies opaque.
+The desktop shell reports `noHardwareAcceleration` (display-settings.cjs
+`describeGpu`); the Settings "Hardware acceleration" toggle is then disabled
+and lean is forced.
+
+**Keyboard**: a window root is `role="dialog" aria-modal="false"` with the window
+title as label and `tabIndex=-1`; focus moves into it on open (unless its app
+took focus) and returns to the previous element, else the app's dock tile
+(`data-dock-app`), on close. Ctrl+W / Ctrl+M close / minimise the focused window
+(`windowShortcut` in `src/lib/focusKeys.ts`, which also holds the lock-screen
+Tab-trap rule `trapTarget`).
+
 **Selectors**: prefer `useWindowStore((s) => s.windows[id])` (a per-window
 selector) over subscribing to the whole store. The store's internal actions
 are written to only create a new object reference for a `WindowState` that
@@ -360,7 +382,7 @@ glows and concentric ring outlines. No logo or tagline lockup.
   and the older `shadow-float-sm|float|float-lg`. All tint from `--sh`.
 - **Easing / motion**: `ease-spring` `cubic-bezier(.34,1.5,.64,1)` (presses,
   toggles, popovers), `ease-smooth` `cubic-bezier(.22,.9,.28,1)` (fades,
-  geometry); `--dur-fast|base|slow` (.2s/.35s/.55s). JS twins in
+  geometry); `--dur-base` (.35s). JS twins in
   `src/lib/motion.ts` (`easeSpring`, `easeSmooth`, `popEnter`/`dialogEnter`)
   and `src/lib/tokens.ts`.
 - **Type**: `font-sans` follows the mode; `font-headline` is weight 700
@@ -503,6 +525,32 @@ it, so treat it as worth discussing rather than changing silently.
 The next planned step for this repo is a final visual QA pass across
 everything above, not new feature work.
 
+## Desktop shell and security
+
+`desktop/` is the Electron shell (`main.cjs`, `preload.cjs`, `launch-config.cjs`, `pmo-notifier.cjs`,
+`display-settings.cjs`). It starts two child services and owns them: the Next server (a UI mode, see the
+README) and the Tasks engine (`tasks-engine/main.py`, launched through `POST /api/tasks-engine/start`
+with `AI_OS_DESKTOP_MODE=1`). The window runs with `contextIsolation`, `sandbox` and no Node integration;
+the preload exposes a small `window.aiOsDesktop` bridge. User data (settings, PMO data, Tasks engine data,
+`desktop.log`) lives in `%APPDATA%\ai-os`, never in the install folder.
+
+Everything is loopback-only; nothing listens on another interface. The rules, and where each lives:
+
+| Rule                                                                                                                                                                                                                                                                                                                                                                                      | Where                                                                                          |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Every `/api/*` request must carry a loopback `Host` (stops DNS rebinding); a write (anything but GET/HEAD/OPTIONS) must not come from another origin                                                                                                                                                                                                                                      | `src/middleware.ts` -> `src/lib/security/apiGuard.ts` (reuses `lib/pmo/server/originCheck.ts`) |
+| The engine refuses a non-loopback `Host`, a non-GET with a foreign `Origin`, and, when `AI_OS_ENGINE_TOKEN` is set, any request without `X-AI-OS-Token` (only `GET /health` and `OPTIONS` are exempt)                                                                                                                                                                                     | `tasks-engine/main.py`                                                                         |
+| Per-process secrets: the Next server makes a random token and instance id once (kept on `globalThis` so every route shares them), passes them to the engine it spawns (`AI_OS_ENGINE_TOKEN`, `AI_OS_ENGINE_INSTANCE`) and sends the token on every call it makes to it                                                                                                                    | `src/lib/tasks-engine/engineAuth.ts`, `app/api/tasks-engine/shared.ts`                         |
+| The page calls the engine directly, so it gets the token from `GET /api/tasks-engine/token` (answered only to this app's own origin), caches it and refetches once on a 403                                                                                                                                                                                                               | `src/lib/tasks-engine/engineClient.ts`, `components/apps/tasks-app/api.ts`                     |
+| In the desktop app only an engine whose `/health` reports our instance id is adopted, so a stray process on ports 8000-8019 is never used; in `next dev` any engine that accepts our token is                                                                                                                                                                                             | `findRunningEngine` in `app/api/tasks-engine/shared.ts`                                        |
+| `NODE_TLS_REJECT_UNAUTHORIZED` and `PYTHON*` variables are not passed to the engine, Ollama or setup commands (a warning is logged once)                                                                                                                                                                                                                                                  | `lib/security/childEnv.ts`, `engineEnv()`                                                      |
+| Response headers: a CSP (`frame-ancestors 'none'`, `object-src 'none'`, `connect-src` limited to this app and loopback ports so the engine on 127.0.0.1:8000-8019 and Ollama work, `frame-src *` because the Browser app embeds arbitrary sites, `'unsafe-eval'` only in `next dev`), `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `X-Frame-Options: DENY`; `images.unoptimized` | `next.config.mjs`                                                                              |
+| The Browser app's "can this site be framed?" check fetches third-party URLs, so it resolves DNS and refuses private, loopback, link-local, CGNAT, unique-local and IPv4-mapped addresses, follows at most 5 redirects by hand (each hop re-validated) and treats HTTP >= 400 as not embeddable                                                                                            | `lib/browser/embeddableCheck.ts`, `app/api/browser/check-embeddable/route.ts`                  |
+
+Out of scope: a hostile process running as the same Windows user (it can read the token from the server's
+environment or the files in `%APPDATA%\ai-os`). The rules above defend against other web pages and
+against other machines and local processes that do not have the token.
+
 ## Tasks: Shift Roster and December Disconnect (outside the desktop shell)
 
 `tasks/` is not part of the Next.js app. It holds task folders (`task.json` manifest, `scripts/`, tests)
@@ -549,13 +597,13 @@ the installer does not carry. The **Set up AI OS** dialog (opened at launch whil
 is missing, unless the person chose "Not now" for exactly that list; reopened any time from Settings >
 "Setup and health check") reports each one in plain language and fixes what it can:
 
-| Check | Required | What it does |
-|---|---|---|
-| Local AI (Ollama) | yes | Finds `ollama.exe` (the AI runtime's own resolution: `AI_OS_OLLAMA_EXE`, PATH, `%LOCALAPPDATA%\Programs\Ollama`). *Install Ollama* downloads the official `OllamaSetup.exe` from ollama.com into a fresh temp folder, requires a valid Authenticode signature by "Ollama Inc.", runs it silently per user (no administrator rights), verifies with `ollama --version`, and deletes the download. A blocked download (company proxy) ends in manual steps; the installer is never run unverified. |
-| AI model | yes | `gemma4:12b` (the runtime's default; fallback `qwen3.5:9b`) through Ollama's own `/api/pull`, with progress, speed and time left, retry with pauses (Ollama resumes partial files), cancel, and free-disk / RAM advice before it starts (a pull that cannot fit is refused). Only the configured model and the fallback can be requested. |
-| PMO inbox folder | yes | Resolves the folder exactly as the PMO service does (`AI_OS_PMO_INBOX_DIR`, else `config.json`), says whether OneDrive is signed in, suggests `PMO-Inbox` inside each OneDrive root, and saves a chosen folder to the PMO config (never starts the poller). |
-| Tasks engine | yes | Runs `tasks-engine/selftest.py` with the bundled Python: package imports, the shared task libraries loading their shipped example files, and a task-style step on generated fixture data. No Outlook, no network, no sends. |
-| Classic Outlook | no | Reads two registry keys (`Outlook.Application` COM registration, `OUTLOOK.EXE` app path) and, only if COM is not registered, the installed packages for the new Outlook. Report only; never opens a mailbox. |
+| Check             | Required | What it does                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| ----------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Local AI (Ollama) | yes      | Finds `ollama.exe` (the AI runtime's own resolution: `AI_OS_OLLAMA_EXE`, PATH, `%LOCALAPPDATA%\Programs\Ollama`). _Install Ollama_ downloads the official `OllamaSetup.exe` from ollama.com into a fresh temp folder, requires a valid Authenticode signature by "Ollama Inc.", runs it silently per user (no administrator rights), verifies with `ollama --version`, and deletes the download. A blocked download (company proxy) ends in manual steps; the installer is never run unverified. |
+| AI model          | yes      | `gemma4:12b` (the runtime's default; fallback `qwen3.5:9b`) through Ollama's own `/api/pull`, with progress, speed and time left, retry with pauses (Ollama resumes partial files), cancel, and free-disk / RAM advice before it starts (a pull that cannot fit is refused). Only the configured model and the fallback can be requested.                                                                                                                                                        |
+| PMO inbox folder  | yes      | Resolves the folder exactly as the PMO service does (`AI_OS_PMO_INBOX_DIR`, else `config.json`), says whether OneDrive is signed in, suggests `PMO-Inbox` inside each OneDrive root, and saves a chosen folder to the PMO config (never starts the poller).                                                                                                                                                                                                                                      |
+| Tasks engine      | yes      | Runs `tasks-engine/selftest.py` with the bundled Python: package imports, the shared task libraries loading their shipped example files, and a task-style step on generated fixture data. No Outlook, no network, no sends.                                                                                                                                                                                                                                                                      |
+| Classic Outlook   | no       | Reads two registry keys (`Outlook.Application` COM registration, `OUTLOOK.EXE` app path) and, only if COM is not registered, the installed packages for the new Outlook. Report only; never opens a mailbox.                                                                                                                                                                                                                                                                                     |
 
 The pure logic (`report.ts`, `pull.ts`, `ollamaInstall.ts`, `models.ts`, `inbox.ts`, `outlook.ts`, `jobs.ts`)
 takes its fetch, clock, file and process access as arguments, so the whole flow is tested with fakes and no
@@ -704,7 +752,7 @@ decisions); UI in `src/components/ai-runtime/` (`ModelLogDialog`, reusable:
   `other`.
 - **`GET /api/ai/runtime/log?since=<seq>&session=<id>&serverLog=1`** returns
   `{ ok, session, sessionStartedAt, now, reset, latestSeq, events, status,
-  serverLog? }`: only events after `since` (a different `session` returns all and
+serverLog? }`: only events after `since` (a different `session` returns all and
   `reset: true`), a fresh status snapshot, and optionally the tail of Ollama's server
   log. The dialog polls it every ~2 s **only while open and the tab is visible**.
   `POST /api/ai/runtime/load` ("Load now": starts the tiny warm-up in the
@@ -749,7 +797,7 @@ The whole app in one place (the sections below are the detail, phase by phase).
 
 1. **Intake and review.** Teams messages and Outlook emails arrive as `pmo-intake/1` files in
    an inbox folder; the Deloitte-only filter runs first; the **local** model turns each message
-   into a to-do *proposal*; proposals wait in the Review Queue and only a person's **Approve**
+   into a to-do _proposal_; proposals wait in the Review Queue and only a person's **Approve**
    creates a to-do.
 2. **Producers and settings.** A read-only Outlook COM export, a Paste dialog, a Settings
    dialog, the Filtered tab with its guidance, and a retention purge.
@@ -758,7 +806,7 @@ The whole app in one place (the sections below are the detail, phase by phase).
    desktop and browser notifications and the dock badge.
 4. **Waiting, chasers, thread-aware intake.** "Waiting on" with a chaser cadence, local
    chaser drafts to copy, a timeline, and a later message in the same conversation becoming
-   an *update card* the person approves instead of a duplicate to-do.
+   an _update card_ the person approves instead of a duplicate to-do.
 5. **Weekly status report.** Built by code from the app's own to-dos, an optional local-model
    narrative that is checked against the data, copy and save locally.
 6. **Approval and sign-off.** Approval checkpoints carry a request, an answer and an
@@ -770,7 +818,7 @@ The whole app in one place (the sections below are the detail, phase by phase).
 
 - **Nothing is ever sent.** No email, Teams post, SMTP, Outlook COM send, Graph call or
   tasks-engine call exists in this app. The only hand-offs are text to copy and a `mailto:`
-  link that opens an *unsent* compose window in the person's own mail program. The only
+  link that opens an _unsent_ compose window in the person's own mail program. The only
   notifications are local reminders on this computer. Source scans in the tests fail if a
   new module gains mail, network or tasks-engine code, or injects HTML.
 - **A human gate on everything that changes a to-do.** Approve creates a to-do; an update
@@ -837,7 +885,7 @@ src/lib/pmo/            Pure logic, one co-located *.test.mjs per area
                         enums are avoided).
   types.ts                zod: Intake, Proposal, Todo, TodoDraft, config, and the
                           model's answer: `AiModelSchema` (what the model is asked
-                          for, prompt v3: no reason / confidence / tags) widened to
+                          for, prompt v3+: no reason / confidence / tags) widened to
                           the stored `AiStructuredSchema` (those three default to
                           ""/null/[] so v2 and v3 records both parse). Length
                           limits live in the JSON Schema via .meta(), clamping in
@@ -849,7 +897,7 @@ src/lib/pmo/            Pure logic, one co-located *.test.mjs per area
                           tracking links, truncate to ~12k chars. Client-safe.
   quote.ts                Hallucination guard: is `quote` really in the message?
   structurePrompt.ts      System/user prompts (message in <message> delimiters,
-                          marked as untrusted data). `PROMPT_VERSION` (now 3) is
+                          marked as untrusted data). `PROMPT_VERSION` (now 4) is
                           bumped on every wording change and logged with each AI
                           call. The user turn ends with a computed "Date hints"
                           block (today and tomorrow, the received day with the
@@ -861,6 +909,11 @@ src/lib/pmo/            Pure logic, one co-located *.test.mjs per area
   sanitizeDraft.ts        The deterministic clean-up of the model's answer (see
                           "Structuring: prompt v3 and the app's clean-up" below).
                           Pure, client-safe, unit-tested.
+  splitTasks.ts           Prompt v4: one message may hold several tasks. The model
+                          answers a list; `asTaskList` normalises a bare answer,
+                          `selectTasks` drops near-duplicates and over-split
+                          sub-steps and caps the count (`MAX_TASKS_PER_MESSAGE`),
+                          with plain-language notes for what was dropped.
   todoLogic.ts            Draft -> Todo, derived stage/progress, patches (fields,
                           action items with owner/due, checkpoint add/rename/
                           reorder/remove/skip/complete, snooze). Client-safe.
@@ -948,7 +1001,7 @@ are skipped; the app deletes each file it has dealt with, and its only write
 into the folder is the Paste button's file (one more producer, same atomic
 hand-off). **Teams is filtered by default** until a tenant ID or chat is
 allowlisted (the tenant GUID ships empty): a notice under the toolbar says so, a filtered
-Teams item has an *Allow this tenant* button, and the tenant goes in Settings
+Teams item has an _Allow this tenant_ button, and the tenant goes in Settings
 too (see PMO-INTAKE-CONTRACT.md).
 
 **Inbox path migration** (`Store.loadConfig`, `migratedInboxDir` in `server/paths.ts`).
@@ -976,7 +1029,7 @@ the mapping and the script's control flow against fake Outlook objects under
 the blocked-domain/term rules (and a blocked domain anywhere in the pasted text
 counts) but not the Teams default-deny.
 
-**UI additions**: the toolbar has *Paste* and a gear. *Paste*
+**UI additions**: the toolbar has _Paste_ and a gear. _Paste_
 (`PasteIntakeDialog`) validates with the same zod schema as the server;
 _Settings_ (`SettingsDialog`, form logic in `settingsForm.ts`) edits
 `config.json` through GET/PUT `/api/pmo/config`, validated by the same
@@ -1013,7 +1066,10 @@ last call, so the idle state is **Model asleep**, which is normal.
 
 ### Structuring: prompt v3 and the app's clean-up
 
-`PROMPT_VERSION` 3 (logged with every call; `structurePrompt.ts`). What changed from 2:
+`PROMPT_VERSION` is now 4: the model may return several tasks for one message
+(`splitTasks.ts` normalises and caps them; each becomes its own proposal). Everything
+below describes v3, which v4 keeps. `PROMPT_VERSION` 3 (logged with every call;
+`structurePrompt.ts`) changed from 2:
 
 - **Today and age.** The date hints now carry today (IST) and its tomorrow, and the received
   day with the message's age ("12 days ago"), then the 14 days after the received day.
@@ -1158,7 +1214,7 @@ toast, then acks. The PMO toolbar shows a bell, **Enable reminders** (the permis
 request needs a click), only while the browser has not been asked yet; Settings,
 under Reminders, says plainly where things stand (on, off, blocked, unsupported),
 that web reminders only fire while the tab is open and that the desktop app is the
-reliable path, and offers *Send a test*. Without
+reliable path, and offers _Send a test_. Without
 permission the fallbacks are the count badge on the dock tile (a small generic
 `dockBadgeStore`, display only, never touching the pinned layout) and a "(N)"
 prefix on the tab title. Inside the shell the hook never claims; it only refreshes
@@ -1254,16 +1310,17 @@ any scheme before).
 
 **Window layout and UI rules** (the PMO window is 900x600 by default and can be
 shrunk to the shell's 360x240 minimum; dialogs are portaled to the viewport).
-- One toolbar row: tabs (*Review Queue*, *To-Do*, *Filtered*, each with a quiet
-  count, and *Reports*, which has none; it keeps its own scroll body and a sticky
+
+- One toolbar row: tabs (_Review Queue_, _To-Do_, _Filtered_, each with a quiet
+  count, and _Reports_, which has none; it keeps its own scroll body and a sticky
   footer, see Phase 5) on the left, then the model chip (`toolbarView.modelStatus`: **Model asleep** (grey, the normal
   idle state; loads on demand), **Loading model…** (amber, waking for a call),
   **Working on a message** (accent, with "· 2 of 3" while the queue is worked
   through), **Model ready · 1:32** (green, loaded and idle with the countdown to the
-  unload), plus *Model not running* / *Model missing*; it is a button with a
+  unload), plus _Model not running_ / _Model missing_; it is a button with a
   tooltip "Click to see what the model is doing" that opens the model log, see
-  "Model log" above), *Scan now*,
-  *Paste*, the reminders bell (only while the browser has not been asked) and the
+  "Model log" above), _Scan now_,
+  _Paste_, the reminders bell (only while the browser has not been asked) and the
   gear. Information (inbox path, last scan, filtered count) is in tooltips and
   Settings. Anything that needs attention is a notice under the row
   (`toolbarView.buildNotices`, `NoticeStack`): the most urgent shows, the rest fold
@@ -1312,8 +1369,8 @@ config)`, pure, fake-clock tested) computes every number, list, date and owner. 
 local model only writes an optional three-part narrative on top, so the report is
 complete and instant without it (a 12B model on this CPU takes a minute or two).
 
-- **Periods** (`resolvePeriod`, in `reminders.timeZone`, IST by default): *this week so
-  far* (Monday to today), *last week* (the previous Monday to Sunday), *last 7 days*
+- **Periods** (`resolvePeriod`, in `reminders.timeZone`, IST by default): _this week so
+  far_ (Monday to today), _last week_ (the previous Monday to Sunday), _last 7 days_
   (today and six before) or a custom range (real dates, start not after end, not in the
   future, at most 92 days, at most a year back). A period is the half-open range from
   the start of its first day to the start of the day after its last, so a to-do closed
@@ -1344,7 +1401,7 @@ complete and instant without it (a 12B model on this CPU takes a minute or two).
   default "Weekly status", and an optional `projectName`), validated in
   `PmoConfigPatchSchema` and edited in Settings.
 - **Highlights** (`reportNarrative.ts`, `server/reportDrafts.ts`). `POST
-  /api/pmo/reports/narrative { period }` starts (or joins) one in-memory job per period
+/api/pmo/reports/narrative { period }` starts (or joins) one in-memory job per period
   and returns at once; the Reports tab polls `GET ...?key=<start>_<end>` every 2 s while
   it runs ("Drafting... (can take a minute on this PC)"; a failure is a plain, retryable
   message). The call is `generateJson` (`think: false`, temperature 0, schema
@@ -1370,8 +1427,8 @@ complete and instant without it (a 12B model on this CPU takes a minute or two).
   highlights after the Summary and keeps the person's edits).
 - **Saving** (`server/reports.ts`). `POST /api/pmo/reports` builds the report and
   writes nothing but an `audit.jsonl` line (`report-generate`). `POST
-  /api/pmo/reports/[id] { markdown, edited, baseRevision?, period?, generatedAt?,
-  narrative? }` saves under `<data dir>\reports\`: `<yyyy-mm-dd>-<id>.md` is revision 1,
+/api/pmo/reports/[id] { markdown, edited, baseRevision?, period?, generatedAt?,
+narrative? }` saves under `<data dir>\reports\`: `<yyyy-mm-dd>-<id>.md` is revision 1,
   each later save a new `.r2.md`, `.r3.md`, ... (nothing is overwritten; a save on top
   of a revision that is no longer the latest is refused), plus the `.json` sidecar
   (period, generatedAt, `narrative: { model, promptVersion }`, the revision list with an
@@ -1384,13 +1441,13 @@ complete and instant without it (a 12B model on this CPU takes a minute or two).
   `GET /api/pmo/reports` lists them and `GET /api/pmo/reports/[id]?rev=N` reopens one.
 - **UI** (`ReportsTab.tsx`, view-model `reportView.ts`). The period and the draft live in
   `PmoTodoApp` (the tab unmounts on a switch; the person's edits must not). A period
-  menu and *Generate*; the highlights card; the editor (a `<textarea>`: report text is
-  never rendered as HTML); previous reports with *Open*; and a sticky footer of *Copy as
-  text*, *Copy as Markdown*, *Save* and the status line ("Not saved yet", "Unsaved
+  menu and _Generate_; the highlights card; the editor (a `<textarea>`: report text is
+  never rendered as HTML); previous reports with _Open_; and a sticky footer of _Copy as
+  text_, _Copy as Markdown_, _Save_ and the status line ("Not saved yet", "Unsaved
   changes (saved: revision 1)", "Saved as revision 2"). Replacing edits that are not
   saved (Generate again, Open another report) needs a second click. The footer is one
   row at every size (labels shorten below ~512 px; the status line moves into the page
-  below ~448 px). *Open as unsent mail draft* (`buildMailto`, the same 1800-character
+  below ~448 px). _Open as unsent mail draft_ (`buildMailto`, the same 1800-character
   guard) is offered only while the whole text fits in a link, which a real report
   almost never does; otherwise only Copy is offered.
 - **Stub model.** `draftNarrative` writes one line per part from the facts block, quoting
@@ -1405,8 +1462,8 @@ complete and instant without it (a 12B model on this CPU takes a minute or two).
 
 ### Phase 6: approval and sign-off tracking
 
-A checkpoint of kind `approval` (the *Sign-off received* step of the Approval template, or
-any step added with *Sign-off step*) can carry **sign-off state**. Still human-gated, still
+A checkpoint of kind `approval` (the _Sign-off received_ step of the Approval template, or
+any step added with _Sign-off step_) can carry **sign-off state**. Still human-gated, still
 local: **nothing is sent**. "Request sign-off" only prepares text; the person sends it with
 their own mail program or Teams and then says so.
 
@@ -1432,7 +1489,7 @@ or a refusal with a plain reason:
   Asking again keeps the approver and restarts the clock. After "changes requested" or
   "rejected" it starts a new round and archives the old answer in `previous`.
 - `recordSignoff`: needs evidence (a note and/or a linked message of this to-do) and, for
-  conditions and changes, their text. `approved` completes *Sign-off received* and clears
+  conditions and changes, their text. `approved` completes _Sign-off received_ and clears
   the waiting the request set. `approved_with_conditions` records the conditions and does
   **not** complete the step: `confirmConditions` ("Conditions are met") does, with the
   confirmer and time stamped by the server. `changes_requested` and `rejected` reopen the
@@ -1472,12 +1529,12 @@ zod schema, runs the transition under the store lock and writes an audit line
   moved whole into `previous`.
 
 **Request text** (`signoffRequest.ts`, `SignoffRequestDialog`, `server/signoffDrafts.ts`).
-*Request sign-off* opens a dialog (the `ChaserDialog` pattern: Copy, an optional `mailto:`
+_Request sign-off_ opens a dialog (the `ChaserDialog` pattern: Copy, an optional `mailto:`
 through `buildMailto` and its 1800-character guard). The **deterministic template**
 (`buildSignoffTemplate`) appears at once with no model: greeting to the approver, what is
 approved (title and the first sentence of the description), by when (the due date), the
 original message's subject, sender and https link. It follows the approver's name until the
-person edits it. *Improve with AI* starts an in-memory job (`SignoffDrafts`, one per to-do,
+person edits it. _Improve with AI_ starts an in-memory job (`SignoffDrafts`, one per to-do,
 shared while drafting, 12 h life, through the same concurrency-1 runtime queue, `think:
 false`, temperature 0.4, plain text, `SIGNOFF_PROMPT_VERSION`); the state document carries
 `signoffDrafts`; the result is offered as "Use it / Keep mine" next to the person's text,
@@ -1534,16 +1591,16 @@ view-models). The panel shows the state in plain words, the approver, when it wa
 sent (and "Nothing was sent by this app"), the conditions or changes asked for, and the
 **stamp** ("Signed off by <name> · recorded by <user>, <date> IST · Evidence: <note> · open
 the link", with the linked message openable inline; the link is clickable only when it is
-https). Actions by state: *Request sign-off* / *Request again*, *Record sign-off* (outcome,
-conditions, evidence note, optional linked message), *Conditions are met* (two-step),
-*Revoke...* (a reason is required, behind its own form). The "Done" button is not offered on a
+https). Actions by state: _Request sign-off_ / _Request again_, _Record sign-off_ (outcome,
+conditions, evidence note, optional linked message), _Conditions are met_ (two-step),
+_Revoke..._ (a reason is required, behind its own form). The "Done" button is not offered on a
 sign-off step, and a stamped one cannot be reopened or removed there. A to-do row shows
-"Awaiting sign-off from X for N days" with a *Sign-off pending* / *Sign-off overdue* (past the
-chase cadence) / *Conditions* / *Changes requested* / *Rejected* chip (never a second strong
+"Awaiting sign-off from X for N days" with a _Sign-off pending_ / _Sign-off overdue_ (past the
+chase cadence) / _Conditions_ / _Changes requested_ / _Rejected_ chip (never a second strong
 chip), and the weekly report's **Needs a decision** also lists to-dos whose sign-off is open
 (awaiting since N days and who, with "time to chase"; conditions; changes requested;
 rejected; all text escaped like every other report line). The review card for a sign-off
-reply gets a *Sign-off reply* chip and a reading panel (what the model made of it, its
+reply gets a _Sign-off reply_ chip and a reading panel (what the model made of it, its
 reasoning, the quote, and any guard).
 
 **Stub model.** `[[stub-signoff:approved|approved_with_conditions|changes_requested|rejected|

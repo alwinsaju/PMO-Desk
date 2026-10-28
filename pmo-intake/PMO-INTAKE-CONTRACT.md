@@ -18,8 +18,8 @@ document is the whole interface between the two. The producers are:
 
 ## Where files go
 
-| Setting      | Default                                         | Override                                                  |
-| ------------ | ----------------------------------------------- | --------------------------------------------------------- |
+| Setting      | Default                                                 | Override                                                  |
+| ------------ | ------------------------------------------------------- | --------------------------------------------------------- |
 | Inbox folder | `C:\Users\alsaju\OneDrive - Deloitte (O365D)\PMO-Inbox` | env `AI_OS_PMO_INBOX_DIR`, or `inboxDir` in `config.json` |
 
 The app polls the folder every 15 seconds (and on **Scan now**). Rules for
@@ -42,27 +42,30 @@ producers:
 Required: `schema`, `source`, `sourceId`, `receivedAt`, `sender`, `subject`,
 `body.text`. Everything else is optional. `null` counts as "not provided".
 
-| Field         | Type                                                                                         | Notes                                                                                         |
-| ------------- | -------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `schema`      | `"pmo-intake/1"`                                                                             | Exactly this string.                                                                          |
-| `producer`    | string                                                                                       | `pa-cloud-flow`, `outlook-com`, `manual-paste`, `other`. Informational.                       |
-| `source`      | `"outlook"` \| `"teams"` \| `"manual"`                                                       | Drives the filter rules below.                                                                |
-| `sourceId`    | string                                                                                       | Stable id of the message in its system; the de-duplication key.                               |
-| `receivedAt`  | ISO 8601 date-time                                                                           | With offset or `Z`.                                                                           |
-| `sender`      | `{ name?, address? }`                                                                        | Teams gives a name only; neither field is required on its own.                                |
-| `recipients`  | `[{ name?, address?, role? }]`                                                               | `role`: `to`, `cc`, `bcc`.                                                                    |
-| `subject`     | string                                                                                       | Email subject, or the Teams chat/channel name (Teams flow: `Conversation.Name`, else `Teams message`). May be empty. |
-| `body`        | `{ text, format? }`                                                                          | `format`: `text` (default) or `html`.                                                         |
+| Field         | Type                                                                                         | Notes                                                                                                                             |
+| ------------- | -------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `schema`      | `"pmo-intake/1"`                                                                             | Exactly this string.                                                                                                              |
+| `producer`    | string                                                                                       | `pa-cloud-flow`, `outlook-com`, `manual-paste`, `other`. Informational.                                                           |
+| `source`      | `"outlook"` \| `"teams"` \| `"manual"`                                                       | Drives the filter rules below.                                                                                                    |
+| `sourceId`    | string                                                                                       | Stable id of the message in its system; the de-duplication key.                                                                   |
+| `receivedAt`  | ISO 8601 date-time                                                                           | With offset or `Z`.                                                                                                               |
+| `sender`      | `{ name?, address? }`                                                                        | Teams gives a name only; neither field is required on its own.                                                                    |
+| `recipients`  | `[{ name?, address?, role? }]`                                                               | `role`: `to`, `cc`, `bcc`.                                                                                                        |
+| `subject`     | string                                                                                       | Email subject, or the Teams chat/channel name (Teams flow: `Conversation.Name`, else `Teams message`). May be empty.              |
+| `body`        | `{ text, format? }`                                                                          | `format`: `text` (default) or `html`.                                                                                             |
 | `thread`      | `{ conversationId?, parentId? }`                                                             | Teams flow: `conversationId` is the chat's Conversation ID, `parentId` the id of the message replied to (`null` or empty = none). |
-| `context`     | `{ origin?, tenantId?, chatId?, chatType?, teamName?, channelName?, mailbox?, importance? }` | See Teams below. `origin` (`teams`, `outlook`, `manual`) is set by Paste only; informational. |
-| `attachments` | `[{ name?, contentType?, size?, ref? }]`                                                     | References only; the app never opens them.                                                    |
-| `link`        | string                                                                                       | Teams message deep link, or `outlook:<EntryID>`.                                              |
+| `context`     | `{ origin?, tenantId?, chatId?, chatType?, teamName?, channelName?, mailbox?, importance? }` | See Teams below. `origin` (`teams`, `outlook`, `manual`) is set by Paste only; informational.                                     |
+| `attachments` | `[{ name?, contentType?, size?, ref? }]`                                                     | References only; the app never opens them.                                                                                        |
+| `link`        | string                                                                                       | Teams message deep link, or `outlook:<EntryID>`.                                                                                  |
 
 ## De-duplication
 
-`dedupeKey = source + ":" + sha256(sourceId)`. If `sourceId` is blank, the key
-falls back to `sha256(source | sender | receivedAt | first 500 normalised body
-characters)`. A message whose key has already produced a proposal is deleted
+`dedupeKey = source + ":" + sha256(sourceId)`. If `sourceId` is blank (an empty
+string, only spaces or `null`; the key itself must still be present), the app
+derives one: `derived-` plus the first 32 hex characters of `sha256(source |
+sender | subject | receivedAt | first 500 normalised body characters)`, stores it
+as the message's `sourceId` and uses it for the key. A message whose key has
+already produced a proposal is deleted
 from the inbox and logged as a duplicate, so dropping the same file twice (or a
 flow that fires twice) yields one item.
 
@@ -150,19 +153,19 @@ same message, once it passes, also clears its old Filtered entry.
 Built by [Recipe B](./PA-FLOW-RECIPES.md) from **For a selected message (V2)**;
 fictional example: [`examples/teams-v2-selected-message.json`](./examples/teams-v2-selected-message.json).
 
-| Intake field              | From the trigger (`triggerBody()?['teamsFlowRunContext']...`)                           |
-| ------------------------- | --------------------------------------------------------------------------------------- |
-| `sourceId`                | `Conversation.Id` + `/` + `MessagePayload.Id`                                           |
-| `receivedAt`              | derived from `MessagePayload.Id` (epoch ms); fallback `utcNow()`. **No created-time field exists.** |
-| `sender.name`             | `MessagePayload.From.User.DisplayName` (`Last, First`); **no address**                  |
-| `subject`                 | `Conversation.Name`, else `Teams message`                                               |
-| `body.text` / `format`    | `MessagePayload.Body.PlainText` / `text` (a mention keeps the person's name in the text) |
-| `link`                    | `MessagePayload.LinkToMessage`                                                          |
-| `thread.conversationId`   | `Conversation.Id`                                                                       |
-| `thread.parentId`         | `MessagePayload.ReplyToId` (`null` unless a reply)                                      |
-| `context.chatId`          | `Conversation.Id`                                                                       |
-| `context.chatType`        | `group` if `Conversation.IsGroup`, else `oneOnOne` (free text, informational)           |
-| `context.tenantId`        | `ChannelData.Tenant.Id`                                                                 |
+| Intake field            | From the trigger (`triggerBody()?['teamsFlowRunContext']...`)                                       |
+| ----------------------- | --------------------------------------------------------------------------------------------------- |
+| `sourceId`              | `Conversation.Id` + `/` + `MessagePayload.Id`                                                       |
+| `receivedAt`            | derived from `MessagePayload.Id` (epoch ms); fallback `utcNow()`. **No created-time field exists.** |
+| `sender.name`           | `MessagePayload.From.User.DisplayName` (`Last, First`); **no address**                              |
+| `subject`               | `Conversation.Name`, else `Teams message`                                                           |
+| `body.text` / `format`  | `MessagePayload.Body.PlainText` / `text` (a mention keeps the person's name in the text)            |
+| `link`                  | `MessagePayload.LinkToMessage`                                                                      |
+| `thread.conversationId` | `Conversation.Id`                                                                                   |
+| `thread.parentId`       | `MessagePayload.ReplyToId` (`null` unless a reply)                                                  |
+| `context.chatId`        | `Conversation.Id`                                                                                   |
+| `context.chatType`      | `group` if `Conversation.IsGroup`, else `oneOnOne` (free text, informational)                       |
+| `context.tenantId`      | `ChannelData.Tenant.Id`                                                                             |
 
 Consequences worth knowing:
 
@@ -217,15 +220,15 @@ category, flag or read-state, and never opens or saves an attachment (name, size
 and type only). A test fails the build if any of those calls appear in the script
 text, and the mapping is tested with fake items, without Outlook.
 
-| Parameter             | Default                                             | Meaning                                                                                                                       |
-| --------------------- | --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| Parameter             | Default                                                 | Meaning                                                                                                                       |
+| --------------------- | ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | `-InboxDir`           | `C:\Users\alsaju\OneDrive - Deloitte (O365D)\PMO-Inbox` | Drop folder. Must exist; never created.                                                                                       |
-| `-FolderPath`         | (none: flagged mail)                                | e.g. `Inbox\PMO`. Without it, every **flagged** mail in the default mailbox (the To-Do search folder), by last-modified time. |
-| `-SinceDays`          | 14                                                  | Window: received in the last N days (folder), or modified in the last N days (flagged).                                       |
-| `-StatePath`          | `%LOCALAPPDATA%\AI OS\pmo-intake\outlook-seen.json` | Its own seen-file, keyed by Message-ID (EntryID if none).                                                                     |
-| `-MaxItems`           | 200                                                 | Most files per run, newest first.                                                                                             |
-| `-DryRun` / `-WhatIf` | off                                                 | Print what would be written; write nothing, not even the seen-file.                                                           |
-| `-IgnoreSeen`         | off                                                 | Export again even if the seen-file says so (after allowing a domain).                                                         |
+| `-FolderPath`         | (none: flagged mail)                                    | e.g. `Inbox\PMO`. Without it, every **flagged** mail in the default mailbox (the To-Do search folder), by last-modified time. |
+| `-SinceDays`          | 14                                                      | Window: received in the last N days (folder), or modified in the last N days (flagged).                                       |
+| `-StatePath`          | `%LOCALAPPDATA%\AI OS\pmo-intake\outlook-seen.json`     | Its own seen-file, keyed by Message-ID (EntryID if none).                                                                     |
+| `-MaxItems`           | 200                                                     | Most files per run, newest first.                                                                                             |
+| `-DryRun` / `-WhatIf` | off                                                     | Print what would be written; write nothing, not even the seen-file.                                                           |
+| `-IgnoreSeen`         | off                                                     | Export again even if the seen-file says so (after allowing a domain).                                                         |
 
 Mapping: `sourceId` = Message-ID (else EntryID); `receivedAt` ISO 8601 with the
 local offset; `sender` name plus **SMTP** address (Exchange senders come back
@@ -245,7 +248,10 @@ code, so the machine's regional settings cannot change what is exported.
 ### Task Scheduler (documented only; nothing here has been registered)
 
 Run it by hand first (`-DryRun`, then for real). To run it every 15 minutes while
-you are signed in, from a normal (not elevated) PowerShell:
+you are signed in, from a normal (not elevated) PowerShell. The installer ships the
+scripts to `%LOCALAPPDATA%\Programs\AI OS\resources\app\pmo-intake\scripts\`: for
+an installed copy, point `$script` there (the `schtasks` one-liner for that is in
+[`HOW-TO-GET-STARTED.md`](./HOW-TO-GET-STARTED.md) section 7).
 
 ```powershell
 $script    = 'C:\Projects\AI OS\pmo-intake\scripts\Export-OutlookToInbox.ps1'

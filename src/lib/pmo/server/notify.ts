@@ -102,7 +102,7 @@ export async function previewDue(pmo: Pmo): Promise<DuePreview> {
   const blocked = blockedKeys(state, now.getTime());
   return {
     now: now.toISOString(),
-    today: istDate(now),
+    today: istDate(now, config.reminders.timeZone),
     pending: computeDue(todos, now, config.reminders).filter((n) => !blocked.has(n.key)),
     attention: attentionSummary(todos, now, config.reminders),
     prefs: config.reminders,

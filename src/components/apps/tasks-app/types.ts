@@ -345,6 +345,18 @@ export interface FlagsPayload {
   flags: FlagsFile | null;
 }
 
+/** Who the Outlook draft goes to, from GET /tasks/{id}/draft-summary. */
+export interface DraftSummary {
+  to: string[];
+  cc: string[];
+  subject: string;
+  attachments: string[];
+}
+
+export interface DraftSummaryPayload {
+  summary: DraftSummary | null;
+}
+
 export interface CellChange {
   person: string | null;
   date: string | null;

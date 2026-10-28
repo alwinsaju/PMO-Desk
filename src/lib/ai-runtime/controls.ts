@@ -15,6 +15,7 @@ import {
   type LoadedModel,
   type OllamaClient,
 } from "./core.ts";
+import type { ModelChoice, ModelResolver } from "./modelChoice.ts";
 import type { AiLogState } from "./modelWatch.ts";
 import type { AiRuntimeStatus } from "./types.ts";
 
@@ -37,6 +38,8 @@ export interface ControlsDeps {
   processState: () => { owned: boolean; adopted: boolean };
   /** The keep_alive being sent right now. */
   keepAlive: () => string;
+  /** Which model calls use (modelChoice.ts); without it, config.defaultModel. */
+  models?: ModelResolver;
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
   /** setTimeout stand-in for tests; the real one is unref'd. */
@@ -50,6 +53,13 @@ export function createRuntimeControls(deps: ControlsDeps) {
   const { config, client, queue, state } = deps;
   const { ring, tracker } = state;
   const now = deps.now ?? Date.now;
+  const choice = (): ModelChoice =>
+    deps.models?.current() ?? {
+      model: config.defaultModel,
+      source: "default",
+      preferred: config.defaultModel,
+    };
+  const activeModel = () => choice().model;
   const sleep =
     deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   const setTimer =
@@ -72,7 +82,7 @@ export function createRuntimeControls(deps: ControlsDeps) {
     } catch {
       return null;
     }
-    tracker.observe(models, { now: now(), defaultModel: config.defaultModel });
+    tracker.observe(models, { now: now(), defaultModel: activeModel() });
     scheduleWatch();
     return models;
   }
@@ -88,16 +98,23 @@ export function createRuntimeControls(deps: ControlsDeps) {
   }
 
   const isOurModelIn = (models: LoadedModel[]) =>
-    models.some((m) => sameModel(m.name, config.defaultModel));
+    models.some((m) => sameModel(m.name, activeModel()));
 
   /** Read-only snapshot. GETs only. */
   async function status(): Promise<AiRuntimeStatus> {
     const proc = deps.processState();
+    const modelFields = () => {
+      const { model, source, note } = choice();
+      return {
+        defaultModel: model,
+        modelSource: source,
+        ...(note ? { modelNote: note } : {}),
+      };
+    };
     const base = {
       ownedByUs: proc.owned,
       adopted: proc.adopted,
       baseUrl: config.baseUrl,
-      defaultModel: config.defaultModel,
       queue: { waiting: queue.waiting, active: queue.active },
       activeCalls: ring.activeCalls(),
       loadInFlight: state.loadInFlight,
@@ -120,6 +137,7 @@ export function createRuntimeControls(deps: ControlsDeps) {
       }
       return {
         ...base,
+        ...modelFields(),
         running: false,
         modelInstalled: null,
         modelLoaded: false,
@@ -137,16 +155,16 @@ export function createRuntimeControls(deps: ControlsDeps) {
       });
     }
 
-    const wanted = normalizeModelName(config.defaultModel);
-    const [installed, loaded] = await Promise.all([
-      client.listInstalled().then(
-        (names) => names.map(normalizeModelName),
-        () => null,
-      ),
+    const [installedRaw, loaded] = await Promise.all([
+      client.listInstalled().catch(() => null),
       observeModels(),
     ]);
+    deps.models?.observeInstalled(installedRaw);
+    const installed = installedRaw?.map(normalizeModelName) ?? null;
+    const wanted = normalizeModelName(activeModel());
     return {
       ...base,
+      ...modelFields(),
       running: true,
       version: probe.version,
       modelInstalled: installed === null ? null : installed.includes(wanted),
@@ -185,7 +203,7 @@ export function createRuntimeControls(deps: ControlsDeps) {
   function runWarm(log: { task: string; label: string }): void {
     state.loadInFlight = true;
     client
-      .warm(config.defaultModel, log)
+      .warm(activeModel(), log)
       // The failure is already in the log (call-end with its error code).
       .catch(() => undefined)
       .finally(() => {
@@ -214,7 +232,7 @@ export function createRuntimeControls(deps: ControlsDeps) {
     if (before === null) return { ok: false, reason: "Ollama is not running." };
     if (!isOurModelIn(before)) return { ok: true, state: "already-asleep" };
 
-    const model = config.defaultModel;
+    const model = activeModel();
     ring.emit({ kind: "unload-request", model, by: "user", keepAlive: 0 });
     tracker.expectUnload(model, "manual");
     try {

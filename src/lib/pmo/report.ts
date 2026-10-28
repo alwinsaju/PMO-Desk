@@ -25,8 +25,8 @@ import { addDays, isSnoozed, localParts, waitingState, zonedInstant } from "./du
 import { signoffNeedsAttention, signoffSummary } from "./signoffView.ts";
 import type { SignoffState } from "./signoff.ts";
 import { checkpointProgress, deriveStage } from "./todoLogic.ts";
-import { isValidTimeZone } from "./time.ts";
-import { DEFAULT_TIME_ZONE, type PmoConfig, type Priority, type Todo } from "./types.ts";
+import { safeTimeZone } from "./time.ts";
+import type { PmoConfig, Priority, Todo } from "./types.ts";
 
 export const REPORT_SCHEMA_ID = "pmo-report/1";
 /** Items shown per section in the text; the rest become "+N more". The full
@@ -126,9 +126,7 @@ export function rangeLabel(startDay: string, endDay: string): string {
 export type PeriodResult =
   { ok: true; period: ReportPeriod } | { ok: false; reason: string };
 
-export function safeTimeZone(timeZone: string | undefined): string {
-  return timeZone && isValidTimeZone(timeZone) ? timeZone : DEFAULT_TIME_ZONE;
-}
+export { safeTimeZone };
 
 /** Turn the person's choice into days and instants. A custom range that is not a
  *  real range (backwards, in the future, too long, too old) says why. */

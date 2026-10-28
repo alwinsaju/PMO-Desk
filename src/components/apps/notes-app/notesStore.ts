@@ -1,5 +1,22 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { createJSONStorage, persist } from "zustand/middleware";
+import { createServerBackedStorage } from "@/lib/persistedStorage";
+import {
+  clearSamples as clearSampleNotes,
+  migrateNotesState,
+  removeNote,
+  restoreDeleted,
+  restorePreviousRevision,
+  seedFirstRun,
+  updateNoteByAssistant,
+  updateNoteByUser,
+  type DeletedBy,
+  type DeletedNote,
+  type Note,
+} from "./notesLogic";
+
+export type { DeletedBy, DeletedNote, Note } from "./notesLogic";
+export { noteTitle, notePreview } from "./notesLogic";
 
 /**
  * No `"use client"` here, deliberately — same reasoning as
@@ -13,7 +30,9 @@ import { persist } from "zustand/middleware";
  * shared (every open Notes window reads/writes the same data, replacing the
  * old per-instance `useState` that used to live in NotesApp.tsx, seeded
  * from this file's `initialNotes`) and genuinely persisted (survives
- * closing the window and reloading the page, via `persist` + `localStorage`)
+ * closing the window and reloading the page, via `persist` +
+ * `createServerBackedStorage`: the server's data folder, with localStorage
+ * as the immediate copy and fallback)
  * — the exact same shape as `installedAppsStore.ts`/`pinnedAppsStore.ts`.
  *
  * The reason this needed to happen at all: a real AI action needs a real,
@@ -31,65 +50,11 @@ import { persist } from "zustand/middleware";
  * this replaces: its title is just the first line of `content` (see
  * `noteTitle` below), so there's nothing to keep in sync when the content
  * is edited — `createNote`/`updateNote` both only ever take `content`.
+ *
+ * Pure logic (titles, undo, revisions, sample seeding) lives in
+ * `notesLogic.ts`; the sample notes are added exactly once, after the first
+ * hydration finds `samplesSeeded` false.
  */
-export interface Note {
-  id: string;
-  content: string;
-  updatedLabel: string;
-}
-
-/** The note's display title — its content's first non-empty line, or a
- *  fallback for a brand-new, still-empty note. Also what the AI command
- *  route's "existing notes" context uses (id + THIS, never full content —
- *  see route.ts) so the model can reference a specific note by id. */
-export function noteTitle(note: Pick<Note, "content">): string {
-  const firstLine = note.content.split("\n")[0]?.trim();
-  return firstLine || "New Note";
-}
-
-/** Every line after the first, collapsed to one line, for the sidebar's
- *  preview snippet. */
-export function notePreview(note: Pick<Note, "content">): string {
-  const [, ...rest] = note.content.split("\n");
-  const preview = rest.join(" ").trim();
-  return preview || "No additional text";
-}
-
-/**
- * Seed data for a brand-new browser profile that has never persisted its
- * own notes yet — i.e. this only ever matters on the very first load.
- * `persist` (below) writes real state to `localStorage` the moment any
- * note action fires, and every load after that hydrates from THAT instead
- * — same mechanism as every other persisted store in this codebase (see
- * `installedAppsStore.ts`), so a returning user's own notes always win over
- * this seed rather than being clobbered by it on every reload.
- */
-const initialNotes: Note[] = [
-  {
-    id: "welcome",
-    content:
-      "Welcome to Notes\n\nThis is a mock notes app — everything you type is kept in memory for this window only, and nothing leaves your browser tab. Select a note on the left, or create a new one with the + button.",
-    updatedLabel: "Aug 25, 2026",
-  },
-  {
-    id: "grocery-list",
-    content: "Grocery list\n\nOats\nCoffee\nSpinach\nLemon\nOlive oil\nRice",
-    updatedLabel: "Aug 22, 2026",
-  },
-  {
-    id: "book-notes",
-    content:
-      "Reading notes — Project Hail Mary\n\nLoved the pacing on the chemistry problem-solving chapters. Worth rereading the coma-recovery opening once I've finished the rest.",
-    updatedLabel: "Aug 18, 2026",
-  },
-  {
-    id: "standup",
-    content:
-      "Standup talking points\n\n- Shipped the window drag/resize perf pass\n- Next: write up the app-registry gotchas\n- Blocked on: nothing right now",
-    updatedLabel: "Aug 12, 2026",
-  },
-];
-
 function generateNoteId(): string {
   return typeof crypto !== "undefined" && "randomUUID" in crypto
     ? crypto.randomUUID()
@@ -98,22 +63,35 @@ function generateNoteId(): string {
 
 export interface NotesStoreState {
   notes: Note[];
+  /** True once the sample notes were added (first run) — never re-seeds. */
+  samplesSeeded: boolean;
+  /** Last deleted note (user or assistant), restorable by `undoDelete`.
+   *  In-memory only; the UI hides the offer after UNDO_WINDOW_MS. */
+  lastDeleted: DeletedNote | null;
   /** Prepends a new note and returns it. `content` is required (pass ""
    *  for the sidebar's "+" empty-note affordance) — there's no separate
    *  title parameter, per this file's title-from-first-line convention. */
   createNote: (content: string) => Note;
-  /** Replaces a note's entire content (not a merge/append) — matches the
-   *  textarea's own plain onChange semantics from before this was lifted
-   *  into a store. No-ops if `id` doesn't match an existing note. */
-  updateNote: (id: string, content: string) => void;
-  /** No-ops if `id` doesn't match an existing note. */
-  deleteNote: (id: string) => void;
+  /** Replaces a note's entire content (not a merge/append). An update made
+   *  `by: "assistant"` first saves the previous body as a revision (max 5).
+   *  No-ops if `id` doesn't match an existing note. */
+  updateNote: (id: string, content: string, by?: DeletedBy) => void;
+  /** Soft delete: remembered in `lastDeleted`. No-ops if `id` is unknown. */
+  deleteNote: (id: string, by?: DeletedBy) => void;
+  undoDelete: () => void;
+  dismissUndo: () => void;
+  /** Puts back the newest body the assistant replaced. */
+  restoreRevision: (id: string) => void;
+  clearSamples: () => void;
+  seedSamples: () => void;
 }
 
 export const useNotesStore = create<NotesStoreState>()(
   persist(
     (set) => ({
-      notes: initialNotes,
+      notes: [],
+      samplesSeeded: false,
+      lastDeleted: null,
 
       createNote: (content) => {
         const note: Note = {
@@ -125,21 +103,55 @@ export const useNotesStore = create<NotesStoreState>()(
         return note;
       },
 
-      updateNote: (id, content) => {
+      updateNote: (id, content, by = "user") => {
+        set((state) => ({
+          notes: state.notes.map((note) => {
+            if (note.id !== id) return note;
+            return by === "assistant"
+              ? updateNoteByAssistant(note, content, "Just now")
+              : updateNoteByUser(note, content, "Just now");
+          }),
+        }));
+      },
+
+      deleteNote: (id, by = "user") => {
+        set((state) => {
+          const { notes, deleted } = removeNote(state.notes, id, by, Date.now());
+          return deleted ? { notes, lastDeleted: deleted } : state;
+        });
+      },
+
+      undoDelete: () => {
+        set((state) =>
+          state.lastDeleted
+            ? { notes: restoreDeleted(state.notes, state.lastDeleted), lastDeleted: null }
+            : state,
+        );
+      },
+
+      dismissUndo: () =>
+        set((state) => (state.lastDeleted ? { lastDeleted: null } : state)),
+
+      restoreRevision: (id) => {
         set((state) => ({
           notes: state.notes.map((note) =>
-            note.id === id ? { ...note, content, updatedLabel: "Just now" } : note,
+            note.id === id ? restorePreviousRevision(note, "Just now") : note,
           ),
         }));
       },
 
-      deleteNote: (id) => {
-        set((state) => ({ notes: state.notes.filter((note) => note.id !== id) }));
-      },
+      clearSamples: () => set((state) => ({ notes: clearSampleNotes(state.notes) })),
+
+      seedSamples: () => set((state) => seedFirstRun(state)),
     }),
     {
       name: "notes-app:notes",
-      partialize: (state) => ({ notes: state.notes }),
+      version: 1,
+      storage: createJSONStorage(() => createServerBackedStorage("notes")),
+      partialize: (state) => ({ notes: state.notes, samplesSeeded: state.samplesSeeded }),
+      migrate: (persisted, version) =>
+        version === 0 ? migrateNotesState(persisted) : persisted,
+      onRehydrateStorage: () => (state) => state?.seedSamples(),
     },
   ),
 );
@@ -162,10 +174,10 @@ export function createNote(content: string): Note {
   return useNotesStore.getState().createNote(content);
 }
 
-export function updateNote(id: string, content: string): void {
-  useNotesStore.getState().updateNote(id, content);
+export function updateNote(id: string, content: string, by: DeletedBy = "user"): void {
+  useNotesStore.getState().updateNote(id, content, by);
 }
 
-export function deleteNote(id: string): void {
-  useNotesStore.getState().deleteNote(id);
+export function deleteNote(id: string, by: DeletedBy = "user"): void {
+  useNotesStore.getState().deleteNote(id, by);
 }

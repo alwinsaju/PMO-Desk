@@ -17,6 +17,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
+import { waitFor } from "../../testUtils.mjs";
 import {
   approveProposal,
   createManualTodo,
@@ -26,12 +27,14 @@ import {
   stageEdits,
   updateConfig,
 } from "./actions.ts";
-import { MAX_PARSE_FAILURES } from "./ingest.ts";
+import { HARD_MAX_FILE_BYTES, MAX_BODY_CHARS, MAX_PARSE_FAILURES } from "./ingest.ts";
 import { submitManualIntake } from "./manual.ts";
 import { purgeExpired } from "./retention.ts";
 import { Mutex, writeJsonAtomic } from "./fsx.ts";
 import { createPmo } from "./create.ts";
+import { developerConfig } from "../developerDefaults.ts";
 import { createStubGenerator } from "./stubGenerator.ts";
+import { nextTodoDraft } from "../recurrence.ts";
 import { draftFromAi, effectiveDraft } from "../todoLogic.ts";
 import { AiStructuredSchema } from "../types.ts";
 
@@ -101,7 +104,13 @@ beforeEach(async () => {
   inboxDir = await mkdtemp(path.join(os.tmpdir(), "pmo-inbox-"));
   clock = new Date("2026-10-23T05:00:00.000Z"); // Friday 10:30 IST (fixed: the draft's dates are checked against "today")
   ai = fakeModel();
-  pmo = await createPmo({ dataDir, inboxDir, generator: ai, now: () => clock });
+  pmo = await createPmo({
+    dataDir,
+    inboxDir,
+    seedConfig: developerConfig(),
+    generator: ai,
+    now: () => clock,
+  });
 });
 
 afterEach(async () => {
@@ -121,8 +130,17 @@ describe("several tasks in one message", () => {
   const quote = "send me the consolidated RAID log";
   const three = () => [
     aiOutput({ title: "Send the weekly report to Rahul", quote }),
-    aiOutput({ title: "Book the room for Thursday's review", quote, dueAt: "2026-10-29" }),
-    aiOutput({ title: "Chase Dev about the invoice", quote, dueAt: null, dueBasis: "none" }),
+    aiOutput({
+      title: "Book the room for Thursday's review",
+      quote,
+      dueAt: "2026-10-29",
+    }),
+    aiOutput({
+      title: "Chase Dev about the invoice",
+      quote,
+      dueAt: null,
+      dueBasis: "none",
+    }),
   ];
 
   it("turns each independent task into its own ready review item linked to the same message", async () => {
@@ -156,7 +174,13 @@ describe("several tasks in one message", () => {
     for (const answer of [() => [aiOutput()], () => aiOutput()]) {
       await rm(dataDir, { recursive: true, force: true });
       dataDir = await mkdtemp(path.join(os.tmpdir(), "pmo-data-"));
-      pmo = await createPmo({ dataDir, inboxDir, generator: ai, now: () => clock });
+      pmo = await createPmo({
+        dataDir,
+        inboxDir,
+        seedConfig: developerConfig(),
+        generator: ai,
+        now: () => clock,
+      });
       ai.handler = async () => answer();
       await drop("a.json", await example("outlook-task.json"));
       await scanAndStructure();
@@ -177,7 +201,7 @@ describe("several tasks in one message", () => {
     const list = await proposals();
     assert.equal(list.length, 1);
     assert.equal(list[0].part ?? null, null);
-    assert.match(list[0].ai.adjustments.join(" "), /near-identical/);
+    assert.match(list[0].ai.adjustments.join(" "), /Merged 1 identical task/);
   });
 
   it("keeps the raw message until every split task is decided", async () => {
@@ -305,14 +329,16 @@ describe("inbox ingest", () => {
     assert.equal((await proposals()).length, 1);
   });
 
-  it("skips files that are too new or too large, and non-JSON files", async () => {
+  it("skips files that are too new, and leaves other JSON and non-JSON files alone", async () => {
     await drop("fresh.json", await example("outlook-task.json"), 500);
     await drop("big.json", JSON.stringify({ pad: "x".repeat(1_100_000) }));
     await drop("note.txt", "ignore me");
     await writeFile(path.join(inboxDir, "half.json.tmp"), "{");
     const report = await pmo.ingestor.scan();
     assert.equal(report.ingested, 0);
-    assert.equal(report.skipped, 2);
+    assert.equal(report.skipped, 1);
+    assert.deepEqual(report.foreign, ["big.json", "note.txt"]);
+    assert.deepEqual(report.oversized, []);
     assert.equal((await readdir(inboxDir)).length, 4);
 
     // Once the fresh file has aged it is picked up.
@@ -320,8 +346,61 @@ describe("inbox ingest", () => {
     assert.equal((await pmo.ingestor.scan()).ingested, 1);
   });
 
+  it("never moves or deletes JSON that is not a PMO message, however often it scans", async () => {
+    const settings = JSON.stringify({ theme: "dark", schema: "vscode/1" });
+    await drop("settings.json", settings);
+    await drop("list.json", "[1, 2, 3]");
+    await drop("broken-other.json", "{ not json");
+    for (let i = 0; i <= MAX_PARSE_FAILURES + 1; i++) {
+      const report = await pmo.ingestor.scan();
+      assert.equal(report.rejected, 0);
+      assert.equal(report.foreign.length, 3);
+    }
+    assert.deepEqual((await readdir(inboxDir)).sort(), [
+      "broken-other.json",
+      "list.json",
+      "settings.json",
+    ]);
+    assert.equal(await readFile(path.join(inboxDir, "settings.json"), "utf8"), settings);
+    assert.equal(await pmo.store.countRejectedFiles(), 0);
+  });
+
+  it("reports a file over the hard limit as too large and leaves it where it is", async () => {
+    await writeFile(
+      path.join(inboxDir, "huge.json"),
+      Buffer.alloc(HARD_MAX_FILE_BYTES + 1, 0x20),
+    );
+    await utimes(path.join(inboxDir, "huge.json"), new Date(0), new Date(0));
+    const report = await pmo.ingestor.scan();
+    assert.deepEqual(report.oversized, ["huge.json"]);
+    assert.equal(report.skipped, 1);
+    assert.deepEqual(await readdir(inboxDir), ["huge.json"]);
+  });
+
+  it("keeps the first million characters of a very long body and flags the proposal", async () => {
+    const intake = await example("outlook-task.json");
+    intake.body.text = `${"A".repeat(1_500_000)} tail`;
+    await drop("long.json", intake);
+    const report = await pmo.ingestor.scan();
+    assert.equal(report.ingested, 1);
+    assert.deepEqual(report.oversized, []);
+    const [proposal] = await proposals();
+    assert.equal(proposal.messageShortened, true);
+    const raw = await pmo.store.readRaw(proposal.intakeId);
+    assert.equal(raw.intake.body.text.length, MAX_BODY_CHARS);
+
+    const plain = await example("outlook-fyi.json");
+    await drop("short.json", plain);
+    await pmo.ingestor.scan();
+    const others = (await proposals()).filter((p) => p.id !== proposal.id);
+    assert.ok(others.every((p) => !p.messageShortened));
+  });
+
   it("parks an unparsable file in rejected-files after repeated failed scans", async () => {
-    await drop("bad.json", "{ not json");
+    await drop(
+      "bad.json",
+      '{ "schema": "pmo-intake/1", "source": "outlook", "subject": ',
+    );
     await drop("wrong.json", { schema: "pmo-intake/1", source: "outlook" });
     for (let i = 1; i < MAX_PARSE_FAILURES; i++) {
       const report = await pmo.ingestor.scan();
@@ -407,6 +486,24 @@ describe("structuring", () => {
     const [proposal] = await proposals();
     assert.equal(proposal.status, "ready");
     assert.equal(proposal.quoteVerified, false);
+  });
+
+  it("keeps a bottom-posted request for the model and marks the proposal", async () => {
+    const intake = await example("outlook-task.json");
+    intake.body.text =
+      "Hi Alwin,\n\nOn Wed, 21 Oct 2026 at 16:40, Pat Sample wrote:\n> Status please\n\nCould you please send me the consolidated RAID log by Tuesday 27 October?\n\nThanks";
+    await drop("a.json", intake);
+    await scanAndStructure();
+    const [proposal] = await proposals();
+    assert.equal(proposal.replyBelowQuote, true);
+    assert.ok(ai.calls[0].prompt.includes("consolidated RAID log"));
+  });
+
+  it("does not mark an ordinary top-posted message", async () => {
+    await drop("a.json", await example("outlook-task.json"));
+    await scanAndStructure();
+    const [proposal] = await proposals();
+    assert.notEqual(proposal.replyBelowQuote, true);
   });
 
   it("trims a quote that runs past the message and still verifies the part that is real", async () => {
@@ -590,7 +687,7 @@ describe("structuring", () => {
     await drop("a.json", await example("outlook-task.json"));
     await pmo.ingestor.scan();
     await pmo.worker.kick();
-    await new Promise((r) => setTimeout(r, 20));
+    await waitFor(async () => (await proposals())[0]?.status === "structuring");
     const [proposal] = await proposals();
     assert.equal(proposal.status, "structuring");
     await rejectProposal(pmo, proposal.id);
@@ -838,6 +935,86 @@ describe("review gate", () => {
     );
   });
 
+  describe("marking a repeating to-do done offers the next one", () => {
+    const approveWith = async (patch) => {
+      const proposal = await readyProposal({ checkpointTemplate: "simple" });
+      const approved = await approveProposal(pmo, proposal.id, {
+        draft: { ...effectiveDraft(proposal), ...patch },
+      });
+      return approved.todo;
+    };
+
+    it("returns nextOccurrence { dueAt, title } on done, and creates nothing by itself", async () => {
+      const todo = await approveWith({ recurrence: "weekly", dueAt: "2026-10-23" });
+      const before = (await pmo.store.listAllTodos()).length;
+      const done = await patchTodo(pmo, todo.id, { status: "done" });
+      assert.equal(done.ok, true);
+      assert.deepEqual(done.nextOccurrence, { dueAt: "2026-10-30", title: todo.title });
+      assert.equal((await pmo.store.listAllTodos()).length, before, "never auto-created");
+    });
+
+    it("uses the configured time zone for 'today' when there is no due date", async () => {
+      const todo = await approveWith({ recurrence: "daily", dueAt: null });
+      const reminders = (await pmo.store.loadConfig()).reminders;
+      const set = await updateConfig(pmo, {
+        reminders: { ...reminders, timeZone: "America/Los_Angeles" },
+      });
+      assert.equal(set.ok, true);
+      // 05:00Z is still the 22nd in Los Angeles.
+      const done = await patchTodo(pmo, todo.id, { status: "done" });
+      assert.equal(done.nextOccurrence.dueAt, "2026-10-23");
+    });
+
+    it("is null for a one-off, an unreadable recurrence, other edits and cancelling", async () => {
+      const oneOff = await approveWith({ recurrence: null });
+      assert.equal(
+        (await patchTodo(pmo, oneOff.id, { status: "done" })).nextOccurrence,
+        null,
+      );
+      const odd = await approveWith({ recurrence: "when the moon is full" });
+      assert.equal(
+        (await patchTodo(pmo, odd.id, { status: "done" })).nextOccurrence,
+        null,
+      );
+      const weekly = await approveWith({ recurrence: "weekly", dueAt: "2026-10-23" });
+      assert.equal(
+        (await patchTodo(pmo, weekly.id, { title: "T" })).nextOccurrence,
+        null,
+      );
+      assert.equal(
+        (await patchTodo(pmo, weekly.id, { status: "cancelled" })).nextOccurrence,
+        null,
+      );
+    });
+
+    it("is not offered again when an already-done to-do is patched", async () => {
+      const todo = await approveWith({ recurrence: "weekly", dueAt: "2026-10-23" });
+      await patchTodo(pmo, todo.id, { status: "done" });
+      const again = await patchTodo(pmo, todo.id, { status: "done" });
+      assert.equal(again.nextOccurrence, null);
+    });
+
+    it("the offered date creates the next round through the ordinary create action", async () => {
+      const todo = await approveWith({
+        recurrence: "weekly",
+        dueAt: "2026-10-23",
+        tags: ["status"],
+        requester: { name: "Pat Sample", email: "pat@deloitte.com" },
+      });
+      const done = await patchTodo(pmo, todo.id, { status: "done" });
+      const created = await createManualTodo(pmo, {
+        draft: nextTodoDraft(done.todo, done.nextOccurrence.dueAt),
+      });
+      assert.equal(created.ok, true);
+      assert.equal(created.todo.dueAt, "2026-10-30");
+      assert.equal(created.todo.status, "open");
+      assert.deepEqual(created.todo.tags, ["status"]);
+      assert.deepEqual(created.todo.requester, todo.requester);
+      assert.ok(created.todo.checkpoints.every((c) => c.state === "pending"));
+      assert.equal(created.todo.recurrence, "weekly");
+    });
+  });
+
   it("serialises overlapping patches so none is lost", async () => {
     const proposal = await readyProposal();
     const { todo } = await approveProposal(pmo, proposal.id, {
@@ -881,10 +1058,14 @@ describe("config", () => {
     assert.equal((await updateConfig(pmo, { blockedDomains: "x" })).ok, false);
   });
 
-  it("falls back to the strict defaults if config.json is damaged", async () => {
+  it("falls back to the neutral defaults if config.json is damaged (setup not complete, so nothing is ingested)", async () => {
     await writeFile(path.join(dataDir, "config.json"), "{ broken");
     const config = await pmo.store.loadConfig();
-    assert.deepEqual(config.blockedDomains, ["takeda.com"]);
+    assert.equal(config.setupComplete, false);
+    assert.deepEqual(config.blockedDomains, []);
+    assert.deepEqual(config.allowedSenderDomains, []);
+    assert.deepEqual(config.me, { names: [], emails: [] });
+    assert.equal(config.inboxDir, "");
   });
 });
 
@@ -1089,10 +1270,14 @@ describe("retention", () => {
     assert.equal(await pmo.store.readRaw(done.intakeId), null);
     assert.equal(await pmo.store.readRaw(rejected.intakeId), null);
 
-    // The records themselves stay (only the text is removed), and a year on the
-    // open to-do's message is still there.
-    assert.equal((await pmo.store.listTodos()).length, 2);
-    assert.equal((await proposals()).length, 4);
+    // The records themselves stay while their message is still in the dedupe
+    // index (only the text is removed; decided ones may have moved to archive/).
+    // Past the retention window the decided ones go with their index entry.
+    assert.equal((await pmo.store.listAllTodos()).length, 2);
+    assert.equal(
+      (await proposals()).length + (await pmo.store.listArchivedProposals()).length,
+      2,
+    );
     setClock(400);
     report = await purgeExpired(pmo.store, { now: clock, retentionDays: 90 });
     assert.equal(report.rawDeleted, 0);
@@ -1213,31 +1398,48 @@ describe("retention", () => {
     assert.deepEqual(await readdir(dir), []);
   });
 
-  it("is idempotent, and never touches the audit trail, the dedupe index or the config", async () => {
+  it("is idempotent, never touches the audit trail or the config, and prunes only expired dedupe entries", async () => {
     await fourDecisions();
     setClock(200);
     const auditBefore = await readFile(path.join(dataDir, "audit.jsonl"), "utf8");
-    const seenBefore = await readFile(path.join(dataDir, "state", "seen.json"), "utf8");
+    const seenBefore = JSON.parse(
+      await readFile(path.join(dataDir, "state", "seen.json"), "utf8"),
+    );
     const configBefore = await readFile(path.join(dataDir, "config.json"), "utf8");
+    assert.equal(Object.keys(seenBefore).length, 4);
 
     const first = await purgeExpired(pmo.store, { now: clock, retentionDays: 90 });
     assert.ok(first.rawDeleted > 0 || first.logLinesDropped > 0);
+    // The decided messages are forgotten with their archived records; the one
+    // behind the open to-do and the undecided one are not.
+    assert.equal(first.seenPruned, 2);
+    assert.equal(first.archivedProposalsDeleted, 2);
     const second = await purgeExpired(pmo.store, { now: clock, retentionDays: 90 });
     assert.equal(second.rawDeleted, 0);
     assert.equal(second.logLinesDropped, 0);
     assert.equal(second.rejectedFilesDeleted, 0);
     assert.equal(second.quarantineDeleted, 0);
+    assert.equal(second.seenPruned, 0);
+    assert.equal(second.archivedProposalsDeleted, 0);
     assert.deepEqual(second.errors, []);
 
     assert.equal(await readFile(path.join(dataDir, "audit.jsonl"), "utf8"), auditBefore);
-    assert.equal(
-      await readFile(path.join(dataDir, "state", "seen.json"), "utf8"),
-      seenBefore,
-    );
     assert.equal(await readFile(path.join(dataDir, "config.json"), "utf8"), configBefore);
-    // A message whose text was purged is still a duplicate if it arrives again.
-    await drop("again.json", await intakeWith("rejected-1"));
+    const seenAfter = JSON.parse(
+      await readFile(path.join(dataDir, "state", "seen.json"), "utf8"),
+    );
+    assert.equal(Object.keys(seenAfter).length, 2);
+    assert.ok(
+      Object.keys(seenAfter).every((key) => key in seenBefore),
+      "nothing was added",
+    );
+    // A message still behind an open to-do stays a duplicate; an expired one is new again.
+    await drop("open-again.json", await intakeWith("open-1"));
     assert.equal((await pmo.ingestor.scan()).duplicates, 1);
+    await drop("again.json", await intakeWith("rejected-1"));
+    const rescan = await pmo.ingestor.scan();
+    assert.equal(rescan.duplicates, 0);
+    assert.equal(rescan.ingested, 1);
   });
 
   it("uses 90 days when the setting is missing, and is exposed through the config", async () => {
@@ -1342,7 +1544,10 @@ describe("prompt v3: today, the app's clean-up, recurrence", () => {
     // What the review form starts from.
     assert.equal(proposal.draft.dueAt, null);
     assert.equal(proposal.draft.dueBasis, "none");
-    assert.match(proposal.draft.description, /Stated deadline 2026-10-20 had already passed/);
+    assert.match(
+      proposal.draft.description,
+      /Stated deadline 2026-10-20 had already passed/,
+    );
     assert.equal(proposal.draft.priority, "normal");
     assert.equal(proposal.draft.waitingOn, null);
     assert.equal(proposal.draft.actionItems.length, 1);
@@ -1363,7 +1568,9 @@ describe("prompt v3: today, the app's clean-up, recurrence", () => {
     await readyFrom({ priority: "high", dueAt: "2026-10-20", dueBasis: "explicit" });
     const log = await readFile(path.join(dataDir, "logs", "ai-calls.jsonl"), "utf8");
     assert.ok(!/Priority lowered|had already passed|Send the RAID log|adjust/i.test(log));
-    const audit = await readFile(path.join(dataDir, "audit.jsonl"), "utf8").catch(() => "");
+    const audit = await readFile(path.join(dataDir, "audit.jsonl"), "utf8").catch(
+      () => "",
+    );
     assert.ok(!/Priority lowered|had already passed/.test(audit));
   });
 
@@ -1371,7 +1578,8 @@ describe("prompt v3: today, the app's clean-up, recurrence", () => {
     const source = await readFile(path.join(here, "structure.ts"), "utf8");
     const blocks = source.match(/logAiCall\(\{[^}]*\}\)/g) ?? [];
     assert.ok(blocks.length >= 2);
-    for (const block of blocks) assert.doesNotMatch(block, /adjust|draft|rawDraft|title|description|quote/i);
+    for (const block of blocks)
+      assert.doesNotMatch(block, /adjust|draft|rawDraft|title|description|quote/i);
     assert.doesNotMatch(source, /console\.(log|info)\([^)]*(adjust|draft)/);
   });
 
@@ -1385,11 +1593,16 @@ describe("prompt v3: today, the app's clean-up, recurrence", () => {
     assert.equal(effectiveDraft(proposal).recurrence, "weekly, before Tuesday");
 
     // Unedited: audited as not edited (recurrence is part of the snapshot).
-    const result = await approveProposal(pmo, proposal.id, { draft: effectiveDraft(proposal) });
+    const result = await approveProposal(pmo, proposal.id, {
+      draft: effectiveDraft(proposal),
+    });
     assert.equal(result.ok, true);
     assert.equal(result.todo.recurrence, "weekly, before Tuesday");
     assert.equal(result.todo.dueAt, null);
-    assert.equal((await pmo.store.getTodo(result.todo.id)).recurrence, "weekly, before Tuesday");
+    assert.equal(
+      (await pmo.store.getTodo(result.todo.id)).recurrence,
+      "weekly, before Tuesday",
+    );
     const audit = (await readFile(path.join(dataDir, "audit.jsonl"), "utf8"))
       .trim()
       .split("\n")
@@ -1442,7 +1655,10 @@ describe("prompt v3: today, the app's clean-up, recurrence", () => {
     await drop("w.json", {
       ...base,
       sourceId: "weekly",
-      body: { text: "Please update the slide every week before 2026-10-27.", format: "text" },
+      body: {
+        text: "Please update the slide every week before 2026-10-27.",
+        format: "text",
+      },
     });
     await stub.ingestor.scan();
     await stub.worker.kick();

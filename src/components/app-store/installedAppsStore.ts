@@ -1,5 +1,6 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { createJSONStorage, persist } from "zustand/middleware";
+import { createServerBackedStorage } from "@/lib/persistedStorage";
 
 /**
  * No `"use client"` here, deliberately — same reasoning as `windowStore.ts`
@@ -73,6 +74,7 @@ export const useInstalledAppsStore = create<InstalledAppsStoreState>()(
     }),
     {
       name: "app-store:installed-apps",
+      storage: createJSONStorage(() => createServerBackedStorage("installed-apps")),
       partialize: (state) => ({ installedIds: state.installedIds }),
     },
   ),

@@ -7,15 +7,26 @@ const {
   dialog,
   ipcMain,
   nativeImage,
+  powerMonitor,
+  session,
   shell,
 } = require("electron");
 const { spawn } = require("node:child_process");
-const { appendFileSync, existsSync } = require("node:fs");
+const fs = require("node:fs");
+const { existsSync } = fs;
+const { createLogWriter } = require("./log-rotate.cjs");
 const net = require("node:net");
 const path = require("node:path");
 const displaySettings = require("./display-settings.cjs");
 const launchConfig = require("./launch-config.cjs");
+const childEnv = require("./child-env.cjs");
+const { describeExitCode } = require("./exit-code.cjs");
+const portRetry = require("./port-retry.cjs");
 const pmoNotifier = require("./pmo-notifier.cjs");
+const recoveryPolicy = require("./renderer-recovery.cjs");
+const singleFlight = require("./single-flight.cjs");
+const trayPolicy = require("./tray-policy.cjs");
+const urlGuard = require("./url-guard.cjs");
 
 // Windows toasts and the taskbar group are keyed by this id; it must match
 // build.appId in package.json (the installer registers the same one).
@@ -35,7 +46,7 @@ if (displaySettings.shouldDisableHardwareAcceleration(launchedDisplay)) {
 const HOST = "127.0.0.1";
 const PREFERRED_PORT = 3100;
 const PORT_SPAN = 100;
-const TASKS_ENGINE_START_TIMEOUT_MS = 60_000;
+const TASKS_ENGINE_START_TIMEOUT_MS = 90_000;
 const SERVER_STOP_TIMEOUT_MS = 10_000;
 const PORT_FREE_TIMEOUT_MS = 10_000;
 const OUTPUT_TAIL_LINES = 25;
@@ -45,6 +56,14 @@ let splashWindow;
 let isQuitting = false;
 let port;
 let appUrl;
+/** Timestamps of recent renderer crashes (crash-loop detection) and whether the
+ *  "not responding" dialog is already up. */
+let rendererGoneTimes = [];
+let unresponsiveDialogOpen = false;
+/** Windows is signing out / shutting down (set by the session events below). */
+let sessionEnding = false;
+let sessionEndConfirmed = false;
+let tlsOverrideLogged = false;
 
 // PMO reminders (see pmo-notifier.cjs): the poller, the optional tray icon, and
 // the "open this to-do" request a clicked notification leaves for the page.
@@ -73,16 +92,20 @@ let launch;
  *   child:     the spawned process
  *   mode:      the mode it was started in
  *   ready:     true once it answered; a crash after that is offered a restart
- *   restarting: an intentional restart is in progress (exits are expected)
  *   output:    the last few lines it printed, for crash dialogs
+ * (An intentional stop/restart is tracked by `uiRestarting` / `restartGate`
+ * below: they must outlive this object, which startUiServer replaces.)
  */
 let ui = {
   child: undefined,
   mode: "bundled",
   ready: false,
-  restarting: false,
   output: [],
 };
+/** An intentional stop/restart is under way (child exits are expected). */
+let uiRestarting = false;
+/** Restarts run one at a time; a second request joins the one in flight. */
+const restartGate = singleFlight.createSingleFlight();
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -120,11 +143,23 @@ async function startDesktopApp() {
   port = await findAvailablePort();
   appUrl = `http://${HOST}:${port}`;
 
-  if (launchConfig.isLiveMode(launch.mode)) {
-    showSplash();
-  }
+  installPermissionHandlers();
+  // 'shutdown' is emitted on macOS/Linux only; Windows uses the window's
+  // query-session-end / session-end (createWindow).
+  powerMonitor.on("shutdown", () => {
+    markSessionEnding();
+    app.quit();
+  });
+  showSplash();
   await startUiServerWithFallback();
-  await startTasksEngine();
+  // The engine is optional for the shell: a slow or failed start must not keep the window
+  // (and the Setup screen that diagnoses it) from opening. The Tasks app re-requests a start.
+  void startTasksEngine().catch((error) => {
+    desktopLog(
+      `Tasks engine did not start: ${error instanceof Error ? error.message : error}`,
+      "error",
+    );
+  });
   buildMenu();
   createWindow();
   closeSplash();
@@ -140,7 +175,7 @@ async function startDesktopApp() {
 async function startUiServerWithFallback() {
   if (launchConfig.isLiveMode(launch.mode)) {
     try {
-      await startUiServer(launch.mode);
+      await startUiServerRetryingPort(launch.mode);
       return;
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
@@ -159,7 +194,39 @@ async function startUiServerWithFallback() {
       appUrl = `http://${HOST}:${port}`;
     }
   }
-  await startUiServer("bundled");
+  await startUiServerRetryingPort("bundled");
+}
+
+/** startUiServer, retried once on a fresh port when its port was taken or it
+ *  died before answering (port-retry.cjs): another instance may hold the port. */
+async function startUiServerRetryingPort(mode) {
+  try {
+    await startUiServer(mode);
+  } catch (error) {
+    const retry = portRetry.shouldRetryOnFreshPort({
+      output: ui.output,
+      exitedBeforeReady: Boolean(error && error.exitedBeforeReady),
+    });
+    if (!retry) {
+      throw error;
+    }
+    const failedPort = port;
+    desktopLog(
+      `The UI server could not start on port ${failedPort}: ${
+        error instanceof Error ? error.message : String(error)
+      } Retrying once on a fresh port.`,
+      "error",
+    );
+    await stopUiServer();
+    port = await launchConfig.pickPort(
+      async (candidate) => candidate !== failedPort && (await isPortFree(candidate)),
+      PREFERRED_PORT,
+      PORT_SPAN,
+    );
+    appUrl = `http://${HOST}:${port}`;
+    desktopLog(`Retrying the UI server on port ${port}.`);
+    await startUiServer(mode);
+  }
 }
 
 async function startUiServer(mode) {
@@ -178,22 +245,12 @@ async function startUiServer(mode) {
   const child = spawn(process.execPath, args, {
     cwd: root,
     detached: false,
-    env: {
-      ...process.env,
-      AI_OS_DESKTOP_MODE: "1",
-      // PMO To-Do keeps its records here: outside the install dir and OneDrive.
-      AI_OS_PMO_DATA_DIR: path.join(app.getPath("userData"), "pmo"),
-      // The server mirrors the tray setting here for this shell to read.
-      AI_OS_DESKTOP_PREFS_FILE: desktopPrefsFile(),
-      ...tasksEngineEnv(),
-      ELECTRON_RUN_AS_NODE: "1",
-      NODE_ENV: mode === "live-dev" ? "development" : "production",
-    },
+    env: uiServerEnv(mode),
     stdio: ["ignore", "pipe", "pipe"],
     windowsHide: true,
   });
 
-  ui = { child, mode, ready: false, restarting: false, output: [] };
+  ui = { child, mode, ready: false, output: [] };
 
   const record = (data, level) => {
     const text = data.toString().trim();
@@ -215,10 +272,12 @@ async function startUiServer(mode) {
   child.once("exit", (code) => {
     // Before `ready`, waitForServer sees the exit and throws; during an
     // intentional stop/restart the exit is expected.
-    if (isQuitting || ui.child !== child || !ui.ready || ui.restarting) {
+    if (isQuitting || ui.child !== child || !ui.ready || uiRestarting) {
       return;
     }
-    void offerUiRestart(`The AI OS server exited unexpectedly (code ${code}).`);
+    void offerUiRestart(
+      `The AI OS server exited unexpectedly (code ${describeExitCode(code)}).`,
+    );
   });
 
   await waitForServer(
@@ -227,6 +286,31 @@ async function startUiServer(mode) {
     mode === "live-dev" ? 15_000 : 1_000,
   );
   ui.ready = true;
+}
+
+/** The UI server's environment, without the TLS-verification override (child-env.cjs). */
+function uiServerEnv(mode) {
+  const { env, removed } = childEnv.sanitizeChildEnv({
+    ...process.env,
+    AI_OS_DESKTOP_MODE: "1",
+    AI_OS_APP_VERSION: app.getVersion(),
+    // PMO To-Do keeps its records here: outside the install dir and OneDrive.
+    AI_OS_PMO_DATA_DIR: path.join(app.getPath("userData"), "pmo"),
+    // The server mirrors the tray setting here for this shell to read.
+    AI_OS_DESKTOP_PREFS_FILE: desktopPrefsFile(),
+    ...tasksEngineEnv(),
+    ...childEnv.proxyEnv(process.env),
+    ELECTRON_RUN_AS_NODE: "1",
+    NODE_ENV: mode === "live-dev" ? "development" : "production",
+  });
+  if (removed.length && !tlsOverrideLogged) {
+    tlsOverrideLogged = true;
+    desktopLog(
+      `${childEnv.TLS_OVERRIDE_NAME} was set in the environment and was removed for the UI server ` +
+        "(certificate checks stay on). For a corporate proxy, set NODE_EXTRA_CA_CERTS to its CA file instead.",
+    );
+  }
+  return env;
 }
 
 /**
@@ -258,12 +342,12 @@ async function stopUiServer() {
   if (!child) {
     return;
   }
-  const wasRestarting = ui.restarting;
-  ui.restarting = true;
+  const wasRestarting = uiRestarting;
+  uiRestarting = true;
   try {
     await stopProcess(child);
   } finally {
-    ui.restarting = wasRestarting;
+    uiRestarting = wasRestarting;
   }
 }
 
@@ -277,7 +361,14 @@ async function waitForServer(child, timeoutMs, probeTimeoutMs) {
       );
     }
     if (child.exitCode !== null && child.exitCode !== undefined) {
-      throw new Error(`The AI OS server exited with code ${child.exitCode}.`);
+      throw Object.assign(
+        new Error(
+          `The AI OS server exited with code ${describeExitCode(child.exitCode)}.`,
+        ),
+        {
+          exitedBeforeReady: true,
+        },
+      );
     }
 
     try {
@@ -324,13 +415,28 @@ async function offerUiRestart(message) {
  * Developer > Restart UI server. Stops the UI server (which also stops the
  * engine it owns, since the engine is its child), starts it again in the
  * same mode on the same port (the web origin, and with it saved settings,
- * stays the same), re-launches the engine and reloads the window.
+ * stays the same), re-launches the engine and reloads the window. A second
+ * request while one is in flight joins it rather than starting another.
  */
 async function restartUiServer({ confirmIfBusy }) {
-  if (ui.restarting || isQuitting) {
+  if (isQuitting) {
     return;
   }
+  const { joined, result } = restartGate.run(() => runUiRestart({ confirmIfBusy }));
+  if (joined) {
+    desktopLog("A UI server restart is already in progress; ignoring the extra request.");
+    await result;
+    return;
+  }
+  const failure = await result;
+  // Offered only after the gate is free again: the dialog's own restart must be allowed.
+  if (failure) {
+    await offerUiRestart(failure);
+  }
+}
 
+/** Resolves to a failure message, or undefined when restarted (or cancelled). */
+async function runUiRestart({ confirmIfBusy }) {
   if (confirmIfBusy) {
     const busy = await listBusyTasks();
     const { response } = await showMessage({
@@ -355,7 +461,7 @@ async function restartUiServer({ confirmIfBusy }) {
   }
 
   const previousMode = ui.mode;
-  ui.restarting = true;
+  uiRestarting = true;
   desktopLog("Restarting the UI server.");
   try {
     await requestServiceShutdown();
@@ -387,17 +493,15 @@ async function restartUiServer({ confirmIfBusy }) {
       void mainWindow.loadURL(appUrl);
     }
     desktopLog("UI server restarted.");
+    return undefined;
   } catch (error) {
-    ui.restarting = false;
     desktopLog(
       `Restart failed: ${error instanceof Error ? error.stack || error.message : String(error)}`,
       "error",
     );
-    await offerUiRestart(
-      `The UI server could not be restarted: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    return `The UI server could not be restarted: ${error instanceof Error ? error.message : String(error)}`;
   } finally {
-    ui.restarting = false;
+    uiRestarting = false;
   }
 }
 
@@ -476,30 +580,65 @@ function createWindow() {
     event.preventDefault();
     updateWindowTitle();
   });
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith(appUrl)) {
-      return { action: "allow" };
+  // Only web links and mailto: (the PMO "open as unsent mail draft" link) are
+  // handed to the OS; any other scheme is dropped (url-guard.cjs).
+  const routeUrl = (url) => {
+    const verdict = urlGuard.classifyNavigation(url, appUrl);
+    if (verdict === "external") {
+      void shell.openExternal(url);
+    } else if (verdict === "deny") {
+      desktopLog(
+        `Blocked a link with an unsupported address: ${String(url).slice(0, 80)}`,
+      );
     }
-    // Only web links and mailto: (the PMO "open as unsent mail draft" link,
-    // which just opens a compose window in the user's own mail program) are
-    // handed to the OS; any other scheme is dropped.
-    if (/^(https?|mailto):/i.test(url)) void shell.openExternal(url);
-    return { action: "deny" };
+    return verdict;
+  };
+  mainWindow.webContents.setWindowOpenHandler(({ url }) =>
+    routeUrl(url) === "allow" ? { action: "allow" } : { action: "deny" },
+  );
+  // The window never leaves the app origin: other addresses open in the OS.
+  mainWindow.webContents.on("will-navigate", (event) => {
+    if (routeUrl(event.url) !== "allow") {
+      event.preventDefault();
+    }
   });
+  mainWindow.webContents.on("render-process-gone", (_event, details) => {
+    void handleRendererGone(details);
+  });
+  mainWindow.on("unresponsive", () => void handleWindowUnresponsive());
   mainWindow.once("ready-to-show", () => mainWindow.show());
   // "Keep running in the tray" (a setting, off by default): closing the window
   // hides it so reminders keep firing. Off, closing behaves as it always did
-  // (window-all-closed quits the app).
+  // (window-all-closed quits the app). Never while quitting or while Windows is
+  // signing out / shutting down, or the window would block the session end.
   mainWindow.on("close", (event) => {
     if (
-      isQuitting ||
-      !pmoNotifier.readDesktopPrefs(desktopPrefsFile()).keepRunningInTray
+      !trayPolicy.shouldHideToTray({
+        isQuitting,
+        sessionEnding,
+        keepRunningInTray:
+          pmoNotifier.readDesktopPrefs(desktopPrefsFile()).keepRunningInTray,
+      })
     ) {
       return;
     }
     event.preventDefault();
     mainWindow.hide();
     ensureTray();
+  });
+  // Windows: query-session-end is the ask, session-end the point of no return.
+  mainWindow.on("query-session-end", () => {
+    markSessionEnding();
+    // If the sign-out is vetoed no session-end follows; go back to normal.
+    const reset = setTimeout(() => {
+      if (!sessionEndConfirmed) sessionEnding = false;
+    }, trayPolicy.SESSION_QUERY_GRACE_MS);
+    reset.unref();
+  });
+  mainWindow.on("session-end", () => {
+    sessionEndConfirmed = true;
+    markSessionEnding();
+    app.quit();
   });
   mainWindow.on("closed", () => {
     mainWindow = undefined;
@@ -515,6 +654,77 @@ function createWindow() {
   void mainWindow.loadURL(appUrl);
 }
 
+/** The OS is ending the session: stop hiding to the tray so close proceeds. */
+function markSessionEnding() {
+  if (!sessionEnding) {
+    desktopLog("The OS session is ending; the window will close normally.");
+  }
+  sessionEnding = true;
+}
+
+/** The page's renderer died: a blank window is a dead end, so offer a reload. */
+async function handleRendererGone(details) {
+  const reason = details && details.reason;
+  desktopLog(
+    `The window's renderer process is gone (reason: ${reason}, exit code: ${details && details.exitCode}).`,
+    reason === "clean-exit" ? "log" : "error",
+  );
+  if (isQuitting) {
+    return;
+  }
+  rendererGoneTimes = recoveryPolicy.recordCrash(rendererGoneTimes, Date.now());
+  const decision = recoveryPolicy.decideRendererGone({
+    reason,
+    recentCrashes: rendererGoneTimes.length,
+  });
+  if (decision.action === "ignore") {
+    return;
+  }
+  const canReload = decision.action === "offer-reload";
+  const { response } = await showMessage({
+    type: "error",
+    title: "AI OS window stopped",
+    message: decision.message,
+    buttons: canReload ? ["Reload", "Quit AI OS"] : ["Quit AI OS"],
+    defaultId: 0,
+    cancelId: canReload ? 1 : 0,
+    noLink: true,
+  });
+  if (canReload && response === 0 && mainWindow) {
+    void mainWindow.loadURL(appUrl);
+  } else {
+    app.quit();
+  }
+}
+
+/** The window stopped answering: it may recover, so waiting is an option. */
+async function handleWindowUnresponsive() {
+  desktopLog("The AI OS window is not responding.", "error");
+  if (isQuitting || unresponsiveDialogOpen) {
+    return;
+  }
+  unresponsiveDialogOpen = true;
+  try {
+    const { response } = await showMessage({
+      type: "warning",
+      title: "AI OS is not responding",
+      message: "The AI OS window is not responding.",
+      detail: "Wait for it to recover, reload the page, or quit.",
+      buttons: ["Reload", "Keep waiting", "Quit AI OS"],
+      defaultId: 1,
+      cancelId: 1,
+      noLink: true,
+    });
+    if (response === 0 && mainWindow) {
+      void mainWindow.loadURL(appUrl);
+    } else if (response === 2) {
+      app.quit();
+    }
+  } finally {
+    unresponsiveDialogOpen = false;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // PMO reminders: poller, notification click, badge, optional tray
 // ---------------------------------------------------------------------------
@@ -522,7 +732,7 @@ function createWindow() {
 function startReminders() {
   reminderPoller = pmoNotifier.createReminderPoller({
     getBaseUrl: () => appUrl,
-    isReady: () => Boolean(appUrl) && ui.ready && !ui.restarting && !isQuitting,
+    isReady: () => Boolean(appUrl) && ui.ready && !uiRestarting && !isQuitting,
     Notification,
     onOpenTodo: openTodoFromNotification,
     onAttention: applyBadge,
@@ -612,12 +822,33 @@ function ensureTray() {
   }
 }
 
-/** Only our own window may talk to these handlers. */
+/** Only our own window, showing our own origin, may talk to these handlers. */
 function isFromMainWindow(event) {
   return Boolean(
     mainWindow &&
     event.sender === mainWindow.webContents &&
-    event.sender.getURL().startsWith(appUrl),
+    urlGuard.isAppUrl(event.sender.getURL(), appUrl) &&
+    (!event.senderFrame || urlGuard.isAppUrl(event.senderFrame.url, appUrl)),
+  );
+}
+
+/** The page may use notifications (PMO reminders) and copy to the clipboard;
+ *  every other permission request is refused. */
+function installPermissionHandlers() {
+  const ses = session.defaultSession;
+  ses.setPermissionRequestHandler((webContents, permission, callback, details) => {
+    const allowed = urlGuard.isPermissionAllowed(
+      permission,
+      (details && details.requestingUrl) || webContents.getURL(),
+      appUrl,
+    );
+    if (!allowed) {
+      desktopLog(`Denied permission request: ${permission}`);
+    }
+    callback(allowed);
+  });
+  ses.setPermissionCheckHandler((_webContents, permission, requestingOrigin) =>
+    urlGuard.isPermissionAllowed(permission, requestingOrigin, appUrl),
   );
 }
 
@@ -647,18 +878,24 @@ ipcMain.handle("pmo:renderer-ready", (event) => {
 ipcMain.on("display:get-mode", (event) => {
   event.returnValue =
     mainWindow && event.sender === mainWindow.webContents
-      ? displaySettings.fxModeFor(displaySettings.readDisplaySettings(displayFile))
+      ? displaySettings.fxModeFor(
+          displaySettings.readDisplaySettings(displayFile),
+          currentGpu(),
+        )
       : "lean";
 });
+
+function currentGpu() {
+  return displaySettings.describeGpu({
+    featureStatus: app.getGPUFeatureStatus(),
+    launchedWithGpu: !displaySettings.shouldDisableHardwareAcceleration(launchedDisplay),
+  });
+}
 
 function displayState() {
   return {
     saved: displaySettings.readDisplaySettings(displayFile).hardwareAcceleration,
-    ...displaySettings.describeGpu({
-      featureStatus: app.getGPUFeatureStatus(),
-      launchedWithGpu:
-        !displaySettings.shouldDisableHardwareAcceleration(launchedDisplay),
-    }),
+    ...currentGpu(),
   };
 }
 
@@ -681,6 +918,9 @@ ipcMain.handle("setup:choose-folder", async (event) => {
 ipcMain.handle("display:set-hardware-acceleration", (event, enabled) => {
   if (!isFromMainWindow(event) || typeof enabled !== "boolean") {
     return null;
+  }
+  if (currentGpu().noHardwareAcceleration) {
+    return displayState();
   }
   try {
     displaySettings.writeDisplaySettings(displayFile, { hardwareAcceleration: enabled });
@@ -735,7 +975,7 @@ function updateWindowTitle() {
   }
 }
 
-/** A tiny "starting" window: live-dev can take a while on a cold compile. */
+/** A tiny "starting" window: a cold start can take a while on a slow machine. */
 function showSplash() {
   splashWindow = new BrowserWindow({
     width: 380,
@@ -855,7 +1095,10 @@ app.on("before-quit", (event) => {
     tray.destroy();
     tray = undefined;
   }
-  void stopServices().finally(() => app.exit(0));
+  void stopServices().finally(() => {
+    logWriter()?.flush();
+    app.exit(0);
+  });
 });
 
 async function stopServices() {
@@ -1003,12 +1246,23 @@ async function waitForPortFree(candidatePort) {
   throw new Error(`Port ${candidatePort} is still in use after stopping the UI server.`);
 }
 
-function desktopLog(message, level = "log") {
-  const line = `[${new Date().toISOString()}] ${message}`;
-  console[level](line);
-  try {
-    appendFileSync(path.join(app.getPath("userData"), "desktop.log"), `${line}\n`);
-  } catch {
-    // Logging must never take the app down.
+let desktopLogWriter;
+
+function logWriter() {
+  if (!desktopLogWriter) {
+    try {
+      desktopLogWriter = createLogWriter({
+        file: path.join(app.getPath("userData"), "desktop.log"),
+        fs,
+      });
+    } catch {
+      // Logging must never take the app down.
+    }
   }
+  return desktopLogWriter;
+}
+
+function desktopLog(message, level = "log") {
+  console[level](`[${new Date().toISOString()}] ${message}`);
+  logWriter()?.write(message);
 }

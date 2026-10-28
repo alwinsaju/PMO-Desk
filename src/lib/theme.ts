@@ -2,8 +2,9 @@
  * Appearance persistence: TWO orthogonal choices, each one attribute on
  * <html> plus one localStorage key. There is no Settings app (the toggles
  * live in the top-right SettingsMenu.tsx, which reads them via `useTheme` /
- * `useBrand`) and no backend-persisted settings concept in this project, so
- * localStorage is the whole story.
+ * `useBrand`). localStorage is the source of truth (it must be readable before
+ * hydration); each change is also mirrored, best effort, to the server's
+ * `preferences` key so a new origin (another port) can restore it once.
  *
  *   Theme  — `data-theme="dark"`      key `ai-os:theme`   absent = light
  *   Brand  — `data-brand="deloitte"`  key `ai-os:brand`   absent = default
@@ -19,6 +20,12 @@
  * tokens.css's CSS variables, so nothing here needs to know or care what's
  * actually on screen; it only ever touches the attributes + storage keys.
  */
+
+import {
+  fetchServerPreferences,
+  mirrorPreferences,
+  type PreferencesFetch,
+} from "./preferencesSync.ts";
 
 export type Theme = "light" | "dark";
 export type Brand = "default" | "deloitte";
@@ -40,6 +47,11 @@ export function getStoredTheme(): Theme {
 
 /** Applies `theme` to <html> and persists the choice for next time. */
 export function setTheme(theme: Theme): void {
+  writeTheme(theme);
+  mirrorPreferences({ theme, brand: getStoredBrand() });
+}
+
+function writeTheme(theme: Theme): void {
   if (typeof document !== "undefined") {
     if (theme === "dark") {
       document.documentElement.setAttribute("data-theme", "dark");
@@ -69,6 +81,11 @@ export function getStoredBrand(): Brand {
 
 /** Applies `brand` to <html> and persists the choice for next time. */
 export function setBrand(brand: Brand): void {
+  writeBrand(brand);
+  mirrorPreferences({ theme: getStoredTheme(), brand });
+}
+
+function writeBrand(brand: Brand): void {
   if (typeof document !== "undefined") {
     if (brand === "deloitte") {
       document.documentElement.setAttribute("data-brand", "deloitte");
@@ -80,6 +97,37 @@ export function setBrand(brand: Brand): void {
     window.localStorage.setItem(BRAND_STORAGE_KEY, brand);
   } catch {
     // Works for the current tab, just won't survive a reload.
+  }
+}
+
+function hasNoStoredValue(key: string): boolean {
+  try {
+    return window.localStorage.getItem(key) === null;
+  } catch {
+    return false;
+  }
+}
+
+/** For a fresh origin (e.g. the app moved to another port): when localStorage
+ *  holds no theme / brand yet, take the one saved on the server. Never throws,
+ *  and never overrides a choice this browser already has. */
+export async function restoreAppearanceFromServer(
+  fetchFn?: PreferencesFetch,
+): Promise<void> {
+  if (typeof window === "undefined") return;
+  const saved = await fetchServerPreferences(fetchFn);
+  if (!saved) return;
+  if (
+    hasNoStoredValue(THEME_STORAGE_KEY) &&
+    (saved.theme === "dark" || saved.theme === "light")
+  ) {
+    writeTheme(saved.theme);
+  }
+  if (
+    hasNoStoredValue(BRAND_STORAGE_KEY) &&
+    (saved.brand === "deloitte" || saved.brand === "default")
+  ) {
+    writeBrand(saved.brand);
   }
 }
 

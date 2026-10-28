@@ -7,7 +7,6 @@
 import {
   RECORDABLE_OUTCOMES,
   SIGNOFF_OUTCOME_LABEL,
-  approverEmail,
   approverName,
   type RecordableOutcome,
   type SignoffState,
@@ -18,6 +17,7 @@ import {
   summarizeCheckpoint,
   type SignoffSummary,
 } from "../../../lib/pmo/signoffView.ts";
+import { DEFAULT_TIME_ZONE, safeTimeZone } from "../../../lib/pmo/time.ts";
 import {
   MAX_SIGNOFF_NOTE,
   MAX_SIGNOFF_REASON,
@@ -29,15 +29,17 @@ import {
 
 type ClockPrefs = Pick<ReminderPrefs, "timeZone" | "workDays" | "chaserDays">;
 
-/** "26 Oct 2026, 10:30 IST" for an instant (the stamp's time is shown in IST). */
-export function stampTime(iso: string): string {
+/** "26 Oct 2026, 10:30 IST" for an instant, in the reminder zone (named in full
+ *  unless it is the default IST); a bad zone name means IST. */
+export function stampTime(iso: string, timeZone?: string): string {
   const ms = Date.parse(iso);
   if (Number.isNaN(ms)) return iso;
+  const zone = safeTimeZone(timeZone);
   return `${new Intl.DateTimeFormat("en-GB", {
     dateStyle: "medium",
     timeStyle: "short",
-    timeZone: "Asia/Kolkata",
-  }).format(new Date(ms))} IST`;
+    timeZone: zone,
+  }).format(new Date(ms))} ${zone === DEFAULT_TIME_ZONE ? "IST" : zone}`;
 }
 
 /** A message link that may be opened: only https (a Teams or Outlook web link).
@@ -107,7 +109,7 @@ const NO_ACTIONS = {
   revoke: false,
 };
 
-function stampView(summary: SignoffSummary): StampView | null {
+function stampView(summary: SignoffSummary, timeZone?: string): StampView | null {
   const stamp = summary.stamp;
   if (!stamp) return null;
   const link = stamp.evidence.messageLink;
@@ -123,7 +125,7 @@ function stampView(summary: SignoffSummary): StampView | null {
     label: summary.approver ? `${label} by` : label,
     signedBy: summary.approver,
     recordedBy: stamp.recordedBy,
-    recordedAt: stampTime(stamp.recordedAt),
+    recordedAt: stampTime(stamp.recordedAt, timeZone),
     evidenceNote: stamp.evidence.note,
     evidenceIntakeId: stamp.evidence.intakeId,
     evidenceLink: safeHttpsLink(link),
@@ -155,18 +157,18 @@ export function signoffPanelView(
     state: summary.state,
     approverLine: who ? `Approver: ${who}` : "Approver: not named yet",
     requestedLine: summary.requestedAt
-      ? `Marked as sent ${stampTime(summary.requestedAt)}${summary.requestedBy ? ` by ${summary.requestedBy}` : ""}. Nothing was sent by this app.`
+      ? `Marked as sent ${stampTime(summary.requestedAt, prefs.timeZone)}${summary.requestedBy ? ` by ${summary.requestedBy}` : ""}. Nothing was sent by this app.`
       : null,
     chase: summary.overdue,
     confirmedLine: summary.conditionsConfirmedAt
-      ? `Conditions confirmed as met${summary.conditionsConfirmedBy ? ` by ${summary.conditionsConfirmedBy}` : ""}, ${stampTime(summary.conditionsConfirmedAt)}.`
+      ? `Conditions confirmed as met${summary.conditionsConfirmedBy ? ` by ${summary.conditionsConfirmedBy}` : ""}, ${stampTime(summary.conditionsConfirmedAt, prefs.timeZone)}.`
       : null,
-    stamp: stampView(summary),
+    stamp: stampView(summary, prefs.timeZone),
     said:
       summary.conditions && SAID_LABEL[summary.state]
         ? { label: SAID_LABEL[summary.state]!, text: summary.conditions }
         : null,
-    previous: previousLines(checkpoint),
+    previous: previousLines(checkpoint, prefs.timeZone),
   };
   const act = (actions: Partial<SignoffPanelView["actions"]>) =>
     open ? { ...NO_ACTIONS, ...actions } : NO_ACTIONS;
@@ -241,16 +243,16 @@ export function signoffPanelView(
   }
 }
 
-function previousLines(checkpoint: Checkpoint): string[] {
+function previousLines(checkpoint: Checkpoint, timeZone?: string): string[] {
   return (checkpoint.signoff?.previous ?? []).map((entry) => {
     const outcome = SIGNOFF_OUTCOME_LABEL[entry.outcome].toLowerCase();
     const recorded = entry.stamp
-      ? `${outcome}, recorded by ${entry.stamp.recordedBy} ${stampTime(entry.stamp.recordedAt)}`
+      ? `${outcome}, recorded by ${entry.stamp.recordedBy} ${stampTime(entry.stamp.recordedAt, timeZone)}`
       : outcome;
     const ended =
       entry.ended.kind === "revoked"
-        ? `revoked by ${entry.ended.by} ${stampTime(entry.ended.at)}${entry.ended.reason ? `: ${entry.ended.reason}` : ""}`
-        : `replaced by a new request ${stampTime(entry.ended.at)}`;
+        ? `revoked by ${entry.ended.by} ${stampTime(entry.ended.at, timeZone)}${entry.ended.reason ? `: ${entry.ended.reason}` : ""}`
+        : `replaced by a new request ${stampTime(entry.ended.at, timeZone)}`;
     return `${recorded[0].toUpperCase()}${recorded.slice(1)}; ${ended}.`;
   });
 }
@@ -327,6 +329,7 @@ export const revokeProblem = (reason: string): string | null =>
  *  messages linked into its timeline (the server accepts only these). */
 export function evidenceOptions(
   todo: Pick<Todo, "source" | "history">,
+  timeZone?: string,
 ): { value: string; label: string }[] {
   const options: { value: string; label: string }[] = [
     { value: "", label: "No linked message" },
@@ -344,7 +347,7 @@ export function evidenceOptions(
     seen.add(entry.intakeId);
     options.push({
       value: entry.intakeId,
-      label: `Message${entry.from ? ` from ${entry.from}` : ""}, ${stampTime(entry.at).replace(/, \d{2}:\d{2} IST$/, "")}`,
+      label: `Message${entry.from ? ` from ${entry.from}` : ""}, ${stampTime(entry.at, timeZone).replace(/, \d{2}:\d{2} [^,]+$/, "")}`,
     });
   }
   return options;
@@ -370,9 +373,6 @@ export function approverSuggestions(
       value.toLowerCase() !== current.trim().toLowerCase(),
   );
 }
-
-/** Wording of the To field's hint: an address is used only if the approver text has one. */
-export const toFromApprover = (approver: string): string => approverEmail(approver) ?? "";
 
 // --- the list row ---------------------------------------------------------------------------
 

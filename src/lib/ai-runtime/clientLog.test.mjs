@@ -5,6 +5,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { z } from "zod";
+import { waitFor } from "../testUtils.mjs";
 import {
   AiRuntimeError,
   DEFAULT_AI_RUNTIME_CONFIG,
@@ -197,7 +198,11 @@ describe("what a call logs", () => {
       prompt: "3",
       log: { task: "structure", label: "C" },
     });
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    await waitFor(
+      () =>
+        log.all().filter((e) => e.kind === "call-queued").length >= 2 &&
+        log.activeCalls().length === 1,
+    );
     const queued = log.all().filter((e) => e.kind === "call-queued");
     assert.deepEqual(
       queued.map((e) => [e.label, e.position, e.waiting]),
@@ -208,8 +213,10 @@ describe("what a call logs", () => {
     );
     assert.equal(log.activeCalls().length, 1);
     for (let i = 0; i < 3; i++) {
-      await new Promise((resolve) => setTimeout(resolve, 10));
-      release();
+      await waitFor(() => release);
+      const done = release;
+      release = undefined;
+      done();
     }
     await Promise.all([first, second, third]);
     assert.equal(log.activeCalls().length, 0);

@@ -1,12 +1,20 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion } from "motion/react";
 import { NotePencilIcon, PlusIcon, TrashIcon } from "@phosphor-icons/react";
 import { Button, IconButton, ScrollArea } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { easeStandard } from "@/lib/motion";
-import { noteTitle, notePreview, useNotesStore } from "./notesStore";
+import {
+  UNDO_WINDOW_MS,
+  canRestoreRevision,
+  hasSamples,
+  noteTitle,
+  notePreview,
+  undoNoticeText,
+} from "./notesLogic";
+import { useNotesStore } from "./notesStore";
 
 /**
  * Root Notes window — matches the `AppComponent` contract
@@ -27,27 +35,52 @@ export function NotesApp({ windowId }: { windowId: string }) {
   const createNote = useNotesStore((s) => s.createNote);
   const updateNote = useNotesStore((s) => s.updateNote);
   const deleteNote = useNotesStore((s) => s.deleteNote);
+  const lastDeleted = useNotesStore((s) => s.lastDeleted);
+  const undoDelete = useNotesStore((s) => s.undoDelete);
+  const dismissUndo = useNotesStore((s) => s.dismissUndo);
+  const restoreRevision = useNotesStore((s) => s.restoreRevision);
+  const clearSamples = useNotesStore((s) => s.clearSamples);
 
-  const [selectedId, setSelectedId] = useState<string | null>(
-    () => useNotesStore.getState().notes[0]?.id ?? null,
-  );
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const editorRef = useRef<HTMLTextAreaElement>(null);
+  const focusEditorForRef = useRef<string | null>(null);
 
-  const selectedNote = notes.find((note) => note.id === selectedId) ?? null;
+  // Falls back to the first note when nothing (or a vanished note) is
+  // selected, which also covers notes that arrive after async hydration.
+  const selectedNote = notes.find((note) => note.id === selectedId) ?? notes[0] ?? null;
+  const selectedNoteId = selectedNote?.id ?? null;
+
+  useEffect(() => {
+    if (selectedNoteId && focusEditorForRef.current === selectedNoteId) {
+      focusEditorForRef.current = null;
+      editorRef.current?.focus();
+    }
+  }, [selectedNoteId]);
+
+  useEffect(() => {
+    if (!lastDeleted) return;
+    const remaining = UNDO_WINDOW_MS - (Date.now() - lastDeleted.at);
+    if (remaining <= 0) {
+      dismissUndo();
+      return;
+    }
+    const timer = setTimeout(dismissUndo, remaining);
+    return () => clearTimeout(timer);
+  }, [lastDeleted, dismissUndo]);
 
   function handleCreate() {
     const note = createNote("");
+    focusEditorForRef.current = note.id;
     setSelectedId(note.id);
   }
 
   function handleChangeContent(content: string) {
-    if (!selectedId) return;
-    updateNote(selectedId, content);
+    if (!selectedNoteId) return;
+    updateNote(selectedNoteId, content);
   }
 
   function handleDelete(id: string) {
-    const remaining = notes.filter((note) => note.id !== id);
     deleteNote(id);
-    if (selectedId === id) setSelectedId(remaining[0]?.id ?? null);
   }
 
   return (
@@ -57,14 +90,22 @@ export function NotesApp({ windowId }: { windowId: string }) {
           <span className="text-ink-muted text-[12px] font-bold tracking-[0.08em] uppercase">
             Notes
           </span>
-          <IconButton aria-label="New note" variant="ghost" onClick={handleCreate}>
-            <PlusIcon size={18} />
-          </IconButton>
+          <div className="flex items-center gap-1">
+            {hasSamples(notes) && (
+              <Button type="button" variant="ghost" size="sm" onClick={clearSamples}>
+                Clear samples
+              </Button>
+            )}
+            <IconButton aria-label="New note" variant="ghost" onClick={handleCreate}>
+              <PlusIcon size={18} />
+            </IconButton>
+          </div>
         </div>
         <ScrollArea className="min-h-0 flex-1">
           <ul className="flex flex-col gap-1 px-2.5 pb-3">
             {notes.map((note) => {
-              const isSelected = note.id === selectedId;
+              const isSelected = note.id === selectedNoteId;
+              const title = noteTitle(note.content);
               return (
                 // The `li` is the visual row (hover fill, accent bar), so the
                 // delete button that floats over its corner keeps the row
@@ -73,7 +114,7 @@ export function NotesApp({ windowId }: { windowId: string }) {
                   key={note.id}
                   data-active={isSelected}
                   className={cn(
-                    "group row-bar rounded-control ease-smooth relative min-w-0 transition-colors duration-200",
+                    "group row-bar rounded-control ease-smooth flex min-w-0 items-center transition-colors duration-200",
                     isSelected ? "bg-accent-soft" : "hover:bg-chip",
                   )}
                 >
@@ -81,7 +122,7 @@ export function NotesApp({ windowId }: { windowId: string }) {
                     type="button"
                     onClick={() => setSelectedId(note.id)}
                     className={cn(
-                      "rounded-control flex w-full min-w-0 flex-col gap-px px-3 py-[11px] pr-10 text-left",
+                      "rounded-control flex min-w-0 flex-1 flex-col gap-px py-[11px] pr-1 pl-3 text-left",
                       "focus-visible:ring-focus outline-none focus-visible:ring-2 focus-visible:ring-inset",
                     )}
                   >
@@ -98,20 +139,27 @@ export function NotesApp({ windowId }: { windowId: string }) {
                     {/* The selected fill is the translucent `accent-soft`
                       tint, so plain ink tokens stay readable on it in every
                       theme x brand combination. */}
-                    <span className="text-ink line-clamp-1 text-[14px] font-semibold">
-                      {noteTitle(note)}
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      <span className="text-ink line-clamp-1 min-w-0 text-[14px] font-semibold [overflow-wrap:anywhere]">
+                        {title}
+                      </span>
+                      {note.sample && (
+                        <span className="bg-chip text-ink-muted rounded-chip shrink-0 px-1.5 text-[10.5px] font-bold uppercase">
+                          Sample
+                        </span>
+                      )}
                     </span>
-                    <span className="text-ink-muted line-clamp-1 text-[12.5px]">
-                      {note.updatedLabel} — {notePreview(note)}
+                    <span className="text-ink-muted line-clamp-1 text-[12.5px] [overflow-wrap:anywhere]">
+                      {note.updatedLabel} — {notePreview(note.content)}
                     </span>
                   </button>
                   <IconButton
-                    aria-label={`Delete "${noteTitle(note)}"`}
+                    aria-label={`Delete "${title}"`}
                     variant="ghost"
                     size="sm"
                     shape="round"
                     onClick={() => handleDelete(note.id)}
-                    className="text-ink-muted hover:bg-red-soft hover:text-red absolute top-2 right-2 h-[26px] w-[26px] opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                    className="text-ink-muted hover:bg-red-soft hover:text-red mr-2 h-[26px] w-[26px] flex-shrink-0 shrink-0"
                   >
                     <TrashIcon size={14} />
                   </IconButton>
@@ -125,6 +173,20 @@ export function NotesApp({ windowId }: { windowId: string }) {
             )}
           </ul>
         </ScrollArea>
+        {lastDeleted && (
+          <p
+            role="status"
+            className="text-ink-soft border-line flex items-center justify-between gap-2 border-t px-4 py-2 text-[12.5px]"
+          >
+            <span>{undoNoticeText(lastDeleted)}</span>
+            <Button type="button" variant="ghost" size="sm" onClick={undoDelete}>
+              Undo
+            </Button>
+          </p>
+        )}
+        <p className="text-ink-faint border-line border-t px-4 py-2 text-[11.5px]">
+          Notes are saved on this computer.
+        </p>
       </div>
 
       <div className="flex min-w-0 flex-1 flex-col">
@@ -142,10 +204,21 @@ export function NotesApp({ windowId }: { windowId: string }) {
             transition={{ duration: 0.12, ease: easeStandard }}
             className="flex min-h-0 flex-1 flex-col"
           >
-            <div className="text-ink-muted px-gutter pt-3 pb-2 text-[12.5px]">
-              {selectedNote.updatedLabel}
+            <div className="text-ink-muted px-gutter flex items-center justify-between gap-3 pt-3 pb-2 text-[12.5px]">
+              <span>{selectedNote.updatedLabel}</span>
+              {canRestoreRevision(selectedNote) && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => restoreRevision(selectedNote.id)}
+                >
+                  Restore previous version
+                </Button>
+              )}
             </div>
             <textarea
+              ref={editorRef}
               value={selectedNote.content}
               onChange={(event) => handleChangeContent(event.target.value)}
               placeholder="Start typing…"

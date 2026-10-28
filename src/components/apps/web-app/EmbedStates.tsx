@@ -82,6 +82,8 @@ interface EmbedBlockedProps {
   onOpenInNewTab: () => void;
   /** Extra line under the button (e.g. "Opened X in a new tab."). */
   footnote?: ReactNode;
+  /** The real refusal reason; replaces the generic frame explanation. */
+  reason?: string;
 }
 
 /** The "this site refuses to be framed" fallback: an inset glass card with
@@ -91,6 +93,7 @@ export function EmbedBlocked({
   icon,
   onOpenInNewTab,
   footnote,
+  reason,
 }: EmbedBlockedProps) {
   return (
     <div className="flex h-full w-full items-center justify-center p-6">
@@ -103,9 +106,8 @@ export function EmbedBlocked({
             Can&apos;t embed {name} here
           </p>
           <p className="text-ink-muted text-[13px] leading-relaxed">
-            {name} blocks other sites from displaying it in a frame — a real, common
-            security setting, not something broken here. Open it in a regular browser tab
-            instead.
+            {reason ??
+              `${name} blocks other sites from displaying it in a frame — a real, common security setting, not something broken here. Open it in a regular browser tab instead.`}
           </p>
         </div>
         <Button onClick={onOpenInNewTab} className="gap-1.5">

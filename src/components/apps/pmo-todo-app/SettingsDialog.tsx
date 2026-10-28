@@ -14,6 +14,7 @@ import {
   DEFAULT_REPORT_TITLE,
   DEFAULT_RETENTION_DAYS,
   MAX_CHASER_DAYS,
+  MAX_LEAD_WORKING_DAYS,
   MAX_REPORT_TITLE_CHARS,
   MAX_RETENTION_DAYS,
   MIN_RETENTION_DAYS,
@@ -141,11 +142,11 @@ export function SettingsDialog({
                 {listBox(
                   "names",
                   "Your names and aliases",
-                  "Alwin Saju",
+                  "Pat Example",
                   4,
                   "How the model recognises a request addressed to you (first name, nickname, ...).",
                 )}
-                {listBox("emails", "Your email addresses", "you@deloitte.com", 4)}
+                {listBox("emails", "Your email addresses", "you@company.com", 4)}
               </div>
             </Section>
 
@@ -153,9 +154,9 @@ export function SettingsDialog({
               {listBox(
                 "allowedSenderDomains",
                 "Allowed sender domains (Outlook)",
-                "deloitte.com",
+                "company.com",
                 2,
-                "Email from any other domain is filtered. Subdomains match (us.deloitte.com matches deloitte.com).",
+                "Email from any other domain is filtered. Subdomains match (us.company.com matches company.com).",
               )}
               {listBox(
                 "allowedTenantIds",
@@ -196,7 +197,7 @@ export function SettingsDialog({
                 {listBox(
                   "blockedDomains",
                   "Blocked domains",
-                  "takeda.com",
+                  "other-company.example",
                   3,
                   "A sender or recipient on one of these is filtered, even if the sender is allowed.",
                 )}
@@ -354,6 +355,24 @@ export function SettingsDialog({
                   })}
                 </div>
                 <FieldError message={errors["reminders.workDays"]} />
+              </Field>
+              <Field label="Heads-up before a due date (working days)">
+                <Input
+                  inputMode="numeric"
+                  value={form.reminders.leadWorkingDays}
+                  disabled={busy}
+                  className="w-32"
+                  aria-invalid={errors["reminders.leadWorkingDays"] ? true : undefined}
+                  onChange={(event) =>
+                    setReminders({ leadWorkingDays: event.target.value })
+                  }
+                />
+                <span className="text-ink-muted text-[12px] leading-relaxed">
+                  0 to {MAX_LEAD_WORKING_DAYS}. With 1, an item due on a Monday is
+                  reminded on the Friday before. 0 sends no heads-up, only the reminder on
+                  the due day.
+                </span>
+                <FieldError message={errors["reminders.leadWorkingDays"]} />
               </Field>
               <Field label="Chase after (working days without an update)">
                 <Input

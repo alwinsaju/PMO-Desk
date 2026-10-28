@@ -43,9 +43,11 @@ export interface ChaserPromptInput {
   /** Whole days and working days with no reply. */
   waitedCalendarDays: number;
   waitedQuietDays: number;
-  /** When the waiting began, in IST ("2026-10-19T12:00 IST ..."). */
+  /** When the waiting began, in the reminder zone ("2026-10-19T12:00 IST ..."). */
   sinceStamp: string;
   nowIso: string;
+  /** The reminder time zone; blank or unknown means the default. */
+  timeZone?: string;
   /** Who it would be sent to, if known (display only). */
   recipient?: string | null;
 }
@@ -61,13 +63,16 @@ export function buildChaserUserPrompt(input: ChaserPromptInput): string {
     `Waiting on: ${attr(todo.waitingOn)}`,
     `Waiting since: ${input.sinceStamp}`,
     `Waited so far: ${waitedLine}`,
-    `Today: ${istStamp(input.nowIso)}`,
+    `Today: ${istStamp(input.nowIso, input.timeZone)}`,
     todo.dueAt ? `Due date of the to-do: ${todo.dueAt}` : "",
   ]
     .filter(Boolean)
     .join("\n");
   const excerpt = input.excerpt?.trim()
-    ? input.excerpt.trim().slice(0, EXCERPT_CHARS).replace(/<\/(message|todo)/gi, "<\\/$1")
+    ? input.excerpt
+        .trim()
+        .slice(0, EXCERPT_CHARS)
+        .replace(/<\/(message|todo)/gi, "<\\/$1")
     : null;
   const header = [
     `source="${todo.source.source}"`,
@@ -85,7 +90,10 @@ export function buildChaserUserPrompt(input: ChaserPromptInput): string {
  *  untrusted text: this only trims and caps, and the UI shows it as plain text. */
 export function cleanChaserText(raw: string): { text: string; subject: string | null } {
   let text = raw.replace(/\r\n?/g, "\n").trim();
-  text = text.replace(/^```[a-z]*\n?/i, "").replace(/\n?```\s*$/, "").trim();
+  text = text
+    .replace(/^```[a-z]*\n?/i, "")
+    .replace(/\n?```\s*$/, "")
+    .trim();
   let subject: string | null = null;
   const first = /^subject\s*:\s*(.+)\n+/i.exec(text);
   if (first) {
@@ -96,15 +104,18 @@ export function cleanChaserText(raw: string): { text: string; subject: string | 
   text = text.replace(/\n{3,}/g, "\n\n");
   if (text.length > MAX_CHASER_CHARS) {
     const cut = text.slice(0, MAX_CHASER_CHARS);
-    text = cut.slice(0, Math.max(cut.lastIndexOf("\n"), cut.lastIndexOf(". ") + 1) || MAX_CHASER_CHARS).trim();
+    text = cut
+      .slice(
+        0,
+        Math.max(cut.lastIndexOf("\n"), cut.lastIndexOf(". ") + 1) || MAX_CHASER_CHARS,
+      )
+      .trim();
   }
   return { text, subject };
 }
 
 /** "Following up: <title>" or "Re: <subject>" for a mail window. */
-export function defaultChaserSubject(
-  todo: Pick<Todo, "title" | "source">,
-): string {
+export function defaultChaserSubject(todo: Pick<Todo, "title" | "source">): string {
   const subject = todo.source.subject?.trim();
   if (todo.source.source === "outlook" && subject) {
     return /^re:/i.test(subject) ? subject : `Re: ${subject}`;

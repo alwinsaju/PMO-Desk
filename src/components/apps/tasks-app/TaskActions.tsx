@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { ConfirmActionDialog } from "./ConfirmActionDialog";
+import { confirmCopy, needsConfirm, type ConfirmAction } from "./confirmCopy";
 import { blockingSummary } from "./diffView";
 import { StartTaskDialog } from "./StartTaskDialog";
 import { TaskActionBar } from "./TaskActionBar";
@@ -42,6 +44,19 @@ export function TaskActions({
     task.state === "awaiting_review" && task.currentStep === "review_incidents";
   const action = useTaskAction(task.id, onSettled, atReviewGate);
   const [formOpen, setFormOpen] = useState(false);
+  const [confirming, setConfirming] = useState<ConfirmAction | null>(null);
+  const pendingCopy = confirming ? confirmCopy(confirming, task) : null;
+
+  // Send, Reject and Force reset (mid-run) ask first; the rest go straight through.
+  const ask = (kind: ConfirmAction, go: () => void) => () =>
+    needsConfirm(kind, task) ? setConfirming(kind) : go();
+  const runConfirmed = () => {
+    const kind = confirming;
+    setConfirming(null);
+    if (kind === "send") action.send();
+    else if (kind === "reject") action.reject();
+    else if (kind === "reset") action.reset();
+  };
 
   // A "N still need a Subcategory2" notice describes the queue as of the
   // last Approve click; once the task leaves the gate it's no longer true.
@@ -95,9 +110,15 @@ export function TaskActions({
         }}
         onStart={runOpensForm ? () => setFormOpen(true) : () => void action.start()}
         onApprove={action.approve}
-        onReject={action.reject}
-        onSend={action.send}
-        onReset={action.reset}
+        onReject={ask("reject", action.reject)}
+        onSend={ask("send", action.send)}
+        onReset={ask("reset", action.reset)}
+      />
+      <ConfirmActionDialog
+        copy={pendingCopy}
+        taskId={task.id}
+        onConfirm={runConfirmed}
+        onCancel={() => setConfirming(null)}
       />
       {hasStartForm(task) && (
         <StartTaskDialog

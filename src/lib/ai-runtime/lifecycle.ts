@@ -33,6 +33,7 @@ import {
   type OllamaClient,
 } from "./core";
 import { getAiLogState } from "./modelWatch";
+import { withoutTlsOverride } from "../security/childEnv";
 import { ownedLogPath } from "./serverLog";
 
 declare global {
@@ -180,7 +181,7 @@ async function attemptEnsure(
     // Windows job object that is killed when this process dies, so even a
     // hard kill of the Next server (crash, force quit) takes Ollama with it.
     child = spawn(exe.path, ["serve"], {
-      env: { ...process.env, OLLAMA_HOST: ollamaHostFor(config.baseUrl) },
+      env: { ...withoutTlsOverride(), OLLAMA_HOST: ollamaHostFor(config.baseUrl) },
       stdio: ["ignore", outFd, errFd],
       windowsHide: true,
       shell: false,

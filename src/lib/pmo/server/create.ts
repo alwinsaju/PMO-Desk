@@ -15,11 +15,13 @@ export async function createPmo(options: {
   dataDir: string;
   /** Overrides env/config for where the inbox is (tests). */
   inboxDir?: string;
+  /** Config written when none exists yet (tests); production starts neutral. */
+  seedConfig?: PmoConfig;
   generator: Generator;
   now?: () => Date;
 }): Promise<Pmo> {
   const store = new Store(options.dataDir);
-  await store.init();
+  await store.init(options.seedConfig);
   const now = options.now ?? (() => new Date());
   const inboxDir = (config: PmoConfig) =>
     options.inboxDir ?? resolveInboxDir(config.inboxDir);

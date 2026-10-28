@@ -1,5 +1,5 @@
 // What the setup screen says and when it opens: pure helpers, covered by tests.
-import { formatBytes } from "../../lib/setup/models.ts";
+import { MODEL_SIZE, formatBytes } from "../../lib/format.ts";
 import {
   missingRequired,
   type CheckState,
@@ -54,7 +54,7 @@ export function formatEta(seconds: number | null | undefined): string | null {
 
 export function formatRate(bytesPerSecond: number | null | undefined): string | null {
   if (!bytesPerSecond || bytesPerSecond <= 0) return null;
-  return `${formatBytes(bytesPerSecond)}/s`;
+  return `${formatBytes(bytesPerSecond, MODEL_SIZE)}/s`;
 }
 
 /** "3.2 GB of 12 GB · 18 MB/s · about 8 minutes left" */
@@ -66,7 +66,7 @@ export function pullDetail(progress: {
 }): string {
   const parts = [
     progress.totalBytes > 0
-      ? `${formatBytes(progress.completedBytes)} of ${formatBytes(progress.totalBytes)}`
+      ? `${formatBytes(progress.completedBytes, MODEL_SIZE)} of ${formatBytes(progress.totalBytes, MODEL_SIZE)}`
       : null,
     formatRate(progress.bytesPerSecond),
     formatEta(progress.etaSeconds),

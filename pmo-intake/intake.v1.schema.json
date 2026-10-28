@@ -15,9 +15,8 @@
     },
     "source": { "enum": ["outlook", "teams", "manual"] },
     "sourceId": {
-      "description": "Stable id of the message in its source system. Used for de-duplication: the same sourceId is only ever turned into one proposal. Outlook: the message id. Teams flow: Conversation ID + '/' + message id, or the bare message id, or a value derived from the deep link.",
-      "type": "string",
-      "minLength": 1
+      "description": "Stable id of the message in its source system. Used for de-duplication: the same sourceId is only ever turned into one proposal. Outlook: the message id. Teams flow: Conversation ID + '/' + message id, or the bare message id, or a value derived from the deep link. May be blank (empty, spaces or null): the app then derives a stable sha256-based id from source, sender, subject, receivedAt and the start of the body.",
+      "type": ["string", "null"]
     },
     "receivedAt": {
       "description": "ISO 8601 date-time the message was sent/received, with offset or Z.",

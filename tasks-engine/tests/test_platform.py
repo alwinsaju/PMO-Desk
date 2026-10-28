@@ -15,7 +15,7 @@ import types
 
 import pytest
 from fastapi import FastAPI
-from fastapi.testclient import TestClient
+from conftest import make_client
 
 import main as backend
 
@@ -128,7 +128,7 @@ def make_link(link, target):
 
 
 def client():
-    return TestClient(backend.app, raise_server_exceptions=False)
+    return make_client()
 
 
 def upload(c, task_id, input_id, name="a.xlsx", data=b"PK-data"):
@@ -509,6 +509,91 @@ def test_upload_refuses_dest_below_a_symlinked_subfolder(tmp_path):
     assert list(outside.iterdir()) == []
 
 
+SHARED_ROSTER_INPUT = {"id": "names", "type": "file", "accept": [".xlsx"], "dest": "shared/roster/Names.xlsx",
+                       "required": True, "persist": True}
+
+
+def test_upload_to_shared_roster_is_shared_by_every_task_and_satisfies_start(tmp_path):
+    make_platform_task(tmp_path, "one", inputs=[SHARED_ROSTER_INPUT], prepare={}, steps=[])
+    make_platform_task(tmp_path, "two", inputs=[SHARED_ROSTER_INPUT], prepare={}, steps=[])
+    c = client()
+    assert backend._missing_required_inputs(backend.tasks["one"]) == ["names"]
+
+    body = upload(c, "one", "names", name="My Names.xlsx", data=b"PK123")
+
+    assert body["ok"] is True
+    assert (tmp_path / "shared" / "roster" / "Names.xlsx").read_bytes() == b"PK123"
+    assert not (tmp_path / "one" / "shared").exists()
+    assert [p.name for p in (tmp_path / "shared" / "roster").iterdir()] == ["Names.xlsx"]
+    for task_id in ("one", "two"):
+        assert backend._missing_required_inputs(backend.tasks[task_id]) == []
+        listed = c.get(f"/tasks/{task_id}/inputs").json()["inputs"][0]
+        assert listed["present"] is True and listed["persist"] is True
+
+
+def test_shared_roster_survives_input_cleanup(tmp_path):
+    make_platform_task(tmp_path, inputs=[SHARED_ROSTER_INPUT], prepare={}, steps=[])
+    upload(client(), "plat", "names")
+
+    backend._cleanup_inputs(backend.tasks["plat"])
+
+    assert (tmp_path / "shared" / "roster" / "Names.xlsx").is_file()
+
+
+@pytest.mark.parametrize("dest", [
+    "shared/Names.xlsx", "shared/other/Names.xlsx", "shared/roster", "shared/../x.xlsx", "shared/roster/../x.xlsx",
+    "shared/roster/a:b.xlsx",
+])
+def test_upload_refuses_shared_dest_outside_the_user_data_folders(tmp_path, dest):
+    make_platform_task(tmp_path, inputs=[{"id": "r", "type": "file", "accept": [".xlsx"], "dest": dest, "required": True}])
+    body = upload(client(), "plat", "r")
+    assert body["ok"] is False
+    assert not (tmp_path / "x.xlsx").exists() and not (tmp_path / "shared" / "Names.xlsx").exists()
+
+
+def test_upload_refuses_symlinked_shared_roster_folder(tmp_path):
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    make_platform_task(tmp_path, inputs=[SHARED_ROSTER_INPUT])
+    (tmp_path / "shared").mkdir()
+    make_link(tmp_path / "shared" / "roster", outside)
+
+    body = upload(client(), "plat", "names")
+
+    assert body["ok"] is False and "symbolic" in body["reason"]
+    assert list(outside.iterdir()) == []
+
+
+@pytest.mark.parametrize("dest", ["config/rotation-config.json", "reference/Previous.xlsx"])
+def test_upload_can_land_in_the_task_config_and_reference_folders(tmp_path, dest):
+    folder = make_platform_task(tmp_path, inputs=[
+        {"id": "kept", "type": "file", "accept": [".json", ".xlsx"], "dest": dest, "required": True, "persist": True}])
+    c = client()
+    assert backend._missing_required_inputs(backend.tasks["plat"]) == ["kept"]
+
+    assert upload(c, "plat", "kept", name="x.json" if dest.endswith(".json") else "x.xlsx")["ok"] is True
+
+    assert (folder / dest).read_bytes() == b"PK-data"
+    assert backend._missing_required_inputs(backend.tasks["plat"]) == []
+
+
+def test_shared_root_is_only_resolved_when_the_caller_allows_it(tmp_path):
+    make_platform_task(tmp_path)
+    task = backend.tasks["plat"]
+    with pytest.raises(backend._Refusal):
+        backend._resolve_in_task(task, "shared/roster/Names.xlsx")
+    assert backend._resolve_in_task(task, "shared/roster/Names.xlsx", roots=("shared",)) == tmp_path / "shared" / "roster" / "Names.xlsx"
+
+
+@pytest.mark.parametrize("text, expected", [
+    ("Traceback (most recent call last):\n  File \"x.py\", line 1\nFileNotFoundError: no Names.xlsx\n", "FileNotFoundError: no Names.xlsx"),
+    ("", ""),
+    ("x" * 400, "x" * 300),
+])
+def test_error_summary_is_the_last_nonblank_line(text, expected):
+    assert backend._error_summary(text) == expected
+
+
 def test_upload_reports_replace_failure_and_cleans_temp(tmp_path, monkeypatch):
     folder = make_platform_task(tmp_path)
 
@@ -545,7 +630,7 @@ def test_reuploading_a_prepare_input_clears_options_and_select_choices(tmp_path)
 def test_upload_without_multipart_gives_clear_ok_false():
     fresh = FastAPI()
     backend._register_upload_route(fresh, False)
-    body = TestClient(fresh).post("/tasks/x/upload?input=a").json()
+    body = make_client(fresh).post("/tasks/x/upload?input=a").json()
     assert body["ok"] is False and "python-multipart" in body["reason"]
 
 

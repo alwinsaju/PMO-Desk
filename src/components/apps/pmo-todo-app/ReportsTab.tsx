@@ -407,7 +407,7 @@ export function ReportsTab({ state, view, onViewChange }: ReportsTabProps) {
                     role="status"
                     className="text-ink-soft flex items-center gap-2.5 text-[13px]"
                   >
-                    <span className="bg-accent h-2 w-2 shrink-0 rounded-full motion-safe:animate-blink" />
+                    <span className="bg-accent motion-safe:animate-blink h-2 w-2 shrink-0 rounded-full" />
                     {status.kind === "drafting" ? status.text : "Starting…"}
                   </p>
                 )}
@@ -482,7 +482,9 @@ export function ReportsTab({ state, view, onViewChange }: ReportsTabProps) {
 
           {/* Previous reports. */}
           <section aria-label="Previous reports" className="flex flex-col gap-2">
-            <SectionLabel className="border-line border-b pb-2">Previous reports</SectionLabel>
+            <SectionLabel className="border-line border-b pb-2">
+              Previous reports
+            </SectionLabel>
             {saved === null ? (
               <p className="text-ink-muted text-[13.5px]">Loading&hellip;</p>
             ) : rows.length === 0 ? (

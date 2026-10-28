@@ -2,7 +2,9 @@
 
 import { useDrag } from "@use-gesture/react";
 import { windowDefaults } from "@/lib/tokens";
-import { useWindowStore } from "./windowStore";
+import { useWindowStore, windowClampConfig } from "./windowStore";
+import { clampToViewport } from "./windowGeometry";
+import { markGesture } from "./useWindowDrag";
 import type { WindowPosition, WindowSize } from "./types";
 
 export type ResizeDirection = "n" | "s" | "e" | "w" | "ne" | "nw" | "se" | "sw";
@@ -40,7 +42,7 @@ export function useWindowResize(
   const affectsBottom = direction.includes("s");
   const affectsTop = direction.includes("n");
 
-  return useDrag(({ last, movement: [mx, my], memo }) => {
+  return useDrag(({ first, last, movement: [mx, my], memo }) => {
     const start: ResizeMemo =
       (memo as ResizeMemo | undefined) ??
       (() => {
@@ -71,11 +73,19 @@ export function useWindowResize(
       y = start.position.y + (start.size.height - height);
     }
 
+    ({ x, y } = clampToViewport(
+      { x, y, width, height },
+      { width: window.innerWidth, height: window.innerHeight },
+      windowClampConfig,
+    ));
+
     const el = elementRef.current;
     if (el) {
+      if (first) markGesture(el, true);
       el.style.transform = `translate3d(${x}px, ${y}px, 0)`;
       el.style.width = `${width}px`;
       el.style.height = `${height}px`;
+      if (last) markGesture(el, false);
     }
 
     if (last) {

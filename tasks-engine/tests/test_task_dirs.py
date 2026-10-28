@@ -10,7 +10,7 @@ import sys
 import time
 
 import pytest
-from fastapi.testclient import TestClient
+from conftest import make_client
 
 import main as backend
 import workcopy
@@ -57,7 +57,7 @@ def test_the_run_endpoint_works_end_to_end_without_the_folders(tmp_path):
     folder = bare_task(tmp_path)
     backend.discover_tasks()
     shutil.rmtree(folder / "output")  # e.g. cleaned up by hand after discovery
-    with TestClient(backend.app, raise_server_exceptions=False) as client:
+    with make_client() as client:
         assert client.post("/tasks/bare/start").json()["ok"]
         for _ in range(500):
             if backend.tasks["bare"].state != "working":

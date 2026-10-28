@@ -16,17 +16,6 @@ export const LEVEL_RANK: Record<AiLogLevel, number> = { info: 0, warn: 1, error:
 /** What a call is for. Free text on purpose (new call sites need no change here);
  *  these are the ones logView.ts knows how to word. */
 export type AiTaskKind = string;
-export const TASK_KINDS = [
-  "structure",
-  "update",
-  "update-signoff",
-  "chaser",
-  "signoff-request",
-  "report",
-  "command",
-  "load",
-  "prewarm",
-] as const;
 
 export const LABEL_MAX = 60;
 const NOTE_MAX = 80;

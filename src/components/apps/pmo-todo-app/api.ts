@@ -13,6 +13,8 @@ import type {
   TodoDraft,
 } from "@/lib/pmo/types";
 import type { PeriodRequest, SavedReportSummary } from "@/lib/pmo/report";
+import type { FirstRunPayload } from "@/lib/pmo/firstRun";
+import type { FirstRunSuggestions } from "@/lib/pmo/server/firstRun";
 import type { ManualPasteInput } from "@/lib/pmo/manualIntake";
 import type { Attention, DueNotification, Toast } from "@/lib/pmo/due";
 import type { TodoPatch } from "@/lib/pmo/todoLogic";
@@ -62,6 +64,8 @@ export const scanNow = () =>
 export const approveProposal = (id: string, draft: TodoDraft) =>
   call<{ todo: Todo }>(`/queue/${id}/approve`, "POST", { draft });
 export const rejectProposal = (id: string) => call(`/queue/${id}/reject`, "POST");
+/** Undo of Reject: the proposal goes back to the queue. */
+export const restoreProposal = (id: string) => call(`/queue/${id}/restore`, "POST");
 export const retryProposal = (id: string) => call(`/queue/${id}/retry`, "POST");
 /** Apply an "update to existing to-do" card: `include` = the ticked change ids. */
 export const applyUpdate = (id: string, include?: string[]) =>
@@ -77,7 +81,18 @@ export const fetchRaw = (intakeId: string) =>
 export const createTodo = (draft: TodoDraft, proposalId?: string) =>
   call<{ todo: Todo }>("/todos", "POST", { draft, proposalId });
 export const patchTodo = (id: string, patch: TodoPatch) =>
-  call<{ todo: Todo; offerDone: boolean }>(`/todos/${id}`, "PATCH", patch);
+  call<{
+    todo: Todo;
+    offerDone: boolean;
+    nextOccurrence: { dueAt: string; title: string } | null;
+  }>(`/todos/${id}`, "PATCH", patch);
+
+/** A repeating to-do that was just marked done, and when the next round is due.
+ *  Held by the app until the person creates the next one or moves on. */
+export interface NextOffer {
+  todo: Todo;
+  dueAt: string;
+}
 
 // --- chaser drafts: local model, text to copy, never sent ------------------------
 
@@ -137,6 +152,24 @@ export const saveReport = (id: string, body: ReturnType<typeof saveBody>) =>
 
 export const updateConfig = (patch: PmoConfigPatch) =>
   call<{ config: PmoConfig }>("/config", "PUT", patch);
+
+// --- first run (server/firstRun.ts): nothing is created or saved before the person clicks ---
+
+/** A refusal; `needsConfirmation` means "this folder holds other JSON: ask first". */
+export type FirstRunReply<T extends object = object> =
+  ({ ok: true } & T) | { ok: false; reason: string; needsConfirmation?: true };
+
+export const fetchFirstRunSuggestions = () => call<FirstRunSuggestions>("/setup");
+export const finishFirstRun = (body: FirstRunPayload & { confirmNonEmpty?: boolean }) =>
+  call<{ config: PmoConfig }>("/setup", "POST", body) as Promise<
+    FirstRunReply<{ config: PmoConfig }>
+  >;
+/** The "Create PMO-Inbox here" button: the only thing that makes the folder. */
+export const createInboxFolder = (parent: string, confirmNonEmpty = false) =>
+  call<{ path: string; created: boolean }>("/setup/create-folder", "POST", {
+    parent,
+    confirmNonEmpty,
+  }) as Promise<FirstRunReply<{ path: string; created: boolean }>>;
 
 export const submitPaste = (paste: ManualPasteInput) =>
   call<{ duplicate: boolean; fileName: string | null; wouldFilter: string | null }>(

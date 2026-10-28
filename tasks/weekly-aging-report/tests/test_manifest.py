@@ -36,6 +36,7 @@ PREVIOUS_STEPS = [{'id': 'build_report', 'type': 'python', 'cmd': 'scripts/build
   'args': ['-DraftToken', '{entryId}']}]
 
 INPUT_ID = 'incident'
+ROSTER_ID = 'roster'
 DEST = 'input/incident (1).xlsx'
 # the file-name patterns the script really globs for (checked against its source below)
 SCRIPT = 'scripts/build_report.py'
@@ -50,7 +51,7 @@ def test_steps_are_unchanged():
 
 def test_one_required_file_input_opens_the_upload_dialog():
     inputs = MANIFEST["inputs"]
-    assert [i["id"] for i in inputs] == [INPUT_ID]
+    assert [i["id"] for i in inputs] == [INPUT_ID, ROSTER_ID]
     inp = inputs[0]
     assert inp["type"] == "file" and inp["accept"] == [".xlsx"] and inp["required"] is True
     assert inp["dest"] == DEST and inp["label"]
@@ -94,7 +95,7 @@ def test_engine_reads_the_manifest_and_accepts_the_dest():
                     + done.stderr.strip().splitlines()[-1])
     assert done.returncode == 0, done.stderr[-800:]
     info = json.loads(done.stdout.strip().splitlines()[-1])
-    assert info["id"] == 'weekly-aging-report' and info["inputs"] == [[INPUT_ID, True]]
+    assert info["id"] == 'weekly-aging-report' and info["inputs"] == [[INPUT_ID, True], [ROSTER_ID, True]]
     assert info["prepare"] is False
     assert info["steps"] == [[s["id"], s["type"]] for s in PREVIOUS_STEPS]
     assert info["dest"] == DEST

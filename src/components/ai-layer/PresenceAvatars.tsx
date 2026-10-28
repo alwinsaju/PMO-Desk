@@ -69,10 +69,10 @@ export function PresenceAvatars() {
         className="group/pres absolute bottom-7 left-6 z-[var(--z-chrome)] flex items-center pl-2.5"
       >
         {collaborators.map((person) => (
-          <Tooltip key={person.id} label={person.name} side="top" sideOffset={10}>
+          <Tooltip key={person.id} label="Demo presence" side="top" sideOffset={10}>
             <span
               role="img"
-              aria-label={person.active ? `${person.name} (active)` : person.name}
+              aria-label={`${person.name} (demo presence${person.active ? ", active" : ""})`}
               className={cn(
                 "border-surface-elevated relative -ml-2.5 grid h-[38px] w-[38px] place-items-center rounded-full border-2 text-xs font-bold",
                 "ease-spring shadow-[0_4px_12px_rgba(30,30,60,0.2)] transition-[margin,box-shadow] duration-[450ms]",

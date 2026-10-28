@@ -2,12 +2,28 @@
 // its inline validation messages (pure; no React).
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { PmoConfigSchema } from "../../../lib/pmo/types.ts";
+import { developerConfig } from "../../../lib/pmo/developerDefaults.ts";
 import { buildPatch, formFromConfig } from "./settingsForm.ts";
+import { PmoConfigSchema } from "../../../lib/pmo/types.ts";
 
-const config = PmoConfigSchema.parse({});
+const config = developerConfig();
 
 describe("settings form", () => {
+  it("shows empty boxes for a new install (neutral config), never a developer's values", () => {
+    const form = formFromConfig(PmoConfigSchema.parse({}));
+    for (const field of [
+      "names",
+      "emails",
+      "allowedSenderDomains",
+      "allowedTenantIds",
+      "teamsChatAllowlist",
+      "blockedDomains",
+      "blockedTerms",
+    ]) {
+      assert.equal(form[field], "", field);
+    }
+  });
+
   it("round-trips the stored config into the same patch values", () => {
     const form = formFromConfig(config);
     assert.equal(form.allowedSenderDomains, "deloitte.com");
@@ -66,6 +82,7 @@ describe("settings form", () => {
   it("carries the reminder preferences, with defaults that match the engine", () => {
     const form = formFromConfig(config);
     assert.equal(form.reminders.chaserDays, "2");
+    assert.equal(form.reminders.leadWorkingDays, "1");
     assert.equal(form.reminders.hideDetails, true);
     assert.equal(form.reminders.keepRunningInTray, false);
     const built = buildPatch(form);
@@ -86,6 +103,20 @@ describe("settings form", () => {
     assert.match(bad({ chaserDays: "0" }).errors["reminders.chaserDays"], /At least 1/);
     assert.match(bad({ workDays: [] }).errors["reminders.workDays"], /at least one/i);
     assert.equal(bad({ chaserDays: " 3 ", digest: true }).patch.reminders.chaserDays, 3);
+    assert.match(
+      bad({ leadWorkingDays: "" }).errors["reminders.leadWorkingDays"],
+      /number/i,
+    );
+    assert.match(
+      bad({ leadWorkingDays: "6" }).errors["reminders.leadWorkingDays"],
+      /At most 5/,
+    );
+    assert.match(
+      bad({ leadWorkingDays: "1.5" }).errors["reminders.leadWorkingDays"],
+      /whole/i,
+    );
+    assert.equal(bad({ leadWorkingDays: "0" }).patch.reminders.leadWorkingDays, 0);
+    assert.equal(bad({ leadWorkingDays: " 2 " }).patch.reminders.leadWorkingDays, 2);
   });
   it("carries the weekly report heading and checks it", () => {
     const base = formFromConfig(config);

@@ -19,8 +19,10 @@ import {
   repeatsText,
   resendGuidance,
   sortTodos,
+  rejectedRows,
   statusLabel,
   todoRowView,
+  undoRejectText,
 } from "./queueView.ts";
 
 const proposal = (id, status, extra = {}) => ({
@@ -612,7 +614,10 @@ describe("the to-do row view", () => {
 
 describe("repeats text", () => {
   it("is one plain 'Repeats: ...' line, or null for a one-off", () => {
-    assert.equal(repeatsText("weekly, before Tuesday"), "Repeats: weekly, before Tuesday");
+    assert.equal(
+      repeatsText("weekly, before Tuesday"),
+      "Repeats: weekly, before Tuesday",
+    );
     assert.equal(repeatsText("  every   Monday \n"), "Repeats: every Monday");
     assert.equal(repeatsText(null), null);
     assert.equal(repeatsText(undefined), null);
@@ -626,5 +631,59 @@ describe("split tasks", () => {
     assert.equal(partLabelUnderTest({ part: { index: 2, total: 3 } }), "Task 2 of 3");
     assert.equal(partLabelUnderTest({ part: null }), null);
     assert.equal(partLabelUnderTest({}), null);
+  });
+});
+
+describe("rejected proposals (Restore / Undo)", () => {
+  const rejected = (id, updatedAt, extra = {}) => ({
+    ...proposal(id, "rejected"),
+    updatedAt,
+    draft: null,
+    ...extra,
+  });
+  const now = Date.parse("2026-10-28T10:00:00Z");
+
+  it("lists the newest rejection first with a relative time", () => {
+    const rows = rejectedRows(
+      [
+        rejected("p1", "2026-10-28T09:00:00Z"),
+        rejected("p2", "2026-10-28T09:55:00Z", { draft: { title: "Send the deck" } }),
+      ],
+      now,
+    );
+    assert.deepEqual(
+      rows.map((r) => [r.id, r.title, r.when]),
+      [
+        ["p2", "Send the deck", "Rejected 5 min ago"],
+        ["p1", "p1", "Rejected 1 h ago"],
+      ],
+    );
+  });
+
+  it("only gives a reason when the model said it was not a task", () => {
+    const [plain, notTask] = rejectedRows(
+      [
+        rejected("p1", "2026-10-28T09:00:00Z"),
+        rejected("p2", "2026-10-28T08:00:00Z", { isActionable: false }),
+      ],
+      now,
+    );
+    assert.equal(plain.reason, null);
+    assert.match(notTask.reason, /not a task/);
+  });
+
+  it("does not mutate its input and handles an empty list", () => {
+    assert.deepEqual(rejectedRows([], now), []);
+    const input = [
+      rejected("p1", "2026-10-28T08:00:00Z"),
+      rejected("p2", "2026-10-28T09:00:00Z"),
+    ];
+    rejectedRows(input, now);
+    assert.equal(input[0].id, "p1");
+  });
+
+  it("words the undo line, with or without a title", () => {
+    assert.equal(undoRejectText("Send the deck"), 'Rejected "Send the deck".');
+    assert.equal(undoRejectText("  "), "Rejected.");
   });
 });

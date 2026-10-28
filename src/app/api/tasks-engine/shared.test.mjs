@@ -9,7 +9,9 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, it } from "node:test";
 import { resolvePython } from "./python.ts";
+import { getEngineAuth } from "../../../lib/tasks-engine/engineAuth.ts";
 import {
+  engineEnv,
   engineUrlFor,
   findRunningEngine,
   isTasksEngine,
@@ -38,7 +40,9 @@ const engineHandler = (req, res) => {
 afterEach(async () => {
   delete process.env.AI_OS_TASKS_ENGINE_URL;
   delete process.env.AI_OS_TASKS_PYTHON;
+  delete process.env.AI_OS_DESKTOP_MODE;
   globalThis.aiOsTasksEngineUrl = undefined;
+  globalThis.aiOsEngineAuth = undefined;
   await Promise.all(servers.splice(0).map((s) => new Promise((done) => s.close(done))));
 });
 
@@ -79,6 +83,75 @@ describe("findRunningEngine", () => {
     const url = await serve(engineHandler);
     globalThis.aiOsTasksEngineUrl = url;
     assert.equal(await findRunningEngine(), url);
+  });
+});
+
+describe("engine identity and token", () => {
+  /** An engine that reports `instance` and demands `token` on everything but /health. */
+  const authedEngine = ({ instance, token }) =>
+    serve((req, res) => {
+      res.setHeader("content-type", "application/json");
+      if (req.url === "/health") {
+        return res.end(JSON.stringify({ ok: true, service: "tasks-engine", instance }));
+      }
+      if (req.headers["x-ai-os-token"] !== token) {
+        res.statusCode = 403;
+        return res.end("{}");
+      }
+      res.end("[]");
+    });
+
+  it("isTasksEngine can require a specific instance id", async () => {
+    const url = await authedEngine({ instance: "abc", token: "t" });
+    assert.equal(await isTasksEngine(url, "abc"), true);
+    assert.equal(await isTasksEngine(url, "other"), false);
+    assert.equal(await isTasksEngine(url), true);
+    assert.equal(await isTasksEngine(await serve(engineHandler), "abc"), false);
+  });
+
+  it("desktop mode adopts only an engine reporting this process's instance id", async () => {
+    process.env.AI_OS_DESKTOP_MODE = "1";
+    const { instance, token } = getEngineAuth();
+    const foreign = await authedEngine({ instance: "someone-else", token });
+    const unnamed = await serve(engineHandler);
+    globalThis.aiOsTasksEngineUrl = foreign;
+    assert.notEqual(await findRunningEngine(), foreign);
+    globalThis.aiOsTasksEngineUrl = unnamed;
+    assert.notEqual(await findRunningEngine(), unnamed);
+
+    const ours = await authedEngine({ instance, token });
+    globalThis.aiOsTasksEngineUrl = ours;
+    assert.equal(await findRunningEngine(), ours);
+  });
+
+  it("dev mode adopts an engine that accepts our token and skips one that refuses it", async () => {
+    const { token } = getEngineAuth();
+    const mine = await authedEngine({ instance: "x", token });
+    const stale = await authedEngine({ instance: "x", token: "another-session" });
+    globalThis.aiOsTasksEngineUrl = mine;
+    assert.equal(await findRunningEngine(), mine);
+    globalThis.aiOsTasksEngineUrl = stale;
+    assert.notEqual(await findRunningEngine(), stale);
+  });
+
+  it("builds the engine env: no PYTHON*/TLS override, token and instance set", () => {
+    const env = engineEnv({
+      PATH: "p",
+      PYTHONHOME: "x",
+      pythonpath: "y",
+      NODE_TLS_REJECT_UNAUTHORIZED: "0",
+      NODE_EXTRA_CA_CERTS: "ca.pem",
+      AI_OS_ENGINE_TOKEN: "stale",
+    });
+    const { token, instance } = getEngineAuth();
+    assert.equal(env.PATH, "p");
+    assert.equal(env.NODE_EXTRA_CA_CERTS, "ca.pem");
+    assert.equal(env.PYTHONHOME, undefined);
+    assert.equal(env.pythonpath, undefined);
+    assert.equal(env.NODE_TLS_REJECT_UNAUTHORIZED, undefined);
+    assert.equal(env.PYTHONNOUSERSITE, "1");
+    assert.equal(env.AI_OS_ENGINE_TOKEN, token);
+    assert.equal(env.AI_OS_ENGINE_INSTANCE, instance);
   });
 });
 

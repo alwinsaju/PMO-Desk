@@ -25,7 +25,7 @@ contextBridge.exposeInMainWorld("aiOsDesktop", {
   displayMode,
 
   display: {
-    /** { saved, launchedWithGpu, compositing, gpuCompositing } | null */
+    /** { saved, launchedWithGpu, compositing, gpuCompositing, noHardwareAcceleration } | null */
     getState: () => ipcRenderer.invoke("display:get-state"),
     /** Saves the setting (applies to the GPU after a restart); resolves to the new state. */
     setHardwareAcceleration: (enabled) =>

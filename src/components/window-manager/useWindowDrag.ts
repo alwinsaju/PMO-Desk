@@ -1,7 +1,15 @@
 "use client";
 
 import { useDrag } from "@use-gesture/react";
-import { useWindowStore } from "./windowStore";
+import { useWindowStore, windowClampConfig } from "./windowStore";
+import { clampToViewport } from "./windowGeometry";
+
+/** `data-gesture` on the window node while a drag/resize is live: tokens.css
+ *  gives only that window `will-change: transform` + contained chrome. */
+export function markGesture(el: HTMLElement, active: boolean): void {
+  if (active) el.setAttribute("data-gesture", "");
+  else el.removeAttribute("data-gesture");
+}
 
 /**
  * Drag-to-move for a window. Performance-critical: while the pointer is
@@ -33,11 +41,21 @@ export function useWindowDrag(
   const { disabled = false } = options;
 
   return useDrag(
-    ({ offset: [x, y], last }) => {
+    ({ offset: [rawX, rawY], first, last }) => {
       if (disabled) return;
+      const size = useWindowStore.getState().windows[id]?.size;
+      const { x, y } = size
+        ? clampToViewport(
+            { x: rawX, y: rawY, ...size },
+            { width: window.innerWidth, height: window.innerHeight },
+            windowClampConfig,
+          )
+        : { x: rawX, y: rawY };
       const el = elementRef.current;
       if (el) {
+        if (first) markGesture(el, true);
         el.style.transform = `translate3d(${x}px, ${y}px, 0)`;
+        if (last) markGesture(el, false);
       }
       if (last) {
         useWindowStore.getState().moveWindow(id, { x, y });

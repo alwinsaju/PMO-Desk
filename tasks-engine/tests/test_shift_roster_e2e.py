@@ -30,7 +30,7 @@ from getpass import getuser
 from pathlib import Path
 
 import pytest
-from fastapi.testclient import TestClient
+from conftest import make_client
 
 import main as backend
 
@@ -144,7 +144,7 @@ def env(tmp_path, monkeypatch):
 def client(env):
     # the context manager keeps ONE event loop alive across requests, so the
     # fire-and-forget pipeline task created by /start survives between calls
-    with TestClient(backend.app, raise_server_exceptions=False) as c:
+    with make_client() as c:
         yield c
 
 
@@ -273,8 +273,9 @@ def test_full_lifecycle(env, client):
     assert {"id", "displayName", "state", "error", "currentStep", "steps",
             "notifications", "inputs", "prepare"} <= set(t)
     assert (t["state"], t["prepare"]) == ("resting", True)
-    assert [i["id"] for i in t["inputs"]] == ["roster", "holidays", "pto", "cycle"]
-    assert {i["id"]: i["required"] for i in t["inputs"]} == {"roster": True, "holidays": False, "pto": False, "cycle": True}
+    assert [i["id"] for i in t["inputs"]] == ["roster", "rotation_config", "holidays", "pto", "cycle"]
+    assert {i["id"]: i["required"] for i in t["inputs"]} == {
+        "roster": True, "rotation_config": True, "holidays": False, "pto": False, "cycle": True}
     # the Holiday Roster is optional and kept on file; only the roster gates Check inputs
     holidays_input = next(i for i in t["inputs"] if i["id"] == "holidays")
     assert holidays_input["persist"] is True and "optional" in holidays_input["label"].lower()
@@ -292,7 +293,8 @@ def test_full_lifecycle(env, client):
     # 2. nothing uploaded yet; start is refused with the missing required inputs
     inputs = get(c, "/inputs")
     assert inputs["ok"] and inputs["params"] == {}
-    assert {i["id"]: i["present"] for i in inputs["inputs"]} == {"roster": False, "holidays": False, "pto": False, "cycle": False}
+    assert {i["id"]: i["present"] for i in inputs["inputs"]} == {
+        "roster": False, "rotation_config": True, "holidays": False, "pto": False, "cycle": False}
     refused = post(c, "/start")
     assert refused["ok"] is False and refused["missing"] == ["roster", "cycle"]
     assert task_json(c)["state"] == "resting"

@@ -22,7 +22,7 @@ export type EmbeddableCheck =
   /** A live HTTP header check is in flight. Only ever happens when
    *  `knownEmbeddable` is omitted — see the hook's doc comment below. */
   | { status: "checking" }
-  | { status: "checked"; embeddable: boolean };
+  | { status: "checked"; embeddable: boolean; reason?: string };
 
 /**
  * Resolves whether `url` can be embedded in this OS's sandboxed iframe
@@ -74,10 +74,10 @@ export function useEmbeddableUrl(
     })
       .then((res) => {
         if (!res.ok) throw new Error(`check-embeddable responded ${res.status}`);
-        return res.json() as Promise<{ embeddable: boolean }>;
+        return res.json() as Promise<{ embeddable: boolean; reason?: string }>;
       })
       .then((data) => {
-        setState({ status: "checked", embeddable: data.embeddable });
+        setState({ status: "checked", embeddable: data.embeddable, reason: data.reason });
       })
       .catch((err: unknown) => {
         if (controller.signal.aborted) return;

@@ -170,7 +170,7 @@ describe("when not to poll", () => {
     let release;
     const gate = new Promise((resolve) => (release = resolve));
     const { poller, calls } = harness([claim()], {
-      fetchImpl: async (url, init) => {
+      fetchImpl: async (url) => {
         calls.push({ url });
         await gate;
         return {

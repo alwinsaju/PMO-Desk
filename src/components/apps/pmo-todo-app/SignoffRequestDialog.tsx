@@ -241,7 +241,7 @@ export function SignoffRequestDialog({
           </div>
           {drafting && (
             <Note role="status" className="flex items-center gap-2.5">
-              <span className="bg-accent h-2 w-2 shrink-0 rounded-full motion-safe:animate-blink" />
+              <span className="bg-accent motion-safe:animate-blink h-2 w-2 shrink-0 rounded-full" />
               Drafting&hellip; (can take a minute on this PC). You can keep editing; your
               text is not touched.
             </Note>

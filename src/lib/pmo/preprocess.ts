@@ -88,19 +88,75 @@ function startsChain(lines: string[], i: number): boolean {
   return isHeaderBlockStart(lines, i);
 }
 
-/** Cuts the quoted reply chain (and ">"-quoted lines). If that would leave
- *  nothing, the text is returned untouched. */
-export function stripQuotedChain(text: string): string {
+/** Greetings and sign-offs carry no request: a reply that has only these above
+ *  its quote probably answered below it (bottom-posted or inline). */
+const GREETING =
+  /^(hi|hello|hey|dear|good (?:morning|afternoon|evening)|greetings)\b[^.!?\n]{0,60}[,!:]?\s*$/i;
+const CLOSING =
+  /^(thanks|thank you|many thanks|regards|kind regards|best regards|warm regards|best|cheers|sincerely|rgds|br)\b[^.!?\n]{0,30}[,!.]?\s*$/i;
+
+function hasRealText(lines: string[]): boolean {
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (line === "") continue;
+    if (CLOSING.test(line) || line === "--") break; // everything after is a signature
+    if (GREETING.test(line)) continue;
+    if (/[\p{L}\p{N}]/u.test(line)) return true;
+  }
+  return false;
+}
+
+/** The lines under the chain marker: the marker (and its header block) skipped,
+ *  ">"-quoted lines dropped, what is left being the sender's own answers. */
+function belowMarker(lines: string[], cut: number): string {
+  let start = cut + 1;
+  if (/^\s*on\s/i.test(lines[cut]) && !/wrote:\s*$/i.test(lines[cut])) start++; // wrapped "wrote:"
+  while (
+    start < lines.length &&
+    (lines[start].trim() === "" || HEADER_FIELD.test(lines[start]))
+  )
+    start++;
+  return lines
+    .slice(start)
+    .filter((line) => !/^\s*>/.test(line))
+    .join("\n")
+    .trim();
+}
+
+export interface QuotedChainResult {
+  text: string;
+  /** The real text was under the quote (bottom-posted or inline), so it was kept. */
+  replyBelowQuote: boolean;
+}
+
+/** Cuts the quoted reply chain (and ">"-quoted lines) when real text sits above
+ *  it. When only a greeting does, the text below the marker is kept too, capped
+ *  at the model's body limit. If that would leave nothing, the text is returned
+ *  untouched. */
+export function analyseQuotedChain(text: string): QuotedChainResult {
   const lines = text.split("\n");
   let cut = lines.findIndex((_, i) => startsChain(lines, i));
-  if (cut < 0) cut = lines.length;
+  const marked = cut >= 0;
+  if (!marked) cut = lines.length;
   const kept = lines
     .slice(0, cut)
     .filter((line) => !/^\s*>/.test(line))
     .join("\n")
     .trim();
-  return kept === "" ? text : kept;
+  if (marked && !hasRealText(kept.split("\n"))) {
+    const below = belowMarker(lines, cut);
+    if (below !== "") {
+      const joined = (kept === "" ? below : `${kept}\n\n${below}`).slice(
+        0,
+        MAX_MODEL_CHARS,
+      );
+      return { text: joined, replyBelowQuote: true };
+    }
+  }
+  return { text: kept === "" ? text : kept, replyBelowQuote: false };
 }
+
+export const stripQuotedChain = (text: string): string => analyseQuotedChain(text).text;
 
 /** base64 payloads and long tracking/safe-link URLs only burn the context
  *  window; short links are kept because they can carry meaning. */
@@ -115,11 +171,11 @@ export function dropNoise(text: string): string {
     );
 }
 
-/** Raw intake -> the text the model reads. */
-export function prepareForModel(intake: Pick<Intake, "body">): string {
-  let text = displayText(intake);
-  text = stripQuotedChain(text);
-  text = dropNoise(text);
+/** Raw intake -> the text the model reads, and whether the reply was kept from
+ *  under its quote. */
+export function prepareForModelDetailed(intake: Pick<Intake, "body">): QuotedChainResult {
+  const { text: unquoted, replyBelowQuote } = analyseQuotedChain(displayText(intake));
+  let text = dropNoise(unquoted);
   text = text
     .replace(/[ \t]+/g, " ")
     .replace(/\n{3,}/g, "\n\n")
@@ -127,5 +183,9 @@ export function prepareForModel(intake: Pick<Intake, "body">): string {
   if (text.length > MAX_MODEL_CHARS) {
     text = `${text.slice(0, MAX_MODEL_CHARS)}\n[... message truncated ...]`;
   }
-  return text;
+  return { text, replyBelowQuote };
 }
+
+/** Raw intake -> the text the model reads. */
+export const prepareForModel = (intake: Pick<Intake, "body">): string =>
+  prepareForModelDetailed(intake).text;

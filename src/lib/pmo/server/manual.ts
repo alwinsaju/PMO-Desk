@@ -2,8 +2,9 @@
 // pmo-intake/1 file in the SAME inbox the producers use, written the same way
 // (temp file, then rename), so it is deduplicated, filtered and queued by the
 // ordinary ingest pass rather than by a side door. The sourceId is a hash of
-// the content, so pasting the same text twice is one item.
-import { createHash } from "node:crypto";
+// the content, so pasting the same text twice is one item, unless the person
+// chooses "Import anyway" (allowDuplicate), which salts the id.
+import { createHash, randomBytes } from "node:crypto";
 import { stat } from "node:fs/promises";
 import path from "node:path";
 import { dedupeKey, normaliseText } from "../dedupe.ts";
@@ -47,13 +48,21 @@ export async function submitManualIntake(
     [paste.subject, paste.from, paste.body].map((part) => normaliseText(part)).join("\n"),
   );
   const now = pmo.now();
-  const raw = buildManualIntake(paste, `manual-${hash.slice(0, 32)}`, now.toISOString());
+  // "Import anyway" salts the id so the new item does not collide with the old one.
+  const idHash = paste.allowDuplicate
+    ? sha256(`${hash}|${now.getTime()}|${randomBytes(4).toString("hex")}`)
+    : hash;
+  const raw = buildManualIntake(
+    paste,
+    `manual-${idHash.slice(0, 32)}`,
+    now.toISOString(),
+  );
   const intake = IntakeSchema.safeParse(raw);
   if (!intake.success)
     return { ok: false, reason: "That text could not be turned into a message." };
 
   const key = dedupeKey(intake.data);
-  if (await pmo.store.hasSeen(key)) {
+  if (!paste.allowDuplicate && (await pmo.store.hasSeen(key))) {
     return { ok: true, duplicate: true, fileName: null, wouldFilter: null };
   }
 
@@ -69,9 +78,13 @@ export async function submitManualIntake(
     };
   }
 
-  const fileName = `manual-${compactUtc(now)}-${hash.slice(0, 8)}.json`;
+  const fileName = `manual-${compactUtc(now)}-${idHash.slice(0, 8)}.json`;
   await writeJsonAtomic(path.join(dir, fileName), raw);
-  await pmo.store.audit("paste", { origin: paste.origin, fileName });
+  await pmo.store.audit("paste", {
+    origin: paste.origin,
+    fileName,
+    ...(paste.allowDuplicate ? { importedAnyway: true } : {}),
+  });
 
   const verdict = filterIntake(intake.data, config);
   return {

@@ -2,6 +2,7 @@ import argparse
 import asyncio
 import getpass
 import hashlib
+import hmac
 import json
 import logging
 import os
@@ -21,10 +22,14 @@ from fastapi import FastAPI, File, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
+from starlette.datastructures import Headers
 
 import workcopy
 
 log = logging.getLogger("tasks-engine")
+if __name__ == "__main__":
+    # Started as a script by the launcher: make the engine's own log lines (workcopy sync, load errors) visible.
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
 ENGINE_DIR = Path(__file__).resolve().parent
 ROOT_DIR = ENGINE_DIR.parent
@@ -45,8 +50,13 @@ DEFINITIONS_ROOT = Path(os.environ.get("AI_OS_TASKS_DIR") or ROOT_DIR / "tasks")
 _data_dir_env = os.environ.get("AI_OS_TASKS_DATA_DIR")
 DATA_DIR = Path(_data_dir_env or ENGINE_DIR / ".data").resolve()
 TASKS_ROOT = DATA_DIR / "tasks" if _data_dir_env else DEFINITIONS_ROOT
+WORKCOPY_REMOVED = 0
 if _data_dir_env:
-    workcopy.sync(DEFINITIONS_ROOT, TASKS_ROOT)
+    WORKCOPY_REMOVED = workcopy.sync(DEFINITIONS_ROOT, TASKS_ROOT)
+    log.info("workcopy sync removed %d files", WORKCOPY_REMOVED)
+
+# One file per task that is not resting (see "Run state" below).
+RUN_STATE_DIR = DATA_DIR / "run-state"
 
 # Append-only audit log of finished/failed runs: local-only runtime data (the
 # file's own header line says so), never committed.
@@ -57,21 +67,70 @@ HISTORY_HEADER = {
 MAX_RUNS_PER_TASK = 100
 
 app = FastAPI()
-# The Tasks app talks to this engine straight from the browser (or the Electron
-# window), so the only origins allowed are loopback pages on any port.
+
+# Request guard. The Tasks app talks to this engine straight from the browser (or
+# the Electron window), so only loopback hosts and loopback pages are accepted:
+# * Host must be loopback (stops DNS rebinding);
+# * a request that can change something (not GET/HEAD/OPTIONS) with an Origin
+#   header must come from a loopback page (body-less POSTs are CORS "simple
+#   requests", so any web page could otherwise fire approve/send);
+# * when AI_OS_ENGINE_TOKEN is set, every request but GET /health and the CORS
+#   preflight must carry it in X-AI-OS-Token (also forces a preflight).
+TOKEN_ENV = "AI_OS_ENGINE_TOKEN"
+INSTANCE_ENV = "AI_OS_ENGINE_INSTANCE"
+TOKEN_HEADER = "X-AI-OS-Token"
+_LOOPBACK_HOST = r"(127\.0\.0\.1|localhost|\[::1\])(:\d+)?"
+LOOPBACK_HOST_RE = re.compile(_LOOPBACK_HOST, re.IGNORECASE)
+LOOPBACK_ORIGIN_RE = re.compile(rf"^http://{_LOOPBACK_HOST}$")
+_READ_ONLY_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+
+
+def _guard_refusal(method: str, path: str, headers: Headers) -> str | None:
+    """Why the request must be refused (plain language), or None to let it through."""
+    if not LOOPBACK_HOST_RE.fullmatch(headers.get("host", "").strip()):
+        return "The engine only answers requests addressed to this computer (127.0.0.1)."
+    if method not in _READ_ONLY_METHODS:
+        origin = headers.get("origin")
+        if origin is not None and not LOOPBACK_ORIGIN_RE.fullmatch(origin):
+            return "The engine refuses requests from other web pages."
+    token = os.environ.get(TOKEN_ENV)
+    if token and method != "OPTIONS" and not (method == "GET" and path == "/health"):
+        if not hmac.compare_digest(headers.get(TOKEN_HEADER, "").encode("utf-8"), token.encode("utf-8")):
+            return "The engine token is missing or wrong. Restart AI OS."
+    return None
+
+
+class RequestGuard:
+    """Pure ASGI middleware (no body buffering, no extra task per request)."""
+
+    def __init__(self, inner):
+        self.inner = inner
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+            reason = _guard_refusal(scope["method"], scope["path"], Headers(scope=scope))
+            if reason:
+                await JSONResponse({"ok": False, "reason": reason}, status_code=403)(scope, receive, send)
+                return
+        await self.inner(scope, receive, send)
+
+
+# Added first so CORS (added last = outermost) also decorates the refusals.
+app.add_middleware(RequestGuard)
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=r"^http://(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$",
+    allow_origin_regex=LOOPBACK_ORIGIN_RE.pattern,
     allow_methods=["*"],
-    allow_headers=["*"],
+    allow_headers=["*", TOKEN_HEADER],
 )
 
 
 @app.get("/health")
 async def health():
     """Identity probe: lets the launcher tell this engine from any other
-    process that happens to answer on a port."""
-    return {"ok": True, "service": "tasks-engine"}
+    process that happens to answer on a port. `instance` echoes the launch id
+    the shell passed in AI_OS_ENGINE_INSTANCE (null when none was given)."""
+    return {"ok": True, "service": "tasks-engine", "instance": os.environ.get(INSTANCE_ENV) or None}
 
 
 class Task:
@@ -188,7 +247,15 @@ def _step_env() -> dict:
     """Steps (and scripts they start, e.g. a PowerShell step calling Python) find
     the engine's interpreter in AI_OS_TASKS_PYTHON instead of guessing a venv path.
     PYTHONNOUSERSITE keeps a user-level Python install out of their imports."""
-    return {**os.environ, "AI_OS_TASKS_PYTHON": STEP_PYTHON, "PYTHONNOUSERSITE": "1"}
+    return {
+        **os.environ,
+        "AI_OS_TASKS_PYTHON": STEP_PYTHON,
+        "PYTHONNOUSERSITE": "1",
+        # Python steps read and write UTF-8 whatever the Windows code page (matches the pipe decoding in run_step).
+        "PYTHONUTF8": "1",
+        # Exports from ServiceNow trigger this harmless warning on every load; it only buries real errors.
+        "PYTHONWARNINGS": "ignore:Workbook contains no default style:UserWarning",
+    }
 
 
 # Task scripts include console-subsystem Python and PowerShell executables.
@@ -197,22 +264,159 @@ def _step_env() -> dict:
 STEP_POPEN_EXTRA_KWARGS = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
 
 
+task_load_errors: list[dict] = []  # [{"folder", "reason"}] of the last discover_tasks(); logged, never fatal
+
+
+def _manifest_problem(manifest) -> str | None:
+    """Why a parsed task.json cannot become a Task, or None when it can."""
+    if not isinstance(manifest, dict):
+        return "the manifest is not a JSON object"
+    if not isinstance(manifest.get("id"), str) or not manifest["id"].strip():
+        return "the manifest has no id"
+    steps = manifest.get("steps")
+    if not isinstance(steps, list) or not all(
+        isinstance(s, dict) and isinstance(s.get("id"), str) and isinstance(s.get("type"), str) for s in steps
+    ):
+        return "the manifest has no valid steps list (every step needs an id and a type)"
+    return None
+
+
 def discover_tasks():
+    """Load every task folder's task.json. One broken or unreadable manifest is
+    logged, remembered in task_load_errors and skipped: it must never stop the
+    engine (and so every other task) from loading."""
     tasks.clear()
+    task_load_errors.clear()
     for folder in sorted(TASKS_ROOT.iterdir()):
         if not folder.is_dir() or folder.name in SKIP_DIRS:
             continue
         manifest_path = folder / "task.json"
-        if manifest_path.exists():
-            manifest = json.loads(manifest_path.read_text())
-            task = tasks[manifest["id"]] = Task(manifest, folder)
-            _ensure_task_dirs(task)
+        if not manifest_path.exists():
+            continue
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8-sig"))
+            problem = _manifest_problem(manifest)
+            if problem:
+                raise ValueError(problem)
+            task = Task(manifest, folder)
+        except Exception as exc:  # noqa: BLE001 - OSError, bad JSON/UTF-8, wrong shape: all skip this one task
+            log.warning("skipping task folder %s: %s: %s", folder.name, type(exc).__name__, exc)
+            task_load_errors.append({"folder": folder.name, "reason": f"{type(exc).__name__}: {exc}"})
+            continue
+        tasks[task.id] = task
+        _ensure_task_dirs(task)
+
+
+# --- Run state ---------------------------------------------------------------
+# Every state transition of a task that is not resting is written to
+# <data>/run-state/<task_id>.json (atomically), so an engine crash or restart at a
+# gate does not lose the run, and a re-run does not make a second Outlook draft.
+# restore_run_state() reads those files back after discover_tasks(): a gate
+# (awaiting_review / awaiting_send) and an error come back as they were; a run
+# that was working/finishing becomes an error whose Retry resumes after the last
+# completed step. A resting task has no file.
+
+INTERRUPTED_MESSAGE = "The engine restarted while this task was running. Retry resumes after the last completed step."
+_RESTORABLE_STATES = frozenset({"awaiting_review", "awaiting_send", "working", "finishing", "error"})
+_RUN_STATE_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+
+
+def _run_state_path(task_id: str) -> Path | None:
+    return RUN_STATE_DIR / f"{task_id}.json" if _RUN_STATE_ID_RE.fullmatch(task_id) else None
+
+
+def _persist_run_state(task: Task) -> None:
+    path = _run_state_path(task.id)
+    if path is None:
+        return
+    try:
+        if task.state == "resting":
+            path.unlink(missing_ok=True)
+            return
+        _atomic_write_json(path, {
+            "version": 1,
+            "task_id": task.id,
+            "state": task.state,
+            "current_step": task.current_step,
+            "completed_steps": [s["id"] for s in task.steps if s["id"] in task.completed_steps],
+            "entry_id": task.entry_id,
+            "run_id": task.run_id,
+            "run_started_at": task.run_started_at,
+            "error": task.error,
+            "approvals": task.approvals,
+            "saved_at": _utc_now(),
+        })
+    except OSError:
+        # Losing the file only costs the restart safety net; it must not fail the run.
+        log.warning("could not save the run state of %s", task.id, exc_info=True)
+
+
+def _is_str_or_none(value) -> bool:
+    return value is None or isinstance(value, str)
+
+
+def _saved_run_state_problem(task: Task, saved) -> str | None:
+    """Why a saved run state cannot be restored onto this task, or None."""
+    if not isinstance(saved, dict) or saved.get("state") not in _RESTORABLE_STATES:
+        return "unknown state"
+    step_ids = {s["id"] for s in task.steps}
+    completed = saved.get("completed_steps")
+    if not isinstance(completed, list) or not all(isinstance(c, str) and c in step_ids for c in completed):
+        return "it names steps the manifest no longer has"
+    current = saved.get("current_step")
+    if not _is_str_or_none(current) or (current is not None and current not in step_ids):
+        return "its current step is not in the manifest"
+    if saved["state"] in ("awaiting_review", "awaiting_send") and current is None:
+        return "a gate without a step"
+    if not all(_is_str_or_none(saved.get(k)) for k in ("entry_id", "run_id", "run_started_at", "error")):
+        return "malformed fields"
+    return None
+
+
+def _restore_one(task: Task, saved: dict) -> None:
+    state = saved["state"]
+    current = saved.get("current_step")
+    task.completed_steps = set(saved["completed_steps"])
+    task.entry_id = saved.get("entry_id")
+    if state == "error":
+        # Its run record was written when it failed.
+        set_state(task, "error", error=saved.get("error"), current_step=current)
+        return
+    task.run_id = saved.get("run_id")
+    task.run_started_at = saved.get("run_started_at")
+    approvals = saved.get("approvals")
+    task.approvals = [a for a in approvals if isinstance(a, dict)] if isinstance(approvals, list) else []
+    if state in ("awaiting_review", "awaiting_send"):
+        set_state(task, state, current_step=current)
+    else:
+        _fail_task(task, current, INTERRUPTED_MESSAGE)
+
+
+def restore_run_state() -> None:
+    """Bring back the run state saved before the last engine stop (see above).
+    Files of tasks that no longer exist are left alone; files that no longer fit
+    their task's manifest, or cannot be read, are dropped."""
+    for task in tasks.values():
+        path = _run_state_path(task.id)
+        if path is None or not path.is_file():
+            continue
+        try:
+            saved = json.loads(path.read_text(encoding="utf-8"))
+            problem = _saved_run_state_problem(task, saved)
+            if problem is None:
+                _restore_one(task, saved)
+                continue
+        except (OSError, ValueError) as exc:
+            problem = f"{type(exc).__name__}: {exc}"
+        log.warning("dropping the saved run state of %s: %s", task.id, problem)
+        path.unlink(missing_ok=True)
 
 
 def set_state(task: Task, state: str, **kw):
     task.state = state
     for k, v in kw.items():
         setattr(task, k, v)
+    _persist_run_state(task)
 
 
 def _read_report_data(task: Task) -> dict | None:
@@ -362,7 +566,7 @@ def run_step(step: dict, cwd: Path, entry_id: str | None, task: "Task | None" = 
     # stderr is still captured whole (it's short, and only read on failure).
     proc = subprocess.Popen(
         cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        text=True, stdin=subprocess.DEVNULL, env=_step_env(),
+        text=True, encoding="utf-8", errors="replace", stdin=subprocess.DEVNULL, env=_step_env(),
         **STEP_POPEN_EXTRA_KWARGS,
     )
     if task is not None:
@@ -498,14 +702,22 @@ def _finalize_run_record(task: Task, outcome: str, error: str | None = None, cle
     task.approvals = []
 
 
+def _error_summary(error_text: str, limit: int = 300) -> str:
+    """The line that says what went wrong: a failed step's stderr starts with warnings and
+    the traceback, and ends with the exception, so show the last non-blank line."""
+    lines = [line.strip() for line in error_text.splitlines() if line.strip()]
+    return (lines[-1] if lines else error_text)[:limit]
+
+
 def _fail_task(task: Task, step_id: str, error_text: str):
     set_state(task, "error", error=error_text, current_step=step_id)
     _finalize_run_record(task, "failed", error_text[:500])
+    _persist_run_state(task)  # the finished run's id is gone now
     push_notification(
         task,
         "task.failed",
         f"{task.display_name}: hit an error",
-        error_text[:300],
+        _error_summary(error_text),
     )
 
 
@@ -604,7 +816,8 @@ async def run_steps(task: Task, steps: list[dict]):
         if step.get("capturesEntryId"):
             entry_file = task.folder / "output" / "draft-entry-id.txt"
             if entry_file.exists():
-                task.entry_id = entry_file.read_text().strip()
+                task.entry_id = entry_file.read_text(encoding="utf-8-sig").strip()
+        _persist_run_state(task)  # a restart resumes after this step
 
     _finish_task(task, steps)
 
@@ -661,7 +874,7 @@ async def start_task(task_id: str):
     if is_retry:
         entry_file = task.folder / "output" / "draft-entry-id.txt"
         if not entry_id and entry_file.exists():
-            entry_id = entry_file.read_text().strip()
+            entry_id = entry_file.read_text(encoding="utf-8-sig").strip()
         steps = [s for s in steps if s["id"] not in task.completed_steps]
     else:
         task.completed_steps.clear()
@@ -999,6 +1212,11 @@ def _lstat_signature(path: Path):
     return sig, _stat_is_link(st)
 
 
+SHARED_ROOT = "shared"
+# Where a manifest file input's `dest` may point: the per-run input/ folder, or the user data that
+# outlives runs (the task's config/ and reference/, the shared roster folders).
+INPUT_DEST_ROOTS = ("input", "config", "reference", SHARED_ROOT)
+SHARED_UPLOAD_DIRS = frozenset(workcopy.PROTECTED_SHARED_DIRS)
 _RESOLVE_MEMO_MAX = 256
 _resolve_memo: "OrderedDict[tuple, tuple[tuple, Path]]" = OrderedDict()
 
@@ -1008,6 +1226,10 @@ def _resolve_in_task(task: Task, rel, roots: tuple[str, ...] = ("input", "output
     that is not strictly inside <task>/<root> for one of `roots`: absolute
     paths, drive letters / NTFS streams, '..', and any symlink or junction
     along the way.
+
+    The one exception is root "shared" (only when listed in `roots`): the user data
+    folders of the sibling shared/ folder (SHARED_UPLOAD_DIRS, e.g. the roster
+    several tasks read), resolved against the tasks folder instead of this task.
 
     `memo=True` (read-only polling paths) skips the two expensive realpath calls
     when every component's lstat signature is unchanged since the last full
@@ -1019,13 +1241,18 @@ def _resolve_in_task(task: Task, rel, roots: tuple[str, ...] = ("input", "output
     parts = [p for p in rel.replace("\\", "/").split("/") if p not in ("", ".")]
     if len(parts) < 2 or ".." in parts or parts[0] not in roots:
         raise _Refusal(f"path must be inside the task's {' or '.join(r + '/' for r in roots)} folder: {rel}")
-    current = task.folder
+    base = task.folder
+    if parts[0] == SHARED_ROOT:
+        if len(parts) < 3 or parts[1] not in SHARED_UPLOAD_DIRS:
+            raise _Refusal(f"path must be inside shared/{'/ or shared/'.join(sorted(SHARED_UPLOAD_DIRS))}/: {rel}")
+        base = task.folder.parent
+    current = base
     if not memo:
         for part in parts:
             current = current / part
             if _is_link(current):
                 raise _Refusal(f"symbolic links are not allowed: {rel}")
-        if not current.resolve().is_relative_to(task.folder.resolve() / parts[0]):
+        if not current.resolve().is_relative_to(base.resolve() / parts[0]):
             raise _Refusal(f"path escapes the task folder: {rel}")
         return current
     signature = [_lstat_signature(current)[0]]
@@ -1036,13 +1263,13 @@ def _resolve_in_task(task: Task, rel, roots: tuple[str, ...] = ("input", "output
             raise _Refusal(f"symbolic links are not allowed: {rel}")
         signature.append(sig)
     signature = tuple(signature)
-    key = (str(task.folder), tuple(parts))
+    key = (str(base), tuple(parts))
     with _cache_lock:
         hit = _resolve_memo.get(key)
         if hit is not None and hit[0] == signature:
             _resolve_memo.move_to_end(key)
             return hit[1]
-    if not current.resolve().is_relative_to(task.folder.resolve() / parts[0]):
+    if not current.resolve().is_relative_to(base.resolve() / parts[0]):
         raise _Refusal(f"path escapes the task folder: {rel}")
     with _cache_lock:
         _resolve_memo[key] = (signature, current)
@@ -1291,7 +1518,7 @@ def _read_upload_meta(task: Task, *, cached: bool = False) -> dict:
 def _file_input_path(task: Task, inp: dict, *, memo: bool = False) -> Path | None:
     """Existing file for a `file` input, or None when absent/unsafe."""
     try:
-        path = _resolve_in_task(task, inp.get("dest"), roots=("input",), memo=memo)
+        path = _resolve_in_task(task, inp.get("dest"), roots=INPUT_DEST_ROOTS, memo=memo)
     except _Refusal:
         return None
     return path if path.is_file() else None
@@ -1677,7 +1904,7 @@ def _store_upload(task: Task, input_id: str, client_name, stream) -> dict:
         raise _Refusal(f"input '{input_id}' declares no accepted file types")
     if ext in _DENIED_UPLOAD_EXTENSIONS or ext not in accept:
         raise _Refusal(f"file type '{ext or filename}' is not accepted (allowed: {', '.join(accept)})")
-    dest = _resolve_in_task(task, inp.get("dest"), roots=("input",))
+    dest = _resolve_in_task(task, inp.get("dest"), roots=INPUT_DEST_ROOTS)
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest.parent / f".{dest.name}.{uuid.uuid4().hex}.upload"
     digest = hashlib.sha256()
@@ -2034,7 +2261,66 @@ def get_flags(task_id: str):
         return exc.payload()
 
 
+_EMAIL_DATA_REL = "output/email-data.json"
+_DRAFT_LIST_MAX = 50
+_DRAFT_VALUE_MAX = 300
+
+
+def _draft_text(value) -> str:
+    return value.strip()[:_DRAFT_VALUE_MAX] if isinstance(value, str) else ""
+
+
+def _draft_list(value, *, split: bool = False) -> list[str]:
+    """Whitelisted display strings: trimmed, non-empty, each capped, at most _DRAFT_LIST_MAX.
+    A recipient string is split on ';' only (display names contain commas)."""
+    if isinstance(value, str):
+        value = value.split(";") if split else [value]
+    if not isinstance(value, list):
+        return []
+    items = (_draft_text(v) for v in value)
+    return [s for s in items if s][:_DRAFT_LIST_MAX]
+
+
+def _draft_attachment_names(value) -> list[str]:
+    names = []
+    for item in _draft_list(value):
+        name = item.replace("\\", "/").rsplit("/", 1)[-1].strip()
+        if name:
+            names.append(name)
+    return names
+
+
+@app.get("/tasks/{task_id}/draft-summary")
+def get_draft_summary(task_id: str):
+    """Who the Outlook draft goes to, echoed for the 'Confirm & send' dialog. Reads
+    only output/email-data.json and returns just to / cc / subject / attachments."""
+    try:
+        task = _task_or_refusal(task_id)
+        try:
+            data = _read_json_rel(task, _EMAIL_DATA_REL)
+        except _Refusal:
+            data = None
+        if not isinstance(data, dict):
+            return {"ok": True, "summary": None}
+        to = _draft_list(data.get("to"), split=True)
+        cc = _draft_list(data.get("cc"), split=True)
+        if not to and not cc:
+            return {"ok": True, "summary": None}
+        return {
+            "ok": True,
+            "summary": {
+                "to": to,
+                "cc": cc,
+                "subject": _draft_text(data.get("subject")),
+                "attachments": _draft_attachment_names(data.get("attachments")),
+            },
+        }
+    except _Refusal as exc:
+        return exc.payload()
+
+
 discover_tasks()
+restore_run_state()
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -2045,7 +2331,8 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
     import uvicorn
 
-    uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="info")
+    # access_log off: the Tasks app polls every 2 s, which would bury the launch log in access lines.
+    uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="info", access_log=False)
 
 
 if __name__ == "__main__":

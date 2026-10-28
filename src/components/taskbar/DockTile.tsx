@@ -27,9 +27,14 @@ export const dockTileClassName = cn(
 );
 
 interface DockTileProps {
+  /** The app this tile stands for; lets a closing window return focus here. */
+  appId?: string;
   label: string;
   icon: Icon;
   onClick: () => void;
+  /** Offered in the context menu while the app is running, since a plain
+   *  click minimises/restores instead of opening another window. */
+  onNewWindow?: () => void;
   /** False for a temporary tile that's only here because a window of an
    *  unpinned app is open — its context menu offers "Pin to taskbar"
    *  instead of "Unpin from taskbar". */
@@ -65,9 +70,11 @@ interface DockTileProps {
  * flex row sees the button itself as the item.
  */
 export function DockTile({
+  appId,
   label,
   icon: IconGlyph,
   onClick,
+  onNewWindow,
   pinned,
   onTogglePinned,
   onResetTaskbar,
@@ -93,6 +100,7 @@ export function DockTile({
                     : undefined
               }
               data-running={running}
+              data-dock-app={appId}
               onClick={onClick}
               className={dockTileClassName}
               {...dragProps}
@@ -124,6 +132,12 @@ export function DockTile({
         </span>
       </ContextMenuTrigger>
       <ContextMenuContent>
+        {onNewWindow && running !== "none" && (
+          <>
+            <ContextMenuItem onSelect={onNewWindow}>New window</ContextMenuItem>
+            <ContextMenuSeparator />
+          </>
+        )}
         <ContextMenuItem onSelect={onTogglePinned}>
           {pinned ? "Unpin from taskbar" : "Pin to taskbar"}
         </ContextMenuItem>

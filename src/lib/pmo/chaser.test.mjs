@@ -53,7 +53,10 @@ describe("chaser prompt", () => {
     assert.match(prompt, /^Waited so far: 7 days \(5 working days\)$/m);
     assert.match(prompt, /Waiting since: 2026-10-19T12:00 IST/);
     assert.match(prompt, /Due date of the to-do: 2026-10-30/);
-    assert.match(prompt, /<message source="outlook" from="Pat Sample" subject="Q4 programme/);
+    assert.match(
+      prompt,
+      /<message source="outlook" from="Pat Sample" subject="Q4 programme/,
+    );
     assert.match(prompt, /consolidated RAID log by Tuesday/);
   });
 
@@ -89,10 +92,13 @@ describe("chaser prompt", () => {
 
 describe("cleanChaserText", () => {
   it("trims, drops code fences and surrounding quotes, and lifts a Subject line", () => {
-    assert.deepEqual(cleanChaserText("  Hi Jordan,\n\nChecking in.\n\nThanks,\nAlwin  \n"), {
-      text: "Hi Jordan,\n\nChecking in.\n\nThanks,\nAlwin",
-      subject: null,
-    });
+    assert.deepEqual(
+      cleanChaserText("  Hi Jordan,\n\nChecking in.\n\nThanks,\nAlwin  \n"),
+      {
+        text: "Hi Jordan,\n\nChecking in.\n\nThanks,\nAlwin",
+        subject: null,
+      },
+    );
     assert.equal(cleanChaserText("```text\nHi there\n```").text, "Hi there");
     assert.equal(cleanChaserText('"Hi there,\nPing."').text, "Hi there,\nPing.");
     const withSubject = cleanChaserText("Subject: Quick check-in\n\nHi Jordan,\nPing.");
@@ -122,11 +128,15 @@ describe("defaultChaserSubject", () => {
       "Re: Q4 programme status pack - input needed",
     );
     assert.equal(
-      defaultChaserSubject(todo({ source: { source: "outlook", subject: "RE: Already" } })),
+      defaultChaserSubject(
+        todo({ source: { source: "outlook", subject: "RE: Already" } }),
+      ),
       "RE: Already",
     );
     assert.equal(
-      defaultChaserSubject(todo({ source: { source: "teams", subject: "PMO weekly sync" } })),
+      defaultChaserSubject(
+        todo({ source: { source: "teams", subject: "PMO weekly sync" } }),
+      ),
       "Following up: Send the consolidated RAID log",
     );
   });
@@ -153,16 +163,25 @@ describe("buildMailto", () => {
       body: "b",
     });
     assert.equal(bad.ok, true);
-    assert.ok(bad.url.startsWith("mailto:?subject="), "no To at all rather than a mangled one");
+    assert.ok(
+      bad.url.startsWith("mailto:?subject="),
+      "no To at all rather than a mangled one",
+    );
     assert.ok(!bad.url.includes("bcc"));
-    assert.ok(buildMailto({ to: "", subject: "s", body: "b" }).url.startsWith("mailto:?"));
+    assert.ok(
+      buildMailto({ to: "", subject: "s", body: "b" }).url.startsWith("mailto:?"),
+    );
   });
 
   it("refuses a link longer than mail programs accept, and says to copy instead", () => {
     const result = buildMailto({ to: null, subject: "s", body: "word ".repeat(800) });
     assert.equal(result.ok, false);
     assert.match(result.reason, /Too long for a mail link/);
-    const near = buildMailto({ to: null, subject: "s", body: "x".repeat(MAILTO_MAX_CHARS - 60) });
+    const near = buildMailto({
+      to: null,
+      subject: "s",
+      body: "x".repeat(MAILTO_MAX_CHARS - 60),
+    });
     assert.equal(near.ok, true);
     assert.ok(near.url.length <= MAILTO_MAX_CHARS);
   });
