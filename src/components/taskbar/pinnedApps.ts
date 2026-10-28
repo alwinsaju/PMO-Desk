@@ -19,6 +19,7 @@ import {
   ClipboardTextIcon,
   FolderIcon,
   GlobeIcon,
+  IdentificationBadgeIcon,
   ListChecksIcon,
   NotePencilIcon,
   SquaresFourIcon,
@@ -64,6 +65,7 @@ export interface BuiltInApp {
 export const builtInApps = [
   { id: "pmo-todo", title: "PMO To-Do", icon: ClipboardTextIcon },
   { id: "tasks", title: "Tasks", icon: ListChecksIcon },
+  { id: "staff", title: "Staff Management", icon: IdentificationBadgeIcon },
   { id: "files", title: "Files", icon: FolderIcon },
   { id: "notes", title: "Notes", icon: NotePencilIcon },
   { id: "browser", title: "Browser", icon: GlobeIcon },

@@ -18,6 +18,12 @@ on the user's computer (loopback only; the AI is a local Ollama model, no cloud 
 - **Tasks engine** (`tasks-engine/`, Python/FastAPI) and the **Tasks app**: runs the task
   folders under `tasks/` (Shift Roster, December Disconnect, the weekly and monthly reports,
   the deployment mailer) through prepare, review, approve and send gates.
+- **Staff Management** (`src/lib/staff/`, `src/components/apps/staff-app/`): the roster of
+  people. A Directory (the main columns in a list, everything else in a right-hand detail pane),
+  a Shift roster (teams, each with its own shift schedule, imported from the team's roster
+  workbook), a Time-off tracker and an Offboarded list (people removed from the
+  roster, kept on file and editable, restorable or deletable). It is meant to be the one list of people that
+  the other apps read instead of an uploaded Excel file.
 - **First-run Setup screen**: checks and installs what a new computer lacks (Ollama, the AI
   model, the PMO inbox folder, classic Outlook, the Tasks engine).
 - Demo apps (Notes, Browser, web apps) and an app store.
@@ -51,6 +57,7 @@ model in detail.
 Everything the installed app writes is under `%APPDATA%\ai-os` (Electron's user-data folder),
 never in the install folder, so a reinstall keeps it: `tasks-engine\` (task inputs, outputs,
 config, run history), `pmo\` (the PMO data folder: to-dos, queue, audit log, reports),
+`pmo\staff\` (the Staff Management roster, shifts, time off and profile pictures),
 `desktop.log`, and the app's settings files. The first-run Setup screen and `docs/clean-machine-test.md`
 describe how to test this on a new computer.
 

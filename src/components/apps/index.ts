@@ -25,3 +25,6 @@ import "../app-store"; // the App Store is also opened as a window
 registerLazyApp("pmo-todo", () =>
   import("./pmo-todo-app/PmoTodoApp").then((m) => ({ default: m.PmoTodoApp })),
 );
+registerLazyApp("staff", () =>
+  import("./staff-app/StaffApp").then((m) => ({ default: m.StaffApp })),
+);

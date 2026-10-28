@@ -787,6 +787,141 @@ serverLog? }`: only events after `since` (a different `session` returns all and
   Download .txt, and a **Follow** switch (scrolling up turns it off). Both views are
   built from the same events by `logView.ts`.
 
+## Staff Management (`src/lib/staff/`, `src/components/apps/staff-app/`, `/api/staff`)
+
+The roster app. It owns the list of people; other apps should read people from it rather than
+from a workbook.
+
+**Sections.** _Directory_ (search, filter by location / OP / offering / level, sort; the list
+shows Employee, Level, OP, Offering, Team, Location and Roll-off, and the right-hand pane shows
+every other field, grouped. Every column and the pane are resizable: drag a column's right edge
+or the pane's left edge, use the arrow keys on the focused divider, double-click or press Home
+to reset; sizes are remembered per computer in localStorage, limits and parsing in
+`layout.ts`), _Shift roster_ (see "Shift roster" below) and _Time off_ (approval
+summary, per-type bars, approve / reject / undo, add and delete). All colors come from the
+theme tokens, so light, dark and Deloitte mode (and its dark variant) follow automatically.
+
+**Data model** (`types.ts`, columns from the _Staff roster template_ workbook). `Employee` holds
+the template's columns: first / last name (full name is derived), milestone, Deloitte email,
+roll-off date, campus, location (Onshore / Offshore), home office, level, offering, OP, team,
+phone, skills, Deloitte Person ID, Takeda email, Staffit start / end, contract end, Network ID,
+Workday ID, client manager, and gender (kept on file, never shown in a list or the pane and
+left out of the CSV export). Level, OP (offering portfolio = the M365 department), home
+office, phone and the names are the **M365-sourced** fields; **Offering** is not in M365 and
+is entered by hand (to be derived from OP once the OP-to-offering mapping exists); the rest
+are entered by hand too.
+
+**Storage.** One JSON file per collection plus a file per picture, under
+`<data dir>\staff\` (`employees.json`, `shifts.json`, `timeoff.json`, `offboarded.json`,
+`photos\<id>.img`). `employees.json` is the file other apps and the Tasks engine can read.
+Writes are validated (`schema.ts`), atomic and serialized; removing a person also removes
+their leave and picture; two people cannot share a Deloitte email.
+
+**Offboarded.** _Remove from roster_ in the Directory does not delete the profile: it moves
+the person (all fields and the picture, stamped `offboardedAt`) from `employees.json` to
+`offboarded.json`, so other apps and the Tasks engine stop seeing them, and drops their
+time-off requests. The _Offboarded_ tab lists them with search, **Edit** (the same form as the
+Directory), **Restore** (back onto the roster; refused when someone on the roster already has
+that email) and **Delete** (removes the profile and picture for good, after a confirmation).
+The move is one locked server operation that writes the new copy before dropping the old one,
+so an interrupted move can duplicate a person but never lose one.
+
+**API** (loopback-only like every `/api` route; see `src/middleware.ts`):
+
+| Route                                   | Purpose                                                                           |
+| --------------------------------------- | --------------------------------------------------------------------------------- |
+| `GET /api/staff/employees`              | `{ ok, items }` - the roster. Same shape for `shifts` and `timeoff`.              |
+| `POST /api/staff/employees`             | `{ upsert?: [...], remove?: [ids] }` - all-or-nothing batch. Same for the others. |
+| `GET/PUT/POST /api/staff/roster`        | The shift roster's configuration; PUT replaces it, POST is the workbook import.   |
+| `GET/POST /api/staff/offboarded`        | The offboarded list: edit (`upsert`, existing people only) or delete (`remove`).  |
+| `POST /api/staff/offboard`              | `{ action: "offboard" \| "restore", ids }` - moves people between the two lists.  |
+| `PUT/GET/DELETE /api/staff/photos/<id>` | The picture (JPEG / PNG / WebP, max 1 MB, type checked by its bytes).             |
+| `POST /api/staff/profile`               | Applies one M365 profile directly (see below).                                    |
+| `GET/POST /api/staff/sync`              | The exchange-folder scan (see below); `{ resend: id }` asks for a profile again.  |
+
+**Adding people and the M365 profile.** _Add employee_ takes one or many Deloitte emails
+(pasted, one per line). Each becomes a person flagged **Waiting for M365 profile**, with a
+provisional name taken from the address. A cloud flow cannot reach the loopback-only server, so
+the hand-over is a OneDrive folder (`exchangeServer.ts`, `exchange.ts`): the scan writes
+`requests\<email>~<stamp>.json` for each waiting person, a Power Automate flow looks the person
+up in M365 and writes `profiles\<email>.json`, and the next scan applies it (through the same
+`applyProfileSync` as `POST /api/staff/profile`) and deletes the file and the request. Files that
+cannot be applied move to `rejected\` with a `.reason.txt`; a file that does not parse yet is
+left alone for two minutes in case it is still syncing. The folder is
+`AI_OS_STAFF_EXCHANGE_DIR`, else `Staff-Exchange` in the first OneDrive root, else
+`<data dir>\staff\exchange`. The store runs the scan before every load (every ~20 s while a
+Staff window is open). The exact flow is in `docs/staff-m365-flow.md`.
+
+`POST /api/staff/profile` takes
+`{ email, firstName?, lastName?, homeOffice?, level?, op?, phone?, photoBase64? }`
+directly; the person with that email gets those fields (empty or missing values never
+overwrite what is on file), the picture is stored, and the flag becomes _synced_. Unknown emails
+answer `404`. **Import from Excel** reads the template workbook in the browser and matches rows
+by email (existing people are updated with the cells that have a value; new ones are added);
+**Export** writes the same columns as CSV.
+
+**Shift roster exclusion.** `Employee.excludeFromShiftRoster` (a switch in the detail pane and
+the edit dialog, the "Exclude from shift roster" column on import/export). The shift roster
+leaves excluded people out; anything building a shift roster from the list should use
+`shiftRosterPeople()`.
+
+**Shift roster** (`shifts.ts` logic, `rosterCatalog.ts` defaults, `rosterImport.ts` workbook
+reader, `rosterStore.ts` client copy of the configuration, `ShiftRoster.tsx` and friends). The
+team ran this in Excel, where every team had its own legend and the same names (Shift-1 ...)
+meant different hours. It is modelled so that stays true without the confusion:
+
+- A **schedule** is a named set of shifts (`label`, `start`/`end` in IST, usual `days`). A
+  **team** (group) uses exactly one schedule. A shift is stored as a reference
+  `<scheduleId>:<shiftId>`, so "Shift-3" of Device Support (9 PM - 6 AM) and "Shift-3" of Main
+  (2 PM - 11 PM) can never be mixed up, and editing one schedule's hours never touches another's.
+- **Day types** are shared by every team and are not part of any schedule: holiday (one code,
+  `HOL`, for India, US, Mexico and all locations), PTO, temp PTO, comp off, on-call, sick, day
+  off. A **swap** is a flag (plus note) on a day, not a shift of its own, and **custom hours**
+  (`custom` + typed text, e.g. `11AM-8PM`) cover what no schedule has.
+- **Colours follow the start time** (day / afternoon / evening / night), not the shift name, so
+  equal hours look equal across teams; day types are drawn dashed. Each team section shows its
+  own legend (every shift with its hours and usual days) above its people.
+- **Events** (holidays, swap days, notes such as the winter disconnect) apply to a day or a run
+  of days for everyone and show above the dates.
+- **Who is on the roster.** A `RosterMember` is one row. It links to a directory profile
+  (`employeeId`) or, until the person exists in the directory, stands alone with the name, city
+  and role from the workbook; **Manage > Match names to the directory** (and the import itself)
+  link members whose name is the same words as exactly one profile. A linked member takes the
+  name and photo from the directory and disappears when the profile is excluded from the shift
+  roster. Directory people who are included but in no team yet are listed last under "Not in a
+  team yet", with **Add to team**. Removing a person from the directory unlinks their entry
+  (and keeps its shifts) rather than deleting it.
+- **Storage.** `roster.json` holds `{ schedules, groups, members, events }` (replaced as a whole
+  by PUT, validated for dangling teams / schedules / links); `shifts.json` holds the days
+  (`<memberId>|<date>` ids; the list is served with an ETag because a year of a 50-person roster
+  is ~11,000 days).
+- **Import** (Manage > Import from Excel) reads the "Resource" sheet of the roster workbook in the
+  browser: the banner row becomes events, the date row the days, a heading row a team, and each
+  person row a member with their cells. Cells are read against their team's schedule (so
+  `Shift-3` under Device Support becomes that team's Shift-3); a shift the team's schedule lacks
+  but only one set of hours has by that name (`NS`) is found elsewhere; anything else is kept as
+  typed hours and listed in the preview. Team names are mapped by alias (`Device Support L3` ->
+  Device Support, `L N S 2.0` -> LNS 2.0, `Governance` -> Integration Hub). Re-importing updates
+  the same people instead of adding them again; days left blank in the file are not cleared.
+- **Editing.** Click a day for the team's shifts, "Fill the week with..." (a shift's usual days),
+  day types, custom hours / swap / note, or clear. **Manage > Schedules and teams** edits
+  schedules, shifts and teams (a shift that days still use cannot be deleted).
+
+The starting schedules are the legends of the workbook (Main, Device Support, Lab, LNS 2.0) plus
+an Integration Hub schedule that starts as a copy of Main because the workbook has no legend for it.
+
+**Reading people from another app.** Import from `@/lib/staff/staffStore`:
+`useEmployees()` in a component (loads and keeps the list fresh) or `getEmployees()` elsewhere;
+`@/lib/staff/employees` has `displayName`, `fullName`, `photoUrl`, `findByEmail` and the
+filter / sort helpers. The Tasks engine (Python) can read `employees.json` directly.
+
+**Client state.** `staffStore.ts` mirrors the server: it keeps what the server last confirmed plus
+the edits still on their way, shows the two laid together (so edits appear at once), and drops
+an edit that fails without disturbing the others. Writes per collection are sent one at a time.
+
+**Tests.** `src/lib/staff/*.test.mjs` cover the pure logic, the file store (against a temp
+folder), and the client store (against a fake server).
+
 ## PMO To-Do (`src/lib/pmo/`, `src/components/apps/pmo-todo-app/`, `pmo-intake/`)
 
 ### PMO To-Do: what the app does and does not do
