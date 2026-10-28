@@ -13,6 +13,7 @@ import {
   buildSections,
   copyPreviousWeek,
   coverageOn,
+  compactHours,
   fillWeek,
   formatDays,
   formatHours,
@@ -77,6 +78,9 @@ describe("times", () => {
   it("formats hours, days and labels", () => {
     assert.equal(formatHours("08:00", "17:00"), "8:00 AM – 5:00 PM");
     assert.equal(formatHours("00:30", "12:00"), "12:30 AM – 12:00 PM");
+    assert.equal(compactHours("08:00", "17:00"), "8 AM – 5 PM");
+    assert.equal(compactHours("16:30", "01:30"), "4:30 PM – 1:30 AM");
+    assert.equal(compactHours("10:00", "19:00"), "10 AM – 7 PM");
     assert.equal(shortHours("16:30", "01:30"), "4:30p–1:30a");
     assert.equal(formatDays([0, 1, 2, 3, 4]), "Mon–Fri");
     assert.equal(formatDays([2, 3, 4, 5, 6]), "Wed–Sun");

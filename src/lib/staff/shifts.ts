@@ -52,6 +52,10 @@ export function formatClock(hhmm: string): string {
 export const formatHours = (start: string, end: string): string =>
   `${formatClock(start)} – ${formatClock(end)}`;
 
+/** "08:00","17:00" -> "8 AM – 5 PM"; minutes are kept only when there are some. */
+export const compactHours = (start: string, end: string): string =>
+  formatHours(start, end).replaceAll(":00", "");
+
 /** Compact hours for a narrow cell: "8a–5p", "4:30p–1:30a". */
 export function shortHours(start: string, end: string): string {
   const part = (hhmm: string) => {

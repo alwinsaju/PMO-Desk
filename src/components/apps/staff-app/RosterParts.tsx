@@ -25,6 +25,7 @@ import { cn } from "@/lib/cn";
 import { formatDate } from "@/lib/staff/dates";
 import { CUSTOM_REF, STATUS_DEFS, statusRef, type Hue } from "@/lib/staff/rosterCatalog";
 import {
+  compactHours,
   formatDays,
   formatHours,
   hueOfShift,
@@ -70,45 +71,59 @@ export function SectionHeader({
           hueDot(group ? teamHue(section.id) : "off"),
         )}
       />
-      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-2">
-        <h3 className="text-ink flex items-center gap-2 text-[15px] font-bold">
-          {group ? group.name : "Not in a team yet"}
-          <span className="bg-chip text-ink-soft rounded-chip px-2 py-0.5 text-[11.5px] font-semibold">
-            {rows.length}
-          </span>
-          {group && (
-            <IconButton
-              aria-label={`Hide ${group.name}`}
-              title="Hide this team"
-              size="sm"
-              onClick={onHide}
-            >
-              <EyeSlashIcon />
-            </IconButton>
-          )}
-        </h3>
-        {group && schedule && (
-          <>
+      <div className="flex min-w-0 flex-1 flex-col gap-2.5">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <h3 className="text-ink flex items-center gap-2 text-[15px] font-bold">
+            {group ? group.name : "Not in a team yet"}
+            <span className="bg-chip text-ink-soft rounded-chip px-2 py-0.5 text-[11.5px] font-semibold">
+              {rows.length}
+            </span>
+            {group && (
+              <IconButton
+                aria-label={`Hide ${group.name}`}
+                title="Hide this team"
+                size="sm"
+                onClick={onHide}
+              >
+                <EyeSlashIcon />
+              </IconButton>
+            )}
+          </h3>
+          {group && schedule && (
             <span className="text-ink-muted text-[12px]">{schedule.name} schedule</span>
-            <ul className="flex flex-wrap gap-1.5" aria-label={`${schedule.name} shifts`}>
-              {schedule.shifts.map((s) => (
-                <li key={s.id}>
-                  <span
-                    className={cn(
-                      "rounded-chip inline-flex h-6 items-center gap-1.5 px-2.5 text-[11.5px] leading-none font-semibold whitespace-nowrap",
-                      hueClass(hueOfShift(s)),
-                    )}
-                  >
-                    {shortLabel(s.label)}
-                    <span className="font-medium opacity-80">
-                      {formatHours(s.start, s.end)}
-                      {s.days.length > 0 && ` · ${formatDays(s.days)}`}
-                    </span>
+          )}
+        </div>
+        {group && schedule && (
+          <ul
+            aria-label={`${schedule.name} shifts`}
+            className="grid gap-2"
+            style={{ gridTemplateColumns: "repeat(auto-fill, minmax(176px, 1fr))" }}
+          >
+            {schedule.shifts.map((s) => (
+              <li
+                key={s.id}
+                className="border-line bg-surface-elevated flex items-stretch overflow-hidden rounded-lg border"
+              >
+                <span
+                  className={cn(
+                    "grid w-10 shrink-0 place-items-center text-[11.5px] font-bold",
+                    hueClass(hueOfShift(s)),
+                  )}
+                >
+                  {shortLabel(s.label)}
+                </span>
+                <span className="min-w-0 px-2.5 py-1.5 leading-tight">
+                  <span className="text-ink block truncate text-[12.5px] font-semibold">
+                    {compactHours(s.start, s.end)}
                   </span>
-                </li>
-              ))}
-            </ul>
-          </>
+                  <span className="text-ink-muted block truncate text-[11px]">
+                    {s.label}
+                    {s.days.length > 0 && ` · ${formatDays(s.days)}`}
+                  </span>
+                </span>
+              </li>
+            ))}
+          </ul>
         )}
         {!group && (
           <span className="text-ink-muted text-[12px]">
