@@ -1279,12 +1279,29 @@ def _resolve_in_task(task: Task, rel, roots: tuple[str, ...] = ("input", "output
     return current
 
 
+def _replace_with_retry(src: Path, dest: Path, attempts: int = 5):
+    """os.replace over an existing file can fail briefly on Windows (PermissionError)
+    while a virus scanner or another reader has it open; a few short retries ride that out."""
+    for attempt in range(attempts):
+        try:
+            os.replace(src, dest)
+            return
+        except PermissionError:
+            if attempt == attempts - 1:
+                raise
+            time.sleep(0.02 * (attempt + 1))
+
+
 def _atomic_write_bytes(path: Path, data: bytes):
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.parent / f".{path.name}.{uuid.uuid4().hex}.tmp"
     try:
-        tmp.write_bytes(data)
-        os.replace(tmp, path)
+        # fsync before the rename, so a crash or power loss can never publish an empty file
+        with open(tmp, "wb") as handle:
+            handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())
+        _replace_with_retry(tmp, path)
     finally:
         tmp.unlink(missing_ok=True)
 

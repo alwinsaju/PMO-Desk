@@ -497,7 +497,8 @@ def test_file_symlink_inside_input_is_not_followed(tmp_path):
         pytest.skip("cannot create file symlinks here")
     result = backend._cleanup_inputs(backend.tasks["plat"])
     assert target.read_bytes() == b"OUT" and os.path.lexists(folder / "input" / "evil.xlsx")
-    assert result["skipped"] == 1 and result["removed"] == 3
+    # roster, pto, extra/notes.txt and extra/deep/more.csv go; the link is skipped
+    assert result["skipped"] == 1 and result["removed"] == 4
 
 
 def test_file_swapped_for_a_link_after_the_scan_is_not_deleted(tmp_path):
