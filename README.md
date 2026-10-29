@@ -113,7 +113,7 @@ pnpm desktop:package
 
 The command first builds the private Python the installer carries (`pnpm runtime:python`; it needs any
 Python 3.9+ with pip on this machine and network access the first time, and reuses its download cache after).
-See `scripts/build-python-runtime.py` for how it is pinned. The installer is built from the working tree, so the gitignored files the tasks need (`tasks/*/templates`, `tasks/*/config`, `tasks/shared/roster-reference`, `tasks/shared/roster/Names.xlsx`) must be present on the machine that builds it; a fresh clone does not have them. The Version 2 installer is written to
+See `scripts/build-python-runtime.py` for how it is pinned. The installer is built from the working tree, so the gitignored files the tasks need (`tasks/*/templates`, `tasks/*/config`, `tasks/shared/roster-reference`, `tasks/shared/roster/Names.xlsx`) must be present on the machine that builds it; a fresh clone does not have them. The installer is written to
 `release/AI OS Setup 3.0.0.exe`. Run it
 once to install AI OS under `%LOCALAPPDATA%\Programs\AI OS` (or select a
 different folder in the installer). The installer creates Start-menu and
@@ -184,12 +184,50 @@ option when the application and Tasks engine must stop together on close.
 Other scripts:
 
 ```bash
-pnpm build         # production build
-pnpm lint          # ESLint
-pnpm typecheck     # tsc --noEmit
-pnpm format        # Prettier — write
-pnpm format:check  # Prettier — check only
+pnpm build          # production build
+pnpm lint           # ESLint
+pnpm typecheck      # tsc --noEmit
+pnpm format         # Prettier — write
+pnpm format:check   # Prettier — check only
+pnpm test           # unit tests (node:test) for src/lib and desktop/
+pnpm test:coverage  # the same, with a line/branch coverage report for src/lib and desktop/
+pnpm test:engine    # Tasks engine tests (pytest, 80% coverage gate; see below)
+pnpm check          # format:check + lint + typecheck + test, the same as CI's web job
 ```
+
+## Development and CI
+
+Needs Node 24 (`.nvmrc`), pnpm (version pinned in `package.json`) and Python 3.13 for the Tasks engine.
+For the engine tests, create a virtual environment once so the task step subprocesses find their
+packages (a bare system Python without them fails the end-to-end tests):
+
+```powershell
+python -m venv tasks-engine\.venv
+tasks-engine\.venv\Scripts\python -m pip install -r tasks-engine\requirements-dev.txt -r tasks\requirements.txt
+cd tasks-engine; .\.venv\Scripts\python -m pytest -q
+```
+
+GitHub Actions (`.github/workflows/ci.yml`) runs on every pull request and every push to `master`:
+format check, lint, type-check, unit tests, a production build and `pnpm audit --prod` (web job), and the
+engine's pytest suite with its coverage gate (engine job). Dependabot (`.github/dependabot.yml`) opens weekly
+update pull requests for npm, pip and the workflow actions.
+
+### Environment variables
+
+All optional. The desktop shell sets most of them itself; set one only to override a default.
+
+| Variable                                                                                                                                                                                             | Purpose                                                                                |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `AI_OS_MODE`, `AI_OS_PROJECT_DIR`                                                                                                                                                                    | Desktop run mode and project folder (see _Getting fixes without reinstalling_)         |
+| `AI_OS_ENGINE_TOKEN`, `AI_OS_ENGINE_INSTANCE`                                                                                                                                                        | Per-launch Tasks engine token and instance id; generated, never set by hand            |
+| `AI_OS_TASKS_ENGINE_URL`, `AI_OS_TASKS_PYTHON`, `AI_OS_SKIP_TASKS_ENGINE`                                                                                                                            | Where the engine is, which Python runs it, or not to start it                          |
+| `AI_OS_TASKS_DIR`, `AI_OS_TASKS_DATA_DIR`, `AI_OS_TASKS_SRC`                                                                                                                                         | Task definitions folder, writable data folder, and the source the working copy follows |
+| `AI_OS_PMO_DATA_DIR`, `AI_OS_PMO_INBOX_DIR`, `AI_OS_PMO_SCAN_MS`                                                                                                                                     | PMO data folder, inbox folder, inbox scan interval                                     |
+| `AI_OS_STAFF_EXCHANGE_DIR`, `AI_OS_PTO_INBOX_DIR`                                                                                                                                                    | Staff Management sync and PTO mail folders                                             |
+| `AI_OS_AI_MODEL_FILE`, `AI_OS_AI_NUM_CTX`, `AI_OS_AI_KEEP_ALIVE`, `AI_OS_AI_TIMEOUT_MS`, `AI_OS_AI_MAX_OUTPUT_TOKENS`, `AI_OS_AI_AUTOSTART`, `AI_OS_AI_PREWARM`, `AI_OS_OLLAMA_EXE`, `OLLAMA_MODELS` | Local AI runtime (model, context size, timeouts, start-up behaviour)                   |
+| `AI_OS_FORCE_FIRST_TIME`, `AI_OS_FOLDER_NAME`                                                                                                                                                        | Re-open the first-time setup; name of the OneDrive folder it creates                   |
+
+ARCHITECTURE.md has the details of each area.
 
 ## Project layout
 
