@@ -22,6 +22,7 @@ import {
   appendJsonl,
   appendJsonlRotating,
   listFiles,
+  mapLimit,
   moveFile,
   mutexFor,
   readJson,
@@ -32,6 +33,9 @@ import {
 import { migrateProposal, migrateTodo } from "./migrate.ts";
 import { isSafeId, pmoPaths, type PmoPaths } from "./paths.ts";
 import { inferSetupComplete } from "../firstRun.ts";
+
+/** Record files read at once when a folder is listed. */
+const READ_CONCURRENCY = 16;
 
 export interface SeenEntry {
   at: string;
@@ -274,15 +278,18 @@ export class Store {
   }
 
   private async readAll<T>(dir: string, kind: RecordKind, parse: Parse<T>): Promise<T[]> {
-    const out: T[] = [];
     const names = await listFiles(dir);
     const live = new Set<string>();
-    for (const name of names) {
+    const files = names.map((name) => {
       const file = path.join(dir, name);
       live.add(file);
-      const record = await this.loadRecord(file, kind, parse);
-      if (record !== undefined) out.push(record);
-    }
+      return file;
+    });
+    // Bounded parallelism: a first read of a big folder is mostly waiting on the disk.
+    const records = await mapLimit(files, READ_CONCURRENCY, (file) =>
+      this.loadRecord(file, kind, parse),
+    );
+    const out = records.filter((record): record is T => record !== undefined);
     for (const key of this.cache.keys()) {
       if (path.dirname(key) === dir && !live.has(key)) this.cache.delete(key);
     }

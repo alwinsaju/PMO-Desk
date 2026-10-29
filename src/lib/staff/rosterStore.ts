@@ -121,7 +121,9 @@ export const useRosterStore = create<RosterState>()((set) => ({
 export function useRosterSync(): void {
   useEffect(() => {
     void useRosterStore.getState().load();
-    const timer = setInterval(() => void useRosterStore.getState().load(), SYNC_MS);
+    const timer = setInterval(() => {
+      if (document.visibilityState !== "hidden") void useRosterStore.getState().load();
+    }, SYNC_MS);
     return () => clearInterval(timer);
   }, []);
 }

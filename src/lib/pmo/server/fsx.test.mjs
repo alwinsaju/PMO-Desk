@@ -3,7 +3,7 @@ import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
-import { appendJsonlRotating, rotateIfLarge, rotatedName } from "./fsx.ts";
+import { appendJsonlRotating, mapLimit, rotateIfLarge, rotatedName } from "./fsx.ts";
 
 let dir;
 let file;
@@ -73,5 +73,36 @@ describe("appendJsonlRotating", () => {
         .filter(Boolean).length;
     }
     assert.equal(count, 30);
+  });
+});
+
+describe("mapLimit", () => {
+  it("keeps the order of the items and never exceeds the limit", async () => {
+    let running = 0;
+    let peak = 0;
+    const out = await mapLimit([5, 1, 4, 2, 3, 0], 2, async (n) => {
+      running++;
+      peak = Math.max(peak, running);
+      await new Promise((resolve) => setTimeout(resolve, n));
+      running--;
+      return n * 10;
+    });
+    assert.deepEqual(out, [50, 10, 40, 20, 30, 0]);
+    assert.equal(peak, 2);
+  });
+
+  it("handles an empty list and a limit above the item count", async () => {
+    assert.deepEqual(await mapLimit([], 4, async (n) => n), []);
+    assert.deepEqual(await mapLimit([1, 2], 10, async (n) => n + 1), [2, 3]);
+  });
+
+  it("rejects with the first failure", async () => {
+    await assert.rejects(
+      mapLimit([1, 2, 3], 2, async (n) => {
+        if (n === 2) throw new Error("boom");
+        return n;
+      }),
+      /boom/,
+    );
   });
 });

@@ -306,7 +306,9 @@ let onVisible: (() => void) | null = null;
 export function startStaffSync(): () => void {
   if (watchers++ === 0) {
     void useStaffStore.getState().load();
-    timer = setInterval(() => void useStaffStore.getState().load(), SYNC_INTERVAL_MS);
+    timer = setInterval(() => {
+      if (document.visibilityState !== "hidden") void useStaffStore.getState().load();
+    }, SYNC_INTERVAL_MS);
     onVisible = () => {
       if (document.visibilityState === "visible") void useStaffStore.getState().load();
     };
