@@ -9,7 +9,7 @@ import {
   keepsDockOpen,
 } from "./dockAutoHide.ts";
 
-function harness(outside = { menuOpen: false, dragging: false }) {
+function harness(outside = { menuOpen: false, dragging: false }, desktopClear = false) {
   let now = 0;
   let pending = [];
   let nextId = 1;
@@ -18,6 +18,7 @@ function harness(outside = { menuOpen: false, dragging: false }) {
   const ctl = createDockAutoHide({
     onChange: (shown) => states.push(shown),
     outside: () => facts,
+    desktopClear,
     setTimer: (run, ms) => {
       const entry = { id: nextId++, at: now + ms, run };
       pending.push(entry);
@@ -42,12 +43,13 @@ function harness(outside = { menuOpen: false, dragging: false }) {
 }
 
 describe("what keeps the dock up", () => {
-  it("is any one of pointer, keyboard focus, an open menu or a drag", () => {
+  it("is any one of pointer, keyboard focus, an open menu, a drag or the home page", () => {
     const none = {
       pointerInside: false,
       focusInside: false,
       menuOpen: false,
       dragging: false,
+      desktopClear: false,
     };
     assert.equal(keepsDockOpen(none), false);
     for (const key of Object.keys(none)) {
@@ -57,6 +59,37 @@ describe("what keeps the dock up", () => {
 });
 
 describe("the dock's auto-hide", () => {
+  it("never hides on the home page, however long nothing touches it", () => {
+    const { ctl, states, advance } = harness(undefined, true);
+    ctl.start();
+    ctl.pointer(true);
+    ctl.pointer(false);
+    advance(INTRO_MS * 4);
+    assert.deepEqual(states, []);
+  });
+
+  it("hides once an app opens and comes back when the home page does", () => {
+    const { ctl, states, advance } = harness(undefined, true);
+    ctl.desktopClear(false);
+    advance(HIDE_DELAY_MS);
+    assert.deepEqual(states, [false]);
+    ctl.desktopClear(true);
+    assert.deepEqual(states, [false, true]);
+    advance(INTRO_MS * 4);
+    assert.deepEqual(states, [false, true]);
+  });
+
+  it("waits for the pointer to leave before hiding after an app opens", () => {
+    const { ctl, states, advance } = harness(undefined, true);
+    ctl.pointer(true);
+    ctl.desktopClear(false);
+    advance(HIDE_DELAY_MS * 5);
+    assert.deepEqual(states, []);
+    ctl.pointer(false);
+    advance(HIDE_DELAY_MS);
+    assert.deepEqual(states, [false]);
+  });
+
   it("hides after the intro when nothing is on it", () => {
     const { ctl, states, advance } = harness();
     ctl.start();

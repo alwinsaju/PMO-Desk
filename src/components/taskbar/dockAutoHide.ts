@@ -1,7 +1,8 @@
 // The dock's auto-hide, as plain logic (no React, no DOM) so it can be tested with fake
-// timers. It stays up while the pointer or keyboard focus is on it, while one of its
-// menus is open or a tile is being dragged; otherwise it slides away after a short
-// grace period, and comes back as soon as the pointer reaches the top edge.
+// timers. It always shows on the home page (no app window open). With an app open it
+// stays up while the pointer or keyboard focus is on it, while one of its menus is open
+// or a tile is being dragged; otherwise it slides away after a short grace period, and
+// comes back as soon as the pointer reaches the top edge.
 
 /** How long the pointer may be away before the dock hides (a quick slip does not hide it). */
 export const HIDE_DELAY_MS = 450;
@@ -14,14 +15,22 @@ export interface DockFacts {
   focusInside: boolean;
   menuOpen: boolean;
   dragging: boolean;
+  /** No app window is showing: the home page. */
+  desktopClear: boolean;
 }
 
 export const keepsDockOpen = (facts: DockFacts): boolean =>
-  facts.pointerInside || facts.focusInside || facts.menuOpen || facts.dragging;
+  facts.pointerInside ||
+  facts.focusInside ||
+  facts.menuOpen ||
+  facts.dragging ||
+  facts.desktopClear;
 
 export interface DockAutoHide {
-  /** Begins the intro: the dock hides after `INTRO_MS` unless something keeps it open. */
+  /** Begins the intro: with an app open the dock hides after `INTRO_MS` unless something keeps it open. */
   start: () => void;
+  /** Whether an app window is showing (false) or the home page is (true). */
+  desktopClear: (clear: boolean) => void;
   stop: () => void;
   pointer: (inside: boolean) => void;
   focus: (inside: boolean) => void;
@@ -33,6 +42,8 @@ export interface DockAutoHideOptions {
   outside: () => Pick<DockFacts, "menuOpen" | "dragging">;
   setTimer?: (run: () => void, ms: number) => unknown;
   clearTimer?: (handle: unknown) => void;
+  /** Whether the home page is showing at the start (default: yes). */
+  desktopClear?: boolean;
 }
 
 export function createDockAutoHide({
@@ -40,10 +51,12 @@ export function createDockAutoHide({
   outside,
   setTimer = (run, ms) => setTimeout(run, ms),
   clearTimer = (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+  desktopClear: startsClear = true,
 }: DockAutoHideOptions): DockAutoHide {
   let timer: unknown = null;
   let pointerInside = false;
   let focusInside = false;
+  let desktopClear = startsClear;
   let shown = true;
 
   const emit = (next: boolean) => {
@@ -55,7 +68,12 @@ export function createDockAutoHide({
     if (timer !== null) clearTimer(timer);
     timer = null;
   };
-  const facts = (): DockFacts => ({ pointerInside, focusInside, ...outside() });
+  const facts = (): DockFacts => ({
+    pointerInside,
+    focusInside,
+    desktopClear,
+    ...outside(),
+  });
   const schedule = (ms: number) => {
     clear();
     timer = setTimer(() => {
@@ -74,15 +92,21 @@ export function createDockAutoHide({
   };
 
   return {
-    start: () => schedule(INTRO_MS),
+    start: () => {
+      if (!desktopClear) schedule(INTRO_MS);
+    },
+    desktopClear: (clear) => {
+      desktopClear = clear;
+      settle(clear || pointerInside || focusInside);
+    },
     stop: clear,
     pointer: (inside) => {
       pointerInside = inside;
-      settle(inside || focusInside);
+      settle(inside || focusInside || desktopClear);
     },
     focus: (inside) => {
       focusInside = inside;
-      settle(inside || pointerInside);
+      settle(inside || pointerInside || desktopClear);
     },
   };
 }

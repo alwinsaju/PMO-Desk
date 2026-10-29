@@ -474,7 +474,8 @@ themselves, not a task list.
 1. **Desktop Shell & Chrome** (`src/components/desktop/*`,
    `src/components/taskbar/*`) — the top floating dock (`Dock.tsx` and
    `DockTile.tsx`, driven by the shared `{ id, title, icon }` contract in
-   `taskbar/pinnedApps.ts`). The dock auto-hides like the macOS dock
+   `taskbar/pinnedApps.ts`). The dock always shows on the home page (no app
+   window open) and auto-hides like the macOS dock once an app is open
    (`dockAutoHide.ts`, tested with fake timers): it slides away after a short
    grace period and returns when the pointer reaches the top edge; keyboard
    focus, an open dock menu or a tile drag keep it up. It also has a right-click context menu on the desktop

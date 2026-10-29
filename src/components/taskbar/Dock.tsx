@@ -99,7 +99,8 @@ const subscribeNever = () => () => {};
  * launcher only: the command bar, AI cursor, and presence avatars are a
  * separate, later workstream (the AI Agent Layer) and don't belong here.
  *
- * Auto-hides like the macOS dock (dockAutoHide.ts): it slides up out of view when the
+ * Always visible on the home page (no app window showing); once an app is open it
+ * auto-hides like the macOS dock (dockAutoHide.ts): it slides up out of view when the
  * pointer is not on it (after a short grace period; an open menu, keyboard focus or a
  * tile drag keeps it up) and returns when the pointer reaches the top edge, where a
  * small handle marks it while it is away.
@@ -195,6 +196,11 @@ export function Dock() {
     autoHide.start();
     return autoHide.stop;
   }, [autoHide]);
+  // The home page keeps the dock up; it only hides once an app window is showing.
+  const homePage = !useWindowStore((s) =>
+    Object.values(s.windows).some((w) => !w.isMinimized),
+  );
+  useEffect(() => autoHide.desktopClear(homePage), [autoHide, homePage]);
 
   const effectivePinnedIds = hydrated ? pinnedIds : defaultPinnedIds(builtInAppIds);
   // Drop ids that no longer resolve to an app — defensive only (a stale id
