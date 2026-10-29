@@ -1,11 +1,7 @@
 // Run with `pnpm test`. The streaming body cap shared by every /api route.
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import {
-  BodyTooLargeError,
-  readBytesBounded,
-  readTextBounded,
-} from "./boundedBody.ts";
+import { BodyTooLargeError, readBytesBounded, readTextBounded } from "./boundedBody.ts";
 
 const post = (body, headers = {}) =>
   new Request("http://localhost/api/x", { method: "POST", body, headers });
@@ -60,7 +56,10 @@ describe("readTextBounded", () => {
   });
 
   it("counts bytes, not characters", async () => {
-    await assert.rejects(readTextBounded(post("\u20ac".repeat(4)), 10), BodyTooLargeError);
+    await assert.rejects(
+      readTextBounded(post("\u20ac".repeat(4)), 10),
+      BodyTooLargeError,
+    );
   });
 
   it("stops reading a chunked body once the cap is crossed", async () => {

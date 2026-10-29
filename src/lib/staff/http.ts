@@ -51,7 +51,8 @@ export async function readCappedText(
   try {
     return await readTextBounded(request, max);
   } catch (error) {
-    if (error instanceof BodyTooLargeError) throw new StaffError("The request is too large.");
+    if (error instanceof BodyTooLargeError)
+      throw new StaffError("The request is too large.");
     throw error;
   }
 }
