@@ -12,6 +12,7 @@ import { Tooltip } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { springSnappy } from "@/lib/motion";
 import { AppMenu } from "./AppMenu";
+import { createDockAutoHide } from "./dockAutoHide";
 import { DockTile, dockTileClassName, type TileRunState } from "./DockTile";
 import { builtInAppIds, builtInApps } from "./pinnedApps";
 import { launchBuiltInApp } from "./launchBuiltInApp";
@@ -98,6 +99,11 @@ const subscribeNever = () => () => {};
  * launcher only: the command bar, AI cursor, and presence avatars are a
  * separate, later workstream (the AI Agent Layer) and don't belong here.
  *
+ * Auto-hides like the macOS dock (dockAutoHide.ts): it slides up out of view when the
+ * pointer is not on it (after a short grace period; an open menu, keyboard focus or a
+ * tile drag keeps it up) and returns when the pointer reaches the top edge, where a
+ * small handle marks it while it is away.
+ *
  * A 60px frosted-glass pill (`glass rounded-surface`) at the `z-chrome`
  * layer, mounted as a sibling of `<WindowManager />` from Desktop.tsx, of
  * 46px tiles that morph square -> circle on hover (see DockTile.tsx). The tiles are USER-EDITABLE: one
@@ -172,6 +178,24 @@ export function Dock() {
     settled.current = hydrated;
   }, [hydrated]);
 
+  // Auto-hide, like the macOS dock: it slides away when the pointer is not on it and
+  // returns when the pointer reaches the top edge (see dockAutoHide.ts).
+  const navRef = useRef<HTMLElement>(null);
+  const [shown, setShown] = useState(true);
+  const [autoHide] = useState(() =>
+    createDockAutoHide({
+      onChange: setShown,
+      outside: () => ({
+        menuOpen: navRef.current?.querySelector('[data-state="open"]') != null,
+        dragging: draggingTileId.current !== null,
+      }),
+    }),
+  );
+  useEffect(() => {
+    autoHide.start();
+    return autoHide.stop;
+  }, [autoHide]);
+
   const effectivePinnedIds = hydrated ? pinnedIds : defaultPinnedIds(builtInAppIds);
   // Drop ids that no longer resolve to an app — defensive only (a stale id
   // from a since-edited catalog); nothing here removes apps at runtime.
@@ -238,16 +262,48 @@ export function Dock() {
 
   return (
     <nav
+      ref={navRef}
       aria-label="App dock"
-      className="absolute top-4 left-1/2 z-[var(--z-chrome)] -translate-x-1/2"
+      onPointerEnter={() => autoHide.pointer(true)}
+      onPointerLeave={() => autoHide.pointer(false)}
+      onFocus={(event) => {
+        // Only keyboard focus keeps the dock up; a clicked tile keeps focus without it.
+        if (event.target.matches(":focus-visible")) autoHide.focus(true);
+      }}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          autoHide.focus(false);
+        }
+      }}
+      className="pointer-events-none absolute top-0 left-1/2 z-[var(--z-chrome)] -translate-x-1/2 pt-4"
     >
+      {/* The hover area along the top edge: it brings the dock back, and while the
+          dock is away a small handle shows where it is. */}
+      <div
+        aria-hidden
+        className={cn(
+          "pointer-events-auto absolute top-0 right-0 left-0",
+          shown ? "h-5" : "h-2",
+        )}
+      />
+      <div
+        aria-hidden
+        className={cn(
+          "bg-line-strong pointer-events-none absolute top-1 left-1/2 h-1 w-10 -translate-x-1/2 rounded-full",
+          "ease-standard transition-opacity duration-200",
+          shown ? "opacity-0" : "opacity-70",
+        )}
+      />
       <div
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
         className={cn(
           "glass rounded-surface h-dock flex items-center gap-1.5 px-2.5",
-          "ease-standard transition-[box-shadow] duration-150",
+          "ease-standard transition-[box-shadow,transform,opacity] duration-300",
+          shown
+            ? "pointer-events-auto translate-y-0 opacity-100"
+            : "pointer-events-none -translate-y-[calc(100%+1.5rem)] opacity-0",
           isDropTarget && "ring-focus ring-offset-surface ring-2 ring-offset-2",
         )}
       >

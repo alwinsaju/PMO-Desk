@@ -166,6 +166,16 @@ export function ShiftRoster() {
     () => buildSections(config, employees, { query, groupId: groupName }),
     [config, employees, query, groupName],
   );
+  const teamGroups = useMemo<RosterGroup[]>(
+    () =>
+      teams.map((t) => ({
+        id: t.id,
+        name: t.name,
+        scheduleId: t.scheduleId,
+        ...(t.hidden ? { hidden: true } : {}),
+      })),
+    [teams],
+  );
   const index = useMemo(() => indexAssignments(shifts), [shifts]);
   const rows = useMemo(() => sections.flatMap((s) => s.rows), [sections]);
   const rowByKey = useMemo(() => {
@@ -248,11 +258,18 @@ export function ShiftRoster() {
   /** The latest saved configuration, for actions that follow another save. */
   const latest = () => useRosterStore.getState().config;
 
+  /** `base` with the team stored, when only the directory has named it so far. */
+  const withTeam = (base: RosterConfig, groupId: string): RosterConfig => {
+    const team = teamGroups.find((g) => g.id === groupId);
+    return team ? withGroup(base, team) : base;
+  };
+
   const patchMember = (memberId: string, change: Partial<RosterMember>) => {
     const current = latest();
+    const base = change.groupId ? withTeam(current, change.groupId) : current;
     return saveRoster({
-      ...current,
-      members: current.members.map((m) => (m.id === memberId ? { ...m, ...change } : m)),
+      ...base,
+      members: base.members.map((m) => (m.id === memberId ? { ...m, ...change } : m)),
     });
   };
 
@@ -294,7 +311,7 @@ export function ShiftRoster() {
   function addToTeam(row: RosterRow, targetGroupId: string) {
     const employee = row.employee;
     if (!employee) return;
-    const current = latest();
+    const current = withTeam(latest(), targetGroupId);
     return saveRoster({
       ...current,
       members: [
@@ -654,6 +671,7 @@ export function ShiftRoster() {
             today={today}
             sections={sections}
             config={config}
+            groups={teamGroups}
             index={index}
             viewOf={viewOf}
             timeOff={timeOff}

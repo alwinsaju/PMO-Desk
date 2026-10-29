@@ -474,7 +474,10 @@ themselves, not a task list.
 1. **Desktop Shell & Chrome** (`src/components/desktop/*`,
    `src/components/taskbar/*`) — the top floating dock (`Dock.tsx` and
    `DockTile.tsx`, driven by the shared `{ id, title, icon }` contract in
-   `taskbar/pinnedApps.ts`) and a right-click context menu on the desktop
+   `taskbar/pinnedApps.ts`). The dock auto-hides like the macOS dock
+   (`dockAutoHide.ts`, tested with fake timers): it slides away after a short
+   grace period and returns when the pointer reaches the top edge; keyboard
+   focus, an open dock menu or a tile drag keep it up. It also has a right-click context menu on the desktop
    background (`DesktopContextMenu.tsx`), plus a top-right settings gear
    (`SettingsMenu.tsx` — the single home of the dark-mode switch; add new
    settings as rows in its `settingsRows` list), mounted as siblings of
@@ -485,8 +488,8 @@ themselves, not a task list.
 2. **AI Agent Layer** (`src/components/ai-layer/*`) — the bottom command
    bar (`CommandBar.tsx`), the AI cursor overlay (`AICursor.tsx`, riding
    `springTrailing` from `src/lib/motion.ts`), an inline annotation bubble
-   (`AIAnnotationBubble.tsx`), the corner presence avatars
-   (`PresenceAvatars.tsx`, using the UI kit's `<Avatar presence="active">`),
+   (`AIAnnotationBubble.tsx`), the corner AI orb and status pill
+   (`PresenceAvatars.tsx`; the placeholder "collaborator" avatars were removed)
    and a collapsible task history panel (`TaskList.tsx`/`TaskListItem.tsx`).
    Drives `windowStore`'s `setWindowControlledBy` to hand a window between
    human and AI control, plus its own single Zustand store (`agentStore.ts`)
@@ -947,8 +950,10 @@ meant different hours. It is modelled so that stays true without the confusion:
   day with nothing entered shows the leave on days the person would work. Pending and rejected
   requests are not shown. The roster entries underneath are kept.
 - **Teams come from the directory.** A person's team is the Team on their directory profile;
-  a team no stored group matches (by name or alias) appears by itself, with the first schedule
-  until you pick one under Schedules and teams, and a new profile appears in the roster
+  a team no stored group matches (by name or alias) appears by itself, on the first schedule
+  until you choose its schedule. A schedule is named in **Schedules and teams** and lists the
+  directory teams that work it (a team uses exactly one schedule, so several teams can share one),
+  and a new profile appears in the roster
   without any step. A roster entry is created for a directory person only when something is
   entered for them (`ensureMember`, together with their team). Entries that are not linked to a
   profile (imported) stay in the team they were put in. **Teams** in the toolbar (or the eye on
@@ -981,8 +986,9 @@ meant different hours. It is modelled so that stays true without the confusion:
   day types, custom hours / swap / note, or clear. **Manage > Schedules and teams** edits
   schedules, shifts and teams (a shift that days still use cannot be deleted).
 
-The starting schedules are the legends of the workbook (Main, Device Support, Lab, LNS 2.0) plus
-an Integration Hub schedule that starts as a copy of Main because the workbook has no legend for it.
+The roster itself starts with one schedule ("Standard") and no teams. The legends of the team's
+workbook (Main, Device Support, Lab, LNS 2.0, Integration Hub) and its team names live only in
+`rosterCatalog.ts` as the workbook catalog the importer reads; nothing in a new roster is named after a team.
 
 **Reading people from another app.** Import from `@/lib/staff/staffStore`:
 `useEmployees()` in a component (loads and keeps the list fresh) or `getEmployees()` elsewhere;

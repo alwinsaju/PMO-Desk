@@ -22,7 +22,7 @@ import {
   locationOf,
   observes,
 } from "./holidays.ts";
-import { defaultRosterConfig } from "./rosterCatalog.ts";
+import { defaultRosterConfig, workbookRosterConfig } from "./rosterCatalog.ts";
 import { planRosterImport } from "./rosterImport.ts";
 import { rosterConfigSchema } from "./schema.ts";
 import {
@@ -212,7 +212,7 @@ describe("holidays by location", () => {
   });
 
   it("is saved with the roster: hidden teams and holiday locations", () => {
-    const config = defaultRosterConfig();
+    const config = workbookRosterConfig();
     config.groups[0].hidden = true;
     config.events.push(holiday({ locations: ["Hyderabad", "Pune"] }));
     const parsed = rosterConfigSchema.safeParse(config);
@@ -225,7 +225,7 @@ describe("holidays by location", () => {
 });
 
 describe("what a person's day shows", () => {
-  const schedules = defaultRosterConfig().schedules;
+  const schedules = workbookRosterConfig().schedules;
   const entry = (ref, extra) =>
     resolveAssignment(makeAssignment("m", "2026-03-03", ref, extra), schedules);
   const pto = { type: "pto", label: "PTO" };
@@ -351,7 +351,7 @@ describe("where a workbook banner says a holiday applies", () => {
         { date: "2026-03-05", label: "Republic Day" },
       ],
     };
-    const { config } = planRosterImport(parsed, defaultRosterConfig(), []);
+    const { config } = planRosterImport(parsed, workbookRosterConfig(), []);
     const [holi, swap, plain] = config.events;
     assert.equal(holi.kind, "holiday");
     assert.equal(holi.locations.includes("Gurgaon"), false);
@@ -363,8 +363,51 @@ describe("where a workbook banner says a holiday applies", () => {
   });
 });
 
+describe("a new roster has no hard-coded teams", () => {
+  it("starts with one schedule and no teams; every section comes from the directory", () => {
+    const fresh = defaultRosterConfig();
+    assert.deepEqual(fresh.groups, []);
+    assert.equal(fresh.schedules.length, 1);
+    assert.equal(rosterConfigSchema.safeParse(fresh).success, true);
+    const result = buildSections(fresh, [
+      emp(1, { team: "Payments" }),
+      emp(2, { team: "Data Platform" }),
+      emp(3, { team: "Payments" }),
+    ]);
+    assert.deepEqual(
+      result.sections.map((s) => [s.group.name, s.rows.length, s.schedule.id]),
+      [
+        ["Data Platform", 1, fresh.schedules[0].id],
+        ["Payments", 2, fresh.schedules[0].id],
+      ],
+    );
+  });
+
+  it("lets several directory teams share one named schedule", () => {
+    const fresh = defaultRosterConfig();
+    const config = {
+      ...fresh,
+      schedules: [...fresh.schedules, { id: "support", name: "Support", shifts: [] }],
+      groups: [
+        { id: "payments", name: "Payments", scheduleId: "support" },
+        { id: "data-platform", name: "Data Platform", scheduleId: "support" },
+      ],
+    };
+    const result = buildSections(config, [
+      emp(1, { team: "Payments" }),
+      emp(2, { team: "Data Platform" }),
+      emp(3, { team: "Other" }),
+    ]);
+    const scheduleOf = (name) => result.teams.find((t) => t.name === name).scheduleId;
+    assert.equal(scheduleOf("Payments"), "support");
+    assert.equal(scheduleOf("Data Platform"), "support");
+    assert.equal(scheduleOf("Other"), fresh.schedules[0].id);
+    assert.equal(rosterConfigSchema.safeParse(config).success, true);
+  });
+});
+
 describe("teams come from the directory", () => {
-  const base = defaultRosterConfig();
+  const base = workbookRosterConfig();
   const names = (result, id) =>
     result.sections.find((s) => s.id === id)?.rows.map((r) => r.name);
 

@@ -8,43 +8,8 @@ import { AgentStatusBadge } from "./AgentStatusBadge";
 import { TaskList } from "./TaskList";
 
 /**
- * Decorative placeholder "collaborators" for the bottom-left presence
- * cluster. This pass has no real multiplayer backend, so these are fixed
- * initials-only avatars, not real accounts — purely to sell the "presence"
- * concept the reference product's screenshots show. Exactly 3, matching
- * the reference's 2-3-avatar cluster. `tone` is the avatar fill: two
- * gradients, plus the accent gradient for the agent. In Deloitte mode the
- * first two swap to brand blue / dark gray (`brand-dl:`).
- */
-const collaborators = [
-  {
-    id: "a",
-    initials: "JL",
-    name: "Jordan L.",
-    active: true,
-    tone: "bg-[linear-gradient(145deg,#5a93e0,#3b62c4)] text-white brand-dl:bg-none brand-dl:bg-[#00a3e0] brand-dl:text-black",
-  },
-  {
-    id: "b",
-    initials: "MK",
-    name: "Maya K.",
-    active: false,
-    tone: "bg-[linear-gradient(145deg,#d9779f,#b0488a)] text-white brand-dl:bg-none brand-dl:bg-[#282728] brand-dl:dark:bg-[#555555]",
-  },
-  {
-    id: "c",
-    initials: "SR",
-    name: "Shift Roster agent",
-    active: true,
-    tone: "bg-[linear-gradient(145deg,var(--color-accent-2),var(--color-accent))] text-accent-contrast",
-  },
-];
-
-/**
- * Corner presence indicators: a cluster of overlapping placeholder
- * "collaborator" avatars bottom-left (they fan out when the cluster is
- * hovered; a small green dot marks the active ones), and, bottom-right, the
- * AI agent's status pill plus the AI orb (an accent-gradient round button).
+ * Corner AI indicators, bottom-right: the AI agent's status pill plus the AI orb (an
+ * accent-gradient round button).
  * The orb gets a rotating `ai-ring` while a task is in flight — thinking or
  * working, read from agentStore's `currentTask` — and clicking it
  * expands/collapses the "AI activity" task history panel — collapsed by
@@ -63,35 +28,6 @@ export function PresenceAvatars() {
 
   return (
     <>
-      <div
-        role="group"
-        aria-label="Collaborators"
-        className="group/pres absolute bottom-7 left-6 z-[var(--z-chrome)] flex items-center pl-2.5"
-      >
-        {collaborators.map((person) => (
-          <Tooltip key={person.id} label="Demo presence" side="top" sideOffset={10}>
-            <span
-              role="img"
-              aria-label={`${person.name} (demo presence${person.active ? ", active" : ""})`}
-              className={cn(
-                "border-surface-elevated relative -ml-2.5 grid h-[38px] w-[38px] place-items-center rounded-full border-2 text-xs font-bold",
-                "ease-spring shadow-[0_4px_12px_rgba(30,30,60,0.2)] transition-[margin,box-shadow] duration-[450ms]",
-                "group-hover/pres:ml-1 hover:shadow-[0_0_0_3px_var(--color-accent-soft),0_4px_12px_rgba(30,30,60,0.2)]",
-                person.tone,
-              )}
-            >
-              {person.initials}
-              {person.active && (
-                <i
-                  aria-hidden
-                  className="bg-success-dot border-surface-elevated absolute -right-px -bottom-px h-2.5 w-2.5 rounded-full border-2"
-                />
-              )}
-            </span>
-          </Tooltip>
-        ))}
-      </div>
-
       <div className="absolute right-6 bottom-7 z-[var(--z-chrome)] flex flex-col items-end gap-3">
         {/* Always mounted (see TaskList.tsx's own doc comment for why).
             TaskList positions itself absolutely — this column is already

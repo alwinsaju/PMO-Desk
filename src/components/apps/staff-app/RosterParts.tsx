@@ -34,7 +34,7 @@ import {
   type RosterRow,
   type RosterSection,
 } from "@/lib/staff/shifts";
-import type { RosterConfig, ShiftAssignment, ShiftSchedule } from "@/lib/staff/types";
+import type { RosterGroup, ShiftAssignment, ShiftSchedule } from "@/lib/staff/types";
 import { PersonAvatar, hueClass, hueDot } from "./parts";
 
 export interface MenuTarget {
@@ -149,7 +149,7 @@ export function PersonCell({
 }: {
   row: RosterRow;
   section: RosterSection;
-  groups: RosterConfig["groups"];
+  groups: readonly RosterGroup[];
   locations: readonly string[];
   onLink: () => void;
   onUnlink: () => void;

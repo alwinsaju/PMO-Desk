@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, it } from "node:test";
 import { createEmployee } from "./employees.ts";
 import { createTimeOff } from "./timeoff.ts";
 import { makeAssignment } from "./shifts.ts";
-import { defaultRosterConfig } from "./rosterCatalog.ts";
+import { workbookRosterConfig } from "./rosterCatalog.ts";
 import {
   applyChanges,
   applyProfileSync,
@@ -52,7 +52,7 @@ const memberOf = (n, employeeId = null, over = {}) => ({
   ...over,
 });
 const saveMembers = (members) =>
-  saveRoster({ config: { ...defaultRosterConfig(), members } }, env);
+  saveRoster({ config: { ...workbookRosterConfig(), members } }, env);
 const day = (member, date, ref = "main:shift-1", extra) =>
   makeAssignment(member.id, date, ref, extra);
 
@@ -226,28 +226,15 @@ describe("shifts and time off", () => {
 });
 
 describe("shift roster configuration", () => {
-  it("starts from the team's schedules and sections, with nobody in them", async () => {
+  it("starts with one schedule and no teams: teams come from the directory", async () => {
     const config = await readRoster(env);
-    assert.deepEqual(
-      config.groups.map((g) => g.name),
-      [
-        "L2",
-        "DEP",
-        "L3",
-        "Device Support",
-        "Lab",
-        "CMS 2.0",
-        "EKS",
-        "LNS 2.0",
-        "Integration Hub",
-      ],
-    );
+    assert.deepEqual(config.groups, []);
     assert.deepEqual(config.members, []);
-    const sets = Object.fromEntries(
-      config.schedules.map((s) => [s.id, s.shifts.map((x) => x.id)]),
+    assert.deepEqual(
+      config.schedules.map((s) => s.name),
+      ["Standard"],
     );
-    assert.deepEqual(sets["device-support"], ["shift-1", "shift-3", "shift-4"]);
-    assert.deepEqual(sets["lns-2"], ["shift-1", "shift-2"]);
+    assert.ok(config.schedules[0].shifts.length > 0);
   });
 
   it("saves a configuration and drops the shifts of people who are no longer in it", async () => {
@@ -270,7 +257,7 @@ describe("shift roster configuration", () => {
   });
 
   it("refuses an inconsistent configuration and links to unknown or shared profiles", async () => {
-    const base = defaultRosterConfig();
+    const base = workbookRosterConfig();
     const a = person("a@x.com");
     await save([a]);
     const bad = (config) => saveRoster({ config }, env);
@@ -323,7 +310,7 @@ describe("shift roster configuration", () => {
     );
     const result = await importRoster(
       {
-        config: { ...defaultRosterConfig(), members: [m1, m2] },
+        config: { ...workbookRosterConfig(), members: [m1, m2] },
         upsert: [day(m1, "2026-03-02", "main:ns"), day(m2, "2026-03-02")],
       },
       env,
@@ -340,7 +327,7 @@ describe("shift roster configuration", () => {
     await assert.rejects(
       importRoster(
         {
-          config: { ...defaultRosterConfig(), members: [m1] },
+          config: { ...workbookRosterConfig(), members: [m1] },
           upsert: [day(m2, "2026-03-04")],
         },
         env,

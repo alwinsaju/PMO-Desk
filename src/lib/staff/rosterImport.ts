@@ -7,8 +7,8 @@ import { parseDateCell } from "./employees.ts";
 import { locationHint } from "./holidays.ts";
 import {
   GROUP_ALIASES,
-  defaultGroups,
-  defaultSchedules,
+  workbookGroups,
+  workbookSchedules,
   slugify,
 } from "./rosterCatalog.ts";
 import { interpretCell, makeAssignment, newId, suggestLinks } from "./shifts.ts";
@@ -161,7 +161,7 @@ export function planRosterImport(
   employees: readonly Employee[],
 ): RosterImportPlan {
   const schedules = [...existing.schedules];
-  for (const d of defaultSchedules()) {
+  for (const d of workbookSchedules()) {
     if (!schedules.some((s) => s.id === d.id)) schedules.push(d);
   }
   const groups: RosterGroup[] = [...existing.groups];
@@ -173,7 +173,9 @@ export function planRosterImport(
       groups.find((g) => g.id === aliased) ??
       groups.find((g) => g.name.toLowerCase() === lower || g.id === slugify(name));
     if (found) return found;
-    const known = defaultGroups().find((g) => g.id === aliased || g.id === slugify(name));
+    const known = workbookGroups().find(
+      (g) => g.id === aliased || g.id === slugify(name),
+    );
     const group: RosterGroup = known ?? {
       id: slugify(name) || newId("grp"),
       name: name.trim(),

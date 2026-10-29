@@ -22,7 +22,7 @@ export interface Employee {
   rollOffDate: string;
   campus: boolean;
   location: StaffLocation | "";
-  /** State, from the M365 office location. */
+  /** The city, as Teams shows it (Bengaluru, not Karnataka), from the M365 profile. */
   homeOffice: string;
   level: string;
   offering: string;

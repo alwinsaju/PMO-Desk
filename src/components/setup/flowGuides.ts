@@ -138,7 +138,7 @@ export const STAFF_COMPOSE = `{
   "lastName": "@body('Get_user_profile_(V2)')?['surname']",
   "level": "@body('Get_user_profile_(V2)')?['jobTitle']",
   "op": "@body('Get_user_profile_(V2)')?['department']",
-  "homeOffice": "@body('Get_user_profile_(V2)')?['state']",
+  "homeOffice": "@coalesce(body('Get_user_profile_(V2)')?['city'], body('Get_user_profile_(V2)')?['officeLocation'])",
   "phone": "@coalesce(body('Get_user_profile_(V2)')?['mobilePhone'], body('Get_user_profile_(V2)')?['businessPhones']?[0])",
   "photoBase64": "@outputs('Photo')"
 }`;

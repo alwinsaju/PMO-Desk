@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 
 import { addMonths, formatMonth, monthDates, monthStart } from "./dates.ts";
 import { createEmployee } from "./employees.ts";
-import { defaultRosterConfig, defaultSchedules, STATUS_DEFS } from "./rosterCatalog.ts";
+import { workbookRosterConfig, workbookSchedules, STATUS_DEFS } from "./rosterCatalog.ts";
 import { findRosterSheet, parseRosterSheet, planRosterImport } from "./rosterImport.ts";
 import {
   UNASSIGNED_ID,
@@ -51,7 +51,7 @@ const member = (n, over = {}) => ({
   role: "L2 DIS USI",
   ...over,
 });
-const sched = (id) => defaultSchedules().find((s) => s.id === id);
+const sched = (id) => workbookSchedules().find((s) => s.id === id);
 
 describe("times", () => {
   it("reads hour ranges, choosing the reading closest to a nine-hour shift", () => {
@@ -95,8 +95,10 @@ describe("times", () => {
 
   it("colours a shift by its name, the way the workbook does, in every team", () => {
     const hue = (ref, extra) =>
-      resolveAssignment(makeAssignment("m", "2026-03-02", ref, extra), defaultSchedules())
-        .hue;
+      resolveAssignment(
+        makeAssignment("m", "2026-03-02", ref, extra),
+        workbookSchedules(),
+      ).hue;
     assert.equal(hue("main:shift-1"), "s1");
     assert.equal(hue("main:shift-2"), "s2");
     assert.equal(hue("main:shift-3"), "s3");
@@ -118,11 +120,11 @@ describe("times", () => {
     assert.equal(hue("main:shift-3", { swap: true }), "swap");
     const main = resolveAssignment(
       makeAssignment("m", "2026-03-02", "main:shift-3"),
-      defaultSchedules(),
+      workbookSchedules(),
     );
     const device = resolveAssignment(
       makeAssignment("m", "2026-03-02", "device-support:shift-3"),
-      defaultSchedules(),
+      workbookSchedules(),
     );
     assert.notEqual(main.hours, device.hours); // Shift-3 is 9 PM - 6 AM there
     assert.deepEqual(device.range, { start: "21:00", end: "06:00" });
@@ -150,7 +152,7 @@ describe("times", () => {
 
 describe("the same shift name in different teams' schedules", () => {
   it("means the hours of the team it belongs to", () => {
-    const schedules = defaultSchedules();
+    const schedules = workbookSchedules();
     const view = (ref) =>
       resolveAssignment(makeAssignment("m", "2026-03-02", ref), schedules);
     assert.equal(view("main:shift-1").hours, "8:00 AM – 5:00 PM");
@@ -164,7 +166,7 @@ describe("the same shift name in different teams' schedules", () => {
   it("shows a deleted shift as unknown instead of failing", () => {
     const cell = resolveAssignment(
       makeAssignment("m", "2026-03-02", "main:gone"),
-      defaultSchedules(),
+      workbookSchedules(),
     );
     assert.equal(cell.kind, "unknown");
     assert.equal(cell.label, "gone");
@@ -223,7 +225,7 @@ describe("interpretCell (the way the workbook writes it)", () => {
 
   it("finds a shift the team lacks when only one set of hours has that name", () => {
     const lab = sched("lab");
-    const all = defaultSchedules();
+    const all = workbookSchedules();
     assert.equal(interpretCell("NS", lab, all)?.ref, "main:ns"); // main and integration-hub share the hours
     assert.equal(interpretCell("US-CST", lab, all)?.ref, "main:us-cst");
     // Shift-3 means different hours in several schedules: not guessed.
@@ -288,7 +290,7 @@ describe("interpretCell (the way the workbook writes it)", () => {
 
 describe("rows and sections", () => {
   const config = {
-    ...defaultRosterConfig(),
+    ...workbookRosterConfig(),
     members: [
       member(1, { name: "Doe, Jane", employeeId: emp(1).id }),
       member(2, { name: "Not Yet In Directory" }),
@@ -362,7 +364,7 @@ describe("rows and sections", () => {
 describe("counting, copying and filling", () => {
   const m1 = member(1);
   const m2 = member(2, { employeeId: emp(2).id });
-  const schedules = defaultSchedules();
+  const schedules = workbookSchedules();
   const rows = [
     { key: "1", member: m1, employee: null, name: "A", subtitle: "" },
     { key: "2", member: m2, employee: emp(2), name: "B", subtitle: "" },
@@ -595,7 +597,7 @@ describe("reading the workbook", () => {
   });
 
   it("plans the import: teams by alias, each team's own schedule, directory matches", () => {
-    const plan = planRosterImport(parseRosterSheet(sheet()), defaultRosterConfig(), [
+    const plan = planRosterImport(parseRosterSheet(sheet()), workbookRosterConfig(), [
       emp(1, { firstName: "Jane", lastName: "Doe" }),
     ]);
     const { members } = plan.config;
@@ -635,7 +637,7 @@ describe("reading the workbook", () => {
   });
 
   it("keeps unreadable entries visible instead of dropping them silently", () => {
-    const plan = planRosterImport(parseRosterSheet(sheet()), defaultRosterConfig(), []);
+    const plan = planRosterImport(parseRosterSheet(sheet()), workbookRosterConfig(), []);
     const reasons = plan.warnings.map((w) => [w.text, w.reason]);
     assert.ok(reasons.some(([t, r]) => t === "mystery" && /kept as typed/.test(r)));
     assert.ok(reasons.some(([, r]) => /Too long/.test(r)));
@@ -646,7 +648,7 @@ describe("reading the workbook", () => {
   });
 
   it("turns the banner row into events: holidays, swap days, notes", () => {
-    const plan = planRosterImport(parseRosterSheet(sheet()), defaultRosterConfig(), []);
+    const plan = planRosterImport(parseRosterSheet(sheet()), workbookRosterConfig(), []);
     const kinds = Object.fromEntries(plan.config.events.map((e) => [e.label, e.kind]));
     assert.deepEqual(kinds, {
       "Lean Shift": "note",
@@ -663,7 +665,7 @@ describe("reading the workbook", () => {
   });
 
   it("importing again updates the same people instead of adding them twice", () => {
-    const first = planRosterImport(parseRosterSheet(sheet()), defaultRosterConfig(), []);
+    const first = planRosterImport(parseRosterSheet(sheet()), workbookRosterConfig(), []);
     const second = planRosterImport(parseRosterSheet(sheet()), first.config, []);
     assert.equal(second.config.members.length, 7);
     assert.equal(second.stats.membersAdded, 0);
@@ -681,7 +683,7 @@ describe("reading the workbook", () => {
       ["New Team", null, null, null],
       [8, "Zed Zed", "Pune", "New Team", "Shift-1"],
     );
-    const plan = planRosterImport(parseRosterSheet(rows), defaultRosterConfig(), []);
+    const plan = planRosterImport(parseRosterSheet(rows), workbookRosterConfig(), []);
     const group = plan.config.groups.find((g) => g.name === "New Team");
     assert.equal(group.scheduleId, "main");
     assert.equal(plan.stats.groupsAdded, 1);

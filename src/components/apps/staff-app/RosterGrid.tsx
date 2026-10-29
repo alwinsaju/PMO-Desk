@@ -24,6 +24,7 @@ import { TIME_OFF_META } from "@/lib/staff/timeoff";
 import type {
   RosterConfig,
   RosterEvent,
+  RosterGroup,
   ShiftAssignment,
   TimeOffRequest,
 } from "@/lib/staff/types";
@@ -58,6 +59,8 @@ export interface RosterGridProps {
   today: string;
   sections: readonly RosterSection[];
   config: RosterConfig;
+  /** Every team (stored or named only by the directory), for "Move to team". */
+  groups: readonly RosterGroup[];
   index: ReadonlyMap<string, ShiftAssignment>;
   viewOf: (a: ShiftAssignment) => CellView;
   timeOff: readonly TimeOffRequest[];
@@ -124,6 +127,7 @@ export function RosterGrid({
   today,
   sections,
   config,
+  groups,
   index,
   viewOf,
   timeOff,
@@ -266,7 +270,7 @@ export function RosterGrid({
                   <PersonCell
                     row={row}
                     section={section}
-                    groups={config.groups}
+                    groups={groups}
                     locations={choices}
                     onLink={() => actions.link(row)}
                     onUnlink={() => actions.unlink(row)}

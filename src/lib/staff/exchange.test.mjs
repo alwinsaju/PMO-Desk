@@ -70,6 +70,17 @@ describe("request and profile files", () => {
     assert.equal(op({ level: "Senior" }), undefined);
   });
 
+  it("reads the city as the home office, ahead of a state a first flow put there", () => {
+    const office = (profile) =>
+      parseProfileFile(JSON.stringify({ email: "a@x.com", ...profile })).profile
+        .homeOffice;
+    assert.equal(office({ city: " Bengaluru ", homeOffice: "Karnataka" }), "Bengaluru");
+    assert.equal(office({ homeOffice: "Pune" }), "Pune");
+    assert.equal(office({ officeLocation: "Hyderabad" }), "Hyderabad");
+    assert.equal(office({ city: "", homeOffice: "Pune" }), "Pune");
+    assert.equal(office({}), undefined);
+  });
+
   it("accepts a picture as text, a data URL or a connector file object", () => {
     const b64 = JPEG.toString("base64");
     assert.equal(

@@ -475,7 +475,10 @@ function EmployeeForm({
             ))}
           </select>
         </Field>
-        {text("homeOffice", "Home office", { list: "homeOffice", hint: "State only." })}
+        {text("homeOffice", "Home office", {
+          list: "homeOffice",
+          hint: "The city, as Teams shows it (for example Bengaluru).",
+        })}
         {text("milestone", "Milestone", {
           placeholder: "e.g. 2027",
           hint: "Year set for promotion.",

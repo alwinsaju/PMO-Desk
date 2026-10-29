@@ -27,13 +27,7 @@ import { cn } from "@/lib/cn";
 import { slugify } from "@/lib/staff/rosterCatalog";
 import { useRosterStore } from "@/lib/staff/rosterStore";
 import { useStaffStore } from "@/lib/staff/staffStore";
-import {
-  buildSections,
-  formatDays,
-  formatHours,
-  hueOfShift,
-  newId,
-} from "@/lib/staff/shifts";
+import { buildSections, formatDays, formatHours, hueOfShift } from "@/lib/staff/shifts";
 import type { RosterConfig, ShiftDef, ShiftSchedule } from "@/lib/staff/types";
 import { SELECT_CLASS, hueDot } from "./parts";
 
@@ -80,15 +74,45 @@ function Body({ onClose }: { onClose: () => void }) {
   const save = useRosterStore((s) => s.save);
   const shifts = useStaffStore((s) => s.shifts);
   const employees = useStaffStore((s) => s.employees);
-  const [draft, setDraft] = useState<RosterConfig>(() => structuredClone(stored));
+  const [draft, setDraft] = useState<RosterConfig>(() => {
+    const config = structuredClone(stored);
+    // A stored team nobody is in and no profile names is left over from an older roster.
+    const alive = new Set(
+      buildSections(config, employees)
+        .teams.filter((t) => t.count > 0)
+        .map((t) => t.id),
+    );
+    return { ...config, groups: config.groups.filter((g) => alive.has(g.id)) };
+  });
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  /** Every team with people in it: from the directory, plus any imported by hand. */
+  const allTeams = useMemo(
+    () => buildSections(draft, employees).teams.filter((t) => t.count > 0),
+    [draft, employees],
+  );
 
   /** Teams that only the directory names so far (saved with the roster once you pick a schedule). */
   const directoryTeams = useMemo(
     () => buildSections(draft, employees).teams.filter((t) => t.virtual),
     [draft, employees],
   );
+
+  /** A team uses exactly one schedule (its shifts are `<schedule>:<shift>`): put it on this one. */
+  function assignTeam(team: { id: string; name: string }, scheduleId: string) {
+    setDraft((d) =>
+      d.groups.some((g) => g.id === team.id)
+        ? {
+            ...d,
+            groups: d.groups.map((g) => (g.id === team.id ? { ...g, scheduleId } : g)),
+          }
+        : {
+            ...d,
+            groups: [...d.groups, { id: team.id, name: team.name, scheduleId }],
+          },
+    );
+  }
 
   /** How many days use each `<schedule>:<shift>`. */
   const used = useMemo(() => {
@@ -191,8 +215,9 @@ function Body({ onClose }: { onClose: () => void }) {
     <>
       <DialogTitle>Schedules and teams</DialogTitle>
       <DialogDescription>
-        A schedule is the set of shifts one team works. Two teams can both have a
-        “Shift-1” with different hours: each team uses its own schedule.
+        A schedule is a named set of shifts. Choose which teams (taken from the directory)
+        work it: several teams can share one schedule, and a team that works different
+        hours under the same shift names gets its own.
       </DialogDescription>
 
       <Tabs defaultValue="schedules" className="mt-5">
@@ -208,6 +233,7 @@ function Body({ onClose }: { onClose: () => void }) {
         <TabsContent value="schedules" className="mt-4 flex flex-col gap-4">
           {draft.schedules.map((schedule) => {
             const teams = teamsUsing(schedule.id);
+            const others = draft.schedules.filter((s) => s.id !== schedule.id);
             return (
               <section
                 key={schedule.id}
@@ -224,11 +250,7 @@ function Body({ onClose }: { onClose: () => void }) {
                     }
                     className="h-8 max-w-[240px] font-semibold"
                   />
-                  <span className="text-ink-muted min-w-0 flex-1 truncate text-[12.5px]">
-                    {teams.length > 0
-                      ? `Used by ${teams.map((t) => t.name).join(", ")}`
-                      : "Not used by any team"}
-                  </span>
+                  <span className="min-w-0 flex-1" />
                   <IconButton
                     aria-label={`Duplicate ${schedule.name}`}
                     title="Duplicate"
@@ -253,7 +275,57 @@ function Body({ onClose }: { onClose: () => void }) {
                   </IconButton>
                 </div>
 
-                <ul className="mt-3 flex flex-col gap-2">
+                <div
+                  className="mt-3"
+                  role="group"
+                  aria-label={`Teams on ${schedule.name}`}
+                >
+                  <p className="text-ink-muted mb-1.5 text-[12px] font-semibold">
+                    Teams on this schedule
+                  </p>
+                  {allTeams.length === 0 ? (
+                    <p className="text-ink-muted text-[12.5px]">
+                      No teams yet. Teams come from the Team on each directory profile.
+                    </p>
+                  ) : (
+                    <div className="flex flex-wrap gap-1.5">
+                      {allTeams.map((team) => {
+                        const on = team.scheduleId === schedule.id;
+                        const elsewhere = draft.schedules.find(
+                          (s) => s.id === team.scheduleId,
+                        );
+                        return (
+                          <button
+                            key={team.id}
+                            type="button"
+                            aria-pressed={on}
+                            disabled={on && others.length === 0}
+                            title={
+                              on
+                                ? others.length > 0
+                                  ? `Click to move ${team.name} to ${others[0].name}`
+                                  : "A team always uses a schedule"
+                                : `Uses ${elsewhere?.name ?? "another schedule"}; click to use ${schedule.name}`
+                            }
+                            onClick={() =>
+                              assignTeam(team, on ? others[0].id : schedule.id)
+                            }
+                            className={cn(
+                              "rounded-chip h-7 px-2.5 text-[12.5px] font-semibold transition-colors disabled:opacity-60",
+                              on
+                                ? "bg-accent text-accent-contrast"
+                                : "bg-chip text-ink-muted hover:bg-chip-strong",
+                            )}
+                          >
+                            {team.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                <ul className="mt-4 flex flex-col gap-2">
                   {schedule.shifts.map((x) => {
                     const days = used.get(`${schedule.id}:${x.id}`) ?? 0;
                     return (
@@ -376,8 +448,8 @@ function Body({ onClose }: { onClose: () => void }) {
         <TabsContent value="teams" className="mt-4 flex flex-col gap-2">
           <p className="text-ink-muted mb-1 text-[12.5px] leading-snug">
             Teams come from the Team on each directory profile: a new team or person
-            appears in the roster by itself. Name a team here the way the directory spells
-            it to give it its own schedule. Use the eye on a team to hide it.
+            appears in the roster by itself, so there is nothing to add here. Pick the
+            teams of a schedule on the Schedules tab, or give a team its schedule below.
           </p>
           {draft.groups.map((group, index) => {
             const count = membersIn(group.id);
@@ -490,32 +562,6 @@ function Body({ onClose }: { onClose: () => void }) {
               </span>
             </div>
           ))}
-          <div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() =>
-                setDraft((d) => ({
-                  ...d,
-                  groups: [
-                    ...d.groups,
-                    {
-                      id: uniqueId(
-                        "team",
-                        d.groups.map((g) => g.id),
-                        newId("grp"),
-                      ),
-                      name: "New team",
-                      scheduleId: d.schedules[0]?.id ?? "main",
-                    },
-                  ],
-                }))
-              }
-            >
-              <PlusIcon size={14} weight="bold" />
-              Add a team
-            </Button>
-          </div>
         </TabsContent>
       </Tabs>
 

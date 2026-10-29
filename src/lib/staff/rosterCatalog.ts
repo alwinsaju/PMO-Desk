@@ -1,7 +1,6 @@
-// The starting point of the shift roster: the schedules, team sections and day
-// types of the team's roster workbook (Shiftroster_Takeda). Everything here can
-// be changed in the app (Shift roster > Schedules); this is only what an empty
-// roster starts from and what the workbook importer maps names onto.
+// The starting point of the shift roster: one schedule and no teams (teams come from the
+// directory). Everything can be changed in the app (Shift roster > Schedules). The
+// workbook catalog below only maps names when the team's roster workbook is imported.
 import type { RosterConfig, RosterGroup, ShiftDef, ShiftSchedule } from "./types.ts";
 
 export type Tone = "accent" | "info" | "amber" | "red" | "success" | "neutral";
@@ -119,7 +118,21 @@ const MAIN_SHIFTS: ShiftDef[] = [
   shift("ns", "NS", "19:00", "04:00"),
 ];
 
-export function defaultSchedules(): ShiftSchedule[] {
+/** What an empty roster starts from: one schedule, no teams. Teams come from the Team
+ *  on each directory profile; a schedule is named and given its teams in the app. */
+export function starterSchedules(): ShiftSchedule[] {
+  return [
+    {
+      id: "main",
+      name: "Standard",
+      shifts: MAIN_SHIFTS.map((s) => ({ ...s, days: [...s.days] })),
+    },
+  ];
+}
+
+/** The schedules of the team's roster workbook (Shiftroster_Takeda). Used only to read
+ *  that workbook; a new roster does not start from them. */
+export function workbookSchedules(): ShiftSchedule[] {
   return [
     {
       id: "main",
@@ -162,8 +175,8 @@ export function defaultSchedules(): ShiftSchedule[] {
   ];
 }
 
-/** Team sections of the workbook and the schedule each one uses. */
-export function defaultGroups(): RosterGroup[] {
+/** Team sections of the workbook and the schedule each one uses (only for reading it). */
+export function workbookGroups(): RosterGroup[] {
   return [
     { id: "l2", name: "L2", scheduleId: "main" },
     { id: "dep", name: "DEP", scheduleId: "main" },
@@ -179,8 +192,18 @@ export function defaultGroups(): RosterGroup[] {
 
 export function defaultRosterConfig(): RosterConfig {
   return {
-    schedules: defaultSchedules(),
-    groups: defaultGroups(),
+    schedules: starterSchedules(),
+    groups: [],
+    members: [],
+    events: [],
+  };
+}
+
+/** A roster as the workbook lays it out; for tests and the importer's expectations. */
+export function workbookRosterConfig(): RosterConfig {
+  return {
+    schedules: workbookSchedules(),
+    groups: workbookGroups(),
     members: [],
     events: [],
   };

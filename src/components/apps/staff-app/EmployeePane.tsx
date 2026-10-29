@@ -113,9 +113,7 @@ export function EmployeePane({
     const result = await requestProfile(employee.id);
     setBusy(false);
     setNotice(
-      result.ok
-        ? "Requested again. The profile arrives once the flow has run."
-        : result.reason,
+      result.ok ? "Requested. The profile arrives once the flow has run." : result.reason,
     );
   }
 
@@ -166,6 +164,17 @@ export function EmployeePane({
                   Request again
                 </Button>
               </div>
+            )}
+            {!pending && employee.profileSync === "synced" && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="mt-1.5 -ml-2 h-6 px-2 text-[12px]"
+                disabled={busy}
+                onClick={() => void askAgain()}
+              >
+                Refresh from M365
+              </Button>
             )}
             {notice && (
               <p role="status" className="text-ink-muted mt-1.5 text-[12px]">

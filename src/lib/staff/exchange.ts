@@ -52,6 +52,10 @@ const PROFILE_TEXT_KEYS = [
  *  `offering` is what the first version of the flow guide called it. */
 const OP_ALIASES = ["department", "offeringPortfolio", "offering"] as const;
 
+/** The home office is the city Teams shows (Bengaluru), not the state (Karnataka): a
+ *  `city` in the file wins over a `homeOffice` the first flow guide filled with the state. */
+const HOME_OFFICE_KEYS = ["city", "homeOffice", "officeLocation"] as const;
+
 /** Flows can hand a picture over as plain base64, a data URL, or the
  *  `{ "$content-type", "$content" }` object a connector returns for a file. */
 function photoText(value: unknown): string {
@@ -104,6 +108,10 @@ export function parseProfileFile(text: string): ParsedProfile {
       profile.op = value.trim();
     }
   }
+  const office = HOME_OFFICE_KEYS.map((key) => source[key]).find(
+    (value): value is string => typeof value === "string" && value.trim() !== "",
+  );
+  if (office) profile.homeOffice = office.trim();
   const photo = photoText(source.photoBase64);
   if (photo) profile.photoBase64 = photo;
   if (!profile.email) return { ok: false, reason: "The file has no email." };

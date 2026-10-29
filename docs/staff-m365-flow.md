@@ -1,7 +1,7 @@
 # Staff Management: M365 profile flow (Power Automate)
 
 When you add someone by email in Staff Management, the app asks Microsoft 365 for their
-profile (name, level, OP, home office state, phone, picture) through a **cloud flow** and
+profile (name, level, OP, home office city, phone, picture) through a **cloud flow** and
 a **OneDrive folder**. A cloud flow cannot call this app directly (the app only listens on
 `127.0.0.1`), so the two talk through files, the same way the PMO inbox works.
 
@@ -84,7 +84,7 @@ plain text, use the action's **Code view** so each `"@..."` value is read as an 
   "lastName": "@body('Get_user_profile_(V2)')?['surname']",
   "level": "@body('Get_user_profile_(V2)')?['jobTitle']",
   "op": "@body('Get_user_profile_(V2)')?['department']",
-  "homeOffice": "@body('Get_user_profile_(V2)')?['state']",
+  "homeOffice": "@coalesce(body('Get_user_profile_(V2)')?['city'], body('Get_user_profile_(V2)')?['officeLocation'])",
   "phone": "@coalesce(body('Get_user_profile_(V2)')?['mobilePhone'], body('Get_user_profile_(V2)')?['businessPhones']?[0])",
   "photoBase64": "@outputs('Photo')"
 }
@@ -107,7 +107,7 @@ Save the flow and turn it on.
 | givenName / surname                   | First name / Last name  |
 | jobTitle                              | Level                   |
 | department                            | OP (offering portfolio) |
-| state                                 | Home office             |
+| city (else officeLocation)            | Home office             |
 | mobilePhone (or first business phone) | Phone                   |
 | Get user photo                        | Profile picture         |
 
@@ -117,6 +117,11 @@ derived from the OP once you give me the OP-to-offering mapping.
 > **If you built the flow earlier** with an `"offering"` line holding the `department` expression:
 > it still works. AI OS reads `offering` (and `department`) in a profile file as the offering
 > portfolio when there is no `"op"` key. Renaming the line to `"op"` is still the tidy way.
+
+**Home office is the city** (Bengaluru, as Teams shows it), not the state (Karnataka). If your flow
+still sends `state` as `homeOffice`, change that line to the `coalesce(... 'city' ..., ... 'officeLocation' ...)`
+expression above, or add a `"city"` line: a `city` in the file wins over `homeOffice`. People already
+synced keep the old value until you press **Refresh from M365** on their profile.
 
 ## Test it
 
@@ -138,7 +143,7 @@ already be on the roster):
   "lastName": "One",
   "level": "Consultant",
   "op": "DF&O IN BEN",
-  "homeOffice": "Texas",
+  "homeOffice": "Bengaluru",
   "phone": "+1 555 0100",
   "photoBase64": null
 }
