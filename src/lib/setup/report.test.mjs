@@ -7,7 +7,6 @@ import { buildReport, missingRequired } from "./report.ts";
 const GB = 1024 ** 3;
 
 function facts(overrides = {}) {
-  const dirs = new Set(["C:\\OneDrive", "C:\\OneDrive\\PMO-Inbox"]);
   const base = {
     platform: "win32",
     ollama: {
@@ -18,13 +17,6 @@ function facts(overrides = {}) {
       defaultModel: "gemma4:12b",
     },
     hardware: { totalRamBytes: 32 * GB, freeDiskBytes: 300 * 1e9 },
-    inbox: {
-      path: "C:\\OneDrive\\PMO-Inbox",
-      fromEnvironment: false,
-      exists: true,
-      oneDrive: { signedIn: true, roots: ["C:\\OneDrive"] },
-      isDirectory: (p) => dirs.has(p),
-    },
     outlook: { comRegistered: true, classicInstalled: true, newOutlook: false },
     engine: {
       python: "C:\\app\\resources\\python\\pythonw.exe",
@@ -42,7 +34,6 @@ function facts(overrides = {}) {
     ...overrides,
     ollama: { ...base.ollama, ...overrides.ollama },
     hardware: { ...base.hardware, ...overrides.hardware },
-    inbox: { ...base.inbox, ...overrides.inbox },
     outlook: { ...base.outlook, ...overrides.outlook },
     engine: { ...base.engine, ...overrides.engine },
   };
@@ -62,7 +53,6 @@ describe("a fully set up computer", () => {
       [
         ["ollama", "ok"],
         ["model", "ok"],
-        ["pmo-inbox", "ok"],
         ["engine", "ok"],
         ["outlook", "ok"],
       ],
@@ -190,77 +180,6 @@ describe("Ollama and the model", () => {
       c.summary,
       /qwen3\.5:9b is installed, but AI OS is set up for gemma4:12b/,
     );
-  });
-});
-
-describe("the PMO inbox folder", () => {
-  it("explains that OneDrive is not signed in and offers to choose another folder", () => {
-    const report = buildReport(
-      facts({ inbox: { exists: false, oneDrive: { signedIn: false, roots: [] } } }),
-      NOW,
-    );
-    const c = check(report, "pmo-inbox");
-    assert.equal(c.state, "missing");
-    assert.match(c.summary, /OneDrive is not signed in/);
-    assert.deepEqual(c.actions, ["choose-inbox"]);
-    assert.equal(report.ready, false);
-  });
-
-  it("says the folder is missing when OneDrive is fine, and suggests where it might be", () => {
-    const c = check(
-      buildReport(facts({ inbox: { path: "C:\\Old\\PMO-Inbox", exists: false } }), NOW),
-      "pmo-inbox",
-    );
-    assert.match(
-      c.summary,
-      /OneDrive is signed in, but the PMO inbox folder does not exist/,
-    );
-    assert.deepEqual(c.suggestions, [
-      "C:\\OneDrive\\PMO-Inbox",
-      "C:\\OneDrive\\AI-OS\\PMO-Inbox",
-    ]);
-    assert.match(c.steps[0], /Pick the folder below/);
-  });
-
-  it("keeps working but warns when the folder exists and OneDrive does not look signed in", () => {
-    const c = check(
-      buildReport(facts({ inbox: { oneDrive: { signedIn: false, roots: [] } } }), NOW),
-      "pmo-inbox",
-    );
-    assert.equal(c.state, "attention");
-    assert.match(c.steps[0], /Sign in to OneDrive/);
-  });
-
-  it("does not claim OneDrive when a setting fixes the folder", () => {
-    const c = check(
-      buildReport(
-        facts({
-          inbox: { fromEnvironment: true, oneDrive: { signedIn: false, roots: [] } },
-        }),
-        NOW,
-      ),
-      "pmo-inbox",
-    );
-    assert.equal(c.state, "ok");
-    assert.match(c.summary, /fixed by a setting, so OneDrive is not checked/);
-  });
-
-  it("cannot be changed from the screen when the environment sets it", () => {
-    const c = check(
-      buildReport(
-        facts({
-          inbox: {
-            fromEnvironment: true,
-            exists: false,
-            oneDrive: { signedIn: false, roots: [] },
-          },
-        }),
-        NOW,
-      ),
-      "pmo-inbox",
-    );
-    assert.deepEqual(c.actions, []);
-    assert.ok(c.details.some((d) => /AI_OS_PMO_INBOX_DIR/.test(d)));
   });
 });
 
@@ -415,7 +334,7 @@ describe("the AI-OS folders in OneDrive", () => {
 
 describe("the Power Automate flows", () => {
   const flows = (over = {}) => ({
-    pto: { lastReceivedAt: null, waiting: 0, needsReview: 0 },
+    pto: { lastReceivedAt: null, waiting: 0, setAside: 0 },
     staff: { waiting: 0, oldestMinutes: null },
     ...over,
   });
@@ -433,7 +352,7 @@ describe("the Power Automate flows", () => {
   it("is fine once PTO emails arrive and nothing is stuck", () => {
     const c = run(
       flows({
-        pto: { lastReceivedAt: "2026-10-28T09:00:00.000Z", waiting: 0, needsReview: 0 },
+        pto: { lastReceivedAt: "2026-10-28T09:00:00.000Z", waiting: 0, setAside: 0 },
       }),
     );
     assert.equal(c.state, "ok");
@@ -454,13 +373,14 @@ describe("the Power Automate flows", () => {
     );
   });
 
-  it("points at PTO emails that need a look", () => {
+  it("reports PTO emails that were set aside", () => {
     const c = run(
       flows({
-        pto: { lastReceivedAt: "2026-10-28T09:00:00.000Z", waiting: 0, needsReview: 3 },
+        pto: { lastReceivedAt: "2026-10-28T09:00:00.000Z", waiting: 0, setAside: 3 },
       }),
     );
     assert.equal(c.state, "attention");
-    assert.match(c.summary, /3 PTO emails need a look/);
+    assert.match(c.summary, /3 PTO emails were set aside/);
+    assert.match(c.summary, /PTO-Inbox\\rejected/);
   });
 });

@@ -26,7 +26,8 @@ import { resolveOllamaExe } from "@/lib/ai-runtime/core";
 import { allowedModels, saveModelChoice } from "@/lib/ai-runtime/modelChoice";
 import { withoutTlsOverride } from "@/lib/security/childEnv";
 import { Store } from "@/lib/pmo/server/store";
-import { resolveDataDir, resolveInboxDir } from "@/lib/pmo/server/paths";
+import { resolveDataDir } from "@/lib/pmo/server/paths";
+import { isAwaitingProfile } from "@/lib/staff/employees";
 import { ptoMailState } from "@/lib/staff/ptoMailServer";
 import { readStaff } from "@/lib/staff/server";
 import { ollamaStartDue, outlookProbeDue, type StatusContext } from "./background";
@@ -232,7 +233,6 @@ export async function collectFacts(
   const store = new Store(resolveDataDir());
   // A computer whose installer made the AI-OS folder is already mapped: no choice to make.
   await autoMapInbox(store);
-  const inboxPath = resolveInboxDir((await store.loadConfig()).inboxDir);
   const python = resolvePython();
   startOllamaForSetup(context, Boolean(exe.path), runtime.running);
   // A stopped Ollama cannot list its models; the manifests on disk can.
@@ -255,13 +255,6 @@ export async function collectFacts(
       ...(runtime.modelNote ? { modelNote: runtime.modelNote } : {}),
     },
     hardware: { totalRamBytes: os.totalmem(), freeDiskBytes: freeBytes(modelsDir()) },
-    inbox: {
-      path: inboxPath,
-      fromEnvironment: Boolean(process.env.AI_OS_PMO_INBOX_DIR?.trim()),
-      exists: isDirectory(inboxPath),
-      oneDrive: oneDriveFacts(process.env, isDirectory),
-      isDirectory,
-    },
     outlook: await cachedOutlook(context),
     engine: { python, selfTest: currentSelfTest() },
     folders: readFolderFacts(),
@@ -299,10 +292,10 @@ function readFolderFacts(): FolderFacts {
 async function readFlowFacts(): Promise<FlowFacts | undefined> {
   try {
     const [pto, people] = await Promise.all([
-      ptoMailState(process.env, 1),
+      ptoMailState(process.env),
       readStaff("employees"),
     ]);
-    const waiting = people.filter((p) => p.profileSync === "pending");
+    const waiting = people.filter(isAwaitingProfile);
     const oldest = waiting.reduce<number | null>((min, p) => {
       const at = Date.parse(p.createdAt);
       return Number.isNaN(at) || (min !== null && at >= min) ? min : at;
@@ -311,7 +304,7 @@ async function readFlowFacts(): Promise<FlowFacts | undefined> {
       pto: {
         lastReceivedAt: pto.lastReceivedAt,
         waiting: pto.waiting,
-        needsReview: pto.needsReview,
+        setAside: pto.setAside,
       },
       staff: {
         waiting: waiting.length,

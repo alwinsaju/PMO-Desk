@@ -8,12 +8,14 @@ import {
   employeeFromEmail,
   employeesToCsv,
   filterEmployees,
+  isAwaitingProfile,
   nameFromEmail,
   parseDateCell,
   parseEmailList,
   parseRosterRows,
   planImport,
   rollOffStatus,
+  settleProfileSync,
   sortEmployees,
   validateEmployee,
   NO_FILTER,
@@ -125,6 +127,42 @@ describe("M365 profile", () => {
     assert.equal(next.offering, "");
     assert.equal(next.profileSync, "synced");
     assert.equal(next.updatedAt, "later");
+  });
+
+  it("waits for the profile until something the profile owns is filled in", () => {
+    const pending = employeeFromEmail("jane.doe@deloitte.com", NOW);
+    assert.equal(isAwaitingProfile(pending), true);
+    assert.equal(isAwaitingProfile({ ...pending, op: "DF&O IN BEN" }), false);
+    assert.equal(isAwaitingProfile({ ...pending, photoVersion: 5 }), false);
+    assert.equal(isAwaitingProfile({ ...pending, profileSync: "synced" }), false);
+  });
+
+  it("keeps a stale edit from bringing 'waiting' back or blanking a synced profile", () => {
+    const synced = {
+      ...employeeFromEmail("jane.doe@deloitte.com", NOW),
+      op: "DF&O IN BEN",
+      level: "Senior",
+      profileSync: "synced",
+    };
+    const stale = { ...employeeFromEmail("jane.doe@deloitte.com", NOW), team: "Run" };
+    const saved = settleProfileSync(stale, synced);
+    assert.equal(saved.profileSync, "synced");
+    assert.equal(saved.op, "DF&O IN BEN");
+    assert.equal(saved.level, "Senior");
+    assert.equal(saved.team, "Run");
+  });
+
+  it("ends the wait when the profile is filled in by hand, and not before", () => {
+    const pending = employeeFromEmail("jane.doe@deloitte.com", NOW);
+    assert.equal(
+      settleProfileSync({ ...pending, team: "Run" }, pending).profileSync,
+      "pending",
+    );
+    assert.equal(
+      settleProfileSync({ ...pending, level: "Senior" }, pending).profileSync,
+      "manual",
+    );
+    assert.equal(settleProfileSync(pending).profileSync, "pending");
   });
 });
 

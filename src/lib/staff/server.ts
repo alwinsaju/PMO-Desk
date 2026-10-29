@@ -7,7 +7,12 @@ import { randomBytes } from "node:crypto";
 import { mutexFor, readJsonSafe, writeJsonAtomic } from "../pmo/server/fsx.ts";
 import { resolveDataDir } from "../pmo/server/paths.ts";
 import { mergeChanges } from "./changes.ts";
-import { applyProfile, EMPLOYEE_ID, findByEmail } from "./employees.ts";
+import {
+  applyProfile,
+  EMPLOYEE_ID,
+  findByEmail,
+  settleProfileSync,
+} from "./employees.ts";
 import {
   checkPhoto,
   decodeBase64Photo,
@@ -261,14 +266,15 @@ export function applyChanges<K extends StaffKind>(
       const upsert = (parsed.data.upsert ?? []).map((e) => {
         const before = stored.get(e.id);
         // The photo stamp belongs to the photo endpoint, never to a form.
+        const incoming = settleProfileSync(e as Employee, before);
         return before
           ? {
-              ...(e as Employee),
+              ...incoming,
               photoVersion: before.photoVersion,
               createdAt: before.createdAt,
               updatedAt: stamp,
             }
-          : { ...(e as Employee), photoVersion: 0, createdAt: stamp, updatedAt: stamp };
+          : { ...incoming, photoVersion: 0, createdAt: stamp, updatedAt: stamp };
       });
       const next = mergeChanges(current, { upsert, remove: parsed.data.remove });
       const seen = new Map<string, string>();

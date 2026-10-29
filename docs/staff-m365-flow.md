@@ -111,11 +111,12 @@ Save the flow and turn it on.
 | mobilePhone (or first business phone) | Phone                   |
 | Get user photo                        | Profile picture         |
 
-**Offering** is not in M365, so the flow does not send it. It is set by hand for now (an `offering`
-key in a profile file is ignored); it will be derived from the OP once you give me the OP-to-offering mapping.
+**Offering** is not in M365, so the flow does not send it. It is set by hand for now; it will be
+derived from the OP once you give me the OP-to-offering mapping.
 
-> **If you built the flow earlier:** in step 5, rename the `"offering"` line to `"op"` (keep the
-> same `department` expression), save, then use **Request again** on the person.
+> **If you built the flow earlier** with an `"offering"` line holding the `department` expression:
+> it still works. AI OS reads `offering` (and `department`) in a profile file as the offering
+> portfolio when there is no `"op"` key. Renaming the line to `"op"` is still the tidy way.
 
 ## Test it
 

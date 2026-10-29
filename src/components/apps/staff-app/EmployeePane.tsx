@@ -9,7 +9,7 @@ import {
 } from "@phosphor-icons/react";
 import { Button, IconButton, Switch } from "@/components/ui";
 import { formatDate, formatRange, relativeDays, todayIso } from "@/lib/staff/dates";
-import { displayName, rollOffStatus } from "@/lib/staff/employees";
+import { displayName, isAwaitingProfile, rollOffStatus } from "@/lib/staff/employees";
 import { TIME_OFF_META, upcomingLeave } from "@/lib/staff/timeoff";
 import { useStaffStore } from "@/lib/staff/staffStore";
 import type { Employee } from "@/lib/staff/types";
@@ -95,7 +95,7 @@ export function EmployeePane({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const pending = employee.profileSync === "pending";
+  const pending = isAwaitingProfile(employee);
   const leave = upcomingLeave(timeOff, employee.id, todayIso()).slice(0, 3);
   const subtitle = [employee.level, employee.op].filter(Boolean).join(" · ");
 
@@ -201,7 +201,7 @@ export function EmployeePane({
           <Row label="Level" fromProfile pending={pending}>
             {employee.level}
           </Row>
-          <Row label="OP" fromProfile pending={pending}>
+          <Row label="Offering portfolio" fromProfile pending={pending}>
             {employee.op}
           </Row>
           <Row label="Offering">{employee.offering}</Row>

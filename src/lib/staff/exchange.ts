@@ -48,6 +48,10 @@ const PROFILE_TEXT_KEYS = [
   "phone",
 ] as const;
 
+/** Other names a flow may use for the offering portfolio (the M365 department).
+ *  `offering` is what the first version of the flow guide called it. */
+const OP_ALIASES = ["department", "offeringPortfolio", "offering"] as const;
+
 /** Flows can hand a picture over as plain base64, a data URL, or the
  *  `{ "$content-type", "$content" }` object a connector returns for a file. */
 function photoText(value: unknown): string {
@@ -93,6 +97,12 @@ export function parseProfileFile(text: string): ParsedProfile {
   for (const key of PROFILE_TEXT_KEYS) {
     const value = source[key];
     if (typeof value === "string" && value.trim()) profile[key] = value.trim();
+  }
+  for (const alias of OP_ALIASES) {
+    const value = source[alias];
+    if (!profile.op && typeof value === "string" && value.trim()) {
+      profile.op = value.trim();
+    }
   }
   const photo = photoText(source.photoBase64);
   if (photo) profile.photoBase64 = photo;

@@ -4,7 +4,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   CheckCircleIcon,
   CircleNotchIcon,
-  FolderOpenIcon,
   QuestionIcon,
   WarningCircleIcon,
   XCircleIcon,
@@ -16,10 +15,8 @@ import {
   DialogContent,
   DialogDescription,
   DialogTitle,
-  Input,
   Progress,
 } from "@/components/ui";
-import { cn } from "@/lib/cn";
 import type { SetupActionId, SetupCheck } from "@/lib/setup/report";
 import { FALLBACK_MODEL, downloadSizeText } from "@/lib/setup/models";
 import { fetchSetupStatus, postSetupAction, type SetupStatus } from "./setupApi";
@@ -54,18 +51,9 @@ function writeSkip(signature: string) {
   }
 }
 
-/** The folder picker the desktop shell offers (absent in a plain browser). */
-function folderPicker(): (() => Promise<string | null>) | null {
-  if (typeof window === "undefined") return null;
-  const api = (
-    window as unknown as { aiOsDesktop?: { chooseFolder?: () => Promise<string | null> } }
-  ).aiOsDesktop;
-  return api?.chooseFolder ? () => api.chooseFolder!() : null;
-}
-
 /**
  * First-run setup: a plain-language report of what this computer has and what
- * is missing (the local AI, its model, the PMO inbox folder, classic Outlook,
+ * is missing (the local AI, its model, the OneDrive folders, classic Outlook,
  * the Tasks engine), with a button for each thing that can be fixed from here.
  * It opens by itself at launch while something required is missing (unless the
  * person chose "Not now" for exactly that list) and from Settings at any time.
@@ -279,7 +267,6 @@ const ACTION_LABEL: Record<SetupActionId, string> = {
   "install-ollama": "Install Ollama",
   "pull-model": "Download model",
   "pull-fallback-model": `Download the smaller model (${downloadSizeText(FALLBACK_MODEL)})`,
-  "choose-inbox": "Use this folder",
   "create-folders": "Create the folders",
   "run-selftest": "Run self-test again",
 };
@@ -367,36 +354,27 @@ function CheckCard({
           />
         )}
 
-        {check.id === "pmo-inbox" && (
-          <InboxPicker
-            check={check}
-            onChoose={(path) => onAction({ action: "choose-inbox", path })}
-          />
-        )}
-
-        {check.actions.filter((a) => a !== "choose-inbox").length > 0 && (
+        {check.actions.length > 0 && (
           <div className="mt-3 flex flex-wrap gap-2">
-            {check.actions
-              .filter((action) => action !== "choose-inbox")
-              .map((action, index) => (
-                <Button
-                  key={action}
-                  size="sm"
-                  variant={index === 0 && check.state !== "ok" ? "solid" : "outline"}
-                  disabled={
-                    (action === "install-ollama" && busyWith === "install") ||
-                    ((action === "pull-model" || action === "pull-fallback-model") &&
-                      busyWith === "pull") ||
-                    (action === "run-selftest" &&
-                      check.summary === "Running the self-test…")
-                  }
-                  onClick={() =>
-                    void onAction({ action } as Parameters<typeof postSetupAction>[0])
-                  }
-                >
-                  {ACTION_LABEL[action]}
-                </Button>
-              ))}
+            {check.actions.map((action, index) => (
+              <Button
+                key={action}
+                size="sm"
+                variant={index === 0 && check.state !== "ok" ? "solid" : "outline"}
+                disabled={
+                  (action === "install-ollama" && busyWith === "install") ||
+                  ((action === "pull-model" || action === "pull-fallback-model") &&
+                    busyWith === "pull") ||
+                  (action === "run-selftest" &&
+                    check.summary === "Running the self-test…")
+                }
+                onClick={() =>
+                  void onAction({ action } as Parameters<typeof postSetupAction>[0])
+                }
+              >
+                {ACTION_LABEL[action]}
+              </Button>
+            ))}
           </div>
         )}
 
@@ -475,76 +453,6 @@ function JobBlock({
         </div>
       )}
       {!running && !error && <p className="text-ink-muted text-[13px]">{label}</p>}
-    </div>
-  );
-}
-
-function InboxPicker({
-  check,
-  onChoose,
-}: {
-  check: SetupCheck;
-  onChoose: (path: string) => Promise<void>;
-}) {
-  const canChoose = check.actions.includes("choose-inbox");
-  const [value, setValue] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [browse] = useState(folderPicker);
-  if (!canChoose) return null;
-
-  const choose = async (path: string) => {
-    setBusy(true);
-    await onChoose(path);
-    setBusy(false);
-  };
-
-  return (
-    <div className={cn("mt-3 flex flex-col gap-2")}>
-      {check.suggestions && check.suggestions.length > 0 && (
-        <div className="flex flex-col gap-1.5">
-          {check.suggestions.map((path) => (
-            <Button
-              key={path}
-              size="sm"
-              variant="outline"
-              className="justify-start font-mono text-[11.5px]"
-              disabled={busy}
-              onClick={() => void choose(path)}
-            >
-              Use {path}
-            </Button>
-          ))}
-        </div>
-      )}
-      <div className="flex items-center gap-2">
-        <Input
-          value={value}
-          onChange={(event) => setValue(event.target.value)}
-          placeholder="C:\Users\you\OneDrive\PMO-Inbox"
-          aria-label="Folder for the PMO inbox"
-          spellCheck={false}
-        />
-        {browse !== null && (
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={busy}
-            onClick={async () => {
-              const picked = await browse();
-              if (picked) setValue(picked);
-            }}
-          >
-            <FolderOpenIcon size={16} aria-hidden /> Browse
-          </Button>
-        )}
-        <Button
-          size="sm"
-          disabled={busy || !value.trim()}
-          onClick={() => void choose(value)}
-        >
-          {ACTION_LABEL["choose-inbox"]}
-        </Button>
-      </div>
     </div>
   );
 }

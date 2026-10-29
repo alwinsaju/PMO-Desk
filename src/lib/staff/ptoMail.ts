@@ -5,8 +5,9 @@
 // Pure: no I/O, no model calls (the model is injected where this is used).
 //
 // The email is untrusted text. The model only labels it; every answer is checked here
-// (a quote that is really in the email, real dates, a person we can identify) and
-// anything doubtful goes to a person instead of the roster.
+// (a quote that is really in the email, real dates, a person we can identify). Leave is
+// only ever filed as a pending request that a person approves or rejects in Time off;
+// anything that cannot be turned into a request is set aside.
 import { z } from "zod";
 import { addDays, daysBetween, isIsoDate, weekdayIndex } from "./dates.ts";
 import { displayName } from "./employees.ts";
@@ -266,8 +267,10 @@ export interface PtoDraft {
 }
 
 export type PtoDecision =
-  | { action: "apply"; draft: PtoDraft; reason: string }
-  | { action: "review"; reason: string; draft: Partial<PtoDraft> }
+  /** File a pending request. `check` = the AI or the email left a doubt a person should weigh when approving. */
+  | { action: "file"; draft: PtoDraft; reason: string; check: boolean }
+  /** Nothing can be filed (no person, no dates, a cancellation ...): the file is kept aside with the reason. */
+  | { action: "set-aside"; reason: string }
   | { action: "ignore"; reason: string };
 
 export interface DecideInput {
@@ -293,10 +296,18 @@ export function findDuplicate(
   );
 }
 
+/** The draft, when it names a person, a kind and a real range of days. */
+function completeDraft(partial: Partial<PtoDraft>): PtoDraft | null {
+  const { employeeId, type, startDate, endDate } = partial;
+  if (!employeeId || !type || !startDate || !endDate || endDate < startDate) return null;
+  return { employeeId, type, startDate, endDate };
+}
+
 /**
- * Turns the model's reading into one of: file the leave, hand it to a person, or ignore
- * the email. The model's `kind` and the email's own words must agree before a comp off
- * or PTO is filed on its own, and its quote must really be in the email.
+ * Turns the model's reading into one of: file the leave as a pending request, set the
+ * email aside, or ignore it. The model's `kind` and the email's own words must agree,
+ * and its quote must really be in the email, before the request is filed without a
+ * warning; a doubt is written into the request so the person approving sees it.
  */
 export function decide({
   message,
@@ -323,57 +334,58 @@ export function decide({
       ? { endDate: reading.endDate }
       : {}),
   };
-  const review = (reason: string): PtoDecision => ({
-    action: "review",
-    reason,
-    draft: partial,
-  });
+  const doubt = (reason: string): PtoDecision => {
+    const draft = completeDraft(partial);
+    return draft && !findDuplicate(existing, draft)
+      ? { action: "file", draft, reason, check: true }
+      : { action: "set-aside", reason };
+  };
 
   if (reading.kind === "cancel") {
-    return review(
+    return doubt(
       "The email cancels leave. Check which leave it means and remove it in Time off.",
     );
   }
-  if (!who.ok) return review(who.reason);
+  if (!who.ok) return doubt(who.reason);
   if (reading.partialDay)
-    return review("Only part of a day is off; the roster works in whole days.");
+    return doubt("Only part of a day is off; the roster works in whole days.");
   if (
     !reading.startDate ||
     !reading.endDate ||
     !isIsoDate(reading.startDate) ||
     !isIsoDate(reading.endDate)
   ) {
-    return review("The email does not give clear dates.");
+    return doubt("The email does not give clear dates.");
   }
   if (reading.endDate < reading.startDate)
-    return review("The end date is before the start date.");
+    return doubt("The end date is before the start date.");
   const length = daysBetween(reading.startDate, reading.endDate) + 1;
-  if (length > MAX_AUTO_LEAVE_DAYS) return review(`The leave is ${length} days long.`);
+  if (length > MAX_AUTO_LEAVE_DAYS) return doubt(`The leave is ${length} days long.`);
   if (
     daysBetween(reading.startDate, today) > PAST_WINDOW_DAYS ||
     daysBetween(today, reading.endDate) > FUTURE_WINDOW_DAYS
   ) {
-    return review("The dates are far from today.");
+    return doubt("The dates are far from today.");
   }
   if (reading.confidence === "low")
-    return review(reading.reason || "The AI was not sure what the email says.");
+    return doubt(reading.reason || "The AI was not sure what the email says.");
   if (
     !locateQuote(message.text, reading.quote) &&
     !locateQuote(message.subject, reading.quote)
   ) {
-    return review("The AI's quote is not in the email, so it needs a look.");
+    return doubt("The AI's quote is not in the email.");
   }
 
   const type = TYPE_OF_KIND[reading.kind];
   const compWords = mentionsCompOff(text);
   if (type === "comp-off" && !compWords) {
-    return review("The AI read a comp off, but the email does not say so.");
+    return doubt("The AI read a comp off, but the email does not say so.");
   }
   if (type === "pto" && compWords) {
-    return review("The email mentions a comp off, but the AI read it as PTO.");
+    return doubt("The email mentions a comp off, but the AI read it as PTO.");
   }
   if (type === "pto" && SICK_WORDS.test(text) && reading.confidence !== "high") {
-    return review("The email may be sick leave rather than PTO.");
+    return doubt("The email may be sick leave rather than PTO.");
   }
 
   const draft: PtoDraft = {
@@ -388,12 +400,15 @@ export function decide({
       duplicate.startDate === draft.startDate &&
       duplicate.endDate === draft.endDate
       ? { action: "ignore", reason: "This leave is already in Time off." }
-      : review("This person already has time off in these dates.");
+      : {
+          action: "set-aside",
+          reason: "This person already has time off in these dates.",
+        };
   }
-  return { action: "apply", draft, reason: reading.reason };
+  return { action: "file", draft, reason: reading.reason, check: false };
 }
 
-/** The approved request for a draft (approved: the person has told the team themselves). */
+/** The pending request for a draft: a person approves or rejects it in Time off. */
 export function requestFromDraft(
   draft: PtoDraft,
   message: Pick<PtoMessage, "sourceId" | "subject">,
@@ -408,9 +423,9 @@ export function requestFromDraft(
     startDate: draft.startDate,
     endDate: draft.endDate,
     reason: `From ${subject}${note ? `: ${note}` : ""}`.slice(0, 500),
-    status: "approved",
+    status: "pending",
     createdAt: now,
-    decidedAt: now,
+    decidedAt: "",
     source: "email",
     sourceId: message.sourceId,
   };
@@ -420,7 +435,8 @@ export function requestFromDraft(
 // The log of what was done with each email
 // ---------------------------------------------------------------------------
 
-export type PtoMailStatus = "applied" | "needs-review" | "ignored" | "dismissed";
+/** filed = a pending request was made; set-aside = could not be filed, the file is in `rejected`. */
+export type PtoMailStatus = "filed" | "set-aside" | "ignored";
 
 export interface PtoMailRecord {
   /** The message's sourceId. */
@@ -429,14 +445,10 @@ export interface PtoMailRecord {
   senderName: string;
   senderAddress: string;
   subject: string;
-  /** The start of the email, so a person can judge it without the file. */
-  excerpt: string;
   status: PtoMailStatus;
   /** Why: the AI's reason, or what stopped it. */
   reason: string;
   processedAt: string;
-  /** What the AI read, kept for the review screen. */
-  draft?: Partial<PtoDraft>;
   /** The Time off request that was filed. */
   requestId?: string;
 }
@@ -448,7 +460,7 @@ export function recordFor(
   status: PtoMailStatus,
   reason: string,
   now: string,
-  extra: Pick<PtoMailRecord, "draft" | "requestId"> = {},
+  extra: Pick<PtoMailRecord, "requestId"> = {},
 ): PtoMailRecord {
   return {
     id: message.sourceId,
@@ -456,7 +468,6 @@ export function recordFor(
     senderName: message.senderName,
     senderAddress: message.senderAddress,
     subject: message.subject,
-    excerpt: message.text.slice(0, 600),
     status,
     reason: reason.slice(0, 300),
     processedAt: now,
@@ -464,16 +475,10 @@ export function recordFor(
   };
 }
 
-/** Keeps the log to its size: the oldest finished entries go first, never one that needs review. */
+/** Keeps the log to its size: the oldest entries go first. */
 export function trimRecords(records: readonly PtoMailRecord[]): PtoMailRecord[] {
   if (records.length <= MAX_PTO_RECORDS) return [...records];
-  const oldestFirst = [...records].sort((a, b) =>
-    a.processedAt.localeCompare(b.processedAt),
-  );
-  const drop = new Set<string>();
-  for (const r of oldestFirst) {
-    if (records.length - drop.size <= MAX_PTO_RECORDS) break;
-    if (r.status !== "needs-review") drop.add(r.id);
-  }
-  return records.filter((r) => !drop.has(r.id));
+  return [...records]
+    .sort((a, b) => a.processedAt.localeCompare(b.processedAt))
+    .slice(records.length - MAX_PTO_RECORDS);
 }

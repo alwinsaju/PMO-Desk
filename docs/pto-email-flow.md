@@ -3,16 +3,17 @@
 People tell the team they are taking leave by email. You already have an Outlook rule
 that moves those emails into a folder. This flow copies each one into OneDrive; AI OS
 reads it with the **local AI model**, decides whether it is PTO, a **comp off** or sick
-leave, works out the dates and files it as **approved Time off** for the sender. The
-shift roster then shows it on those days.
+leave, works out the dates and files it as a **pending Time off request** for the sender.
+You approve or reject it in **Staff Management > Time off**, like any other request; once
+approved, the shift roster shows it on those days.
 
 Nothing leaves your computer except the copy OneDrive already syncs for you. The flow
 sends no email, posts nothing and asks nobody anything.
 
 ```
 Outlook folder "PTO"  -->  flow  -->  OneDrive\AI-OS\PTO-Inbox  -->  AI OS (local AI)
-                                                                       |-- clear     -> approved Time off -> shift roster
-                                                                       '-- not sure  -> "needs a look" in Time off
+                                                                       |-- clear or doubtful -> pending Time off (Approve / Reject)
+                                                                       '-- no person or dates -> PTO-Inbox\rejected (with the reason)
 ```
 
 ## Before you start
@@ -83,8 +84,9 @@ delete that line's expression and insert the field from the dynamic-content pick
 2. Send yourself an email that says, for example, "I will be on leave from 2 to 4 November"
    and move it to the PTO folder.
 3. Within a minute a file `pto-....json` appears in `PTO-Inbox`; AI OS opens it, reads it,
-   deletes it and shows the leave in **Time off** (an envelope icon marks leave that came
-   from an email) and on the roster.
+   deletes it and adds the leave to **Time off** as a **Pending** request (an envelope icon
+   marks leave that came from an email). Press **Approve** or **Reject**; approved leave
+   shows on the roster.
 4. Try one that says "taking a comp off on 6 November" and check it is filed as **Comp off**.
 
 ## What the local AI decides
@@ -93,38 +95,44 @@ For each email it answers: PTO, comp off, sick leave, a cancellation, or not a l
 plus the first and last day away. The email is treated as data; instructions written inside
 it are ignored.
 
-| The AI reads                                                                     | What AI OS does                                          |
-| -------------------------------------------------------------------------------- | -------------------------------------------------------- |
-| PTO, clear dates, a known sender                                                 | Files **approved PTO**.                                  |
-| Comp off (the email says "comp off", "compensatory off", "time off in lieu" ...) | Files **approved Comp off**.                             |
-| Sick leave                                                                       | Files **approved Sick leave**.                           |
-| Not a leave email                                                                | Ignores it (still listed under "Recently handled").      |
-| Anything else below                                                              | Keeps it under **Time off > PTO emails > needs a look**. |
+| The AI reads                                                                     | What AI OS does                                                         |
+| -------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| PTO, clear dates, a known sender                                                 | Files a **pending PTO** request.                                        |
+| Comp off (the email says "comp off", "compensatory off", "time off in lieu" ...) | Files a **pending Comp off** request.                                   |
+| Sick leave                                                                       | Files a **pending Sick leave** request.                                 |
+| Not a leave email                                                                | Ignores it.                                                             |
+| Anything that needs a closer look (below)                                        | Files it as pending too, with **Check this one: ...** in the Reason.    |
+| No person or no usable dates, a cancellation, or a clash with other leave        | Moves the file to **`PTO-Inbox\rejected`** with a `.reason.txt` beside. |
 
-An email waits for you (nothing is filed) when:
+The request carries **Check this one** in its Reason when:
 
-- the sender is not in the Directory, or two people share the name;
-- the AI is not sure, the dates are missing or odd (over 45 days, far from today, end before
-  start), or only part of a day is off;
+- the AI is not sure, the dates are odd (over 45 days, far from today), or only part of a day
+  is off;
 - the AI says comp off but the email never says so, or says PTO but the email mentions a
-  comp off (the two have to agree);
-- the AI's quoted sentence is not really in the email;
-- the email cancels leave, or the person already has different time off on those days.
+  comp off (the two have to agree), or the email may be sick leave;
+- the AI's quoted sentence is not really in the email.
 
-There you pick the person, kind and dates (already filled with what the AI read) and press
-**File as approved leave**, or **dismiss** it.
+The email is moved to `rejected` instead (nothing can be filed) when the sender is not in
+the Directory (or two people share the name), the email gives no clear dates, it cancels
+leave, or the person already has different time off on those days. Add the leave by hand in
+**Time off > Add time off** if it is real.
+
+The model sleeps on its own: it frees its memory two minutes after the last email, and the
+chip beside the search box in **Time off** shows **Model asleep**, the countdown while it is
+loaded, or what it is reading.
 
 ## If something does not work
 
 - **Nothing appears in `PTO-Inbox`**: open the flow's **Run history**. _Skipped_ runs mean
   Concurrency Control is still on (step 1.6). No runs at all: the trigger folder was typed,
   not picked.
-- **The file is there but nothing happens**: AI OS reads the folder when it is open (about
-  every 20 seconds) and when you press **Read now**; mail that arrives while it is closed
-  is read at the next start. The local AI (Ollama and its model) has to be running; the
-  setup check shows this.
-- **The file disappears into `PTO-Inbox\rejected`**: the app could not read it; the
-  `.reason.txt` next to it says why (usually extra text pasted before the `{`).
+- **The file is there but nothing happens**: AI OS reads the folder while Staff Management
+  is open (about every 20 seconds); mail that arrives while it is closed is read the next
+  time it is opened. The local AI (Ollama and its model) has to be running; the setup check
+  shows this.
+- **The file disappears into `PTO-Inbox\rejected`**: the app could not read it or could not
+  turn it into a request; the `.reason.txt` next to it says why (for a file that cannot be
+  read, usually extra text pasted before the `{`).
 - **Wrong person**: check the sender's email in the Directory.
 - **AI_OS_PTO_INBOX_DIR** points the app at a different folder; **AI_OS_PTO_AI_TIMEOUT_MS**
   changes how long it waits for the model per email (default 3 minutes).

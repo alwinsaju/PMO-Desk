@@ -1,22 +1,21 @@
 // The PTO email hand-over, server side. A Power Automate flow (docs/pto-email-flow.md)
 // writes one file per email into the PTO-Inbox folder in OneDrive; a scan reads each
 // one, asks the local AI what it says (PTO, comp off, sick leave ...), files the leave
-// as approved Time off for the sender and records what was done. Anything doubtful is
-// kept for a person. OneDrive carries the files; mail that arrives while the app is
-// closed is handled at the next scan.
+// as a pending Time off request for the sender (a person approves or rejects it in the
+// Time off list) and records what was done. An email that cannot become a request is
+// moved to `rejected` with the reason beside it. OneDrive carries the files; mail that
+// arrives while the app is closed is handled at the next scan.
 import { statSync } from "node:fs";
 import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { z } from "zod";
 import { mutexFor, readJsonSafe, writeJsonAtomic } from "../pmo/server/fsx.ts";
 import { aiOsFolders } from "../setup/folders.ts";
 import { oneDriveFacts } from "../setup/inbox.ts";
-import { isIsoDate, todayIso } from "./dates.ts";
+import { todayIso } from "./dates.ts";
 import { PARTIAL_FILE_GRACE_MS } from "./exchange.ts";
 import {
   MAX_PTO_FILE_BYTES,
   decide,
-  findDuplicate,
   readPtoFile,
   recordFor,
   requestFromDraft,
@@ -25,7 +24,6 @@ import {
   type PtoMessage,
   type PtoReading,
 } from "./ptoMail.ts";
-import { TIME_OFF_TYPES } from "./types.ts";
 import { applyChanges, readStaff, staffDir, StaffError } from "./server.ts";
 
 type Env = Record<string, string | undefined>;
@@ -80,8 +78,10 @@ const withLock = <T>(env: Env, run: () => Promise<T>): Promise<T> =>
 export interface PtoSyncSummary {
   folder: string;
   source: PtoSource;
-  applied: number;
-  needsReview: number;
+  /** Pending requests filed. */
+  filed: number;
+  /** Emails that could not become a request and were moved to `rejected`. */
+  setAside: number;
   ignored: number;
   /** Files left for the next scan (more than one scan's worth, or the AI is not available). */
   waiting: number;
@@ -137,8 +137,8 @@ async function scan(
   const summary: PtoSyncSummary = {
     folder: dir,
     source,
-    applied: 0,
-    needsReview: 0,
+    filed: 0,
+    setAside: 0,
     ignored: 0,
     waiting: 0,
     paused: null,
@@ -194,25 +194,24 @@ async function scan(
       const employees = await readStaff("employees", env);
       const existing = await readStaff("timeoff", env);
       const decision = decide({ message, reading, employees, existing, today });
-      if (decision.action === "apply") {
-        const request = requestFromDraft(decision.draft, message, decision.reason, stamp);
+      if (decision.action === "file") {
+        const note = decision.check
+          ? `Check this one: ${decision.reason}`
+          : decision.reason;
+        const request = requestFromDraft(decision.draft, message, note, stamp);
         await applyChanges("timeoff", { upsert: [request] }, env);
         record = recordFor(
           message,
-          "applied",
-          decision.reason || "Filed as approved Time off.",
+          "filed",
+          decision.reason || "Filed as a pending Time off request.",
           stamp,
-          {
-            draft: decision.draft,
-            requestId: request.id,
-          },
+          { requestId: request.id },
         );
-        summary.applied++;
-      } else if (decision.action === "review") {
-        record = recordFor(message, "needs-review", decision.reason, stamp, {
-          draft: decision.draft,
-        });
-        summary.needsReview++;
+        summary.filed++;
+      } else if (decision.action === "set-aside") {
+        await reject(dir, name, decision.reason, now());
+        record = recordFor(message, "set-aside", decision.reason, stamp);
+        summary.setAside++;
       } else {
         record = recordFor(message, "ignored", decision.reason, stamp);
         summary.ignored++;
@@ -229,8 +228,9 @@ async function scan(
         error instanceof StaffError
           ? error.message
           : `The AI could not read the email (${error instanceof Error ? error.message : "unknown error"}).`;
-      record = recordFor(message, "needs-review", reason, stamp);
-      summary.needsReview++;
+      await reject(dir, name, reason, now());
+      record = recordFor(message, "set-aside", reason, stamp);
+      summary.setAside++;
     }
     await withLock(env, async () => {
       await writeRecords([...(await readPtoRecords(env)), record], env);
@@ -267,105 +267,24 @@ export interface PtoMailState {
   running: boolean;
   /** Email files in the folder that have not been read yet. */
   waiting: number;
-  /** Newest first, at most `limit`. */
-  records: PtoMailRecord[];
-  needsReview: number;
+  /** Emails that could not become a request (their files are in `rejected`). */
+  setAside: number;
   /** When the newest email was received, or null. */
   lastReceivedAt: string | null;
 }
 
-export async function ptoMailState(
-  env: Env = process.env,
-  limit = 100,
-): Promise<PtoMailState> {
+export async function ptoMailState(env: Env = process.env): Promise<PtoMailState> {
   const { dir, source } = resolvePtoInbox(env);
   const records = await readPtoRecords(env);
-  const sorted = [...records].sort((a, b) => b.processedAt.localeCompare(a.processedAt));
   return {
     folder: dir,
     source,
     running: ptoSyncRunning(),
     waiting: (await listJson(dir)).length,
-    records: sorted.slice(0, limit),
-    needsReview: records.filter((r) => r.status === "needs-review").length,
+    setAside: records.filter((r) => r.status === "set-aside").length,
     lastReceivedAt: records.reduce<string | null>(
       (latest, r) => (latest === null || r.receivedAt > latest ? r.receivedAt : latest),
       null,
     ),
   };
-}
-
-const resolveSchema = z.discriminatedUnion("action", [
-  z.object({
-    action: z.literal("apply"),
-    id: z.string().min(1).max(400),
-    employeeId: z.string().min(1).max(80),
-    type: z.enum(TIME_OFF_TYPES),
-    startDate: z.string().refine(isIsoDate, "Choose a start date."),
-    endDate: z.string().refine(isIsoDate, "Choose an end date."),
-  }),
-  z.object({ action: z.literal("dismiss"), id: z.string().min(1).max(400) }),
-]);
-
-/** A person's decision on an email that needed review: file the leave as they entered it, or dismiss. */
-export async function resolvePtoMail(
-  body: unknown,
-  env: Env = process.env,
-  now: () => string = () => new Date().toISOString(),
-): Promise<PtoMailRecord> {
-  const parsed = resolveSchema.safeParse(body);
-  if (!parsed.success)
-    throw new StaffError(parsed.error.issues[0]?.message ?? "Invalid request.");
-  const input = parsed.data;
-  return withLock(env, async () => {
-    const records = await readPtoRecords(env);
-    const record = records.find((r) => r.id === input.id);
-    if (!record) throw new StaffError("That email is not in the list.", 404);
-    if (record.status !== "needs-review")
-      throw new StaffError("That email was already dealt with.");
-    let updated: PtoMailRecord;
-    if (input.action === "dismiss") {
-      updated = {
-        ...record,
-        status: "dismissed",
-        reason: "Dismissed.",
-        processedAt: now(),
-      };
-    } else {
-      if (input.endDate < input.startDate)
-        throw new StaffError("The end date is before the start date.");
-      const employees = await readStaff("employees", env);
-      if (!employees.some((e) => e.id === input.employeeId))
-        throw new StaffError("That person is not on the roster.", 404);
-      const draft = {
-        employeeId: input.employeeId,
-        type: input.type,
-        startDate: input.startDate,
-        endDate: input.endDate,
-      };
-      if (findDuplicate(await readStaff("timeoff", env), draft)) {
-        throw new StaffError("This person already has time off in these dates.");
-      }
-      const request = requestFromDraft(
-        draft,
-        { sourceId: record.id, subject: record.subject },
-        "filed by hand after review",
-        now(),
-      );
-      await applyChanges("timeoff", { upsert: [request] }, env);
-      updated = {
-        ...record,
-        status: "applied",
-        reason: "Filed by hand after review.",
-        processedAt: now(),
-        draft,
-        requestId: request.id,
-      };
-    }
-    await writeRecords(
-      records.map((r) => (r.id === record.id ? updated : r)),
-      env,
-    );
-    return updated;
-  });
 }

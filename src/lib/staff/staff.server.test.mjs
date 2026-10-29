@@ -516,6 +516,29 @@ describe("photos", () => {
 });
 
 describe("M365 profile sync", () => {
+  it("is not undone by an edit made from a copy loaded before the profile arrived", async () => {
+    const waiting = person("jane.doe@x.com", { profileSync: "pending" });
+    await save([waiting]);
+    await applyProfileSync(
+      { email: "jane.doe@x.com", op: "Tax", level: "Senior" },
+      env,
+      NOW,
+    );
+    await save([{ ...waiting, team: "Run" }]);
+    const [after] = await readStaff("employees", env);
+    assert.equal(after.profileSync, "synced");
+    assert.equal(after.op, "Tax");
+    assert.equal(after.level, "Senior");
+    assert.equal(after.team, "Run");
+  });
+
+  it("ends the wait when someone fills the profile in by hand", async () => {
+    const waiting = person("jane.doe@x.com", { profileSync: "pending" });
+    await save([waiting]);
+    await save([{ ...waiting, op: "Tax" }]);
+    assert.equal((await readStaff("employees", env))[0].profileSync, "manual");
+  });
+
   it("fills the person with that email and stores the photo", async () => {
     const a = person("jane.doe@x.com", { profileSync: "pending", level: "Keep" });
     await save([a]);

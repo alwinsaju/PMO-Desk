@@ -19,6 +19,7 @@ import {
   parseProfileFile,
   requestFileName,
 } from "./exchange.ts";
+import { isAwaitingProfile } from "./employees.ts";
 import { applyProfileSync, readStaff, staffDir, StaffError } from "./server.ts";
 
 type Env = Record<string, string | undefined>;
@@ -168,9 +169,7 @@ async function scan(env: Env, now: () => number): Promise<SyncSummary> {
     }
   }
 
-  const waiting = (await readStaff("employees", env)).filter(
-    (e) => e.profileSync === "pending",
-  );
+  const waiting = (await readStaff("employees", env)).filter((e) => isAwaitingProfile(e));
   if (waiting.length > 0) {
     const asked = new Set(
       (await listJson(path.join(dir, REQUESTS_DIR)))

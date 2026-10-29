@@ -6,7 +6,6 @@ import {
   cancel,
   createFolders,
   getStatus,
-  saveInbox,
   startInstall,
   startPull,
   startSelfTest,
@@ -55,11 +54,10 @@ export async function GET(request: Request) {
  * POST /api/setup { action, ... } -> { ok, reason? }. A fixed list of actions,
  * each one a fixed job: nothing in the request chooses a command, a URL or a
  * file to run. The model name is checked against the configured model and the
- * fallback; the inbox path is checked to be an existing folder. Jobs run in the
- * background; the screen follows them through GET.
+ * fallback. Jobs run in the background; the screen follows them through GET.
  *
  *   install-ollama | cancel-install | pull-model { model? } | pull-fallback-model |
- *   cancel-pull | run-selftest | create-folders | choose-inbox { path, confirmNonEmpty? }
+ *   cancel-pull | run-selftest | create-folders
  */
 export async function POST(request: Request) {
   const refused = refuse(request);
@@ -69,8 +67,6 @@ export async function POST(request: Request) {
   const body = (read.body ?? {}) as {
     action?: unknown;
     model?: unknown;
-    path?: unknown;
-    confirmNonEmpty?: unknown;
   };
 
   let result: ActionResult;
@@ -96,11 +92,6 @@ export async function POST(request: Request) {
         break;
       case "run-selftest":
         result = startSelfTest();
-        break;
-      case "choose-inbox":
-        result = await saveInbox(body.path, {
-          confirmNonEmpty: body.confirmNonEmpty === true,
-        });
         break;
       case "create-folders":
         result = await createFolders();

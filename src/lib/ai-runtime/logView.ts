@@ -130,6 +130,7 @@ const TASK_PHRASE: Record<string, (label?: string) => string> = {
   "signoff-request": (l) => `Improving a sign-off request${l ? ` for "${l}"` : ""}`,
   report: (l) => `Writing the report highlights${l ? ` for ${l}` : ""}`,
   command: (l) => `Answering a command-bar request${l ? ` (${l})` : ""}`,
+  "pto-email": (l) => `Reading a PTO email${quoted(l)} to file the leave`,
 };
 
 /** "Reading a message "Cutover checklist..." to propose a to-do". */
@@ -155,8 +156,41 @@ export function taskNoun(task: string | null | undefined): string {
       return "the report";
     case "command":
       return "a command";
+    case "pto-email":
+      return "a PTO email";
     default:
       return "a request";
+  }
+}
+
+export type ModelChipTone = "ready" | "idle" | "waking" | "working" | "off";
+
+/** The short model status for an app that has no queue of its own to show:
+ *  "Model asleep" (the normal idle state), "Model ready · 1:32" (the time left
+ *  before it goes to sleep), "Reading a PTO email" while it works. */
+export function modelChipOf(
+  info: ModelStateInfo,
+  nowMs: number,
+): { label: string; tone: ModelChipTone; busy: boolean } {
+  switch (info.state) {
+    case "down":
+      return { label: "Model not running", tone: "off", busy: false };
+    case "model-missing":
+      return { label: "Model missing", tone: "off", busy: false };
+    case "loading":
+      return { label: "Waking the model…", tone: "waking", busy: true };
+    case "working":
+      return { label: `Working on ${taskNoun(info.task)}`, tone: "working", busy: true };
+    case "ready": {
+      const left = unloadCountdown(info.unloadsAt, nowMs);
+      return {
+        label: left ? `Model ready · ${left}` : "Model ready",
+        tone: "ready",
+        busy: false,
+      };
+    }
+    default:
+      return { label: "Model asleep", tone: "idle", busy: false };
   }
 }
 

@@ -305,7 +305,7 @@ function RestartEngineRow() {
 }
 
 /** "Setup and health check" - reopens the first-run setup screen (the local AI,
- *  its model, the PMO inbox folder, classic Outlook, the Tasks engine). */
+ *  its model, the OneDrive folders, classic Outlook, the Tasks engine). */
 function SetupRow() {
   const openSetup = useSetupUi((state) => state.openSetup);
   return (

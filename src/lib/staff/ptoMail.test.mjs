@@ -18,6 +18,7 @@ import {
   mentionsCompOff,
   readPtoFile,
   recordFor,
+  requestFromDraft,
   splitSender,
   trimRecords,
 } from "./ptoMail.ts";
@@ -26,7 +27,6 @@ import {
   ptoMailState,
   readPtoRecords,
   resolvePtoInbox,
-  resolvePtoMail,
   syncPtoMail,
 } from "./ptoMailServer.ts";
 import { applyChanges, readStaff } from "./server.ts";
@@ -196,9 +196,10 @@ describe("what the AI is asked", () => {
 });
 
 describe("what is done with the AI's answer", () => {
-  it("files a plain PTO email as approved leave for the sender", () => {
+  it("files a plain PTO email as a pending request for the sender", () => {
     const d = decideWith(message(), reading());
-    assert.equal(d.action, "apply");
+    assert.equal(d.action, "file");
+    assert.equal(d.check, false);
     assert.deepEqual(d.draft, {
       employeeId: people[0].id,
       type: "pto",
@@ -207,7 +208,7 @@ describe("what is done with the AI's answer", () => {
     });
   });
 
-  it("files a comp off only when the email itself says so", () => {
+  it("files a comp off without a warning only when the email itself says so", () => {
     const m = message({
       body: "I am taking a comp off on 2026-11-06 for working last Saturday.",
     });
@@ -218,15 +219,17 @@ describe("what is done with the AI's answer", () => {
       quote: "I am taking a comp off on 2026-11-06 for working last Saturday.",
     });
     const d = decideWith(m, r);
-    assert.equal(d.action, "apply");
+    assert.equal(d.action, "file");
+    assert.equal(d.check, false);
     assert.equal(d.draft.type, "comp-off");
-    // The AI says comp off, the email does not: a person decides.
+    // The AI says comp off, the email does not: filed, with the doubt for the approver.
     const plain = decideWith(message(), reading({ kind: "comp-off" }));
-    assert.equal(plain.action, "review");
+    assert.equal(plain.action, "file");
+    assert.equal(plain.check, true);
     assert.match(plain.reason, /does not say so/);
   });
 
-  it("does not file PTO when the email mentions a comp off", () => {
+  it("flags PTO when the email mentions a comp off", () => {
     const m = message({ body: "Taking a day off on 2026-11-06 as my comp off." });
     const d = decideWith(
       m,
@@ -236,7 +239,8 @@ describe("what is done with the AI's answer", () => {
         quote: "Taking a day off on 2026-11-06 as my comp off.",
       }),
     );
-    assert.equal(d.action, "review");
+    assert.equal(d.action, "file");
+    assert.equal(d.check, true);
     assert.match(d.reason, /comp off/);
   });
 
@@ -247,12 +251,10 @@ describe("what is done with the AI's answer", () => {
     );
   });
 
-  it("hands doubtful answers to a person, each with its reason", () => {
+  it("files doubtful answers that name a person and days, flagged with the reason", () => {
     const cases = [
       [reading({ confidence: "low" }), /not sure|planned/i],
       [reading({ partialDay: true }), /part of a day/],
-      [reading({ startDate: null, endDate: null }), /clear dates/],
-      [reading({ startDate: "2026-11-05", endDate: "2026-11-02" }), /before the start/],
       [reading({ startDate: "2026-11-02", endDate: "2027-02-20" }), /days long/],
       [reading({ startDate: "2024-01-02", endDate: "2024-01-03" }), /far from today/],
       [
@@ -260,30 +262,32 @@ describe("what is done with the AI's answer", () => {
         /quote is not in the email/,
       ],
       [reading({ quote: "" }), /quote is not in the email/],
-      [reading({ kind: "cancel" }), /cancels leave/],
     ];
     for (const [r, why] of cases) {
       const d = decideWith(message(), r);
-      assert.equal(d.action, "review", JSON.stringify(r));
+      assert.equal(d.action, "file", JSON.stringify(r));
+      assert.equal(d.check, true);
       assert.match(d.reason, why);
+      assert.equal(d.draft.employeeId, people[0].id);
     }
   });
 
-  it("keeps what it did read, so the review form starts filled in", () => {
-    const d = decideWith(message(), reading({ confidence: "low" }));
-    assert.deepEqual(d.draft, {
-      employeeId: people[0].id,
-      type: "pto",
-      startDate: "2026-11-02",
-      endDate: "2026-11-04",
-    });
-  });
-
-  it("sends mail from someone who is not in the Directory to review", () => {
-    const d = decideWith(message({ from: "ghost@x.com", fromName: "" }), reading());
-    assert.equal(d.action, "review");
-    assert.match(d.reason, /ghost@x.com/);
-    assert.equal(d.draft.employeeId, undefined);
+  it("sets an email aside when no request can be made from it", () => {
+    const cases = [
+      [message(), reading({ startDate: null, endDate: null }), /clear dates/],
+      [
+        message(),
+        reading({ startDate: "2026-11-05", endDate: "2026-11-02" }),
+        /before the start/,
+      ],
+      [message(), reading({ kind: "cancel" }), /cancels leave/],
+      [message({ from: "ghost@x.com", fromName: "" }), reading(), /ghost@x.com/],
+    ];
+    for (const [m, r, why] of cases) {
+      const d = decideWith(m, r);
+      assert.equal(d.action, "set-aside", JSON.stringify(r));
+      assert.match(d.reason, why);
+    }
   });
 
   it("does not file leave twice", () => {
@@ -293,7 +297,7 @@ describe("what is done with the AI's answer", () => {
       type: "pto",
       startDate: "2026-11-02",
       endDate: "2026-11-04",
-      status: "approved",
+      status: "pending",
     };
     const d = decideWith(message(), reading(), [same]);
     assert.equal(d.action, "ignore");
@@ -301,12 +305,13 @@ describe("what is done with the AI's answer", () => {
     const clash = decideWith(message(), reading(), [
       { ...same, endDate: "2026-11-03", type: "sick" },
     ]);
-    assert.equal(clash.action, "review");
+    assert.equal(clash.action, "set-aside");
+    assert.match(clash.reason, /already has time off/);
     const rejected = decideWith(message(), reading(), [{ ...same, status: "rejected" }]);
-    assert.equal(rejected.action, "apply");
+    assert.equal(rejected.action, "file");
   });
 
-  it("asks for a person when the email could be sick leave read as PTO", () => {
+  it("flags an email that could be sick leave read as PTO", () => {
     const m = message({ body: "I am unwell and will be off on 2026-11-02." });
     const r = reading({
       startDate: "2026-11-02",
@@ -314,19 +319,39 @@ describe("what is done with the AI's answer", () => {
       confidence: "medium",
       quote: "I am unwell and will be off on 2026-11-02.",
     });
-    assert.match(decideWith(m, r).reason, /sick leave/);
+    const d = decideWith(m, r);
+    assert.equal(d.action, "file");
+    assert.equal(d.check, true);
+    assert.match(d.reason, /sick leave/);
+  });
+});
+
+describe("the request filed for an email", () => {
+  it("is pending, so a person approves or rejects it in Time off", () => {
+    const d = decideWith(message(), reading());
+    const request = requestFromDraft(
+      d.draft,
+      message(),
+      d.reason,
+      "2026-10-29T10:00:00Z",
+    );
+    assert.equal(request.status, "pending");
+    assert.equal(request.decidedAt, "");
+    assert.equal(request.source, "email");
+    assert.equal(request.sourceId, "AAMk-1");
+    assert.match(request.reason, /^From "PTO next week"/);
   });
 });
 
 describe("the log", () => {
-  it("keeps a bounded size and never drops one that needs review", () => {
+  it("keeps a bounded size, dropping the oldest entries", () => {
     const m = message();
     const rows = [];
     for (let i = 0; i < MAX_PTO_RECORDS + 20; i++) {
       rows.push(
         recordFor(
           { ...m, sourceId: `id${i}` },
-          i === 0 ? "needs-review" : "applied",
+          "filed",
           "x",
           new Date(NOW_MS + i * 1000).toISOString(),
         ),
@@ -334,8 +359,8 @@ describe("the log", () => {
     }
     const kept = trimRecords(rows);
     assert.equal(kept.length, MAX_PTO_RECORDS);
-    assert.ok(kept.some((r) => r.id === "id0"));
-    assert.ok(!kept.some((r) => r.id === "id1"));
+    assert.ok(!kept.some((r) => r.id === "id0"));
+    assert.ok(kept.some((r) => r.id === `id${MAX_PTO_RECORDS + 19}`));
   });
 });
 
@@ -387,20 +412,21 @@ describe("the PTO inbox folder", () => {
 });
 
 describe("a scan of the PTO inbox", () => {
-  it("files the leave for the sender, records it and removes the file", async () => {
+  it("files the leave as a pending request for the sender, records it and removes the file", async () => {
     await drop("a.json", file());
     const summary = await syncPtoMail(fake(reading()), env, now);
-    assert.equal(summary.applied, 1);
+    assert.equal(summary.filed, 1);
     assert.deepEqual(await inboxFiles(), []);
     const [request] = await readStaff("timeoff", env);
     assert.equal(request.employeeId, people[0].id);
-    assert.equal(request.status, "approved");
+    assert.equal(request.status, "pending");
+    assert.equal(request.decidedAt, "");
     assert.equal(request.type, "pto");
     assert.equal(request.source, "email");
     assert.equal(request.sourceId, "AAMk-1");
     assert.match(request.reason, /PTO next week/);
     const [record] = await readPtoRecords(env);
-    assert.equal(record.status, "applied");
+    assert.equal(record.status, "filed");
     assert.equal(record.requestId, request.id);
   });
 
@@ -429,19 +455,21 @@ describe("a scan of the PTO inbox", () => {
     await drop("b.json", file());
     const summary = await syncPtoMail(classify, env, now);
     assert.equal(calls, 1);
-    assert.equal(summary.applied, 0);
+    assert.equal(summary.filed, 0);
     assert.equal((await readStaff("timeoff", env)).length, 1);
     assert.deepEqual(await inboxFiles(), []);
   });
 
-  it("keeps a doubtful email for review instead of filing it", async () => {
+  it("files a doubtful email as pending with the doubt in the reason", async () => {
     await drop("a.json", file());
     const summary = await syncPtoMail(fake(reading({ confidence: "low" })), env, now);
-    assert.equal(summary.needsReview, 1);
-    assert.deepEqual(await readStaff("timeoff", env), []);
+    assert.equal(summary.filed, 1);
+    assert.equal(summary.setAside, 0);
+    const [request] = await readStaff("timeoff", env);
+    assert.equal(request.status, "pending");
+    assert.match(request.reason, /Check this one/);
     const state = await ptoMailState(env);
-    assert.equal(state.needsReview, 1);
-    assert.equal(state.records[0].status, "needs-review");
+    assert.equal(state.setAside, 0);
     assert.equal(state.lastReceivedAt, "2026-10-28T09:00:00.000Z");
   });
 
@@ -465,21 +493,21 @@ describe("a scan of the PTO inbox", () => {
           env,
           now,
         )
-      ).applied,
+      ).filed,
       1,
     );
   });
 
-  it("sends an email the AI could not read to review rather than losing it", async () => {
+  it("sets an email the AI could not read aside rather than losing it", async () => {
     await drop("a.json", file());
     const bad = Object.assign(new Error("The model answered nonsense."), {
       name: "AiRuntimeError",
       code: "invalid-output",
     });
     const summary = await syncPtoMail(fake(bad), env, now);
-    assert.equal(summary.needsReview, 1);
+    assert.equal(summary.setAside, 1);
     assert.match((await readPtoRecords(env))[0].reason, /could not read the email/);
-    assert.deepEqual(await inboxFiles(), []);
+    assert.deepEqual(await inboxFiles(), [PTO_REJECTED_DIR]);
   });
 
   it("moves a file that is not a PTO email aside with the reason", async () => {
@@ -524,76 +552,19 @@ describe("a scan of the PTO inbox", () => {
   });
 });
 
-describe("deciding on an email that needed review", () => {
-  const pending = async () => {
+describe("an email that cannot become a request", () => {
+  it("is moved to rejected with the reason beside it, and nothing is filed", async () => {
     await drop("a.json", file({ from: "ghost@x.com", fromName: "" }));
-    await syncPtoMail(fake(reading()), env, now);
-    return (await readPtoRecords(env))[0];
-  };
-
-  it("files the leave as entered by the person, once", async () => {
-    const record = await pending();
-    assert.equal(record.status, "needs-review");
-    const done = await resolvePtoMail(
-      {
-        action: "apply",
-        id: record.id,
-        employeeId: people[1].id,
-        type: "comp-off",
-        startDate: "2026-11-02",
-        endDate: "2026-11-03",
-      },
-      env,
-      () => "2026-10-29T11:00:00.000Z",
-    );
-    assert.equal(done.status, "applied");
-    const [request] = await readStaff("timeoff", env);
-    assert.equal(request.employeeId, people[1].id);
-    assert.equal(request.type, "comp-off");
-    assert.equal(request.status, "approved");
-    await assert.rejects(
-      resolvePtoMail({ action: "dismiss", id: record.id }, env),
-      /already dealt with/,
-    );
-  });
-
-  it("can be dismissed, and checks what it is given", async () => {
-    const record = await pending();
-    await assert.rejects(
-      resolvePtoMail(
-        {
-          action: "apply",
-          id: record.id,
-          employeeId: "emp_000000000999",
-          type: "pto",
-          startDate: "2026-11-02",
-          endDate: "2026-11-03",
-        },
-        env,
-      ),
-      /not on the roster/,
-    );
-    await assert.rejects(
-      resolvePtoMail(
-        {
-          action: "apply",
-          id: record.id,
-          employeeId: people[0].id,
-          type: "pto",
-          startDate: "2026-11-05",
-          endDate: "2026-11-03",
-        },
-        env,
-      ),
-      /before the start/,
-    );
-    await assert.rejects(
-      resolvePtoMail({ action: "dismiss", id: "nope" }, env),
-      /not in the list/,
-    );
-    await assert.rejects(resolvePtoMail({ action: "apply", id: record.id }, env));
-    const dismissed = await resolvePtoMail({ action: "dismiss", id: record.id }, env);
-    assert.equal(dismissed.status, "dismissed");
+    const summary = await syncPtoMail(fake(reading()), env, now);
+    assert.equal(summary.setAside, 1);
     assert.deepEqual(await readStaff("timeoff", env), []);
+    const rejected = await readdir(path.join(env.AI_OS_PTO_INBOX_DIR, PTO_REJECTED_DIR));
+    assert.equal(rejected.length, 2);
+    const why = rejected.find((n) => n.endsWith(".reason.txt"));
+    assert.match(
+      await readFile(path.join(env.AI_OS_PTO_INBOX_DIR, PTO_REJECTED_DIR, why), "utf8"),
+      /ghost@x.com is not in the Directory/,
+    );
+    assert.equal((await readPtoRecords(env))[0].status, "set-aside");
   });
 });

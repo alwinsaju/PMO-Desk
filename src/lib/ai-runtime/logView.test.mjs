@@ -14,6 +14,7 @@ import {
   formatDuration,
   formatKeepAlive,
   formatRawLine,
+  modelChipOf,
   modelStateOf,
   plainToText,
   taskNoun,
@@ -607,5 +608,21 @@ describe("modelStateOf", () => {
       ],
     });
     assert.equal(modelStateOf(s, T0).sizeBytes, 5);
+  });
+
+  it("words the chip: asleep when idle, a countdown while loaded, the task while working", () => {
+    const chip = (patch) => modelChipOf(modelStateOf(status(patch), T0), T0);
+    assert.deepEqual(chip({}), { label: "Model asleep", tone: "idle", busy: false });
+    assert.equal(chip(inMemory).label, "Model ready · 2:00");
+    assert.equal(chip(inMemory).tone, "ready");
+    const reading = chip({ ...inMemory, activeCalls: [call("pto-email")] });
+    assert.deepEqual(reading, {
+      label: "Working on a PTO email",
+      tone: "working",
+      busy: true,
+    });
+    assert.equal(chip({ activeCalls: [call("pto-email", false)] }).tone, "waking");
+    assert.equal(chip({ running: false }).tone, "off");
+    assert.equal(chip({ modelInstalled: false }).label, "Model missing");
   });
 });

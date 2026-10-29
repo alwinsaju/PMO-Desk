@@ -251,13 +251,13 @@ export const GUIDES: readonly FlowGuide[] = [
       },
       SAVE([
         "Send yourself an email saying you are on leave on a few days, and move it to the PTO folder.",
-        "Within a minute a file appears in AI-OS \\ PTO-Inbox. AI OS reads it, files the leave and shows it in Time off and on the roster.",
+        "Within a minute a file appears in AI-OS \\ PTO-Inbox. AI OS reads it and adds the leave to Time off as a pending request; approve it there and it shows on the roster.",
         "Try one that says you are taking a comp off: it is filed as Comp off.",
       ]),
     ],
     test: [
       "A pto-....json file appears in PTO-Inbox",
-      "The leave shows in Staff Management > Time off",
+      "The leave shows in Staff Management > Time off as pending, with Approve and Reject",
     ],
   },
   {

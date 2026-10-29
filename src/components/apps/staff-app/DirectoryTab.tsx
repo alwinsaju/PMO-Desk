@@ -28,6 +28,7 @@ import {
   displayName,
   employeesToCsv,
   filterEmployees,
+  isAwaitingProfile,
   rollOffStatus,
   rosterStats,
   sortEmployees,
@@ -193,7 +194,7 @@ export function DirectoryTab() {
             onChange={(v) => setFilterKey("location", v as DirectoryFilter["location"])}
           />
           <FilterMenu
-            label="OPs"
+            label="offering portfolios"
             value={filter.op}
             options={ops}
             onChange={(v) => setFilterKey("op", v)}
@@ -469,7 +470,7 @@ function EmployeeTable({
                     <p
                       className="text-ink truncate text-[13.5px] font-semibold"
                       title={
-                        employee.profileSync === "pending"
+                        isAwaitingProfile(employee)
                           ? "Waiting for the M365 profile"
                           : undefined
                       }

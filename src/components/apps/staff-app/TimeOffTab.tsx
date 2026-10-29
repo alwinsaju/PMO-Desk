@@ -35,7 +35,7 @@ import {
   TonePill,
 } from "./parts";
 import { TimeOffDialog } from "./TimeOffDialog";
-import { PtoMailPanel } from "./PtoMailPanel";
+import { ModelChip } from "./ModelChip";
 
 const STATUS_TABS: { value: TimeOffStatus | ""; label: string }[] = [
   { value: "", label: "All" },
@@ -106,7 +106,6 @@ export function TimeOffTab() {
   const maxType = Math.max(1, ...stats.byType.map((t) => t.count));
   return (
     <div className="@container flex min-h-0 flex-1 flex-col">
-      <PtoMailPanel />
       <div className="grid gap-3 px-5 pb-4 @2xl:grid-cols-2">
         <section className={cn(CARD, "px-4 py-3.5")} aria-label="Approval status">
           <div className="mb-3 flex items-center justify-between">
@@ -185,7 +184,10 @@ export function TimeOffTab() {
             );
           })}
         </div>
-        <div className="relative ml-auto max-w-[240px] min-w-[160px] flex-1">
+        <div className="ml-auto">
+          <ModelChip />
+        </div>
+        <div className="relative max-w-[240px] min-w-[160px] flex-1">
           <MagnifyingGlassIcon
             size={15}
             className="text-ink-muted pointer-events-none absolute top-1/2 left-3 -translate-y-1/2"

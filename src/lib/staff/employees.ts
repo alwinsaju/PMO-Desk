@@ -203,6 +203,42 @@ export function applyProfile(
   return { ...next, profileSync: "synced", updatedAt: now };
 }
 
+/** True while the person still waits for their M365 profile. Names do not count as
+ *  profile data (they are guessed from the email), but anything else the profile
+ *  owns does: once it is filled in, by the flow or by hand, nothing is awaited. */
+export function isAwaitingProfile(
+  employee: Pick<
+    Employee,
+    "profileSync" | "level" | "op" | "phone" | "homeOffice" | "photoVersion"
+  >,
+): boolean {
+  return (
+    employee.profileSync === "pending" &&
+    !(
+      employee.level.trim() ||
+      employee.op.trim() ||
+      employee.phone.trim() ||
+      employee.homeOffice.trim() ||
+      employee.photoVersion > 0
+    )
+  );
+}
+
+/** The profile state to save for an edited person. An edit made from a copy that was
+ *  loaded before the M365 profile arrived must not bring "waiting" back or blank the
+ *  profile; an edit that fills the profile in by hand ends the wait too. */
+export function settleProfileSync(incoming: Employee, stored?: Employee): Employee {
+  if (incoming.profileSync !== "pending") return incoming;
+  if (stored && stored.profileSync !== "pending") {
+    const next: Employee = { ...incoming, profileSync: stored.profileSync };
+    for (const key of M365_FIELDS) {
+      if (!clean(next[key])) next[key] = stored[key];
+    }
+    return next;
+  }
+  return isAwaitingProfile(incoming) ? incoming : { ...incoming, profileSync: "manual" };
+}
+
 export function findByEmail<T extends Pick<Employee, "deloitteEmail">>(
   employees: readonly T[],
   email: string,
@@ -672,6 +708,6 @@ export function rosterStats(employees: readonly Employee[], today: string): Rost
     rollingOff: employees.filter(
       (e) => rollOffStatus(e.rollOffDate, today).kind === "soon",
     ).length,
-    awaitingProfile: employees.filter((e) => e.profileSync === "pending").length,
+    awaitingProfile: employees.filter(isAwaitingProfile).length,
   };
 }

@@ -5,7 +5,7 @@
 export const DIRECTORY_COLUMNS = [
   { key: "employee", label: "Employee", width: 270, min: 170 },
   { key: "level", label: "Level", width: 150, min: 70 },
-  { key: "op", label: "OP", width: 150, min: 70 },
+  { key: "op", label: "Offering portfolio", width: 150, min: 70 },
   { key: "offering", label: "Offering", width: 140, min: 70 },
   { key: "team", label: "Team", width: 130, min: 70 },
   { key: "location", label: "Location", width: 110, min: 80 },

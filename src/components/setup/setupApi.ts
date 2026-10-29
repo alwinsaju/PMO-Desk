@@ -11,18 +11,16 @@ export interface SetupStatus {
   };
 }
 
-export type SetupAction =
-  | {
-      action:
-        | "install-ollama"
-        | "cancel-install"
-        | "pull-model"
-        | "pull-fallback-model"
-        | "cancel-pull"
-        | "run-selftest"
-        | "create-folders";
-    }
-  | { action: "choose-inbox"; path: string };
+export type SetupAction = {
+  action:
+    | "install-ollama"
+    | "cancel-install"
+    | "pull-model"
+    | "pull-fallback-model"
+    | "cancel-pull"
+    | "run-selftest"
+    | "create-folders";
+};
 
 const TIMEOUT_MS = 20_000;
 

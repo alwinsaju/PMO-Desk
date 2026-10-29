@@ -114,7 +114,7 @@ export function OffboardedTab() {
                       Level
                     </th>
                     <th scope="col" className={HEAD}>
-                      OP
+                      Offering portfolio
                     </th>
                     <th scope="col" className={HEAD}>
                       Team

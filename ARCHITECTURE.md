@@ -607,7 +607,6 @@ is missing, unless the person chose "Not now" for exactly that list; reopened an
 | ----------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Local AI (Ollama) | yes      | Finds `ollama.exe` (the AI runtime's own resolution: `AI_OS_OLLAMA_EXE`, PATH, `%LOCALAPPDATA%\Programs\Ollama`). _Install Ollama_ downloads the official `OllamaSetup.exe` from ollama.com into a fresh temp folder, requires a valid Authenticode signature by "Ollama Inc.", runs it silently per user (no administrator rights), verifies with `ollama --version`, and deletes the download. A blocked download (company proxy) ends in manual steps; the installer is never run unverified. |
 | AI model          | yes      | `gemma4:12b` (the runtime's default; fallback `qwen3.5:9b`) through Ollama's own `/api/pull`, with progress, speed and time left, retry with pauses (Ollama resumes partial files), cancel, and free-disk / RAM advice before it starts (a pull that cannot fit is refused). Only the configured model and the fallback can be requested.                                                                                                                                                        |
-| PMO inbox folder  | yes      | Resolves the folder exactly as the PMO service does (`AI_OS_PMO_INBOX_DIR`, else `config.json`), says whether OneDrive is signed in, suggests `PMO-Inbox` inside each OneDrive root, and saves a chosen folder to the PMO config (never starts the poller).                                                                                                                                                                                                                                      |
 | Tasks engine      | yes      | Runs `tasks-engine/selftest.py` with the bundled Python: package imports, the shared task libraries loading their shipped example files, and a task-style step on generated fixture data. No Outlook, no network, no sends.                                                                                                                                                                                                                                                                      |
 | Classic Outlook   | no       | Reads two registry keys (`Outlook.Application` COM registration, `OUTLOOK.EXE` app path) and, only if COM is not registered, the installed packages for the new Outlook. Report only; never opens a mailbox.                                                                                                                                                                                                                                                                                     |
 
@@ -641,10 +640,16 @@ from the filtered Outlook folder as a `pto-mail/1` JSON file into `PTO-Inbox`
 (`AI_OS_PTO_INBOX_DIR` overrides). Every Staff sync scans it (8 per scan): the sender is matched to a Directory
 person, the local model (`generateJson`, task `pto-email`) labels the email `pto | comp-off | sick | cancel |
 not-leave` with dates and a quote, and `decide()` treats that label as a claim to check, not a fact: comp off
-is accepted only when the email's own words say so, the quote must appear in the email, and an unknown sender,
-partial day, cancellation, far-off or over-45-day range, low confidence or duplicate waits as _needs a look_
-in the Time off tab. Applied emails become approved `TimeOffRequest`s with `source: "email"`, which the roster
-already draws over planned shifts. If the AI runtime or model is down the files stay in the folder.
+is accepted without a warning only when the email's own words say so and the quote must appear in the email.
+Every email that names a person and real days becomes a **pending** `TimeOffRequest` with `source: "email"`,
+which a person approves or rejects in the main Time off list (there is no separate PTO email screen); a doubt
+(partial day, far-off or over-45-day range, low confidence, comp off / sick wording that disagrees) is written
+into the request's reason as "Check this one: ...". An email that cannot become a request (unknown sender, no
+dates, a cancellation, a clash with other leave) is moved to `PTO-Inbox\rejected` with a `.reason.txt`, and the
+Setup "Power Automate flows" check counts those. The AI runtime keeps the model loaded for 2 minutes after the
+last email, then it goes to sleep like for every other AI feature; the Time off tab shows that state (`ModelChip`:
+asleep, a countdown while loaded, the task while working) and opens the model log. If the AI runtime or model is
+down the files stay in the folder.
 `AI_OS_PTO_AI_STUB=1` swaps the model for a keyword reader (tests and previews only);
 `AI_OS_PTO_AI_TIMEOUT_MS` bounds one reading.
 

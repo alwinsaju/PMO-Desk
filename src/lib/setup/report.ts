@@ -4,7 +4,6 @@
 // Pure: `buildReport(facts)` has no I/O, so every sentence is covered by tests.
 import { FALLBACK_MODEL, downloadSizeText, preflight, sameModel } from "./models.ts";
 import { MODEL_SIZE, formatBytes } from "../format.ts";
-import { inboxSuggestions, type OneDriveFacts } from "./inbox.ts";
 import type { OutlookFacts } from "./outlook.ts";
 
 /** ok = fine; attention = works, but read this; missing = needs action;
@@ -15,12 +14,10 @@ export type SetupActionId =
   | "install-ollama"
   | "pull-model"
   | "pull-fallback-model"
-  | "choose-inbox"
   | "create-folders"
   | "run-selftest";
 
-export type CheckId =
-  "ollama" | "model" | "folders" | "pmo-inbox" | "flows" | "outlook" | "engine";
+export type CheckId = "ollama" | "model" | "folders" | "flows" | "outlook" | "engine";
 
 export interface SetupCheck {
   id: CheckId;
@@ -35,8 +32,6 @@ export interface SetupCheck {
   /** Facts worth showing small: paths, versions. */
   details: string[];
   actions: SetupActionId[];
-  /** For `pmo-inbox`: folders worth offering as one-click choices. */
-  suggestions?: string[];
   /** For checks made of several parts (the OneDrive folders, the flows): how each part is. */
   items?: { id: string; label: string; ok: boolean; note: string }[];
 }
@@ -68,14 +63,6 @@ export interface SetupFacts {
     modelNote?: string;
   };
   hardware: { totalRamBytes: number; freeDiskBytes: number | null };
-  inbox: {
-    path: string;
-    /** Set by AI_OS_PMO_INBOX_DIR, so the screen cannot change it. */
-    fromEnvironment: boolean;
-    exists: boolean;
-    oneDrive: OneDriveFacts;
-    isDirectory: (path: string) => boolean;
-  };
   outlook: OutlookFacts;
   engine: {
     python: string | null;
@@ -103,7 +90,7 @@ export interface FlowFacts {
     /** When the newest PTO email was received, or null when none has arrived. */
     lastReceivedAt: string | null;
     waiting: number;
-    needsReview: number;
+    setAside: number;
   };
   staff: {
     /** People waiting for their M365 profile. */
@@ -241,65 +228,6 @@ function modelCheck(facts: SetupFacts): SetupCheck {
       : steps,
     details,
     actions: pre.warnings.length ? ["pull-model", "pull-fallback-model"] : ["pull-model"],
-  };
-}
-
-function inboxCheck(facts: SetupFacts): SetupCheck {
-  const { path, fromEnvironment, exists, oneDrive, isDirectory } = facts.inbox;
-  const base = { id: "pmo-inbox" as const, title: "PMO inbox folder", required: true };
-  const suggestions = inboxSuggestions(oneDrive, path, isDirectory);
-  const details = [
-    `Folder: ${path}`,
-    fromEnvironment ? "Set by the AI_OS_PMO_INBOX_DIR setting." : "",
-  ].filter(Boolean);
-  if (exists) {
-    return {
-      ...base,
-      state: oneDrive.signedIn || fromEnvironment ? "ok" : "attention",
-      summary: oneDrive.signedIn
-        ? "The PMO inbox folder is there and OneDrive is signed in."
-        : fromEnvironment
-          ? "The PMO inbox folder is there (it is fixed by a setting, so OneDrive is not checked)."
-          : "The PMO inbox folder is there, but OneDrive does not look signed in, so new messages may not arrive.",
-      steps:
-        oneDrive.signedIn || fromEnvironment
-          ? []
-          : [
-              "Sign in to OneDrive (the cloud icon in the taskbar) so Power Automate's files sync to this computer.",
-            ],
-      details,
-      actions: fromEnvironment ? [] : ["choose-inbox"],
-      suggestions,
-    };
-  }
-  if (!oneDrive.signedIn) {
-    return {
-      ...base,
-      state: "missing",
-      summary:
-        "OneDrive is not signed in on this computer, and the PMO inbox folder cannot be found.",
-      steps: [
-        "Sign in to OneDrive with your work account (open OneDrive from the Start menu).",
-        "Wait for the PMO-Inbox folder to appear, then press Check again.",
-        ...(fromEnvironment ? [] : ["Or choose a different folder below."]),
-      ],
-      details,
-      actions: fromEnvironment ? [] : ["choose-inbox"],
-      suggestions,
-    };
-  }
-  return {
-    ...base,
-    state: "missing",
-    summary: "OneDrive is signed in, but the PMO inbox folder does not exist yet.",
-    steps: [
-      suggestions.length
-        ? "Pick the folder below that Power Automate saves messages to, or choose another."
-        : "Create the PMO-Inbox folder in OneDrive (or choose another folder).",
-    ],
-    details,
-    actions: fromEnvironment ? [] : ["choose-inbox"],
-    suggestions,
   };
 }
 
@@ -523,9 +451,9 @@ function flowsCheck(facts: SetupFacts): SetupCheck | null {
       `A profile request has waited ${ago(staff.oldestMinutes)}: the M365 profile flow may be off or built with the wrong folder.`,
     );
   }
-  if (pto.needsReview > 0) {
+  if (pto.setAside > 0) {
     notes.push(
-      `${pto.needsReview} PTO ${pto.needsReview === 1 ? "email needs" : "emails need"} a look (Staff Management > Time off).`,
+      `${pto.setAside} PTO ${pto.setAside === 1 ? "email was" : "emails were"} set aside because ${pto.setAside === 1 ? "it" : "they"} could not be filed as time off (the files and the reasons are in PTO-Inbox\\rejected).`,
     );
   }
   const items = [
@@ -579,7 +507,6 @@ export function buildReport(
     ollamaCheck(facts),
     modelCheck(facts),
     foldersCheck(facts),
-    inboxCheck(facts),
     flowsCheck(facts),
     engineCheck(facts),
     outlookCheck(facts),

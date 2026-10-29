@@ -26,7 +26,7 @@ on the user's computer (loopback only; the AI is a local Ollama model, no cloud 
   roster, kept on file and editable, restorable or deletable). It is meant to be the one list of people that
   the other apps read instead of an uploaded Excel file.
 - **First-run Setup screen**: checks and installs what a new computer lacks (Ollama, the AI
-  model, the PMO inbox folder, classic Outlook, the Tasks engine). A first install also creates one
+  model, the OneDrive folders, classic Outlook, the Tasks engine). A first install also creates one
   `OneDrive\AI-OS` folder for every flow and opens an animated first-time setup, one step at a time,
   ending with step-by-step Power Automate guides (`docs/pto-email-flow.md` has the PTO email flow).
 - Demo apps (Notes, Browser, web apps) and an app store.
@@ -124,7 +124,7 @@ not need HTTPS, a browser tab, or a terminal.
 
 The installer carries the app, the Tasks engine, its task folders and a private Python, so Tasks work
 straight away. The local AI is not in the installer: on first start the **Set up AI OS** screen checks
-Ollama, the AI model (about 12 GB), the PMO inbox folder (is OneDrive signed in?), classic Outlook (the four
+Ollama, the AI model (about 12 GB), classic Outlook (the four
 mail tasks need it; report only) and the Tasks engine, and installs or downloads what is missing. It opens by
 itself while something required is open and from the gear menu > _Setup and health check_ at any time. Task
 inputs, outputs, config and run history live in `%APPDATA%\ai-os\tasks-engine`, not in the install folder, so a

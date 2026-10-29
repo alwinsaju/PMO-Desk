@@ -172,8 +172,8 @@ function QuickAdd({
     <>
       <DialogTitle>Add employees</DialogTitle>
       <DialogDescription>
-        Enter their Deloitte email. Name, level, OP, home office, phone and profile
-        picture are filled in from their M365 profile.
+        Enter their Deloitte email. Name, level, offering portfolio, home office, phone
+        and profile picture are filled in from their M365 profile.
       </DialogDescription>
       {folder && (
         <p className="text-ink-muted mt-2 text-[12px] leading-snug break-all">
@@ -377,8 +377,8 @@ function EmployeeForm({
       <DialogTitle>{editing ? "Edit employee" : "Add employee"}</DialogTitle>
       <DialogDescription>
         {editing
-          ? "Name, level, OP, home office, phone and the picture normally come from the person's Microsoft 365 profile; change them here only if the profile is wrong or empty."
-          : "Fill in what you know. Name, level, OP, home office, phone and the picture can be left empty and will come from the Microsoft 365 profile."}
+          ? "Name, level, offering portfolio, home office, phone and the picture normally come from the person's Microsoft 365 profile; change them here only if the profile is wrong or empty."
+          : "Fill in what you know. Name, level, offering portfolio, home office, phone and the picture can be left empty and will come from the Microsoft 365 profile."}
       </DialogDescription>
 
       <div className="mt-5 flex items-center gap-4">
@@ -458,7 +458,7 @@ function EmployeeForm({
 
       <FormSection title="Work">
         {text("level", "Level", { list: "level" })}
-        {text("op", "OP (offering portfolio)", { list: "op" })}
+        {text("op", "Offering portfolio", { list: "op" })}
         {text("offering", "Offering", { list: "offering" })}
         {text("team", "Team", { list: "team" })}
         {text("clientManager", "Client manager")}

@@ -60,6 +60,16 @@ describe("request and profile files", () => {
     });
   });
 
+  it("reads the department as the offering portfolio when the flow does not call it op", () => {
+    const op = (profile) =>
+      parseProfileFile(JSON.stringify({ email: "a@x.com", ...profile })).profile.op;
+    assert.equal(op({ department: " DF&O IN BEN " }), "DF&O IN BEN");
+    assert.equal(op({ offering: "DF&O IN BEN" }), "DF&O IN BEN");
+    assert.equal(op({ op: "Real", department: "Other" }), "Real");
+    assert.equal(op({ op: "", department: "Other" }), "Other");
+    assert.equal(op({ level: "Senior" }), undefined);
+  });
+
   it("accepts a picture as text, a data URL or a connector file object", () => {
     const b64 = JPEG.toString("base64");
     assert.equal(
