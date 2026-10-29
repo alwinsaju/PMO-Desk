@@ -2,6 +2,7 @@
 // syncs it) is signed in on this computer. Pure: the environment and the
 // filesystem checks are passed in.
 import { looksLikeIntake } from "../pmo/intakeProbe.ts";
+import { aiOsFolders, legacyFolders } from "./folders.ts";
 
 export interface OneDriveFacts {
   /** A OneDrive account is signed in (Windows sets these variables then). */
@@ -39,15 +40,18 @@ export function oneDriveFacts(
   return { signedIn: roots.length > 0, roots };
 }
 
-/** Folders worth offering: PMO-Inbox inside each OneDrive root, that exists first. */
+/** Folders worth offering: PMO-Inbox inside the AI-OS folder of each OneDrive root (and
+ *  a PMO-Inbox from before that layout, when it is there); folders that exist first. */
 export function inboxSuggestions(
   oneDrive: OneDriveFacts,
   current: string,
   isDirectory: (path: string) => boolean,
 ): string[] {
-  const candidates = oneDrive.roots.map(
-    (root) => `${root.replace(/[\\/]+$/, "")}\\${INBOX_FOLDER_NAME}`,
-  );
+  const candidates = oneDrive.roots.flatMap((root) => {
+    const folder = aiOsFolders(root).pmoInbox;
+    const legacy = legacyFolders(root).pmoInbox;
+    return isDirectory(legacy) && !isDirectory(folder) ? [legacy, folder] : [folder];
+  });
   const unique = candidates.filter(
     (path, index) =>
       path.toLowerCase() !== current.toLowerCase() &&

@@ -213,9 +213,15 @@ describe("exchange folder", () => {
     await mkdir(od);
     const second = { AI_OS_PMO_DATA_DIR: env.AI_OS_PMO_DATA_DIR, OneDriveCommercial: od };
     assert.deepEqual(resolveExchange(second), {
-      dir: path.join(od, "Staff-Exchange"),
+      dir: path.join(od, "AI-OS", "Staff-Exchange"),
       source: "onedrive",
     });
+    // An install from before the AI-OS folder keeps its Staff-Exchange where it is (a flow
+    // watches that exact folder), even when an AI-OS one appears next to it.
+    await mkdir(path.join(od, "Staff-Exchange"));
+    assert.equal(resolveExchange(second).dir, path.join(od, "Staff-Exchange"));
+    await mkdir(path.join(od, "AI-OS", "Staff-Exchange"), { recursive: true });
+    assert.equal(resolveExchange(second).dir, path.join(od, "Staff-Exchange"));
     const none = { AI_OS_PMO_DATA_DIR: env.AI_OS_PMO_DATA_DIR };
     assert.equal(resolveExchange(none).source, "local");
   });

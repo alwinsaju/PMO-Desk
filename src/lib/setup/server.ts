@@ -27,8 +27,17 @@ import { allowedModels, saveModelChoice } from "@/lib/ai-runtime/modelChoice";
 import { withoutTlsOverride } from "@/lib/security/childEnv";
 import { Store } from "@/lib/pmo/server/store";
 import { resolveDataDir, resolveInboxDir } from "@/lib/pmo/server/paths";
+import { ptoMailState } from "@/lib/staff/ptoMailServer";
+import { readStaff } from "@/lib/staff/server";
 import { ollamaStartDue, outlookProbeDue, type StatusContext } from "./background";
 import { modelsOnDisk } from "./diskModels";
+import {
+  aiOsFolders,
+  ensureAiOsFolders,
+  folderStatus,
+  legacyFolders,
+  type AiOsFolders,
+} from "./folders";
 import { oneDriveFacts, saveInboxChoice } from "./inbox";
 import { inboxSafetyFacts } from "./inboxFs";
 import { JobRegistry, type JobKind, type JobSnapshot } from "./jobs";
@@ -38,6 +47,8 @@ import { probeOutlook, type OutlookFacts } from "./outlook";
 import { pullModel, type PullProgress } from "./pull";
 import {
   buildReport,
+  type FlowFacts,
+  type FolderFacts,
   type SelfTestFacts,
   type SetupFacts,
   type SetupReport,
@@ -219,6 +230,8 @@ export async function collectFacts(
   });
   const runtime = await getRuntimeStatus();
   const store = new Store(resolveDataDir());
+  // A computer whose installer made the AI-OS folder is already mapped: no choice to make.
+  await autoMapInbox(store);
   const inboxPath = resolveInboxDir((await store.loadConfig()).inboxDir);
   const python = resolvePython();
   startOllamaForSetup(context, Boolean(exe.path), runtime.running);
@@ -251,7 +264,113 @@ export async function collectFacts(
     },
     outlook: await cachedOutlook(context),
     engine: { python, selfTest: currentSelfTest() },
+    folders: readFolderFacts(),
+    flows: await readFlowFacts(),
   };
+}
+
+/** The OneDrive folder the AI-OS folder lives in: the work account's, else the first one. */
+function oneDriveRoot(): string | null {
+  return oneDriveFacts(process.env, isDirectory).roots[0] ?? null;
+}
+
+function readFolderFacts(): FolderFacts {
+  const root = oneDriveRoot();
+  if (!root) {
+    return {
+      signedIn: false,
+      oneDriveRoot: null,
+      aiOsRoot: null,
+      found: { pmoInbox: false, staffExchange: false, ptoInbox: false },
+    };
+  }
+  const status = folderStatus(root, isDirectory);
+  const older = legacyFolders(root);
+  return {
+    signedIn: true,
+    oneDriveRoot: root,
+    aiOsRoot: status.rootFound ? status.folders.root : null,
+    found: status.found,
+    older: isDirectory(older.pmoInbox) || isDirectory(older.staffExchange),
+  };
+}
+
+/** What the flows have delivered; a flow's only footprint is its files, so this is all there is to read. */
+async function readFlowFacts(): Promise<FlowFacts | undefined> {
+  try {
+    const [pto, people] = await Promise.all([
+      ptoMailState(process.env, 1),
+      readStaff("employees"),
+    ]);
+    const waiting = people.filter((p) => p.profileSync === "pending");
+    const oldest = waiting.reduce<number | null>((min, p) => {
+      const at = Date.parse(p.createdAt);
+      return Number.isNaN(at) || (min !== null && at >= min) ? min : at;
+    }, null);
+    return {
+      pto: {
+        lastReceivedAt: pto.lastReceivedAt,
+        waiting: pto.waiting,
+        needsReview: pto.needsReview,
+      },
+      staff: {
+        waiting: waiting.length,
+        oldestMinutes:
+          oldest === null ? null : Math.max(0, (Date.now() - oldest) / 60_000),
+      },
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+/** Saves `<OneDrive>\AI-OS\PMO-Inbox` as the PMO inbox when nothing is chosen yet and the
+ *  folder is there (the installer created it). A saved choice is never replaced. */
+async function autoMapInbox(store: Store): Promise<void> {
+  try {
+    if (process.env.AI_OS_PMO_INBOX_DIR?.trim()) return;
+    const root = oneDriveRoot();
+    if (!root) return;
+    if ((await store.loadConfig()).inboxDir.trim()) return;
+    const folder = aiOsFolders(root).pmoInbox;
+    if (isDirectory(folder)) await saveInbox(folder);
+  } catch (error) {
+    console.error("[setup] could not map the PMO inbox:", error);
+  }
+}
+
+/** Creates the AI-OS folder and what belongs in it (never touching what is there). */
+export async function createFolders(): Promise<ActionResult> {
+  const root = oneDriveRoot();
+  if (!root) {
+    return {
+      ok: false,
+      reason:
+        "OneDrive is not signed in on this computer. Sign in with your work account, then try again.",
+    };
+  }
+  const folders: AiOsFolders = aiOsFolders(root);
+  // A folder that is already there from before the AI-OS folder is not made a second time.
+  const status = folderStatus(root, isDirectory);
+  const wanted = (Object.keys(status.found) as (keyof typeof status.found)[]).filter(
+    (key) => !status.found[key],
+  );
+  const result = await ensureAiOsFolders(
+    folders,
+    {
+      isDirectory,
+      mkdir: async (dir) => void (await mkdir(dir, { recursive: true })),
+    },
+    wanted,
+  );
+  if (result.failed.length > 0) {
+    return {
+      ok: false,
+      reason: `Could not create ${result.failed[0].path}: ${result.failed[0].reason}`,
+    };
+  }
+  await autoMapInbox(new Store(resolveDataDir()));
+  return { ok: true };
 }
 
 export interface SetupStatus {

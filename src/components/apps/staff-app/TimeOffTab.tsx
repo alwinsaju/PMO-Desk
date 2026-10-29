@@ -5,6 +5,7 @@ import {
   ArrowCounterClockwiseIcon,
   CalendarPlusIcon,
   CheckIcon,
+  EnvelopeSimpleIcon,
   MagnifyingGlassIcon,
   TrashIcon,
   UsersThreeIcon,
@@ -34,6 +35,7 @@ import {
   TonePill,
 } from "./parts";
 import { TimeOffDialog } from "./TimeOffDialog";
+import { PtoMailPanel } from "./PtoMailPanel";
 
 const STATUS_TABS: { value: TimeOffStatus | ""; label: string }[] = [
   { value: "", label: "All" },
@@ -104,6 +106,7 @@ export function TimeOffTab() {
   const maxType = Math.max(1, ...stats.byType.map((t) => t.count));
   return (
     <div className="@container flex min-h-0 flex-1 flex-col">
+      <PtoMailPanel />
       <div className="grid gap-3 px-5 pb-4 @2xl:grid-cols-2">
         <section className={cn(CARD, "px-4 py-3.5")} aria-label="Approval status">
           <div className="mb-3 flex items-center justify-between">
@@ -255,6 +258,14 @@ export function TimeOffTab() {
                           <span className="text-ink truncate text-[13.5px] font-semibold">
                             {displayName(person)}
                           </span>
+                          {request.source === "email" && (
+                            <EnvelopeSimpleIcon
+                              size={14}
+                              aria-label="Filed from a PTO email"
+                              role="img"
+                              className="text-info shrink-0"
+                            />
+                          )}
                         </div>
                       ) : (
                         DASH

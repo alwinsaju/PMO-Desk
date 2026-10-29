@@ -605,6 +605,40 @@ is missing, unless the person chose "Not now" for exactly that list; reopened an
 | Tasks engine      | yes      | Runs `tasks-engine/selftest.py` with the bundled Python: package imports, the shared task libraries loading their shipped example files, and a task-style step on generated fixture data. No Outlook, no network, no sends.                                                                                                                                                                                                                                                                      |
 | Classic Outlook   | no       | Reads two registry keys (`Outlook.Application` COM registration, `OUTLOOK.EXE` app path) and, only if COM is not registered, the installed packages for the new Outlook. Report only; never opens a mailbox.                                                                                                                                                                                                                                                                                     |
 
+Two more checks are never required (they cannot block the app or auto-open the dialog):
+**OneDrive folders** (`folders.ts`: the `AI-OS` layout below; _Create the folders_ makes only the missing
+ones) and **Power Automate flows** (reports whether the PMO inbox, Staff-Exchange and PTO inbox have seen a
+file, so a flow that is not built yet is visible).
+
+**One OneDrive folder.** Everything a flow writes lives under `<OneDrive>\AI-OS\`: `PMO-Inbox`,
+`Staff-Exchange\{requests,profiles,rejected}` and `PTO-Inbox`. An older `OneDrive\PMO-Inbox` or
+`OneDrive\Staff-Exchange` keeps working, and an existing older `Staff-Exchange` always wins
+(`pickStaffExchange`): a flow watches a folder by ID, a move in File Explorer keeps that ID, a copy does not.
+
+**Installer and first-time setup.** On a first install only (`aiOsDetectExistingInstall` reads the install
+registry key; updates skip it) `build/installer.nsh` finds the signed-in OneDrive for Business from
+`HKCU\Software\Microsoft\OneDrive\Accounts\Business1..9\UserFolder` (no email needed; falls back to
+`OneDriveCommercial`), creates the `AI-OS` folders and writes `<data dir>\first-time-setup.json`
+(`{"status":"pending"}`). While that marker is pending the app shows `FirstTimeSetup.tsx` before the home
+screen: one step at a time (welcome, Ollama, model, Tasks engine, Outlook, OneDrive folders, flow guides,
+finish), each auto-advancing when its check is done, with brand marks (`BrandMark.tsx`, simplified stand-ins,
+not official logo files). The flow step (`FlowGuideView.tsx`, data in `flowGuides.ts`) shows a Power
+Automate-style window with the exact fields and a copy button for each (PTO emails, Staff M365 profile, PMO
+intake); the same guides open any time from the Setup dialog. `AI_OS_FORCE_FIRST_TIME=1` shows the page on any
+machine. `GET/POST /api/setup/first-time` read and complete the marker.
+
+**PTO emails** (`src/lib/staff/ptoMail*.ts`, `docs/pto-email-flow.md`). A Power Automate flow writes each email
+from the filtered Outlook folder as a `pto-mail/1` JSON file into `PTO-Inbox`
+(`AI_OS_PTO_INBOX_DIR` overrides). Every Staff sync scans it (8 per scan): the sender is matched to a Directory
+person, the local model (`generateJson`, task `pto-email`) labels the email `pto | comp-off | sick | cancel |
+not-leave` with dates and a quote, and `decide()` treats that label as a claim to check, not a fact: comp off
+is accepted only when the email's own words say so, the quote must appear in the email, and an unknown sender,
+partial day, cancellation, far-off or over-45-day range, low confidence or duplicate waits as _needs a look_
+in the Time off tab. Applied emails become approved `TimeOffRequest`s with `source: "email"`, which the roster
+already draws over planned shifts. If the AI runtime or model is down the files stay in the folder.
+`AI_OS_PTO_AI_STUB=1` swaps the model for a keyword reader (tests and previews only);
+`AI_OS_PTO_AI_TIMEOUT_MS` bounds one reading.
+
 The pure logic (`report.ts`, `pull.ts`, `ollamaInstall.ts`, `models.ts`, `inbox.ts`, `outlook.ts`, `jobs.ts`)
 takes its fetch, clock, file and process access as arguments, so the whole flow is tested with fakes and no
 real download or installer ever runs in a test. `src/lib/setup/server.ts` is the thin real-world wiring.

@@ -8,6 +8,7 @@ import { statSync } from "node:fs";
 import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { oneDriveFacts } from "../setup/inbox.ts";
+import { pickStaffExchange, STAFF_EXCHANGE_FOLDER_NAME } from "../setup/folders.ts";
 import {
   MAX_PROFILE_FILE_BYTES,
   PARTIAL_FILE_GRACE_MS,
@@ -22,7 +23,7 @@ import { applyProfileSync, readStaff, staffDir, StaffError } from "./server.ts";
 
 type Env = Record<string, string | undefined>;
 
-export const EXCHANGE_FOLDER_NAME = "Staff-Exchange";
+export const EXCHANGE_FOLDER_NAME = STAFF_EXCHANGE_FOLDER_NAME;
 /** Files handled per scan, so a flood cannot hold the server up. */
 const MAX_PER_SCAN = 100;
 
@@ -36,8 +37,9 @@ const isDirectory = (p: string): boolean => {
   }
 };
 
-/** AI_OS_STAFF_EXCHANGE_DIR, else `Staff-Exchange` in the first OneDrive folder
- *  (work account first), else a folder inside the app's own data. */
+/** AI_OS_STAFF_EXCHANGE_DIR, else `Staff-Exchange` in the AI-OS folder of the first
+ *  OneDrive folder (work account first; an older `Staff-Exchange` directly in
+ *  OneDrive is kept when that is where it is), else a folder inside the app's data. */
 export function resolveExchange(env: Env = process.env): {
   dir: string;
   source: ExchangeSource;
@@ -45,7 +47,7 @@ export function resolveExchange(env: Env = process.env): {
   const explicit = env.AI_OS_STAFF_EXCHANGE_DIR?.trim();
   if (explicit) return { dir: path.resolve(explicit), source: "env" };
   const [root] = oneDriveFacts(env, isDirectory).roots;
-  if (root) return { dir: path.join(root, EXCHANGE_FOLDER_NAME), source: "onedrive" };
+  if (root) return { dir: pickStaffExchange(root, isDirectory), source: "onedrive" };
   return { dir: path.join(staffDir(env), "exchange"), source: "local" };
 }
 

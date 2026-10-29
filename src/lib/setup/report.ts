@@ -16,9 +16,11 @@ export type SetupActionId =
   | "pull-model"
   | "pull-fallback-model"
   | "choose-inbox"
+  | "create-folders"
   | "run-selftest";
 
-export type CheckId = "ollama" | "model" | "pmo-inbox" | "outlook" | "engine";
+export type CheckId =
+  "ollama" | "model" | "folders" | "pmo-inbox" | "flows" | "outlook" | "engine";
 
 export interface SetupCheck {
   id: CheckId;
@@ -35,6 +37,8 @@ export interface SetupCheck {
   actions: SetupActionId[];
   /** For `pmo-inbox`: folders worth offering as one-click choices. */
   suggestions?: string[];
+  /** For checks made of several parts (the OneDrive folders, the flows): how each part is. */
+  items?: { id: string; label: string; ok: boolean; note: string }[];
 }
 
 export interface SetupReport {
@@ -77,6 +81,35 @@ export interface SetupFacts {
     python: string | null;
     /** null = not run yet; "running" while it is. */
     selfTest: SelfTestFacts | "running" | null;
+  };
+  /** The AI-OS folder in OneDrive. Left out by callers that do not look (old tests). */
+  folders?: FolderFacts;
+  /** What the Power Automate flows have delivered so far. */
+  flows?: FlowFacts;
+}
+
+export interface FolderFacts {
+  signedIn: boolean;
+  /** The OneDrive folder the AI-OS folder is in (work account first), or null. */
+  oneDriveRoot: string | null;
+  aiOsRoot: string | null;
+  found: { pmoInbox: boolean; staffExchange: boolean; ptoInbox: boolean };
+  /** PMO-Inbox or Staff-Exchange still sit directly in OneDrive (an install from before AI-OS). */
+  older?: boolean;
+}
+
+export interface FlowFacts {
+  pto: {
+    /** When the newest PTO email was received, or null when none has arrived. */
+    lastReceivedAt: string | null;
+    waiting: number;
+    needsReview: number;
+  };
+  staff: {
+    /** People waiting for their M365 profile. */
+    waiting: number;
+    /** How long the longest-waiting one has waited, in minutes (null: nobody waits). */
+    oldestMinutes: number | null;
   };
 }
 
@@ -385,6 +418,159 @@ function engineCheck(facts: SetupFacts): SetupCheck {
   };
 }
 
+const FOLDER_LABEL: Record<keyof FolderFacts["found"], string> = {
+  pmoInbox: "PMO-Inbox",
+  staffExchange: "Staff-Exchange",
+  ptoInbox: "PTO-Inbox",
+};
+
+const FOLDER_PURPOSE: Record<keyof FolderFacts["found"], string> = {
+  pmoInbox: "Flagged emails for the PMO To-Do",
+  staffExchange: "M365 profiles for Staff Management",
+  ptoInbox: "PTO emails for the shift roster",
+};
+
+/** The AI-OS folder in OneDrive that Power Automate and AI OS share. */
+function foldersCheck(facts: SetupFacts): SetupCheck | null {
+  const folders = facts.folders;
+  if (!folders) return null;
+  const base = {
+    id: "folders" as const,
+    title: "OneDrive folders (AI-OS)",
+    required: false,
+  };
+  if (!folders.signedIn || !folders.oneDriveRoot) {
+    return {
+      ...base,
+      state: "attention",
+      summary:
+        "OneDrive is not signed in, so the AI-OS folder for the Power Automate flows cannot be set up yet.",
+      steps: [
+        "Sign in to OneDrive with your work account (open OneDrive from the Start menu), then press Check again.",
+      ],
+      details: [],
+      actions: [],
+    };
+  }
+  const missing = (Object.keys(folders.found) as (keyof FolderFacts["found"])[]).filter(
+    (key) => !folders.found[key],
+  );
+  const details = [
+    `OneDrive: ${folders.oneDriveRoot}`,
+    folders.aiOsRoot ? `AI-OS folder: ${folders.aiOsRoot}` : "",
+    folders.older
+      ? "PMO-Inbox or Staff-Exchange are still directly in OneDrive (the older place). They keep working. To tidy up, MOVE them into the AI-OS folder in File Explorer (do not copy): OneDrive keeps each folder's identity, so your flows keep running."
+      : "",
+  ].filter(Boolean);
+  const items = (Object.keys(folders.found) as (keyof FolderFacts["found"])[]).map(
+    (key) => ({
+      id: key,
+      label: FOLDER_LABEL[key],
+      ok: folders.found[key],
+      note: FOLDER_PURPOSE[key],
+    }),
+  );
+  if (missing.length === 0) {
+    return {
+      ...base,
+      state: "ok",
+      summary:
+        "The AI-OS folder is in OneDrive with PMO-Inbox, Staff-Exchange and PTO-Inbox inside.",
+      steps: [],
+      details,
+      actions: [],
+      items,
+    };
+  }
+  return {
+    ...base,
+    state: "attention",
+    summary: `${missing.map((key) => FOLDER_LABEL[key]).join(", ")} ${missing.length === 1 ? "is" : "are"} not in the AI-OS folder yet.`,
+    steps: ["Press Create the folders. Nothing that is already there is touched."],
+    details,
+    actions: ["create-folders"],
+    items,
+  };
+}
+
+const ago = (minutes: number): string =>
+  minutes < 90
+    ? `${Math.max(1, Math.round(minutes))} minutes`
+    : `${Math.round(minutes / 60)} hours`;
+
+/** What the flows have delivered: the only way to tell a flow works is that its files arrive. */
+function flowsCheck(facts: SetupFacts): SetupCheck | null {
+  const flows = facts.flows;
+  if (!flows) return null;
+  const base = { id: "flows" as const, title: "Power Automate flows", required: false };
+  const details: string[] = [];
+  const notes: string[] = [];
+  const { pto, staff } = flows;
+  details.push(
+    pto.lastReceivedAt
+      ? `PTO emails: last received ${pto.lastReceivedAt.slice(0, 10)}`
+      : "PTO emails: none received yet",
+  );
+  if (pto.waiting > 0)
+    details.push(`${pto.waiting} PTO email file(s) waiting to be read`);
+  if (staff.waiting > 0 && staff.oldestMinutes !== null) {
+    details.push(
+      `${staff.waiting} profile request(s) waiting, the oldest for ${ago(staff.oldestMinutes)}`,
+    );
+  }
+  if (staff.oldestMinutes !== null && staff.oldestMinutes >= 15) {
+    notes.push(
+      `A profile request has waited ${ago(staff.oldestMinutes)}: the M365 profile flow may be off or built with the wrong folder.`,
+    );
+  }
+  if (pto.needsReview > 0) {
+    notes.push(
+      `${pto.needsReview} PTO ${pto.needsReview === 1 ? "email needs" : "emails need"} a look (Staff Management > Time off).`,
+    );
+  }
+  const items = [
+    {
+      id: "pto",
+      label: "PTO emails",
+      ok: pto.lastReceivedAt !== null,
+      note: pto.lastReceivedAt
+        ? `Last email received ${pto.lastReceivedAt.slice(0, 10)}`
+        : "No email has arrived yet",
+    },
+    {
+      id: "staff",
+      label: "M365 profiles",
+      ok: staff.oldestMinutes === null || staff.oldestMinutes < 15,
+      note:
+        staff.waiting === 0
+          ? "No request is waiting"
+          : `${staff.waiting} waiting, the oldest for ${ago(staff.oldestMinutes ?? 0)}`,
+    },
+  ];
+  if (notes.length > 0) {
+    return {
+      ...base,
+      state: "attention",
+      summary: notes[0],
+      steps: notes.slice(1),
+      details,
+      actions: [],
+      items,
+    };
+  }
+  return {
+    ...base,
+    state: pto.lastReceivedAt ? "ok" : "unknown",
+    summary: pto.lastReceivedAt
+      ? "The PTO email flow has delivered mail, and no request is stuck."
+      : "No flow has delivered anything yet. The first-time setup shows how to build each flow; you can use AI OS without them.",
+    steps: [],
+    details,
+    actions: [],
+    items,
+  };
+}
+
 export function buildReport(
   facts: SetupFacts,
   now: () => Date = () => new Date(),
@@ -392,10 +578,12 @@ export function buildReport(
   const checks = [
     ollamaCheck(facts),
     modelCheck(facts),
+    foldersCheck(facts),
     inboxCheck(facts),
+    flowsCheck(facts),
     engineCheck(facts),
     outlookCheck(facts),
-  ];
+  ].filter((c): c is SetupCheck => c !== null);
   const ready = checks.every(
     (c) => !c.required || c.state === "ok" || c.state === "attention",
   );

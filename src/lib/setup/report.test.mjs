@@ -215,7 +215,10 @@ describe("the PMO inbox folder", () => {
       c.summary,
       /OneDrive is signed in, but the PMO inbox folder does not exist/,
     );
-    assert.deepEqual(c.suggestions, ["C:\\OneDrive\\PMO-Inbox"]);
+    assert.deepEqual(c.suggestions, [
+      "C:\\OneDrive\\PMO-Inbox",
+      "C:\\OneDrive\\AI-OS\\PMO-Inbox",
+    ]);
     assert.match(c.steps[0], /Pick the folder below/);
   });
 
@@ -352,5 +355,112 @@ describe("the engine self-test", () => {
     );
     assert.equal(c.state, "missing");
     assert.match(c.steps[0], /Reinstall AI OS/);
+  });
+});
+
+describe("the AI-OS folders in OneDrive", () => {
+  const OD = "C:\\OneDrive";
+  const all = { pmoInbox: true, staffExchange: true, ptoInbox: true };
+  const withFolders = (folders) => buildReport(facts({ folders }), NOW);
+
+  it("is left out when the facts do not include it", () => {
+    assert.equal(check(buildReport(facts(), NOW), "folders"), undefined);
+    assert.equal(check(buildReport(facts(), NOW), "flows"), undefined);
+  });
+
+  it("is fine when all three folders are there", () => {
+    const c = check(
+      withFolders({
+        signedIn: true,
+        oneDriveRoot: OD,
+        aiOsRoot: `${OD}\\AI-OS`,
+        found: all,
+      }),
+      "folders",
+    );
+    assert.equal(c.state, "ok");
+    assert.equal(c.required, false);
+    assert.deepEqual(c.actions, []);
+    assert.ok(c.details.includes(`AI-OS folder: ${OD}\\AI-OS`));
+  });
+
+  it("offers to create what is missing, and names it", () => {
+    const c = check(
+      withFolders({
+        signedIn: true,
+        oneDriveRoot: OD,
+        aiOsRoot: null,
+        found: { ...all, ptoInbox: false, staffExchange: false },
+      }),
+      "folders",
+    );
+    assert.equal(c.state, "attention");
+    assert.match(c.summary, /Staff-Exchange, PTO-Inbox are not in the AI-OS folder/);
+    assert.deepEqual(c.actions, ["create-folders"]);
+  });
+
+  it("asks for OneDrive when it is not signed in, without blocking anything", () => {
+    const report = withFolders({
+      signedIn: false,
+      oneDriveRoot: null,
+      aiOsRoot: null,
+      found: { pmoInbox: false, staffExchange: false, ptoInbox: false },
+    });
+    const c = check(report, "folders");
+    assert.equal(c.state, "attention");
+    assert.deepEqual(c.actions, []);
+    assert.equal(report.ready, true);
+  });
+});
+
+describe("the Power Automate flows", () => {
+  const flows = (over = {}) => ({
+    pto: { lastReceivedAt: null, waiting: 0, needsReview: 0 },
+    staff: { waiting: 0, oldestMinutes: null },
+    ...over,
+  });
+  const run = (f) => check(buildReport(facts({ flows: f }), NOW), "flows");
+
+  it("is unknown until a flow has delivered something, and never blocks", () => {
+    const report = buildReport(facts({ flows: flows() }), NOW);
+    const c = check(report, "flows");
+    assert.equal(c.state, "unknown");
+    assert.equal(c.required, false);
+    assert.match(c.summary, /No flow has delivered anything yet/);
+    assert.equal(report.ready, true);
+  });
+
+  it("is fine once PTO emails arrive and nothing is stuck", () => {
+    const c = run(
+      flows({
+        pto: { lastReceivedAt: "2026-10-28T09:00:00.000Z", waiting: 0, needsReview: 0 },
+      }),
+    );
+    assert.equal(c.state, "ok");
+    assert.ok(c.details.includes("PTO emails: last received 2026-10-28"));
+  });
+
+  it("warns when a profile request has waited too long", () => {
+    const c = run(flows({ staff: { waiting: 2, oldestMinutes: 95 } }));
+    assert.equal(c.state, "attention");
+    assert.match(c.summary, /waited 95 minutes|waited 1 hours|waited 2 hours/);
+    assert.match(c.summary, /M365 profile flow/);
+  });
+
+  it("does not warn about a request that has only just been made", () => {
+    assert.equal(
+      run(flows({ staff: { waiting: 1, oldestMinutes: 2 } })).state,
+      "unknown",
+    );
+  });
+
+  it("points at PTO emails that need a look", () => {
+    const c = run(
+      flows({
+        pto: { lastReceivedAt: "2026-10-28T09:00:00.000Z", waiting: 0, needsReview: 3 },
+      }),
+    );
+    assert.equal(c.state, "attention");
+    assert.match(c.summary, /3 PTO emails need a look/);
   });
 });

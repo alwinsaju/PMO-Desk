@@ -1,4 +1,5 @@
 import { resendRequest, resolveExchange, syncExchange } from "@/lib/staff/exchangeServer";
+import { kickPtoSync } from "@/lib/staff/ptoMailAi";
 import { readCappedText, staffHandler } from "@/lib/staff/http";
 import { StaffError } from "@/lib/staff/server";
 
@@ -31,6 +32,8 @@ export function POST(request: Request) {
       }
     }
     if (typeof body.resend === "string") await resendRequest(body.resend);
+    // The PTO emails are read in the background: the model is slow.
+    kickPtoSync();
     return { ...(await syncExchange()) };
   });
 }

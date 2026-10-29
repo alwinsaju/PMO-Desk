@@ -24,6 +24,7 @@ import type { SetupActionId, SetupCheck } from "@/lib/setup/report";
 import { FALLBACK_MODEL, downloadSizeText } from "@/lib/setup/models";
 import { fetchSetupStatus, postSetupAction, type SetupStatus } from "./setupApi";
 import { useSetupUi } from "./setupStore";
+import { useFirstTimeUi } from "./firstTimeStore";
 import {
   SKIP_STORAGE_KEY,
   pullDetail,
@@ -73,6 +74,7 @@ function folderPicker(): (() => Promise<string | null>) | null {
 export function FirstRunSetup() {
   const open = useSetupUi((s) => s.open);
   const openSetup = useSetupUi((s) => s.openSetup);
+  const openGuides = useFirstTimeUi((s) => s.openGuides);
   const closeSetup = useSetupUi((s) => s.closeSetup);
   const [status, setStatus] = useState<SetupStatus | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -115,6 +117,11 @@ export function FirstRunSetup() {
       }
       if (cancelled || !next) return;
       setStatus(next);
+      // On a fresh install the first-time page does the whole health check itself.
+      const firstTime = await fetch("/api/setup/first-time", { cache: "no-store" })
+        .then((r) => r.json() as Promise<{ pending?: boolean }>)
+        .catch(() => ({ pending: false }));
+      if (cancelled || firstTime.pending) return;
       if (shouldAutoOpen(next.report, readStorage("local", SKIP_STORAGE_KEY)))
         openSetup();
     })();
@@ -240,9 +247,20 @@ export function FirstRunSetup() {
         )}
 
         <div className="bg-surface border-line sticky bottom-0 z-10 -mx-7 mt-6 -mb-7 flex items-center justify-between gap-3 border-t px-7 py-4">
-          <Button variant="ghost" onClick={() => void refresh(true)}>
-            Check again
-          </Button>
+          <div className="flex items-center gap-1">
+            <Button variant="ghost" onClick={() => void refresh(true)}>
+              Check again
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                closeSetup();
+                openGuides();
+              }}
+            >
+              Power Automate guides
+            </Button>
+          </div>
           <div className="flex items-center gap-2">
             {report && !report.ready && (
               <Button variant="outline" onClick={notNow}>
@@ -262,6 +280,7 @@ const ACTION_LABEL: Record<SetupActionId, string> = {
   "pull-model": "Download model",
   "pull-fallback-model": `Download the smaller model (${downloadSizeText(FALLBACK_MODEL)})`,
   "choose-inbox": "Use this folder",
+  "create-folders": "Create the folders",
   "run-selftest": "Run self-test again",
 };
 

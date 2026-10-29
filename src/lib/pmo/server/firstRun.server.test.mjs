@@ -282,7 +282,7 @@ describe("createInboxFolder", () => {
     assert.equal(existsSync(target), false, "suggesting does not create");
     assert.deepEqual(
       suggestions.inbox.suggestions.map((s) => [s.path, s.exists]),
-      [[`${home}\\PMO-Inbox`, false]],
+      [[`${home}\\AI-OS\\PMO-Inbox`, false]],
     );
 
     const result = await createInboxFolder({ parent: home }, deps());

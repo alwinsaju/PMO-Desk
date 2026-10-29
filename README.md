@@ -26,7 +26,9 @@ on the user's computer (loopback only; the AI is a local Ollama model, no cloud 
   roster, kept on file and editable, restorable or deletable). It is meant to be the one list of people that
   the other apps read instead of an uploaded Excel file.
 - **First-run Setup screen**: checks and installs what a new computer lacks (Ollama, the AI
-  model, the PMO inbox folder, classic Outlook, the Tasks engine).
+  model, the PMO inbox folder, classic Outlook, the Tasks engine). A first install also creates one
+  `OneDrive\AI-OS` folder for every flow and opens an animated first-time setup, one step at a time,
+  ending with step-by-step Power Automate guides (`docs/pto-email-flow.md` has the PTO email flow).
 - Demo apps (Notes, Browser, web apps) and an app store.
 
 [`ARCHITECTURE.md`](./ARCHITECTURE.md) has the module boundaries, contracts and the security

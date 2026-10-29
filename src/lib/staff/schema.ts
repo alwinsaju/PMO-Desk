@@ -194,6 +194,8 @@ export const timeOffSchema = z
     status: z.enum(TIME_OFF_STATUSES),
     createdAt: stamp,
     decidedAt: stamp,
+    source: z.literal("email").optional(),
+    sourceId: z.string().max(400).optional(),
   })
   .refine((r) => r.endDate >= r.startDate, "The end date is before the start date.");
 

@@ -206,18 +206,22 @@ describe("OneDrive and the inbox folder", () => {
     assert.equal(oneDriveFacts({ OneDrive: "D:\\gone" }, isDir).signedIn, false);
   });
 
-  it("suggests PMO-Inbox inside each root, existing ones first, never the current one", () => {
+  it("suggests PMO-Inbox in the AI-OS folder of each root, an older one first, never the current one", () => {
     const facts = {
       signedIn: true,
       roots: ["C:\\Users\\me\\OneDrive", "C:\\Users\\me\\OneDrive - Contoso"],
     };
     assert.deepEqual(inboxSuggestions(facts, "C:\\somewhere\\else", isDir), [
       `C:\\Users\\me\\OneDrive - Contoso\\${INBOX_FOLDER_NAME}`,
-      `C:\\Users\\me\\OneDrive\\${INBOX_FOLDER_NAME}`,
+      `C:\\Users\\me\\OneDrive\\AI-OS\\${INBOX_FOLDER_NAME}`,
+      `C:\\Users\\me\\OneDrive - Contoso\\AI-OS\\${INBOX_FOLDER_NAME}`,
     ]);
     assert.deepEqual(
       inboxSuggestions(facts, `c:\\users\\me\\onedrive - contoso\\pmo-inbox`, isDir),
-      [`C:\\Users\\me\\OneDrive\\${INBOX_FOLDER_NAME}`],
+      [
+        `C:\\Users\\me\\OneDrive\\AI-OS\\${INBOX_FOLDER_NAME}`,
+        `C:\\Users\\me\\OneDrive - Contoso\\AI-OS\\${INBOX_FOLDER_NAME}`,
+      ],
     );
   });
 

@@ -152,6 +152,10 @@ export interface TimeOffRequest {
   status: TimeOffStatus;
   createdAt: string;
   decidedAt: string;
+  /** `email`: filed by the PTO email flow after the local AI read the message. */
+  source?: "email";
+  /** The message the request came from (the PTO email flow's id), for `email`. */
+  sourceId?: string;
 }
 
 /** Someone moved off the roster. Kept on file (outside the roster other apps

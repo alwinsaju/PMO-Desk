@@ -6,11 +6,11 @@ a **OneDrive folder**. A cloud flow cannot call this app directly (the app only 
 `127.0.0.1`), so the two talk through files, the same way the PMO inbox works.
 
 ```
-Staff Management  --writes-->  OneDrive\Staff-Exchange\requests\<email>~<stamp>.json
+Staff Management  --writes-->  OneDrive\AI-OS\Staff-Exchange\requests\<email>~<stamp>.json
                                          |  (OneDrive sync)
                                   Power Automate flow: Get user profile + photo
                                          |
-Staff Management  <--reads---  OneDrive\Staff-Exchange\profiles\<email>.json
+Staff Management  <--reads---  OneDrive\AI-OS\Staff-Exchange\profiles\<email>.json
 ```
 
 Files that arrive while the app is closed are applied the next time it runs (it checks every
@@ -18,9 +18,12 @@ Files that arrive while the app is closed are applied the next time it runs (it 
 
 ## Before you build the flow
 
-1. OneDrive (work account) is signed in on this computer. The app uses the first OneDrive
-   folder it finds (work account first) and creates `Staff-Exchange\requests`,
-   `Staff-Exchange\profiles` and `Staff-Exchange\rejected` there the first time it syncs.
+1. OneDrive (work account) is signed in on this computer. The installer creates
+   `AI-OS\Staff-Exchange\requests`, `profiles` and `rejected` in your OneDrive folder (the app
+   creates whatever is missing the first time it syncs). An older install that kept
+   `Staff-Exchange` directly in OneDrive keeps using it for as long as it is there (the flow
+   watches that exact folder). To tidy up, **move** it into `AI-OS` in File Explorer; OneDrive
+   keeps the folder's identity, so the flow keeps running.
    To use another folder, set the environment variable `AI_OS_STAFF_EXCHANGE_DIR`.
 2. Open Staff Management, choose **Add employee**: the dialog shows the exact folder in use.
    Add yourself (your own Deloitte email) as the first test person; a request file appears in
@@ -33,7 +36,7 @@ Create an **Automated cloud flow** named `AI OS - Staff M365 profile`.
 **Trigger: OneDrive for Business - When a file is created**
 
 - Folder: **click the folder icon at the right of the field and browse to**
-  `Staff-Exchange` > `requests`. Do **not** type or paste the path. The trigger needs the
+  `AI-OS` > `Staff-Exchange` > `requests`. Do **not** type or paste the path. The trigger needs the
   folder's ID, and a typed path produces the error `400 Invalid fileId` before the flow even
   starts. (If you see that error already, re-pick the folder this way and save.)
 - Include subfolders: No. Infer content type: No.
@@ -91,7 +94,7 @@ Empty and `null` values are fine: the app ignores them and never blanks what is 
 
 **6. OneDrive for Business - Create file**
 
-- Folder Path: pick `Staff-Exchange` > `profiles` with the folder icon.
+- Folder Path: pick `AI-OS` > `Staff-Exchange` > `profiles` with the folder icon.
 - File Name: `Email` outputs, then `.json` (for example `jane.doe@deloitte.com.json`).
 - File Content: the `Outputs` of `Profile`.
 

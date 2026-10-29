@@ -3,6 +3,7 @@ import { checkOrigin, factsFromRequest } from "@/lib/pmo/server/originCheck";
 import { parseStatusContext } from "@/lib/setup/background";
 import {
   cancel,
+  createFolders,
   getStatus,
   saveInbox,
   startInstall,
@@ -54,7 +55,7 @@ export async function GET(request: Request) {
  * background; the screen follows them through GET.
  *
  *   install-ollama | cancel-install | pull-model { model? } | pull-fallback-model |
- *   cancel-pull | run-selftest | choose-inbox { path, confirmNonEmpty? }
+ *   cancel-pull | run-selftest | create-folders | choose-inbox { path, confirmNonEmpty? }
  */
 export async function POST(request: Request) {
   const refused = refuse(request);
@@ -99,6 +100,9 @@ export async function POST(request: Request) {
         result = await saveInbox(body.path, {
           confirmNonEmpty: body.confirmNonEmpty === true,
         });
+        break;
+      case "create-folders":
+        result = await createFolders();
         break;
       default:
         result = { ok: false, reason: "Unknown action." };

@@ -19,7 +19,8 @@ export type SetupAction =
         | "pull-model"
         | "pull-fallback-model"
         | "cancel-pull"
-        | "run-selftest";
+        | "run-selftest"
+        | "create-folders";
     }
   | { action: "choose-inbox"; path: string };
 

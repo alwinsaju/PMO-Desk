@@ -175,6 +175,38 @@ describe("desktop packaging", () => {
       assert.match(nsh, /!macro customUnInit/);
     });
 
+    it("creates the AI-OS OneDrive folders on a first install only, and asks for no e-mail address", () => {
+      const nsh = readFileSync(path.join(root, "build", "installer.nsh"), "utf8");
+      assert.match(nsh, /!macro customInstall/);
+      // Works out whether AI OS was already installed before copying anything.
+      assert.match(
+        nsh,
+        /ReadRegStr \$0 HKCU "\$\{INSTALL_REGISTRY_KEY\}" InstallLocation/,
+      );
+      assert.match(nsh, /\$\{If\} \$aiOsExisting == "0"/);
+      // The OneDrive folder comes from OneDrive's own account list, not from a typed address.
+      assert.match(
+        nsh,
+        /Software\\Microsoft\\OneDrive\\Accounts\\Business\$1" "UserFolder"/,
+      );
+      assert.doesNotMatch(nsh, /nsDialogs|InputBox|MUI_PAGE_CUSTOM/i);
+      for (const folder of [
+        "AI-OS\\PMO-Inbox",
+        "AI-OS\\Staff-Exchange\\requests",
+        "AI-OS\\Staff-Exchange\\profiles",
+        "AI-OS\\Staff-Exchange\\rejected",
+        "AI-OS\\PTO-Inbox",
+      ]) {
+        assert.ok(nsh.includes(`CreateDirectory "$aiOsOneDrive\\${folder}"`), folder);
+      }
+      // The marker that makes the app open the first-time setup page, never overwritten.
+      assert.match(nsh, /\$APPDATA\\ai-os\\pmo\\first-time-setup\.json/);
+      assert.match(
+        nsh,
+        /\$\{IfNot\} \$\{FileExists\} "\$APPDATA\\ai-os\\pmo\\first-time-setup\.json"/,
+      );
+    });
+
     it("builds the runtime before packaging", () => {
       assert.equal(
         pkg.scripts["runtime:python"],
