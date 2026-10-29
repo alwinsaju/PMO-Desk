@@ -14,6 +14,7 @@ import {
   LightningIcon,
   ListChecksIcon,
   MoonIcon,
+  RobotIcon,
   SunIcon,
 } from "@phosphor-icons/react";
 import {
@@ -32,6 +33,7 @@ import { restoreAppearanceFromServer } from "@/lib/theme";
 import { useTheme } from "@/lib/useTheme";
 import { useEngineRestart, type EngineRestartStatus } from "./useEngineRestart";
 import { useHardwareAcceleration } from "./useHardwareAcceleration";
+import { useFastModel } from "./useFastModel";
 
 /**
  * Top-right settings control: a round glass button (same frosted chrome as the
@@ -204,6 +206,32 @@ function HardwareAccelerationRow() {
   );
 }
 
+/** "Fast AI model" - switches the local AI between the careful default and a lighter model
+ *  that answers in about half the time on a CPU-only computer. Downloads the light model
+ *  the first time it is turned on. PTO emails are always read with the light model. */
+function FastModelRow() {
+  const { view, busy, toggle } = useFastModel();
+  if (!view) return null;
+  return (
+    <DropdownMenuSwitchItem
+      checked={view.checked}
+      onCheckedChange={toggle}
+      disabled={busy}
+      className="group py-2.5"
+    >
+      <RowBody
+        icon={<RobotIcon size={18} weight="regular" aria-hidden />}
+        title="Fast AI model"
+        hint={
+          <span role="status" aria-live="polite">
+            {view.hint}
+          </span>
+        }
+      />
+    </DropdownMenuSwitchItem>
+  );
+}
+
 const RESTART_HINT = "Loads engine and task changes";
 
 function restartHint(status: EngineRestartStatus): string {
@@ -323,6 +351,7 @@ const settingsRows: { id: string; Row: ComponentType }[] = [
   { id: "dark-mode", Row: DarkModeRow },
   { id: "deloitte-mode", Row: DeloitteModeRow },
   { id: "hardware-acceleration", Row: HardwareAccelerationRow },
+  { id: "fast-model", Row: FastModelRow },
   { id: "restart-engine", Row: RestartEngineRow },
   { id: "setup", Row: SetupRow },
 ];

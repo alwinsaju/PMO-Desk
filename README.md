@@ -8,23 +8,26 @@ on the user's computer (loopback only; the AI is a local Ollama model, no cloud 
 
 - **Desktop shell**: wallpaper, a dock, a window manager (drag, resize, minimize, maximize,
   per-window human/AI control), light/dark and Deloitte themes, a tray icon, and a Settings
-  menu (gear) with _Setup and health check_ and _Restart Tasks engine_.
+  menu (gear) with a _Fast AI model_ switch, _Setup and health check_ and _Restart Tasks engine_.
 - **Command bar with a local AI**: the AI can open, focus, minimize, maximize and close windows
   with a visible cursor and ownership handoff, and create, update and delete notes when Notes
   is focused. It uses Ollama on `127.0.0.1`.
 - **PMO To-Do**: turns messages dropped in a PMO inbox folder (Power Automate, an Outlook
   export script, or the Paste button) into reviewed to-dos with reminders, chasers, sign-off
-  tracking and a weekly report. Nothing becomes a to-do without a human approving it.
+  tracking and a weekly report. Nothing becomes a to-do without a human approving it. Cancelled
+  to-dos can be deleted for good (**Clear cancelled** in the Done list, or **Delete** in one).
 - **Tasks engine** (`tasks-engine/`, Python/FastAPI) and the **Tasks app**: runs the task
   folders under `tasks/` (Shift Roster, December Disconnect, the weekly and monthly reports,
   the deployment mailer) through prepare, review, approve and send gates.
 - **Staff Management** (`src/lib/staff/`, `src/components/apps/staff-app/`): the roster of
   people. A Directory (the main columns in a list, everything else in a right-hand detail pane),
-  a Shift roster (teams from the directory, each with its own shift schedule, in Today, Week,
+  a Shift roster (teams from the directory, each with its own shift schedule, in Day, Week,
   Month and two-month Cycle views, with holidays by location and approved time off; it can be
   imported from the team's roster workbook), a Time-off tracker and an Offboarded list (people removed from the
   roster, kept on file and editable, restorable or deletable). It is meant to be the one list of people that
-  the other apps read instead of an uploaded Excel file.
+  the other apps read instead of an uploaded Excel file. Leave emails and M365 profiles are read in the
+  background while AI OS runs (light local model, no window needed); the AI orb at the bottom right
+  tells you when a leave request waits for approval.
 - **First-run Setup screen**: checks and installs what a new computer lacks (Ollama, the AI
   model, the OneDrive folders, classic Outlook, the Tasks engine). A first install also creates one
   `OneDrive\AI-OS` folder for every flow and opens an animated first-time setup, one step at a time,
@@ -216,16 +219,16 @@ update pull requests for npm, pip and the workflow actions.
 
 All optional. The desktop shell sets most of them itself; set one only to override a default.
 
-| Variable                                                                                                                                                                                             | Purpose                                                                                |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| `AI_OS_MODE`, `AI_OS_PROJECT_DIR`                                                                                                                                                                    | Desktop run mode and project folder (see _Getting fixes without reinstalling_)         |
-| `AI_OS_ENGINE_TOKEN`, `AI_OS_ENGINE_INSTANCE`                                                                                                                                                        | Per-launch Tasks engine token and instance id; generated, never set by hand            |
-| `AI_OS_TASKS_ENGINE_URL`, `AI_OS_TASKS_PYTHON`, `AI_OS_SKIP_TASKS_ENGINE`                                                                                                                            | Where the engine is, which Python runs it, or not to start it                          |
-| `AI_OS_TASKS_DIR`, `AI_OS_TASKS_DATA_DIR`, `AI_OS_TASKS_SRC`                                                                                                                                         | Task definitions folder, writable data folder, and the source the working copy follows |
-| `AI_OS_PMO_DATA_DIR`, `AI_OS_PMO_INBOX_DIR`, `AI_OS_PMO_SCAN_MS`                                                                                                                                     | PMO data folder, inbox folder, inbox scan interval                                     |
-| `AI_OS_STAFF_EXCHANGE_DIR`, `AI_OS_PTO_INBOX_DIR`                                                                                                                                                    | Staff Management sync and PTO mail folders                                             |
-| `AI_OS_AI_MODEL_FILE`, `AI_OS_AI_NUM_CTX`, `AI_OS_AI_KEEP_ALIVE`, `AI_OS_AI_TIMEOUT_MS`, `AI_OS_AI_MAX_OUTPUT_TOKENS`, `AI_OS_AI_AUTOSTART`, `AI_OS_AI_PREWARM`, `AI_OS_OLLAMA_EXE`, `OLLAMA_MODELS` | Local AI runtime (model, context size, timeouts, start-up behaviour)                   |
-| `AI_OS_FORCE_FIRST_TIME`, `AI_OS_FOLDER_NAME`                                                                                                                                                        | Re-open the first-time setup; name of the OneDrive folder it creates                   |
+| Variable                                                                                                                                                                                             | Purpose                                                                                                   |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `AI_OS_MODE`, `AI_OS_PROJECT_DIR`                                                                                                                                                                    | Desktop run mode and project folder (see _Getting fixes without reinstalling_)                            |
+| `AI_OS_ENGINE_TOKEN`, `AI_OS_ENGINE_INSTANCE`                                                                                                                                                        | Per-launch Tasks engine token and instance id; generated, never set by hand                               |
+| `AI_OS_TASKS_ENGINE_URL`, `AI_OS_TASKS_PYTHON`, `AI_OS_SKIP_TASKS_ENGINE`                                                                                                                            | Where the engine is, which Python runs it, or not to start it                                             |
+| `AI_OS_TASKS_DIR`, `AI_OS_TASKS_DATA_DIR`, `AI_OS_TASKS_SRC`                                                                                                                                         | Task definitions folder, writable data folder, and the source the working copy follows                    |
+| `AI_OS_PMO_DATA_DIR`, `AI_OS_PMO_INBOX_DIR`, `AI_OS_PMO_SCAN_MS`                                                                                                                                     | PMO data folder, inbox folder, inbox scan interval                                                        |
+| `AI_OS_STAFF_EXCHANGE_DIR`, `AI_OS_PTO_INBOX_DIR`, `AI_OS_PTO_SCAN_MS`                                                                                                                               | Staff Management sync and PTO mail folders; how often they are read in the background (ms, `off` to stop) |
+| `AI_OS_AI_MODEL_FILE`, `AI_OS_AI_NUM_CTX`, `AI_OS_AI_KEEP_ALIVE`, `AI_OS_AI_TIMEOUT_MS`, `AI_OS_AI_MAX_OUTPUT_TOKENS`, `AI_OS_AI_AUTOSTART`, `AI_OS_AI_PREWARM`, `AI_OS_OLLAMA_EXE`, `OLLAMA_MODELS` | Local AI runtime (model, context size, timeouts, start-up behaviour)                                      |
+| `AI_OS_FORCE_FIRST_TIME`, `AI_OS_FOLDER_NAME`                                                                                                                                                        | Re-open the first-time setup; name of the OneDrive folder it creates                                      |
 
 ARCHITECTURE.md has the details of each area.
 

@@ -13,8 +13,9 @@ Staff Management  --writes-->  OneDrive\AI-OS\Staff-Exchange\requests\<email>~<s
 Staff Management  <--reads---  OneDrive\AI-OS\Staff-Exchange\profiles\<email>.json
 ```
 
-Files that arrive while the app is closed are applied the next time it runs (it checks every
-20 seconds while a Staff window is open). The app deletes each profile file after applying it.
+Files that arrive while the app is closed are applied soon after it starts, and while it runs
+they are applied about once a minute with no Staff window open (every 20 seconds while one
+is). The app deletes each profile file after applying it.
 
 ## Before you build the flow
 

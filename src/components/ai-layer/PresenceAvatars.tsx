@@ -5,6 +5,7 @@ import { Tooltip } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { useAgentStore } from "./agentStore";
 import { AgentStatusBadge } from "./AgentStatusBadge";
+import { AiNudge, usePtoNudge } from "./AiNudge";
 import { TaskList } from "./TaskList";
 
 /**
@@ -25,6 +26,7 @@ export function PresenceAvatars() {
   );
   const isTaskListExpanded = useAgentStore((s) => s.isTaskListExpanded);
   const toggleTaskList = useAgentStore((s) => s.toggleTaskList);
+  const nudge = usePtoNudge();
 
   return (
     <>
@@ -37,6 +39,7 @@ export function PresenceAvatars() {
             `bottom-7` either way, since an absolutely-positioned child
             doesn't participate in this column's own `flex`/`gap` layout. */}
         <TaskList isExpanded={isTaskListExpanded} />
+        <AiNudge {...nudge} />
 
         <div className="flex items-center gap-3">
           <AgentStatusBadge />
@@ -47,7 +50,7 @@ export function PresenceAvatars() {
               aria-label="AI agent — toggle task history"
               aria-expanded={isTaskListExpanded}
               className={cn(
-                "ai-ring rounded-orb text-accent-contrast grid h-12 w-12 place-items-center",
+                "ai-ring rounded-orb text-accent-contrast relative grid h-12 w-12 place-items-center",
                 "bg-[linear-gradient(145deg,var(--color-accent-2),var(--color-accent))]",
                 "shadow-[0_8px_22px_-6px_var(--color-accent),inset_0_1px_0_rgba(255,255,255,0.35)]",
                 "ease-spring transition-[transform,opacity] duration-[400ms] hover:scale-[1.08] active:scale-[0.94]",
@@ -56,6 +59,12 @@ export function PresenceAvatars() {
               )}
             >
               <SparkleIcon size={23} weight="duotone" aria-hidden />
+              {nudge.unseen.length > 0 && (
+                <span
+                  aria-hidden
+                  className="bg-red ring-surface absolute top-0 right-0 h-3 w-3 rounded-full ring-2"
+                />
+              )}
             </button>
           </Tooltip>
         </div>

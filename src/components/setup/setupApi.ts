@@ -20,6 +20,8 @@ export type SetupAction = {
     | "cancel-pull"
     | "run-selftest"
     | "create-folders";
+  /** For `pull-model`: which model (the default, or another AI OS may download). */
+  model?: string;
 };
 
 const TIMEOUT_MS = 20_000;

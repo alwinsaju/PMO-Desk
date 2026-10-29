@@ -1,11 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui";
 import { useStaffStore, useStaffSync } from "@/lib/staff/staffStore";
+import type { TimeOffStatus } from "@/lib/staff/types";
 import { DirectoryTab } from "./DirectoryTab";
 import { OffboardedTab } from "./OffboardedTab";
 import { ShiftRoster } from "./ShiftRoster";
+import { useStaffNav } from "./staffNavStore";
 import { TimeOffTab } from "./TimeOffTab";
 
 const PANEL = "flex min-h-0 flex-1 flex-col data-[state=inactive]:hidden";
@@ -20,6 +22,16 @@ const PANEL = "flex min-h-0 flex-1 flex-col data-[state=inactive]:hidden";
 export function StaffApp({ windowId }: { windowId: string }) {
   useStaffSync();
   const [tab, setTab] = useState("directory");
+  const [timeOffStatus, setTimeOffStatus] = useState<TimeOffStatus | "">("");
+  const openRequest = useStaffNav((s) => s.openRequest);
+  const clearOpenRequest = useStaffNav((s) => s.clearOpenRequest);
+  useEffect(() => {
+    if (!openRequest) return;
+    setTab(openRequest.tab);
+    if (openRequest.timeOffStatus !== undefined)
+      setTimeOffStatus(openRequest.timeOffStatus);
+    clearOpenRequest(openRequest.id);
+  }, [openRequest, clearOpenRequest]);
   const people = useStaffStore((s) => s.employees.length);
   const left = useStaffStore((s) => s.offboarded.length);
   const pending = useStaffStore(
@@ -50,7 +62,7 @@ export function StaffApp({ windowId }: { windowId: string }) {
           <ShiftRoster />
         </TabsContent>
         <TabsContent value="timeoff" forceMount className={PANEL}>
-          <TimeOffTab />
+          <TimeOffTab status={timeOffStatus} onStatusChange={setTimeOffStatus} />
         </TabsContent>
         <TabsContent value="offboarded" forceMount className={PANEL}>
           <OffboardedTab />

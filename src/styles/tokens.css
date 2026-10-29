@@ -237,7 +237,7 @@
   --ease-smooth: cubic-bezier(0.22, 0.9, 0.28, 1);
 
   /* ---------------------------------------------------------------------
-   * Fonts — wired to the next/font/google CSS variables set in
+   * Fonts — wired to the next/font/local CSS variables set in
    * src/app/layout.tsx. Figtree (variable weight) is the sans by default;
    * Deloitte mode swaps it for Open Sans below. IBM Plex Mono is reserved
    * for technical/file-path text.

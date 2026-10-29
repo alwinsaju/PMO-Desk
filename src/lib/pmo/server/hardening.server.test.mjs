@@ -22,6 +22,7 @@ import { effectiveDraft } from "../todoLogic.ts";
 import { AiStructuredSchema, emptyAttentionSummary } from "../types.ts";
 import {
   approveProposal,
+  clearCancelledTodos,
   createManualTodo,
   patchTodo,
   rejectProposal,
@@ -973,5 +974,50 @@ describe("D-8: needsAttention in the polled state", () => {
     const down = (await poll()).needsAttention;
     assert.equal(down.queuePaused, true);
     assert.equal(down.modelMissing, false);
+  });
+});
+
+describe("clearCancelledTodos", () => {
+  it("deletes only cancelled to-dos, with their message text, and keeps the dedupe record", async () => {
+    const { proposal, todo } = await approvedOne();
+    const open = await createManualTodo(pmo, {
+      draft: { ...effectiveDraft(proposal), title: "Still open" },
+    });
+    assert.equal(open.ok, true);
+
+    // Nothing is cancelled yet: nothing is removed.
+    assert.deepEqual(await clearCancelledTodos(pmo, {}), { ok: true, removed: 0 });
+
+    assert.equal((await patchTodo(pmo, todo.id, { status: "cancelled" })).ok, true);
+    const dedupeKey = (await pmo.store.readRaw(proposal.intakeId)).dedupeKey;
+    assert.equal(await pmo.store.hasSeen(dedupeKey), true);
+
+    const result = await clearCancelledTodos(pmo, {});
+    assert.deepEqual(result, { ok: true, removed: 1 });
+    assert.equal(await pmo.store.getTodo(todo.id), null);
+    assert.notEqual(await pmo.store.getTodo(open.todo.id), null, "an open to-do stays");
+    assert.equal(await pmo.store.readRaw(proposal.intakeId), null, "the text is gone");
+    assert.equal(
+      await pmo.store.hasSeen(dedupeKey),
+      true,
+      "the message is not re-imported",
+    );
+    const audit = await readFile(path.join(dataDir, "audit.jsonl"), "utf8");
+    assert.match(audit, /clear-cancelled/);
+  });
+
+  it("with ids, removes only those, and never a done or open to-do", async () => {
+    const { todo } = await approvedOne();
+    assert.equal((await patchTodo(pmo, todo.id, { status: "done" })).ok, true);
+    assert.deepEqual(await clearCancelledTodos(pmo, { ids: [todo.id] }), {
+      ok: true,
+      removed: 0,
+    });
+    assert.notEqual(await pmo.store.getTodo(todo.id), null);
+  });
+
+  it("refuses a malformed request", async () => {
+    const result = await clearCancelledTodos(pmo, { ids: "all" });
+    assert.equal(result.ok, false);
   });
 });

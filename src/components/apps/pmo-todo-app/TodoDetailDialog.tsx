@@ -30,7 +30,13 @@ import {
   type Todo,
 } from "@/lib/pmo/types";
 import { ChaserDialog } from "./ChaserDialog";
-import { createTodo, patchTodo, startChaser, type NextOffer } from "./api";
+import {
+  clearCancelled,
+  createTodo,
+  patchTodo,
+  startChaser,
+  type NextOffer,
+} from "./api";
 import { OriginalMessage } from "./OriginalMessage";
 import { SignoffRequestDialog } from "./SignoffRequestDialog";
 import { SnoozeMenu } from "./SnoozeMenu";
@@ -155,6 +161,25 @@ export function TodoDetailDialog({
     } catch {
       setError("Could not reach the app server.");
       return false;
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** Delete a cancelled to-do for good, then close the dialog. */
+  const remove = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const reply = await clearCancelled([shown.id]);
+      if (!reply.ok) {
+        setError(reply.reason);
+        return;
+      }
+      onSettled();
+      onOpenChange(false);
+    } catch {
+      setError("Could not reach the app server.");
     } finally {
       setBusy(false);
     }
@@ -537,13 +562,20 @@ export function TodoDetailDialog({
                 </Button>
               </>
             ) : (
-              <Button
-                variant="outline"
-                disabled={busy}
-                onClick={() => void apply({ status: "open" })}
-              >
-                Reopen
-              </Button>
+              <>
+                <Button
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() => void apply({ status: "open" })}
+                >
+                  Reopen
+                </Button>
+                {shown.status === "cancelled" && (
+                  <Button variant="ghost" disabled={busy} onClick={() => void remove()}>
+                    Delete
+                  </Button>
+                )}
+              </>
             )}
           </div>
           <Button disabled={busy || !dirty} onClick={() => void save()}>

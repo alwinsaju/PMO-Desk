@@ -352,6 +352,15 @@ body {
 }
 
 @layer base {
+  /* Slim, theme-tinted scrollbars everywhere: the native ones carry arrow
+     buttons that clash with the rest of the UI (dialogs, tables, the roster).
+     In the base layer so `scroll-thin` and `[scrollbar-width:none]` utilities
+     still win. `scrollbar-width` is not inherited, hence the universal selector. */
+  :where(*) {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-line-strong) transparent;
+  }
+
   /* Default keyboard focus indicator for anything interactive that doesn't
      bring its own. Lives in the BASE layer so any `focus-visible:ring-*` /
      `outline-none` utility wins over it. `--color-focus` is the accent, except

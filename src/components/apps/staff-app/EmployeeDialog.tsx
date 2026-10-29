@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { CameraIcon, WarningCircleIcon } from "@phosphor-icons/react";
 import {
   Avatar,
@@ -176,8 +176,17 @@ function QuickAdd({
         and profile picture are filled in from their M365 profile.
       </DialogDescription>
       {folder && (
-        <p className="text-ink-muted mt-2 text-[12px] leading-snug break-all">
-          The profile is requested through <code>{folder}</code>.
+        <p className="text-ink-muted mt-2 text-[12px] leading-snug">
+          The profile is requested through{" "}
+          <code className="[overflow-wrap:anywhere]">
+            {folder.split(/(?<=\\)/).map((part, index) => (
+              <Fragment key={index}>
+                {part}
+                <wbr />
+              </Fragment>
+            ))}
+          </code>
+          .
         </p>
       )}
       <div className="mt-5 flex flex-col gap-3">

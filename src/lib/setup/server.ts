@@ -42,7 +42,13 @@ import {
 import { oneDriveFacts, saveInboxChoice } from "./inbox";
 import { inboxSafetyFacts } from "./inboxFs";
 import { JobRegistry, type JobKind, type JobSnapshot } from "./jobs";
-import { FALLBACK_MODEL, isPullable, modelToPull, preflight } from "./models";
+import {
+  FALLBACK_MODEL,
+  LIGHT_MODEL,
+  isPullable,
+  modelToPull,
+  preflight,
+} from "./models";
 import { installOllama, type InstallProgress, type RunResult } from "./ollamaInstall";
 import { probeOutlook, type OutlookFacts } from "./outlook";
 import { pullModel, type PullProgress } from "./pull";
@@ -436,7 +442,7 @@ export async function startPull(
   if (!isPullable(model, config.defaultModel) && !isPullable(model, active)) {
     return {
       ok: false,
-      reason: `AI OS only downloads ${config.defaultModel} or ${FALLBACK_MODEL}.`,
+      reason: `AI OS only downloads ${config.defaultModel}, ${FALLBACK_MODEL} or ${LIGHT_MODEL}.`,
     };
   }
   const check = preflight({

@@ -115,6 +115,26 @@ describe("chooseModel", () => {
     assert.equal(both.model, SMALL);
   });
 
+  it("falls back to an installed allowed model when the chosen one is not installed yet", () => {
+    const choice = chooseModel({
+      ...base,
+      saved: "qwen3.5:4b",
+      installed: [DEFAULT, SMALL],
+    });
+    assert.equal(choice.model, DEFAULT);
+    assert.equal(choice.source, "only-installed");
+    assert.equal(choice.preferred, "qwen3.5:4b");
+    assert.equal(
+      chooseModel({ ...base, saved: "qwen3.5:4b", installed: ["qwen3.5:4b"] }).model,
+      "qwen3.5:4b",
+    );
+  });
+
+  it("saves the light model", () => {
+    assert.deepEqual(saveModelChoice("qwen3.5:4b", envFor()), { ok: true });
+    assert.equal(readSavedModel(envFor()), "qwen3.5:4b");
+  });
+
   it("never second-guesses an explicit env model", () => {
     const choice = chooseModel({
       ...base,

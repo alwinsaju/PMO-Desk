@@ -32,7 +32,13 @@ import {
   type EnsureServerResult,
 } from "./lifecycle";
 import { cleanText, type AiLogEvent } from "./log";
-import { createModelResolver, type ModelResolver } from "./modelChoice";
+import {
+  createModelResolver,
+  saveModelChoice,
+  type ModelResolver,
+  type SaveResult,
+} from "./modelChoice";
+import { LIGHT_MODEL, sameModel } from "../setup/models";
 import { getAiLogState } from "./modelWatch";
 import { readServerLogTail, resolveServerLog, type ServerLogTail } from "./serverLog";
 import type { AiRuntimeLogResponse, AiRuntimeStatus } from "./types";
@@ -142,6 +148,60 @@ export function getAiRuntimeConfig(): AiRuntimeConfig {
  *  else the default, or the one allowed model that is installed. */
 export function getActiveModel(): string {
   return runtime().models.current().model;
+}
+
+export interface ModelOption {
+  id: string;
+  kind: "accurate" | "fast";
+  /** null when Ollama could not be asked. */
+  installed: boolean | null;
+}
+
+export interface ModelOptions {
+  /** The model calls use right now. */
+  active: string;
+  /** The model that was asked for (differs from `active` while it is still downloading). */
+  preferred: string;
+  options: ModelOption[];
+}
+
+/** The switchable models and whether each is installed (GET /api/tags only). */
+export async function getModelOptions(): Promise<ModelOptions> {
+  const { models, client, config } = runtime();
+  let installed: string[] | null;
+  try {
+    installed = await client.listInstalled(2_000);
+  } catch {
+    installed = null;
+  }
+  models.observeInstalled(installed);
+  const choice = models.current();
+  const has = (id: string) =>
+    installed === null ? null : installed.some((n) => sameModel(n, id));
+  return {
+    active: choice.model,
+    preferred: choice.preferred,
+    options: [
+      { id: config.defaultModel, kind: "accurate", installed: has(config.defaultModel) },
+      { id: LIGHT_MODEL, kind: "fast", installed: has(LIGHT_MODEL) },
+    ],
+  };
+}
+
+/** Saves which model calls use from now on (one of the allowed models). The next call picks it up. */
+export function chooseActiveModel(model: string): SaveResult {
+  return saveModelChoice(model);
+}
+
+/** The light model's exact installed name, or undefined when it is not installed or Ollama
+ *  cannot be asked: PTO emails are read with it, and without it fall back to the chosen model. */
+export async function getLightModelIfInstalled(): Promise<string | undefined> {
+  try {
+    const installed = await runtime().client.listInstalled(2_000);
+    return installed.find((name) => sameModel(name, LIGHT_MODEL));
+  } catch {
+    return undefined;
+  }
 }
 
 /** The keep_alive every request to Ollama should carry right now (2 minutes by

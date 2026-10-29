@@ -87,6 +87,10 @@ export const patchTodo = (id: string, patch: TodoPatch) =>
     nextOccurrence: { dueAt: string; title: string } | null;
   }>(`/todos/${id}`, "PATCH", patch);
 
+/** Delete cancelled to-dos for good: all of them, or just `ids`. */
+export const clearCancelled = (ids?: string[]) =>
+  call<{ removed: number }>("/todos/clear-cancelled", "POST", ids ? { ids } : {});
+
 /** A repeating to-do that was just marked done, and when the next round is due.
  *  Held by the app until the person creates the next one or moves on. */
 export interface NextOffer {

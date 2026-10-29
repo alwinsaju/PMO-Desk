@@ -9,12 +9,13 @@ import {
   PlusIcon,
   RepeatIcon,
   SealCheckIcon,
+  TrashIcon,
 } from "@phosphor-icons/react";
 import { Button, Progress } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { describeInstant } from "@/lib/pmo/due";
 import type { PmoState, ReminderPrefs, Todo } from "@/lib/pmo/types";
-import { patchTodo, type NextOffer } from "./api";
+import { clearCancelled, patchTodo, type NextOffer } from "./api";
 import {
   CONTENT_WIDTH,
   Chip,
@@ -88,6 +89,7 @@ export function TodoList({
     sort,
     state.today,
   );
+  const cancelledCount = state.todos.filter((todo) => todo.status === "cancelled").length;
   // Whole minutes, so a card only redraws when something it shows can differ
   // (the server clock moves on every 3 s poll).
   const nowMinute = new Date(Math.floor(now.getTime() / 60_000) * 60_000).toISOString();
@@ -141,6 +143,10 @@ export function TodoList({
         </div>
       </div>
 
+      {filter === "done" && cancelledCount > 0 && (
+        <ClearCancelledBar count={cancelledCount} onSettled={onSettled} />
+      )}
+
       {visible.length === 0 ? (
         <PanelMessage className="min-h-56">{EMPTY[filter]}</PanelMessage>
       ) : (
@@ -160,6 +166,73 @@ export function TodoList({
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+/** "Clear cancelled": removes every cancelled to-do for good, after one confirm click.
+ *  Done to-dos stay (they feed the weekly report); cancelled ones are only noise. */
+function ClearCancelledBar({
+  count,
+  onSettled,
+}: {
+  count: number;
+  onSettled: () => void;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const clear = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const reply = await clearCancelled();
+      if (!reply.ok) setError(reply.reason);
+      else {
+        setConfirming(false);
+        onSettled();
+      }
+    } catch {
+      setError("Could not reach the app server.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div
+      className={cn(CONTENT_WIDTH, GUTTER_X, "flex flex-wrap items-center gap-2.5 pt-3")}
+    >
+      <span className="text-ink-muted text-[12.5px]">
+        {error ??
+          (confirming
+            ? `Delete ${count} cancelled ${count === 1 ? "to-do" : "to-dos"} for good?`
+            : `${count} cancelled ${count === 1 ? "to-do" : "to-dos"} in this list.`)}
+      </span>
+      <span className="ml-auto flex items-center gap-2">
+        {confirming ? (
+          <>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={busy}
+              onClick={() => setConfirming(false)}
+            >
+              Keep
+            </Button>
+            <Button size="sm" disabled={busy} onClick={() => void clear()}>
+              <TrashIcon size={14} weight="bold" />
+              Delete
+            </Button>
+          </>
+        ) : (
+          <Button variant="outline" size="sm" onClick={() => setConfirming(true)}>
+            <TrashIcon size={14} weight="bold" />
+            Clear cancelled
+          </Button>
+        )}
+      </span>
     </div>
   );
 }

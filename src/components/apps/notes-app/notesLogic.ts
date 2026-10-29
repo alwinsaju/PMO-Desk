@@ -39,7 +39,11 @@ export function notePreview(content: string): string {
   const text = content ?? "";
   const match = /[^\r\n]*\S[^\r\n]*/.exec(text);
   const rest = match ? text.slice(match.index + match[0].length) : "";
-  const preview = rest.replace(/\s+/g, " ").trim();
+  const preview = rest
+    .replace(/\s+/g, " ")
+    .trim()
+    // A leading list marker would read as a stray dash after the date separator.
+    .replace(/^[-*•]\s+/, "");
   if (!preview) return "No additional text";
   return preview.length > 120 ? `${preview.slice(0, 119).trimEnd()}…` : preview;
 }

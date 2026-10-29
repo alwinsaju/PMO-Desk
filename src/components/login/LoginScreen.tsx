@@ -73,6 +73,13 @@ function LoginClock() {
   );
 }
 
+/** True when Settings > Hardware acceleration is on (`data-fx="rich"`, see displayFx.ts). */
+function isRichFx(): boolean {
+  return (
+    typeof document !== "undefined" && document.documentElement.dataset.fx === "rich"
+  );
+}
+
 export interface LoginScreenProps {
   /** True once the user has triggered unlock — drives the exit animation. */
   isUnlocking: boolean;
@@ -141,9 +148,17 @@ export function LoginScreen({ isUnlocking, onUnlock, onExitComplete }: LoginScre
   // compositor (measured: 47 fps idle vs 62 without). Once the entrance is done
   // drop the filter entirely; put the no-op blur back just before the exit
   // animation so it still starts from `blur(0px)`.
+  //
+  // Lean mode (no GPU effects) exits differently: fading or scaling the whole
+  // layer re-rasterizes the wallpaper every frame (measured 8 fps on a software
+  // compositor), but that wallpaper is pixel-identical to the desktop's beneath
+  // it. So only the scrim and the card fade; the lock screen is removed once
+  // they are gone and the wallpaper simply stays put.
+  const rich = isRichFx();
   useLayoutEffect(() => {
-    if (isUnlocking && rootRef.current) rootRef.current.style.filter = "blur(0px)";
-  }, [isUnlocking]);
+    if (isUnlocking && rich && rootRef.current)
+      rootRef.current.style.filter = "blur(0px)";
+  }, [isUnlocking, rich]);
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -160,7 +175,9 @@ export function LoginScreen({ isUnlocking, onUnlock, onExitComplete }: LoginScre
       initial={{ opacity: 0, scale: 1.02, filter: "blur(16px)" }}
       animate={
         isUnlocking
-          ? { opacity: 0, scale: 1.06, filter: "blur(28px)" }
+          ? rich
+            ? { opacity: 0, scale: 1.06, filter: "blur(28px)" }
+            : { opacity: 1, scale: 1 }
           : { opacity: 1, scale: 1, filter: "blur(0px)" }
       }
       transition={{
@@ -175,8 +192,9 @@ export function LoginScreen({ isUnlocking, onUnlock, onExitComplete }: LoginScre
         },
       }}
       onAnimationComplete={() => {
-        if (isUnlocking) onExitComplete();
-        else {
+        if (isUnlocking) {
+          if (rich) onExitComplete();
+        } else {
           // Motion writes its final style after this callback, so wait a beat.
           const el = rootRef.current;
           if (el) window.setTimeout(() => (el.style.filter = "none"), 60);
@@ -200,10 +218,15 @@ export function LoginScreen({ isUnlocking, onUnlock, onExitComplete }: LoginScre
           already a smooth gradient, so the blur changed nothing visible (mean
           pixel diff 0.6/255) but cost ~200 ms per frame on a software
           compositor. */}
-      <div
+      <motion.div
         aria-hidden
+        animate={{ opacity: isUnlocking && !rich ? 0 : 1 }}
+        transition={{ duration: 0.35, ease: easeExit }}
+        onAnimationComplete={() => {
+          if (isUnlocking && !rich) onExitComplete();
+        }}
         className={cn(
-          "absolute inset-0 backdrop-saturate-150",
+          "fx-rich:backdrop-saturate-150 absolute inset-0",
           // Rich effects mode (Settings > Hardware acceleration): the original
           // full-screen blur, too slow without a GPU.
           "fx-rich:backdrop-blur-[46px]",

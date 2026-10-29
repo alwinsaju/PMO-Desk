@@ -87,7 +87,7 @@ import { ScheduleDialog } from "./ScheduleDialog";
 
 const VIEWS: readonly RosterView[] = ["today", "week", "month", "cycle"];
 const VIEW_LABEL: Record<RosterView, string> = {
-  today: "Today",
+  today: "Day",
   week: "Week",
   month: "Month",
   cycle: "Cycle",

@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Figtree, IBM_Plex_Mono, Open_Sans } from "next/font/google";
+import localFont from "next/font/local";
 import Script from "next/script";
 import { ServiceWorkerRegistration } from "@/components/pwa/ServiceWorkerRegistration";
 import { GlobalSpotlight } from "@/components/ui/GlobalSpotlight";
@@ -8,22 +8,40 @@ import { getFxInitScript } from "@/lib/displayFx";
 import { getThemeInitScript } from "@/lib/theme";
 import "./globals.css";
 
-// Figtree is used as a true variable font (no `weight` list) so every
-// Tailwind font-weight utility — font-medium, font-semibold, etc. — has a
-// real matching weight to render instead of the browser faking it.
-const figtree = Figtree({
-  subsets: ["latin"],
+// The fonts are bundled from @fontsource packages instead of fetched from
+// Google Fonts: the desktop app must render identically offline, behind a
+// corporate proxy, and in `next dev` without a "Failed to download" warning
+// and a fallback face (whose metrics the tight headline tracking is not
+// tuned for).
+
+// Figtree is a true variable font so every Tailwind font-weight utility —
+// font-medium, font-semibold, etc. — has a real matching weight to render
+// instead of the browser faking it.
+const figtree = localFont({
+  src: "../../node_modules/@fontsource-variable/figtree/files/figtree-latin-wght-normal.woff2",
+  weight: "300 900",
   variable: "--font-figtree",
   display: "swap",
 });
 
-// IBM Plex Mono ships as static weights on Google Fonts (no variable axis),
-// so the weights actually used need to be listed explicitly. Reserved for
-// technical/file-path text in later phases (e.g. the files app).
-const ibmPlexMono = IBM_Plex_Mono({
-  subsets: ["latin"],
+// IBM Plex Mono ships as static weights (no variable axis), so the weights
+// actually used are listed explicitly. Reserved for technical/file-path text.
+const ibmPlexMono = localFont({
+  src: [
+    {
+      path: "../../node_modules/@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-400-normal.woff2",
+      weight: "400",
+    },
+    {
+      path: "../../node_modules/@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-500-normal.woff2",
+      weight: "500",
+    },
+    {
+      path: "../../node_modules/@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-600-normal.woff2",
+      weight: "600",
+    },
+  ],
   variable: "--font-ibm-plex-mono",
-  weight: ["400", "500", "600"],
   display: "swap",
 });
 
@@ -32,8 +50,9 @@ const ibmPlexMono = IBM_Plex_Mono({
 // brand's light display weight) through 700 all have real masters. It is only
 // ever *referenced* under the brand attribute, so default-mode users pay for
 // the preload hint but never render a glyph in it.
-const openSans = Open_Sans({
-  subsets: ["latin"],
+const openSans = localFont({
+  src: "../../node_modules/@fontsource-variable/open-sans/files/open-sans-latin-wght-normal.woff2",
+  weight: "300 800",
   variable: "--font-open-sans",
   display: "swap",
 });

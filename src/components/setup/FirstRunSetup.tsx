@@ -234,7 +234,9 @@ export function FirstRunSetup() {
           </p>
         )}
 
-        <div className="bg-surface border-line sticky bottom-0 z-10 -mx-7 mt-6 -mb-7 flex items-center justify-between gap-3 border-t px-7 py-4">
+        {/* -bottom-7 cancels the dialog's p-7: a sticky offset is measured from the
+            padding edge, so `bottom-0` left a 28px strip of cards showing below it. */}
+        <div className="bg-surface border-line sticky -bottom-7 z-10 -mx-7 mt-6 -mb-7 flex items-center justify-between gap-3 border-t px-7 py-4">
           <div className="flex items-center gap-1">
             <Button variant="ghost" onClick={() => void refresh(true)}>
               Check again

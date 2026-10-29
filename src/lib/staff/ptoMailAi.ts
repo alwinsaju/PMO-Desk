@@ -1,7 +1,7 @@
 // The real PTO reader: the local AI runtime (src/lib/ai-runtime), which talks only to
 // Ollama on 127.0.0.1, the same one the PMO To-Do uses. Kept apart from the rest of the
 // PTO code because it needs the app's module aliases; tests inject a fake classifier.
-import { clampTimeoutMs, generateJson } from "@/lib/ai-runtime";
+import { clampTimeoutMs, generateJson, getLightModelIfInstalled } from "@/lib/ai-runtime";
 import {
   PtoReadingSchema,
   buildPtoSystemPrompt,
@@ -55,12 +55,15 @@ function createStubClassifier(): PtoClassifier {
 
 export function createPtoClassifier(): PtoClassifier {
   if (process.env.AI_OS_PTO_AI_STUB?.trim()) return createStubClassifier();
-  return (message, today) =>
+  return async (message, today) =>
     generateJson({
       system: buildPtoSystemPrompt(),
       prompt: buildPtoUserPrompt(message, today),
       schema: PtoReadingSchema,
       timeoutMs: TIMEOUT_MS,
+      // The light model reads these unattended in the background (a short email needs
+      // nothing bigger, and it loads fast); without it, the model chosen in Settings.
+      model: await getLightModelIfInstalled(),
       // No reasoning phase: the structured answer needs none and it is 3-10x slower on CPU.
       think: false,
       log: {

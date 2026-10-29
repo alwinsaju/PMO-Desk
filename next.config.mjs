@@ -31,6 +31,8 @@ const securityHeaders = [
 
 /** @type {import("next").NextConfig} */
 const nextConfig = {
+  // The dev-server "N" badge floats over the desktop shell's bottom-left corner.
+  devIndicators: false,
   // Nothing uses the image optimizer; turning it off removes its attack surface.
   images: { unoptimized: true },
   async headers() {

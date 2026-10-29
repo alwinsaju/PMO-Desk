@@ -20,6 +20,7 @@ const path = require("node:path");
 const displaySettings = require("./display-settings.cjs");
 const launchConfig = require("./launch-config.cjs");
 const childEnv = require("./child-env.cjs");
+const { warmDevRoutes } = require("./dev-warmup.cjs");
 const { describeExitCode } = require("./exit-code.cjs");
 const portRetry = require("./port-retry.cjs");
 const pmoNotifier = require("./pmo-notifier.cjs");
@@ -164,6 +165,12 @@ async function startDesktopApp() {
   createWindow();
   closeSplash();
   startReminders();
+  if (launch.mode === "live-dev") {
+    // `next dev` compiles each route on first use; do that now, in the background.
+    void warmDevRoutes({ baseUrl: appUrl }).then(({ warmed, failed }) =>
+      desktopLog(`Warmed ${warmed} dev routes${failed ? ` (${failed} failed)` : ""}.`),
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------

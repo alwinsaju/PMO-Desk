@@ -46,12 +46,17 @@ const STATUS_TABS: { value: TimeOffStatus | ""; label: string }[] = [
 
 const CARD = "border-line bg-card rounded-card border";
 
-export function TimeOffTab() {
+export function TimeOffTab({
+  status,
+  onStatusChange: setStatus,
+}: {
+  status: TimeOffStatus | "";
+  onStatusChange: (status: TimeOffStatus | "") => void;
+}) {
   const employees = useStaffStore((s) => s.employees);
   const timeOff = useStaffStore((s) => s.timeOff);
   const commit = useStaffStore((s) => s.commit);
 
-  const [status, setStatus] = useState<TimeOffStatus | "">("");
   const [query, setQuery] = useState("");
   const [adding, setAdding] = useState(false);
   const [deleting, setDeleting] = useState<TimeOffRequest | null>(null);

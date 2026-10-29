@@ -609,7 +609,7 @@ is missing, unless the person chose "Not now" for exactly that list; reopened an
 | Check             | Required | What it does                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | ----------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Local AI (Ollama) | yes      | Finds `ollama.exe` (the AI runtime's own resolution: `AI_OS_OLLAMA_EXE`, PATH, `%LOCALAPPDATA%\Programs\Ollama`). _Install Ollama_ downloads the official `OllamaSetup.exe` from ollama.com into a fresh temp folder, requires a valid Authenticode signature by "Ollama Inc.", runs it silently per user (no administrator rights), verifies with `ollama --version`, and deletes the download. A blocked download (company proxy) ends in manual steps; the installer is never run unverified. |
-| AI model          | yes      | `gemma4:12b` (the runtime's default; fallback `qwen3.5:9b`) through Ollama's own `/api/pull`, with progress, speed and time left, retry with pauses (Ollama resumes partial files), cancel, and free-disk / RAM advice before it starts (a pull that cannot fit is refused). Only the configured model and the fallback can be requested.                                                                                                                                                        |
+| AI model          | yes      | `gemma4:12b` (the runtime's default; fallback `qwen3.5:9b`; light `qwen3.5:4b`) through Ollama's own `/api/pull`, with progress, speed and time left, retry with pauses (Ollama resumes partial files), cancel, and free-disk / RAM advice before it starts (a pull that cannot fit is refused). Only the configured model, the fallback and the light model can be requested.                                                                                                                   |
 | Tasks engine      | yes      | Runs `tasks-engine/selftest.py` with the bundled Python: package imports, the shared task libraries loading their shipped example files, and a task-style step on generated fixture data. No Outlook, no network, no sends.                                                                                                                                                                                                                                                                      |
 | Classic Outlook   | no       | Reads two registry keys (`Outlook.Application` COM registration, `OUTLOOK.EXE` app path) and, only if COM is not registered, the installed packages for the new Outlook. Report only; never opens a mailbox.                                                                                                                                                                                                                                                                                     |
 
@@ -723,7 +723,12 @@ off.
 Config (all optional env vars; defaults in `core.ts`): `OLLAMA_MODEL`
 (default `gemma4:12b`; fallback `qwen3.5:9b`, also think off. Both model
 choices come from a local bake-off on fictional messages: qwen2.5:7b obeyed
-prompt injection and got weekday dates wrong), `OLLAMA_BASE_URL` (default
+prompt injection and got weekday dates wrong. A third, light model
+`qwen3.5:4b` (`LIGHT_MODEL`, `src/lib/setup/models.ts`) sits behind the gear menu's
+**Fast AI model** switch (`GET/POST /api/ai/model`, saved in the same `ai-model.json`; the
+first time it is turned on it is downloaded through `/api/setup` `pull-model`, and the
+resolver uses an installed allowed model until the download is done). PTO emails are always
+read with it when installed (`getLightModelIfInstalled`)), `OLLAMA_BASE_URL` (default
 `http://127.0.0.1:11434`), `AI_OS_OLLAMA_EXE`, `AI_OS_AI_AUTOSTART=0` (never
 spawn Ollama), `AI_OS_AI_PREWARM` (default off, see above), `AI_OS_AI_KEEP_ALIVE`
 (default `2m`),
@@ -901,7 +906,11 @@ cannot be applied move to `rejected\` with a `.reason.txt`; a file that does not
 left alone for two minutes in case it is still syncing. The folder is
 `AI_OS_STAFF_EXCHANGE_DIR`, else `Staff-Exchange` in the first OneDrive root, else
 `<data dir>\staff\exchange`. The store runs the scan before every load (every ~20 s while a
-Staff window is open). The exact flow is in `docs/staff-m365-flow.md`.
+Staff window is open), and `src/lib/staff/ptoBackground.ts` (started from `instrumentation.ts`)
+runs the same profile sync and the PTO-Inbox scan about once a minute for as long as the app
+runs (`AI_OS_PTO_SCAN_MS`), so leave emails are read with no window open; the AI widget's
+heads-up (`GET /api/staff/pto-alert`, `components/ai-layer/AiNudge.tsx`) tells the person
+which pending requests wait. The exact flow is in `docs/staff-m365-flow.md`.
 
 `POST /api/staff/profile` takes
 `{ email, firstName?, lastName?, homeOffice?, level?, op?, phone?, photoBase64? }`

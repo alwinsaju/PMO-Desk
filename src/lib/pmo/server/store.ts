@@ -49,6 +49,7 @@ export type AuditAction =
   | "edit"
   | "complete"
   | "cancel"
+  | "clear-cancelled"
   | "reopen"
   | "create-manual"
   | "retry"
@@ -428,6 +429,16 @@ export class Store {
   /** Live and archived to-dos together (reports and retention need the history). */
   async listAllTodos(): Promise<Todo[]> {
     return [...(await this.listTodos()), ...(await this.listArchivedTodos())];
+  }
+
+  /** Delete a to-do for good, from todos/ or archive/todos (callers hold the lock). */
+  async removeTodo(id: string): Promise<void> {
+    if (!isSafeId(id)) return;
+    for (const dir of [this.paths.todos, this.paths.archiveTodos]) {
+      const file = path.join(dir, `${id}.json`);
+      this.cache.delete(file);
+      await unlink(file).catch(() => undefined);
+    }
   }
 
   /** Move a decided proposal / closed to-do into archive/ (callers hold the lock). */

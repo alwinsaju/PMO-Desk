@@ -8,7 +8,7 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { resolveDataDir } from "../pmo/server/paths.ts";
-import { FALLBACK_MODEL, sameModel } from "../setup/models.ts";
+import { FALLBACK_MODEL, LIGHT_MODEL, sameModel } from "../setup/models.ts";
 import { DEFAULT_AI_RUNTIME_CONFIG } from "./core.ts";
 
 type Env = Record<string, string | undefined>;
@@ -24,9 +24,10 @@ export interface ModelChoice {
   note?: string;
 }
 
-/** The models Setup may save: the shipped default and the smaller fallback. */
+/** The models Setup may save: the shipped default, the smaller fallback and the light
+ *  model the "Fast AI model" switch uses. */
 export function allowedModels(): string[] {
-  return [DEFAULT_AI_RUNTIME_CONFIG.defaultModel, FALLBACK_MODEL];
+  return [DEFAULT_AI_RUNTIME_CONFIG.defaultModel, FALLBACK_MODEL, LIGHT_MODEL];
 }
 
 /** AI_OS_AI_MODEL_FILE (tests), else `ai-model.json` in the PMO data dir. */
@@ -79,9 +80,9 @@ export interface ChooseInput {
   installed: string[] | null;
 }
 
-/** env > saved > default; and when that model is not installed but exactly one
- *  allowed model is, that one (a computer with only the small model must work
- *  without anyone editing settings). */
+/** env > saved > default; and when that model is not installed but another allowed one is,
+ *  the first of those (a computer with only the small model, or one whose chosen model was
+ *  just removed or is still downloading, must work without anyone editing settings). */
 export function chooseModel(input: ChooseInput): ModelChoice {
   const { envModel, saved, defaultModel, installed } = input;
   const preferred = envModel || saved || defaultModel;
@@ -91,7 +92,7 @@ export function chooseModel(input: ChooseInput): ModelChoice {
   const has = (name: string) => installed.some((i) => sameModel(i, name));
   if (has(preferred)) return plain;
   const present = allowedModels().filter(has);
-  if (present.length !== 1) return plain;
+  if (present.length === 0) return plain;
   return {
     model: present[0],
     source: "only-installed",

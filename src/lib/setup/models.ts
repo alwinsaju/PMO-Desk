@@ -6,6 +6,11 @@ import { MODEL_SIZE, formatBytes } from "../format.ts";
 /** Used when the default model does not fit this computer (see core.ts). */
 export const FALLBACK_MODEL = "qwen3.5:9b";
 
+/** The light model behind the "Fast AI model" switch, and the one that reads PTO emails
+ *  in the background: about 4x smaller than the default, so it loads fast and shares
+ *  memory with it. */
+export const LIGHT_MODEL = "qwen3.5:4b";
+
 const GB = 1_000_000_000;
 
 export interface ModelNeeds {
@@ -19,6 +24,7 @@ export interface ModelNeeds {
 export const MODEL_NEEDS: Readonly<Record<string, ModelNeeds>> = {
   "gemma4:12b": { sizeBytes: 12 * GB, minRamBytes: 16 * 1024 ** 3 },
   "qwen3.5:9b": { sizeBytes: 6.6 * GB, minRamBytes: 12 * 1024 ** 3 },
+  "qwen3.5:4b": { sizeBytes: 3.3 * GB, minRamBytes: 8 * 1024 ** 3 },
 };
 
 /** "about 6.6 GB" for a model in the size table, else "of unknown size" (reads
@@ -40,10 +46,14 @@ export function modelToPull(input: {
   return input.fallback ? FALLBACK_MODEL : input.requested?.trim() || input.active;
 }
 
-/** Only the configured default model and the fallback may be pulled from the UI. */
+/** Only the configured default model, the fallback and the light model may be pulled from the UI. */
 export function isPullable(model: string, defaultModel: string): boolean {
   const wanted = model.trim().toLowerCase();
-  return wanted === defaultModel.trim().toLowerCase() || wanted === FALLBACK_MODEL;
+  return (
+    wanted === defaultModel.trim().toLowerCase() ||
+    wanted === FALLBACK_MODEL ||
+    wanted === LIGHT_MODEL
+  );
 }
 
 /** "gemma4:12b" and "gemma4:12b:latest"-style tags compare by their name part. */

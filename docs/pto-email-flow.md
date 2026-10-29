@@ -121,15 +121,30 @@ The model sleeps on its own: it frees its memory two minutes after the last emai
 chip beside the search box in **Time off** shows **Model asleep**, the countdown while it is
 loaded, or what it is reading.
 
+## It runs on its own
+
+AI OS looks in `PTO-Inbox` a minute after it starts and then about once a minute, whether or not
+a Staff window is open or even visible. The emails are read
+with the **light model** (`qwen3.5:4b`, the same one as the **Fast AI model** switch in the
+gear menu; if it is not downloaded yet, the model chosen in that menu is used). You do not
+have to do anything: when the AI has filed a request, the AI orb at the bottom right shows a
+note ("I read a leave email. It needs your approval.") with a **Review** button that opens
+**Staff Management > Time off** on the pending requests. **Later** (or the cross) hides the note
+for the requests it listed; a new request shows it again.
+
+**AI_OS_PTO_SCAN_MS** changes how often it looks (default 60000, at least 5000; `0` or `off`
+turns the background reading off, and the Staff window then reads the folder while it is open).
+
 ## If something does not work
 
 - **Nothing appears in `PTO-Inbox`**: open the flow's **Run history**. _Skipped_ runs mean
   Concurrency Control is still on (step 1.6). No runs at all: the trigger folder was typed,
   not picked.
-- **The file is there but nothing happens**: AI OS reads the folder while Staff Management
-  is open (about every 20 seconds); mail that arrives while it is closed is read the next
-  time it is opened. The local AI (Ollama and its model) has to be running; the setup check
-  shows this.
+- **The file is there but nothing happens**: AI OS reads the folder on its own about every
+  minute while it is running (and every 20 seconds while a Staff window is open); mail that
+  arrives while it is closed is read soon after it starts. The local AI (Ollama and its model)
+  has to be running; the setup check shows this. A model that has to load first adds about
+  half a minute to the first email.
 - **The file disappears into `PTO-Inbox\rejected`**: the app could not read it or could not
   turn it into a request; the `.reason.txt` next to it says why (for a file that cannot be
   read, usually extra text pasted before the `{`).

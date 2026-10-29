@@ -49,6 +49,13 @@ describe("notePreview", () => {
   it("is the text after the title, collapsed", () => {
     assert.equal(notePreview("Title\n\nline one\nline two"), "line one line two");
   });
+  it("drops a leading list marker so it does not read as a stray dash", () => {
+    assert.equal(
+      notePreview("Standup\n- Shipped the build\n- Fixed bug"),
+      "Shipped the build - Fixed bug",
+    );
+    assert.equal(notePreview("T\n• First"), "First");
+  });
   it("has a fallback and caps length", () => {
     assert.equal(notePreview("Title only"), "No additional text");
     assert.ok(notePreview(`T\n${"z".repeat(5000)}`).length <= 120);

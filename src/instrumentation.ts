@@ -13,6 +13,10 @@ export async function register() {
     process.env.NEXT_RUNTIME === "nodejs" &&
     process.env.NEXT_PHASE !== "phase-production-build"
   ) {
+    // Leave requests and PTO emails are read in the background from the moment the app
+    // runs, so the Staff window only has the approvals left to show (staff/ptoBackground.ts).
+    const { startPtoBackground } = await import("./lib/staff/ptoBackground");
+    startPtoBackground();
     // Only for someone who has used AI before; everyone else starts it lazily
     // on the first AI call or when Setup needs it.
     const { hasUsedAi } = await import("./lib/ai-runtime/aiUsed");

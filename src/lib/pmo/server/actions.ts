@@ -666,6 +666,52 @@ export async function patchTodo(
 }
 
 // ---------------------------------------------------------------------------
+// Cancelled to-dos
+// ---------------------------------------------------------------------------
+
+const ClearCancelledBodySchema = z
+  .object({ ids: z.array(z.string().min(1)).max(1000).optional() })
+  .strict();
+
+const DECIDED: ReadonlySet<string> = new Set(["approved", "rejected"]);
+
+/** Delete cancelled to-dos for good: every one, or just `ids`. Only cancelled ones go: a
+ *  done or open to-do named in `ids` is left alone. The message text goes with the last
+ *  to-do made from it, unless a task from that message is still waiting for review; the
+ *  dedupe index stays, so the same message is not imported again. */
+export function clearCancelledTodos(
+  pmo: Pmo,
+  body: unknown,
+): Promise<ActionResult<{ removed: number }>> {
+  const parsed = ClearCancelledBodySchema.safeParse(body ?? {});
+  if (!parsed.success)
+    return Promise.resolve(fail(`Invalid request: ${firstIssue(parsed.error)}`));
+  const wanted = parsed.data.ids ? new Set(parsed.data.ids) : null;
+  return pmo.store.withLock(async () => {
+    const todos = await pmo.store.listAllTodos();
+    const doomed = todos.filter(
+      (todo) => todo.status === "cancelled" && (!wanted || wanted.has(todo.id)),
+    );
+    if (doomed.length === 0) return { ok: true as const, removed: 0 };
+    for (const todo of doomed) await pmo.store.removeTodo(todo.id);
+
+    const gone = new Set(doomed.map((todo) => todo.id));
+    const stillUsed = new Set<string>();
+    for (const todo of todos) {
+      if (!gone.has(todo.id) && todo.source.intakeId) stillUsed.add(todo.source.intakeId);
+    }
+    for (const proposal of await pmo.store.listProposals()) {
+      if (!DECIDED.has(proposal.status)) stillUsed.add(proposal.intakeId);
+    }
+    for (const intakeId of new Set(doomed.map((todo) => todo.source.intakeId))) {
+      if (intakeId && !stillUsed.has(intakeId)) await pmo.store.removeRaw(intakeId);
+    }
+    await pmo.store.audit("clear-cancelled", { removed: doomed.length, ids: [...gone] });
+    return { ok: true as const, removed: doomed.length };
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
 
