@@ -10,6 +10,7 @@ import { windowFxMode } from "@/lib/displayFx";
 import { firstUsable, windowShortcut } from "@/lib/focusKeys";
 import { getAppComponent } from "@/components/apps/registry";
 import { useWindowStore } from "./windowStore";
+import { AppErrorBoundary } from "./AppErrorBoundary";
 import { WindowTitleBar } from "./WindowTitleBar";
 import { ResizeHandles } from "./ResizeHandles";
 import { AIGlowBorder } from "./AIGlowBorder";
@@ -400,9 +401,11 @@ export function Window({ id }: WindowProps) {
         />
         <div className="relative min-h-0 flex-1 overflow-auto">
           {AppComponent ? (
-            <Suspense fallback={<AppLoading />}>
-              <AppComponent windowId={id} />
-            </Suspense>
+            <AppErrorBoundary appId={data.appId}>
+              <Suspense fallback={<AppLoading />}>
+                <AppComponent windowId={id} />
+              </Suspense>
+            </AppErrorBoundary>
           ) : (
             <UnregisteredAppNotice appId={data.appId} />
           )}
