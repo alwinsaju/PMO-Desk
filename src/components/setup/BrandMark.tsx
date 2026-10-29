@@ -135,6 +135,22 @@ export function BrandMark({
           <path d="M7 8h15l-8 6.800z" fill="#fff" opacity="0.28" />
         </svg>
       );
+    case "teams":
+      return (
+        <svg {...common} aria-label="Microsoft Teams">
+          <circle cx="35" cy="12" r="5" fill="#7b83eb" />
+          <rect x="26" y="19" width="19" height="17" rx="5" fill="#7b83eb" />
+          <circle cx="22" cy="13" r="7" fill="#5059c9" />
+          <rect x="5" y="19" width="30" height="24" rx="4" fill="#4f52b2" />
+          <path
+            d="M13 26h14M20 26v11"
+            fill="none"
+            stroke="#fff"
+            strokeWidth="3.200"
+            strokeLinecap="round"
+          />
+        </svg>
+      );
     case "outlook":
       return (
         <svg {...common} aria-label="Outlook">

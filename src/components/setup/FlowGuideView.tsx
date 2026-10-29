@@ -48,7 +48,9 @@ function ConnectorTile({
         ? "outlook"
         : connector === "onedrive"
           ? "onedrive"
-          : null;
+          : connector === "teams"
+            ? "teams"
+            : null;
   if (brand) {
     return (
       <span

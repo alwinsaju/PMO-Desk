@@ -6,7 +6,7 @@
 import type { BrandId } from "./firstTimeSteps.ts";
 
 export type ConnectorId =
-  "make" | "outlook" | "onedrive" | "office365users" | "compose" | "select";
+  "make" | "outlook" | "onedrive" | "office365users" | "teams" | "compose" | "select";
 
 /** How a field is filled in, which decides how the mock draws it. */
 export type FieldHow =
@@ -44,7 +44,7 @@ export interface FlowStep {
 }
 
 export interface FlowGuide {
-  id: "pto" | "staff" | "pmo";
+  id: "pto" | "staff" | "pmo" | "teams";
   name: string;
   brand: BrandId;
   /** One line: what the flow is for. */
@@ -57,11 +57,16 @@ export interface FlowGuide {
   test: string[];
 }
 
-const CREATE = (flowName: string, search: string, picked: string): FlowStep => ({
+const CREATE = (
+  flowName: string,
+  search: string,
+  picked: string,
+  kind: "Automated" | "Instant" = "Automated",
+): FlowStep => ({
   id: "create",
   connector: "make",
   title: "Create the flow",
-  action: "Create > Automated cloud flow",
+  action: `Create > ${kind} cloud flow`,
   fields: [
     { label: "Flow name", value: flowName, how: "type" },
     {
@@ -73,7 +78,7 @@ const CREATE = (flowName: string, search: string, picked: string): FlowStep => (
   ],
   doThis: [
     "Open make.powerautomate.com and sign in with your Deloitte account.",
-    "Choose Create, then Automated cloud flow.",
+    `Choose Create, then ${kind} cloud flow.`,
     `Type the flow name, search for "${search}", pick "${picked}" and press Create.`,
   ],
 });
@@ -98,6 +103,33 @@ export const PTO_COMPOSE = `{
   "subject": "@{coalesce(triggerOutputs()?['body/subject'], '')}",
   "body": "@{coalesce(triggerOutputs()?['body/body'], '')}",
   "isHtml": "@{coalesce(triggerOutputs()?['body/isHtml'], false)}"
+}`;
+
+export const TEAMS_COMPOSE = `{
+  "schema": "pmo-intake/1",
+  "producer": "pa-cloud-flow",
+  "source": "teams",
+  "sourceId": "@{concat(triggerBody()?['teamsFlowRunContext']?['Conversation']?['Id'], '/', triggerBody()?['teamsFlowRunContext']?['MessagePayload']?['Id'])}",
+  "receivedAt": "@{formatDateTime(addSeconds('1970-01-01T00:00:00Z', div(int(triggerBody()?['teamsFlowRunContext']?['MessagePayload']?['Id']), 1000)), 'yyyy-MM-ddTHH:mm:ssZ')}",
+  "sender": {
+    "name": "@{triggerBody()?['teamsFlowRunContext']?['MessagePayload']?['From']?['User']?['DisplayName']}"
+  },
+  "subject": "@{coalesce(triggerBody()?['teamsFlowRunContext']?['Conversation']?['Name'], 'Teams message')}",
+  "body": {
+    "text": "@{coalesce(triggerBody()?['teamsFlowRunContext']?['MessagePayload']?['Body']?['PlainText'], '')}",
+    "format": "text"
+  },
+  "thread": {
+    "conversationId": "@{triggerBody()?['teamsFlowRunContext']?['Conversation']?['Id']}",
+    "parentId": "@triggerBody()?['teamsFlowRunContext']?['MessagePayload']?['ReplyToId']"
+  },
+  "context": {
+    "tenantId": "@{triggerBody()?['teamsFlowRunContext']?['ChannelData']?['Tenant']?['Id']}",
+    "chatId": "@{triggerBody()?['teamsFlowRunContext']?['Conversation']?['Id']}",
+    "chatType": "@{if(equals(triggerBody()?['teamsFlowRunContext']?['Conversation']?['IsGroup'], true), 'group', 'oneOnOne')}"
+  },
+  "attachments": [],
+  "link": "@{triggerBody()?['teamsFlowRunContext']?['MessagePayload']?['LinkToMessage']}"
 }`;
 
 export const STAFF_COMPOSE = `{
@@ -495,6 +527,86 @@ export const GUIDES: readonly FlowGuide[] = [
       ]),
     ],
     test: ["A file appears in PMO-Inbox", "It shows in the PMO To-Do Review Queue"],
+  },
+  {
+    id: "teams",
+    name: "Teams message",
+    brand: "teams",
+    purpose:
+      "Sends a Teams message you pick (message menu, then Send to PMO To-Do) to the PMO To-Do. Nothing is sent back to Teams.",
+    flowName: "Send to PMO To-Do",
+    folder: "AI-OS \\ PMO-Inbox",
+    steps: [
+      CREATE(
+        "Send to PMO To-Do",
+        "selected message",
+        "For a selected message (V2)",
+        "Instant",
+      ),
+      {
+        id: "trigger",
+        connector: "teams",
+        trigger: true,
+        title: "For a selected message (V2)",
+        action: "Microsoft Teams",
+        fields: [
+          {
+            label: "Environment (top right)",
+            value: "Your default environment",
+            how: "pick",
+            note: "A flow in another environment never shows up in Teams.",
+          },
+        ],
+        doThis: [
+          "Check the environment picker at the top right is your default environment.",
+          "Do not add the adaptive-card input: it is not needed.",
+        ],
+        tip: "If the flow never appears under a message's ... menu, More actions, the Power Automate Actions app is blocked in your Teams admin center.",
+      },
+      {
+        id: "intake",
+        connector: "compose",
+        title: "Intake",
+        action: "Compose",
+        fields: [{ label: "Inputs", value: TEAMS_COMPOSE, how: "code" }],
+        doThis: [
+          "Add a Compose, rename it Intake.",
+          `Paste the code as the Inputs. ${PASTE_JSON}`,
+        ],
+        tip: "If receivedAt fails on an odd message id, replace that whole value with @{utcNow()}.",
+      },
+      {
+        id: "file",
+        connector: "onedrive",
+        title: "Create file",
+        action: "OneDrive for Business",
+        fields: [
+          { label: "Folder Path", value: "/AI-OS/PMO-Inbox", how: "pick" },
+          {
+            label: "File Name",
+            value: "concat('teams-', guid(), '.json')",
+            how: "expression",
+          },
+          {
+            label: "File Content",
+            value: "string(outputs('Intake'))",
+            how: "expression",
+          },
+        ],
+        doThis: [
+          "Add Create file. Folder Path: AI-OS, then PMO-Inbox.",
+          "Enter the File Name and File Content expressions.",
+        ],
+      },
+      SAVE([
+        "In Teams, open a chat with yourself, write a test message, hover it, then ... > More actions > Send to PMO To-Do > Run.",
+        "A file appears in AI-OS \\ PMO-Inbox. Teams items stay filtered until you allow the chat or tenant under Settings in the PMO To-Do.",
+      ]),
+    ],
+    test: [
+      "A teams-....json file appears in PMO-Inbox",
+      "Allow the chat or tenant in the PMO To-Do settings",
+    ],
   },
 ];
 

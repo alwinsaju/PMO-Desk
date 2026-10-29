@@ -3,7 +3,14 @@
 import type { CheckId, SetupCheck, SetupReport } from "../../lib/setup/report.ts";
 
 export type BrandId =
-  "aios" | "ollama" | "gemma" | "python" | "onedrive" | "powerautomate" | "outlook";
+  | "aios"
+  | "ollama"
+  | "gemma"
+  | "python"
+  | "onedrive"
+  | "powerautomate"
+  | "outlook"
+  | "teams";
 
 export type StepId =
   "welcome" | "ollama" | "model" | "engine" | "outlook" | "folders" | "flows" | "finish";

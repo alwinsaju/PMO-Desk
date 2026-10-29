@@ -5,7 +5,13 @@ import { describe, it } from "node:test";
 import { parseProfileFile } from "../../lib/staff/exchange.ts";
 import { readPtoFile } from "../../lib/staff/ptoMail.ts";
 import { IntakeSchema } from "../../lib/pmo/types.ts";
-import { GUIDES, PMO_COMPOSE, PTO_COMPOSE, STAFF_COMPOSE } from "./flowGuides.ts";
+import {
+  GUIDES,
+  PMO_COMPOSE,
+  PTO_COMPOSE,
+  STAFF_COMPOSE,
+  TEAMS_COMPOSE,
+} from "./flowGuides.ts";
 import {
   STEPS,
   firstOpenStep,
@@ -165,7 +171,7 @@ describe("the Power Automate guides", () => {
   it("have unique ids, a create step first and a save step last", () => {
     assert.deepEqual(
       GUIDES.map((g) => g.id),
-      ["pto", "staff", "pmo"],
+      ["pto", "staff", "pmo", "teams"],
     );
     for (const guide of GUIDES) {
       assert.equal(
@@ -228,8 +234,19 @@ describe("the Power Automate guides", () => {
     assert.equal(parsed.success, true, JSON.stringify(parsed.error?.issues));
   });
 
+  it("write a Teams intake the app reads", () => {
+    const text = sample(TEAMS_COMPOSE.replace(/"@triggerBody[^"]*"/, "null"), {
+      "Conversation']?['Id'], '/'": "19:abc@thread.v2/1761644400000",
+      "div(int(": "2026-10-28T09:00:00Z",
+      "if(equals": "group",
+    });
+    const parsed = IntakeSchema.safeParse(JSON.parse(text));
+    assert.equal(parsed.success, true, JSON.stringify(parsed.error?.issues));
+    assert.equal(parsed.data.source, "teams");
+  });
+
   it("never start a pasted body with a stray word, which makes unreadable files", () => {
-    for (const body of [PTO_COMPOSE, STAFF_COMPOSE, PMO_COMPOSE])
+    for (const body of [PTO_COMPOSE, STAFF_COMPOSE, PMO_COMPOSE, TEAMS_COMPOSE])
       assert.ok(body.startsWith("{"));
   });
 });

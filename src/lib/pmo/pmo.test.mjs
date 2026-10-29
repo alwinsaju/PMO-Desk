@@ -1114,6 +1114,29 @@ describe("paths", () => {
     );
     assert.equal(resolveInboxDir("C:\\configured", {}), path.resolve("C:\\configured"));
   });
+
+  it("resolveInboxDir follows PMO-Inbox into the AI-OS folder once it was moved", () => {
+    const old = path.resolve("C:\\OD\\PMO-Inbox");
+    const moved = path.join(path.resolve("C:\\OD"), "AI-OS", "PMO-Inbox");
+    const has =
+      (...dirs) =>
+      (d) =>
+        dirs.includes(d);
+    assert.equal(resolveInboxDir(old, {}, has(moved)), moved);
+    assert.equal(
+      resolveInboxDir(old, {}, has(old, moved)),
+      old,
+      "the saved folder still exists",
+    );
+    assert.equal(resolveInboxDir(old, {}, has()), old, "nothing moved: unchanged");
+    assert.equal(resolveInboxDir(old, { AI_OS_PMO_INBOX_DIR: old }, has(moved)), old);
+    const other = path.resolve("C:\\Work\\Mail");
+    assert.equal(
+      resolveInboxDir(other, {}, () => false),
+      other,
+      "other names are never redirected",
+    );
+  });
 });
 
 describe("paste intake (manualIntake.ts)", () => {

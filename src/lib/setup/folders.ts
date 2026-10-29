@@ -8,6 +8,9 @@
 // The installer creates them on a fresh install; the app also creates whatever is
 // missing. Installs from before this layout used PMO-Inbox and Staff-Exchange
 // directly in the OneDrive folder: those keep working (see the legacy helpers).
+// RULE: every folder AI OS or a flow uses in OneDrive lives inside AI-OS. To add one:
+// name it here, add it to aiOsFolders/describeFolders, to the installer
+// (build/installer.nsh) and to the Setup checks, then give it a flow guide.
 // Pure: the filesystem is passed in. No node: imports, because the setup report that
 // uses these names is also read in the browser.
 

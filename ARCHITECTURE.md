@@ -614,6 +614,9 @@ file, so a flow that is not built yet is visible).
 `Staff-Exchange\{requests,profiles,rejected}` and `PTO-Inbox`. An older `OneDrive\PMO-Inbox` or
 `OneDrive\Staff-Exchange` keeps working, and an existing older `Staff-Exchange` always wins
 (`pickStaffExchange`): a flow watches a folder by ID, a move in File Explorer keeps that ID, a copy does not.
+A saved PMO inbox setting of `<OneDrive>\PMO-Inbox` that no longer exists follows the folder to
+`<OneDrive>\AI-OS\PMO-Inbox` (`resolveInboxDir`), so moving it needs no change in the app. **Any new folder
+goes inside AI-OS**: add it to `folders.ts`, the installer, the Setup checks and a flow guide.
 
 **Installer and first-time setup.** On a first install only (`aiOsDetectExistingInstall` reads the install
 registry key; updates skip it) `build/installer.nsh` finds the signed-in OneDrive for Business from
@@ -624,7 +627,7 @@ screen: one step at a time (welcome, Ollama, model, Tasks engine, Outlook, OneDr
 finish), each auto-advancing when its check is done, with brand marks (`BrandMark.tsx`, simplified stand-ins,
 not official logo files). The flow step (`FlowGuideView.tsx`, data in `flowGuides.ts`) shows a Power
 Automate-style window with the exact fields and a copy button for each (PTO emails, Staff M365 profile, PMO
-intake); the same guides open any time from the Setup dialog. `AI_OS_FORCE_FIRST_TIME=1` shows the page on any
+intake from flagged Outlook mail, PMO intake from a selected Teams message); the same guides open any time from the Setup dialog. `AI_OS_FORCE_FIRST_TIME=1` shows the page on any
 machine. `GET/POST /api/setup/first-time` read and complete the marker.
 
 **PTO emails** (`src/lib/staff/ptoMail*.ts`, `docs/pto-email-flow.md`). A Power Automate flow writes each email

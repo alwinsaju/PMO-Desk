@@ -49,6 +49,7 @@ const BRAND_NAME: Record<BrandId, string> = {
   onedrive: "OneDrive",
   powerautomate: "Power Automate",
   outlook: "Outlook",
+  teams: "Microsoft Teams",
 };
 
 // ---------------------------------------------------------------------------

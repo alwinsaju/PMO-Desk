@@ -1,6 +1,7 @@
 // Where the PMO app keeps its data and where it looks for new messages.
 // Both can be redirected with env vars, which is how every test and preview
 // run points at a throwaway directory instead of real data.
+import { existsSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -16,10 +17,27 @@ export function resolveDataDir(env: Env = process.env): string {
 }
 
 /** AI_OS_PMO_INBOX_DIR wins over config.inboxDir. "" = no inbox configured
- *  (never the current folder, which is what resolving "" would give). */
-export function resolveInboxDir(configured: string, env: Env = process.env): string {
-  const chosen = env.AI_OS_PMO_INBOX_DIR?.trim() || configured.trim();
-  return chosen ? path.resolve(chosen) : "";
+ *  (never the current folder, which is what resolving "" would give).
+ *  A saved `<OneDrive>\PMO-Inbox` that is gone because it was moved into
+ *  `<OneDrive>\AI-OS\PMO-Inbox` follows it there. */
+export function resolveInboxDir(
+  configured: string,
+  env: Env = process.env,
+  exists: (dir: string) => boolean = existsSync,
+): string {
+  const fromEnv = env.AI_OS_PMO_INBOX_DIR?.trim();
+  const chosen = fromEnv || configured.trim();
+  if (!chosen) return "";
+  const resolved = path.resolve(chosen);
+  if (
+    fromEnv ||
+    exists(resolved) ||
+    path.basename(resolved).toLowerCase() !== "pmo-inbox"
+  ) {
+    return resolved;
+  }
+  const moved = path.join(path.dirname(resolved), "AI-OS", "PMO-Inbox");
+  return exists(moved) ? moved : resolved;
 }
 
 export interface PmoPaths {
