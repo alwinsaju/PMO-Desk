@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { guardApiRequest } from "@/lib/security/apiGuard";
+import { BodyTooLargeError, readTextBounded } from "@/lib/security/boundedBody";
 import {
   MAX_BODY_BYTES,
   isUiStateKey,
@@ -48,14 +49,17 @@ export async function GET(request: Request, context: Context) {
 async function save(request: Request, context: Context) {
   const key = await gate(request, context);
   if (typeof key !== "string") return key;
-  const declared = Number(request.headers.get("content-length") ?? 0);
-  if (declared > MAX_BODY_BYTES) {
+  let text: string;
+  try {
+    text = await readTextBounded(request, MAX_BODY_BYTES);
+  } catch (error) {
+    if (!(error instanceof BodyTooLargeError)) throw error;
     return NextResponse.json(
       { ok: false, reason: "The saved state is too large (limit 1 MB)." },
       { status: 413 },
     );
   }
-  const parsed = parsePutBody(await request.text());
+  const parsed = parsePutBody(text);
   if (!parsed.ok) {
     return NextResponse.json(
       { ok: false, reason: parsed.reason },

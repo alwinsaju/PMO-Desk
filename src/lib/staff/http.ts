@@ -2,6 +2,11 @@
 // size cap and the { ok, reason } envelope.
 import { NextResponse } from "next/server";
 import { guardApiRequest } from "../security/apiGuard.ts";
+import {
+  BodyTooLargeError,
+  readBytesBounded,
+  readTextBounded,
+} from "../security/boundedBody.ts";
 import { StaffError } from "./server.ts";
 
 export const MAX_JSON_BYTES = 5 * 1024 * 1024;
@@ -43,12 +48,12 @@ export async function readCappedText(
   request: Request,
   max = MAX_JSON_BYTES,
 ): Promise<string> {
-  const declared = Number(request.headers.get("content-length") ?? 0);
-  if (declared > max) throw new StaffError("The request is too large.");
-  const text = await request.text();
-  if (Buffer.byteLength(text, "utf8") > max)
-    throw new StaffError("The request is too large.");
-  return text;
+  try {
+    return await readTextBounded(request, max);
+  } catch (error) {
+    if (error instanceof BodyTooLargeError) throw new StaffError("The request is too large.");
+    throw error;
+  }
 }
 
 export async function readCappedJson(
@@ -67,9 +72,12 @@ export async function readCappedBytes(
   request: Request,
   max: number,
 ): Promise<Uint8Array> {
-  const declared = Number(request.headers.get("content-length") ?? 0);
-  if (declared > max) throw new StaffError("The photo is larger than 1 MB.");
-  const bytes = new Uint8Array(await request.arrayBuffer());
-  if (bytes.byteLength > max) throw new StaffError("The photo is larger than 1 MB.");
-  return bytes;
+  try {
+    return await readBytesBounded(request, max);
+  } catch (error) {
+    if (error instanceof BodyTooLargeError) {
+      throw new StaffError("The photo is larger than 1 MB.");
+    }
+    throw error;
+  }
 }

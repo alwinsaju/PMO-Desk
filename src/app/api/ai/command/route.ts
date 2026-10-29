@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getAiRuntimeConfig, startExternalCall } from "@/lib/ai-runtime";
 import { resolveWindowTarget } from "@/lib/ai-runtime/windowIntent";
+import { readBodyCapped } from "@/lib/pmo/server/bodyCap";
 import type {
   AiCommandAppId,
   AiCommandRequest,
@@ -14,6 +15,9 @@ import type {
 // Always a live call to a local model process — never safe to treat as
 // static/cacheable content.
 export const dynamic = "force-dynamic";
+
+/** A prompt plus the open windows and note titles; far under this in practice. */
+const COMMAND_BODY_BYTES = 512 * 1024;
 
 /**
  * This route is the ONLY thing that ever talks to Ollama. Client JS never
@@ -261,7 +265,9 @@ const openAppArgsSchema = z.object({ appId: z.enum(AI_APP_IDS) });
 export async function POST(request: Request) {
   let body: AiCommandRequest;
   try {
-    body = requestSchema.parse(await request.json());
+    const read = await readBodyCapped(request, COMMAND_BODY_BYTES);
+    if (!("body" in read)) throw new Error(read.reason);
+    body = requestSchema.parse(read.body);
   } catch {
     return NextResponse.json(
       {

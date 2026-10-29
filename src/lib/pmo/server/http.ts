@@ -3,6 +3,7 @@
 // business outcome, like the other routes in this repo; only a refused origin
 // is a 403).
 import { NextResponse } from "next/server";
+import { DEFAULT_BODY_BYTES, readBodyCapped } from "./bodyCap.ts";
 import { checkOrigin, factsFromRequest } from "./originCheck.ts";
 import { ensureIngest, type PmoService } from "./service.ts";
 
@@ -25,11 +26,11 @@ export async function handle(
   }
 }
 
-/** The JSON body, or undefined if there isn't a parsable one. */
-export async function readBody(request: Request): Promise<unknown> {
-  try {
-    return await request.json();
-  } catch {
-    return undefined;
-  }
+/** The JSON body, or undefined if there isn't a parsable one or it is over the cap. */
+export async function readBody(
+  request: Request,
+  maxBytes = DEFAULT_BODY_BYTES,
+): Promise<unknown> {
+  const read = await readBodyCapped(request, maxBytes);
+  return "body" in read ? read.body : undefined;
 }

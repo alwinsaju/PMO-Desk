@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
+import { readBodyCapped } from "@/lib/pmo/server/bodyCap";
 import { checkOrigin, factsFromRequest } from "@/lib/pmo/server/originCheck";
 import { completeFirstTime, readFirstTimePending } from "@/lib/setup/firstTimeServer";
 
 export const dynamic = "force-dynamic";
+
+/** The only body is a tiny `{ action }` object. */
+const SETUP_BODY_BYTES = 16 * 1024;
 
 function refuse(request: Request): NextResponse | null {
   const verdict = checkOrigin(factsFromRequest(request));
@@ -28,12 +32,9 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const refused = refuse(request);
   if (refused) return refused;
-  let body: { action?: unknown };
-  try {
-    body = await request.json();
-  } catch {
-    return NextResponse.json({ ok: false, reason: "The request body must be JSON." });
-  }
+  const read = await readBodyCapped(request, SETUP_BODY_BYTES);
+  if (!("body" in read)) return NextResponse.json({ ok: false, reason: read.reason });
+  const body = (read.body ?? {}) as { action?: unknown };
   if (body.action !== "complete") {
     return NextResponse.json({ ok: false, reason: "Unknown action." });
   }
