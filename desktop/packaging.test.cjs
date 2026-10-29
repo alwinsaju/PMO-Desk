@@ -189,7 +189,8 @@ describe("desktop packaging", () => {
         nsh,
         /Software\\Microsoft\\OneDrive\\Accounts\\Business\$1" "UserFolder"/,
       );
-      assert.doesNotMatch(nsh, /nsDialogs|InputBox|MUI_PAGE_CUSTOM/i);
+      // No page that asks for input (a color hook on the stock welcome/finish pages is fine).
+      assert.doesNotMatch(nsh, /nsDialogs|InputBox|MUI_PAGE_CUSTOM(?!FUNCTION_SHOW)/i);
       for (const folder of [
         "AI-OS\\PMO-Inbox",
         "AI-OS\\Staff-Exchange\\requests",

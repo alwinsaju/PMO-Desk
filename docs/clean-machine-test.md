@@ -77,7 +77,7 @@ Use a Windows 11 VM with a fresh snapshot (no Python, no Ollama, no Office, not 
 OneDrive). Copy the installer in, then in a normal (not elevated) PowerShell inside the VM:
 
 ```powershell
-.\sandbox-check.ps1 -Installer "C:\path\AI OS Setup 3.0.0.exe" -ResultsDir C:\aios-check -LaunchApp -Lifecycle
+.\sandbox-check.ps1 -Installer "C:\path\AI OS Setup 4.0.0.exe" -ResultsDir C:\aios-check -LaunchApp -Lifecycle
 ```
 
 Do not run this on your everyday PC: it installs, reinstalls and uninstalls AI OS. To check

@@ -1,6 +1,76 @@
 ; Custom NSIS include for electron-builder (package.json -> build.nsis.include).
 ; Tracked in git: build/ is otherwise generated output (see .gitignore).
 
+; ---------------------------------------------------------------------------------
+; Look of the wizard. The welcome / finish pages and the header band are dark, with art
+; drawn from the app's own wallpaper (build/installer/*.bmp, made by
+; scripts/build-installer-art.py). NSIS can theme only those; the pages in between (the
+; folder choice and the progress list) keep the system's own light controls, and the
+; uninstaller keeps its stock wording and light panes beside the same dark sidebar.
+; ---------------------------------------------------------------------------------
+
+!macro customWelcomePage
+  !insertmacro skipPageIfUpdated
+  !define MUI_WELCOMEPAGE_TITLE "Welcome to AI OS"
+  !define MUI_WELCOMEPAGE_TEXT "AI OS is a desktop workspace where you and a local AI work side by side. The AI runs on this computer.$\r$\n$\r$\nThis wizard installs it. Click Next to choose where it goes."
+  !define MUI_PAGE_CUSTOMFUNCTION_SHOW aiOsWelcomeShow
+  !insertmacro MUI_PAGE_WELCOME
+
+  ; Defined after the page: the $mui.* controls exist only once MUI_PAGE_WELCOME has run.
+  ; The header band's controls (title, subtitle, background) are the wizard window's own and
+  ; keep their colors for every later page, so they are darkened here, once. (MUI builds its
+  ; header colors before electron-builder's customHeader hook runs, so a define cannot do it.)
+  Function aiOsWelcomeShow
+    Push $0
+    GetDlgItem $0 $HWNDPARENT 1037
+    SetCtlColors $0 "F5F7FA" "0A0C16"
+    GetDlgItem $0 $HWNDPARENT 1038
+    SetCtlColors $0 "B9C1D6" "0A0C16"
+    GetDlgItem $0 $HWNDPARENT 1034
+    SetCtlColors $0 "" "0A0C16"
+    GetDlgItem $0 $HWNDPARENT 1046
+    SetCtlColors $0 "" "0A0C16"
+    Pop $0
+    SetCtlColors $mui.WelcomePage "" "0A0C16"
+    SetCtlColors $mui.WelcomePage.Title "F5F7FA" "0A0C16"
+    SetCtlColors $mui.WelcomePage.Text "B9C1D6" "0A0C16"
+  FunctionEnd
+!macroend
+
+; The default finish page, plus the dark colors. StartApp is the same function
+; electron-builder defines for its own finish page (assistedInstaller.nsh), so
+; "Open AI OS" still launches the app as the user (and with --updated on an update).
+!macro customFinishPage
+  Function StartApp
+    ${if} ${isUpdated}
+      StrCpy $1 "--updated"
+    ${else}
+      StrCpy $1 ""
+    ${endif}
+    ${StdUtils.ExecShellAsUser} $0 "$launchLink" "open" "$1"
+  FunctionEnd
+
+  !define MUI_FINISHPAGE_TITLE "AI OS is ready"
+  !define MUI_FINISHPAGE_TEXT "AI OS is installed.$\r$\n$\r$\nThe first time it opens, it checks that this computer has the local AI it needs and walks you through the rest."
+  !define MUI_FINISHPAGE_RUN
+  !define MUI_FINISHPAGE_RUN_TEXT "Open AI OS"
+  !define MUI_FINISHPAGE_RUN_FUNCTION "StartApp"
+  !define MUI_PAGE_CUSTOMFUNCTION_SHOW aiOsFinishShow
+  !insertmacro MUI_PAGE_FINISH
+
+  ; NSIS colors a control through SetCtlColors; a themed checkbox ignores it, so the theme
+  ; is switched off for that one control.
+  Function aiOsFinishShow
+    SetCtlColors $mui.FinishPage "" "0A0C16"
+    SetCtlColors $mui.FinishPage.Title "F5F7FA" "0A0C16"
+    SetCtlColors $mui.FinishPage.Text "B9C1D6" "0A0C16"
+    System::Call 'uxtheme::SetWindowTheme(i $mui.FinishPage.Run, w " ", w " ")'
+    SetCtlColors $mui.FinishPage.Run "B9C1D6" "0A0C16"
+  FunctionEnd
+!macroend
+
+
+
 ; The Tasks engine runs from <install dir>\resources\python\pythonw.exe. If the app
 ; was killed or crashed, that process can outlive "AI OS.exe" (which electron-builder
 ; already stops by name) and keep files in the install folder locked, failing an
@@ -44,8 +114,12 @@
 ; what makes the app open the first-time setup page before the home screen. An existing
 ; file (a reinstall after an uninstall keeps the user's data) is left as it is.
 ; ---------------------------------------------------------------------------------
-Var aiOsExisting
-Var aiOsOneDrive
+; The two variables are only used by the installer; declaring them in the uninstaller's
+; pass too makes NSIS warn about unused variables, and the build treats warnings as errors.
+!ifndef BUILD_UNINSTALLER
+  Var aiOsExisting
+  Var aiOsOneDrive
+!endif
 
 !macro aiOsDetectExistingInstall
   StrCpy $aiOsExisting "0"
