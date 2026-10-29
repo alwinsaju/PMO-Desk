@@ -1,0 +1,16 @@
+import { connect, sleep, DESCRIBE } from "file:///C:/Projects/AI%20OS/docs/qa/harness/cdp.mjs";
+const FIX = process.argv[2].split("/").join(String.fromCharCode(92));
+const c = await connect();
+await c.send("DOM.enable");
+const doc = await c.send("DOM.getDocument", { depth: 1 });
+const ids = (await c.send("DOM.querySelectorAll", { nodeId: doc.root.nodeId, selector: "input[type=file]" })).nodeIds;
+console.log("file inputs:", ids.length);
+const accept = [];
+for (const id of ids) accept.push((await c.send("DOM.getAttributes", { nodeId: id })).attributes.join(" "));
+console.log(accept.join(" || "));
+await c.send("DOM.setFileInputFiles", { nodeId: ids[0], files: [FIX + String.fromCharCode(92) + "input" + String.fromCharCode(92) + "roster.xlsx"] });
+await sleep(2500);
+let d = await c.eval(DESCRIBE);
+console.log(d.text.split("FILES")[1]?.slice(0, 900).replace(/\n+/g, " | "));
+console.log(await c.shot("11-tasks-roster-file"));
+c.close();

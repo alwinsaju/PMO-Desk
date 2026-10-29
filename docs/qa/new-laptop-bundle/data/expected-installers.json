@@ -1,0 +1,12 @@
+{
+  "AI OS Setup 2.0.0.exe": {
+    "sha256": "aad41131746684895eac567ddbd195f86933f804a8ca146798124985870ff6b3",
+    "size": 257279627,
+    "note": "built 2026-10-25 07:49 local from HEAD 9f6bbf2 (before a7af903 and 6dba299); NSIS 3.04, asInvoker (no admin), unsigned"
+  },
+  "AI OS Setup 1.0.0.exe": {
+    "sha256": "a34a55e96aa4f85b8b7777f9c1311d1566a6c55589e844780cc1304657dc62c3",
+    "size": 194406413,
+    "note": "pre-migration build (needs the old agent-office engine on :8000; no bundled Python)"
+  }
+}

@@ -1,0 +1,12 @@
+import { connect, sleep, DESCRIBE } from "file:///C:/Projects/AI%20OS/docs/qa/harness/cdp.mjs";
+import { cardButton } from "./lib.mjs";
+const c = await connect();
+const r = await c.eval(cardButton("Shift Roster", "Run"));
+console.log("run btn", JSON.stringify(r));
+if (!r) process.exit(1);
+await c.click(r.x, r.y); await sleep(1500);
+const d = await c.eval(DESCRIBE);
+console.log(d.text.slice(0, 1500).replace(/\n+/g, " | ").split("Idle")[ -1 ] ?? "");
+console.log(d.interactive.filter(i=>i.y>60&&!/^(Files|Notes|Browser|Tasks|App Store|PMO To-Do|Open )/.test(i.label)).map(i=>`${i.tag}${i.role?'['+i.role+']':''} "${i.label}"${i.dis?' DIS':''}`).join("; "));
+console.log(await c.shot("11-tasks-run-dialog"));
+c.close();

@@ -1,0 +1,14 @@
+import { connect, sleep, DESCRIBE } from "file:///C:/Projects/AI%20OS/docs/qa/harness/cdp.mjs";
+const BS = String.fromCharCode(92);
+const FIX = process.argv[2].split("/").join(BS);
+const c = await connect();
+await c.send("DOM.enable");
+const doc = await c.send("DOM.getDocument", { depth: 1 });
+const ids = (await c.send("DOM.querySelectorAll", { nodeId: doc.root.nodeId, selector: "input[type=file]" })).nodeIds;
+await c.send("DOM.setFileInputFiles", { nodeId: ids[1], files: [FIX + BS + "input" + BS + "holiday-roster.xlsx"] });
+await sleep(2500);
+await c.clickSel("button", "Check"); await sleep(4000);
+let d = await c.eval(DESCRIBE);
+console.log(d.text.split("CHECK")[1]?.slice(0, 1500).replace(/\n+/g, " | "));
+console.log(await c.shot("11-tasks-roster-checked"));
+c.close();

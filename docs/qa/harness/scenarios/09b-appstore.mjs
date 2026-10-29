@@ -1,0 +1,12 @@
+import { connect, sleep, DESCRIBE } from "file:///C:/Projects/AI%20OS/docs/qa/harness/cdp.mjs";
+import { WINS } from "./lib.mjs";
+const c = await connect();
+await c.clickSel("button", "Open"); await sleep(3500);
+console.log(await c.eval(WINS));
+console.log("iframes:", await c.eval(`[...document.querySelectorAll('iframe')].map(f=>f.src+' sandbox='+f.getAttribute('sandbox')).join(' | ')`));
+console.log((await c.eval(DESCRIBE)).text.slice(0, 300).replace(/\s+/g, " "));
+console.log(await c.shot("09-notion-open"));
+await c.clickSel("button[aria-label='Open App Menu']"); await sleep(800);
+const d = await c.eval(DESCRIBE); console.log(d.interactive.filter(i=>i.y>60&&i.y<600).map(i=>`${i.tag}[${i.role}] "${i.label}" @${i.x},${i.y}`).join("\n"));
+console.log(await c.shot("09-app-menu"));
+c.close();

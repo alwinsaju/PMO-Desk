@@ -127,29 +127,3 @@ describe("isPermissionAllowed", () => {
     assert.equal(guard.isPermissionAllowed("notifications", "", APP), false);
   });
 });
-
-describe("hardenWebviewAttach", () => {
-  const attach = (src, partition = guard.BROWSER_PARTITION) => ({
-    prefs: { preload: "x.js", nodeIntegration: true, sandbox: false },
-    params: { src, partition, allowpopups: "true" },
-  });
-
-  it("strips privileges from an http(s) page in the browser partition", () => {
-    const { prefs, params } = attach("https://www.google.com/");
-    assert.equal(guard.hardenWebviewAttach(prefs, params), true);
-    assert.equal(prefs.preload, undefined);
-    assert.equal(prefs.nodeIntegration, false);
-    assert.equal(prefs.sandbox, true);
-    assert.equal(prefs.contextIsolation, true);
-    assert.equal(params.allowpopups, undefined);
-  });
-
-  it("refuses other schemes, garbage and foreign partitions", () => {
-    for (const src of ["file:///C:/x.html", "javascript:alert(1)", "data:,x", "", undefined]) {
-      const { prefs, params } = attach(src);
-      assert.equal(guard.hardenWebviewAttach(prefs, params), false, String(src));
-    }
-    const { prefs, params } = attach("https://example.com/", "persist:other");
-    assert.equal(guard.hardenWebviewAttach(prefs, params), false);
-  });
-});

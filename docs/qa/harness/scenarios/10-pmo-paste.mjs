@@ -1,0 +1,11 @@
+import { connect, sleep, DESCRIBE } from "file:///C:/Projects/AI%20OS/docs/qa/harness/cdp.mjs";
+const c = await connect();
+await c.clickSel("button", "Paste"); await sleep(900);
+const d = await c.eval(DESCRIBE);
+console.log("PASTE:", d.interactive.filter(i=>i.y>60 && /input|textarea|button/.test(i.tag)).map(i=>`${i.tag} "${i.label}"${i.dis?' DIS':''}`).slice(-12).join("; "));
+console.log(await c.shot("10-pmo-paste"));
+await c.clickSel("textarea"); await c.insert("Please ask the vendor to resend the signed SOW by Friday 30 October. Ünïcödé ✓");
+await sleep(300);
+console.log("btns:", (await c.eval(DESCRIBE)).interactive.filter(i=>i.y>60&&i.tag==='button'&&!/Open|Files|Notes|Browser|Tasks|Store|PMO|Settings|Send|toggle|Minimize|Maximize/.test(i.label)).map(i=>`"${i.label}"${i.dis?' DIS':''}`).join("; "));
+await c.shot("10-pmo-paste-filled");
+c.close();

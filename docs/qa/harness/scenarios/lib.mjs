@@ -1,0 +1,5 @@
+// shared helpers for scenarios (avoid backslashes inside eval strings)
+export const WINS = `JSON.stringify([...document.querySelectorAll('[data-window-chrome]')].map(e=>{const r=e.getBoundingClientRect();const t=(e.innerText||'').slice(0,18);return {id:e.dataset.windowChrome,title:t,x:Math.round(r.x),y:Math.round(r.y),w:Math.round(r.width),h:Math.round(r.height),z:getComputedStyle(e).zIndex,focus:e.dataset.focused}}))`;
+
+/** rect of the "Run…" button inside the card whose heading is `name` (never click Run on a card you did not name). */
+export const cardButton = (name, btn) => `(() => { const cards=[...document.querySelectorAll('h2,h3,[class*=title]')].filter(h=>h.innerText.trim()===${JSON.stringify(name)}); for (const h of cards) { let e=h; for (let i=0;i<6&&e;i++){ const b=[...e.querySelectorAll('button')].find(b=>b.innerText.trim().startsWith(${JSON.stringify(btn)})); if(b){b.scrollIntoView({block:"center"});const r=b.getBoundingClientRect(); return {x:r.x+r.width/2,y:r.y+r.height/2,w:r.width}} e=e.parentElement; } } return null; })()`;

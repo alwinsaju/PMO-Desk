@@ -1,0 +1,30 @@
+{
+  "built_from": "AI OS Setup 2.0.0.exe (extracted with 7-Zip, byte-identical to release\\win-unpacked)",
+  "generated": "2026-10-25T10:17:12",
+  "file_count": 19319,
+  "total_bytes": 997499477,
+  "key_sha256": {
+    "AI OS.exe": "5a4cdd741e6bc3378fc61c0304e60253d429631f3fc1f79f5a8c73af78b09821",
+    "resources\\python\\python.exe": "ef8f51028ac5329641985112f8efb1c2d4c47c86b8011ddf7e6fae21e2b4e5a1",
+    "resources\\python\\pythonw.exe": "95225ed035643523e8c586c11981e276541dce4949eb35cf8cf5741c824249d4",
+    "resources\\python\\python313.dll": "3a7a6170ea840bf2a2a76d05b687b946fcdc8d0cfedfe159012b38f1e8959a7c",
+    "resources\\python\\python313.zip": "080084107afc68721db190b71c2c344a348509687083629b5728f587ef3f8939",
+    "resources\\python\\vcruntime140.dll": "052ad6a20d375957e82aa6a3c441ea548d89be0981516ca7eb306e063d5027f4",
+    "resources\\python\\.runtime-stamp": "cc5da6d3766943091666ad298dec4a46a144ae29c35f1276bed7167234b3cdb9",
+    "resources\\app\\package.json": "493baecd2e34cc37d71436c96f3d54680f0e0f10d55c0cf1b52e610045a90992",
+    "resources\\app\\.next\\BUILD_ID": "cf5e5a00f906242e12322c9747360aa08bf4f4fa160b65da4149d464a72ad29a",
+    "resources\\app\\desktop\\main.cjs": "944379fa56626041d186fd6db77e472ea20ccaac001242563ed6f8f20e76c827",
+    "resources\\app\\desktop\\launch-config.cjs": "7a9913457b5474ac89505f87de69ed8303d3f3a66f6a4f4ad564cae9ab3f9cbd",
+    "resources\\app\\desktop\\preload.cjs": "e2a42b202b16f934f7b287718beae83203089e94ea50656d77d7e39fbb873fbe",
+    "resources\\app\\tasks-engine\\main.py": "5ee18e1bedf4737e80ae7cd5f347a5ba425d1081fb112ae8f3e0ad9402d699c0",
+    "resources\\app\\tasks-engine\\workcopy.py": "b1b8ce7944dda8dfef6cea0ce56d837e1ecf8666f46c50eeb701cc6819ca72bd",
+    "resources\\app\\tasks-engine\\selftest.py": "a0908e515fa1a6bfec06cdf4d1ee3583e3b68b9c542732913471d783b0edf256",
+    "resources\\app\\tasks\\shift-roster\\task.json": "440a5c83d8b250af21164919d14e5c4b853235d43638c33ad581927e6e2e99f4",
+    "resources\\app\\tasks\\december-disconnect\\task.json": "8064cf1906cd112a3db840585e5f1a0ec1817cf33c898f15612e47e951ed6467",
+    "resources\\app\\tasks\\weekly-aging-report\\task.json": "6aa0d6c1215f5f13ff5a92d3244289b38f8ed8c3b54b2e3199b58817c064c75e",
+    "resources\\app\\tasks\\weekly-backlog-report\\task.json": "3022657249e0eac8170db05a8655ad7beadfb925334024d8dac4c64332e264a6",
+    "resources\\app\\tasks\\deployment-dep-weekend-mailer\\task.json": "c2b72906bdda554cbb931f6617043c8829346b20f3b580a679b62c3f948bbcdf",
+    "resources\\app\\tasks\\monthly-report-deck\\task.json": "d5d046e4706076ae475f194526ec487705991381a050aee05461b1c0d94b9a69",
+    "resources\\app\\node_modules\\next\\package.json": "f30ad003c2b001f35a10cd87cc791392fd8c74e6acd84c5c2b1efac948fa6eaa"
+  }
+}

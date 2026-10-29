@@ -1,0 +1,14 @@
+import { connect, sleep, DESCRIBE } from "file:///C:/Projects/AI%20OS/docs/qa/harness/cdp.mjs";
+const c = await connect();
+const t0 = Date.now();
+await c.clickSel("input", "Hi Alwin,"); await c.press("a", 2); await c.insert("Send consolidated RAID log to Pat"); 
+await c.clickSel("input[type=date]"); await c.type("10272026"); await sleep(300);
+console.log("date value:", await c.eval("document.querySelector('input[type=date]').value"));
+await c.clickSel("button", "High"); 
+await c.clickSel("button", "Approve"); await sleep(1500);
+console.log("approve->closed ms", Date.now() - t0, "dialog still?", await c.eval("!!document.querySelector('[role=dialog]')"));
+await c.clickSel("button[role=tab]", "To-Do"); await sleep(1000);
+const d = await c.eval(DESCRIBE);
+console.log(d.text.slice(0, 900).replace(/\n+/g, " | "));
+console.log(await c.shot("10-pmo-todo-list"));
+c.close();

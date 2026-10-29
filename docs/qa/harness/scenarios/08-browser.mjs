@@ -1,0 +1,10 @@
+import { connect, sleep, DESCRIBE } from "file:///C:/Projects/AI%20OS/docs/qa/harness/cdp.mjs";
+const c = await connect();
+const nav = async (text, shot) => { await c.clickSel("input[aria-label=Address]"); await c.press("a", 2); await c.press("Backspace"); await c.insert(text); await c.press("Enter"); await sleep(3500); const d = await c.eval(DESCRIBE); console.log("==", text, "|", d.text.slice(0, 500).replace(/\s+/g, " ")); console.log("iframes:", await c.eval(`[...document.querySelectorAll('iframe')].map(f=>f.src).join(',')`)); console.log(await c.shot(shot)); };
+await nav("example.com", "08-browser-example");
+await nav("https://www.wikipedia.org", "08-browser-wikipedia");
+await nav("hello world search", "08-browser-search");
+await nav("javascript:alert(1)", "08-browser-js");
+await nav("http://127.0.0.1:1/", "08-browser-refused");
+await nav("pathfinder://about", "08-browser-about");
+c.close();

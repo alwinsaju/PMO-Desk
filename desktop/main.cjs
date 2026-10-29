@@ -569,28 +569,9 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
-      // The Browser app's <webview> (real browsing, no framing limits).
-      webviewTag: true,
       // window.aiOsDesktop: reminders click-through and badge (preload.cjs).
       preload: path.join(__dirname, "preload.cjs"),
     },
-  });
-
-  // Every attached <webview> is forced into the locked-down browser partition.
-  mainWindow.webContents.on("will-attach-webview", (event, webPreferences, params) => {
-    if (!urlGuard.hardenWebviewAttach(webPreferences, params)) {
-      event.preventDefault();
-    }
-  });
-  mainWindow.webContents.on("did-attach-webview", (_event, contents) => {
-    // New windows from a browsed page go to the OS browser; non-web schemes are dropped.
-    contents.setWindowOpenHandler(({ url }) => {
-      if (urlGuard.isSafeExternalUrl(url)) void shell.openExternal(url);
-      return { action: "deny" };
-    });
-    contents.on("will-navigate", (navEvent) => {
-      if (!/^https?:/i.test(navEvent.url)) navEvent.preventDefault();
-    });
   });
 
   // Keep the mode visible in the title: the page's own <title> ("AI OS")
@@ -869,10 +850,6 @@ function installPermissionHandlers() {
   ses.setPermissionCheckHandler((_webContents, permission, requestingOrigin) =>
     urlGuard.isPermissionAllowed(permission, requestingOrigin, appUrl),
   );
-  // Browsed sites get no device or notification permissions at all.
-  const browserSes = session.fromPartition(urlGuard.BROWSER_PARTITION);
-  browserSes.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
-  browserSes.setPermissionCheckHandler(() => false);
 }
 
 ipcMain.on("pmo:set-badge", (event, count) => {

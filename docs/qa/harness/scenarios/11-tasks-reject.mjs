@@ -1,0 +1,11 @@
+import { connect, sleep, DESCRIBE } from "file:///C:/Projects/AI%20OS/docs/qa/harness/cdp.mjs";
+import { cardButton } from "./lib.mjs";
+const c = await connect();
+const r = await c.eval(cardButton("Shift Roster", "Reject")); console.log("reject btn", JSON.stringify(r));
+await c.click(r.x, r.y); await sleep(1500);
+console.log("dialog?", await c.eval("!!document.querySelector('[role=dialog]')"));
+const d = await c.eval(DESCRIBE);
+console.log(d.interactive.filter(i=>i.y>60 && /dialog|Confirm|Reject|Cancel|Yes|Keep/i.test(i.label)).map(i=>`${i.tag}[${i.role}] "${i.label}"`).join("; "));
+console.log(await c.shot("11-tasks-reject-click"));
+console.log((d.text.match(/Shift Roster[\s\S]{0,240}/)||[''])[0].replace(/\n+/g," | "));
+c.close();

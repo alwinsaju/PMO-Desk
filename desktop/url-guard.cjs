@@ -54,35 +54,9 @@ function isPermissionAllowed(permission, requestingUrl, appUrl) {
   return ALLOWED_PERMISSIONS.has(permission) && isAppUrl(requestingUrl, appUrl);
 }
 
-/** Isolated, persistent storage for the Browser app's <webview> (never shared with the app). */
-const BROWSER_PARTITION = "persist:ai-os-browser";
-
-/**
- * Locks down a <webview> the page asks to attach: only an http(s) page in the
- * Browser partition, with no preload, no Node and no extra privileges.
- * Returns false when the attach must be refused.
- */
-function hardenWebviewAttach(webPreferences, params) {
-  if (!parseWebUrl(params && params.src) || params.partition !== BROWSER_PARTITION) {
-    return false;
-  }
-  delete webPreferences.preload;
-  delete webPreferences.preloadURL;
-  webPreferences.nodeIntegration = false;
-  webPreferences.nodeIntegrationInSubFrames = false;
-  webPreferences.contextIsolation = true;
-  webPreferences.sandbox = true;
-  webPreferences.webSecurity = true;
-  webPreferences.allowRunningInsecureContent = false;
-  delete params.allowpopups;
-  return true;
-}
-
 module.exports = {
   ALLOWED_PERMISSIONS,
-  BROWSER_PARTITION,
   classifyNavigation,
-  hardenWebviewAttach,
   isAppUrl,
   isPermissionAllowed,
   isSafeExternalUrl,
