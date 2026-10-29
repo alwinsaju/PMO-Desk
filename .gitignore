@@ -15,8 +15,8 @@
 
 # next.js
 /.next/
-# the desktop launcher's own UI builds (desktop/ui-build.cjs)
-/.next-live*
+# alternate Next build folders (.next-live, .next-preview, ...)
+/.next-*/
 /out/
 
 # production

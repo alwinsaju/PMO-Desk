@@ -4,6 +4,10 @@
   "description": "A desktop workspace where a human and AI agent work together.",
   "private": true,
   "main": "desktop/main.cjs",
+  "packageManager": "pnpm@11.24.0",
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "next build --turbopack",
@@ -14,6 +18,9 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "node --no-warnings --test \"src/**/*.test.mjs\" \"desktop/*.test.cjs\"",
+    "test:coverage": "node --no-warnings --experimental-test-coverage --test-coverage-include=\"src/lib/**\" --test-coverage-include=\"desktop/**\" --test-coverage-exclude=\"**/*.test.*\" --test \"src/**/*.test.mjs\" \"desktop/*.test.cjs\"",
+    "test:engine": "cd tasks-engine && python -m pytest -q",
+    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },

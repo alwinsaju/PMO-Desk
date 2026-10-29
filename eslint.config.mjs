@@ -48,12 +48,21 @@ const eslintConfig = [
     rules: { "@typescript-eslint/no-require-imports": "off" },
   },
   {
+    // `const { drop: _drop, ...rest } = obj` is the idiom for omitting a key.
+    rules: {
+      "@typescript-eslint/no-unused-vars": [
+        "warn",
+        { ignoreRestSiblings: true, varsIgnorePattern: "^_", argsIgnorePattern: "^_" },
+      ],
+    },
+  },
+  {
     ignores: [
       ".claude/**",
       "agent-apps/**",
       "node_modules/**",
       ".next/**",
-      ".next-live*/**",
+      ".next-*/**",
       "out/**",
       "build/**",
       "release/**",
