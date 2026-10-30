@@ -18,6 +18,7 @@ import {
   createEmployee,
   distinctValues,
   employeeFromEmail,
+  newRosterPerson,
   hasErrors,
   initials,
   nameFromEmail,
@@ -257,7 +258,9 @@ function EmployeeForm({
   const uploadPhoto = useStaffStore((s) => s.uploadPhoto);
   const removePhoto = useStaffStore((s) => s.removePhoto);
 
-  const [draft, setDraft] = useState<Employee>(() => employee ?? createEmployee());
+  const [draft, setDraft] = useState<Employee>(
+    () => employee ?? (kind === "employees" ? newRosterPerson() : createEmployee()),
+  );
   const [skillsText, setSkillsText] = useState(() => draft.skills.join(", "));
   const [errors, setErrors] = useState<EmployeeErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
@@ -388,7 +391,7 @@ function EmployeeForm({
       <DialogDescription>
         {editing
           ? "Name, level, offering portfolio, home office, phone and the picture normally come from the person's Microsoft 365 profile; change them here only if the profile is wrong or empty."
-          : "Fill in what you know. Name, level, offering portfolio, home office, phone and the picture can be left empty and will come from the Microsoft 365 profile."}
+          : "Fill in what you know. Their Microsoft 365 profile is requested as soon as you save, and name, level, offering portfolio, home office, phone and the picture are filled in from it (values it has replace what is typed here)."}
       </DialogDescription>
 
       <div className="mt-5 flex items-center gap-4">

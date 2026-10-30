@@ -10,6 +10,7 @@ import {
   filterEmployees,
   isAwaitingProfile,
   nameFromEmail,
+  newRosterPerson,
   parseDateCell,
   parseEmailList,
   parseRosterRows,
@@ -129,12 +130,21 @@ describe("M365 profile", () => {
     assert.equal(next.updatedAt, "later");
   });
 
-  it("waits for the profile until something the profile owns is filled in", () => {
+  it("waits for the profile until it arrives, whatever has been typed in", () => {
     const pending = employeeFromEmail("jane.doe@deloitte.com", NOW);
     assert.equal(isAwaitingProfile(pending), true);
-    assert.equal(isAwaitingProfile({ ...pending, op: "DF&O IN BEN" }), false);
-    assert.equal(isAwaitingProfile({ ...pending, photoVersion: 5 }), false);
+    assert.equal(isAwaitingProfile({ ...pending, op: "DF&O IN BEN" }), true);
+    assert.equal(isAwaitingProfile({ ...pending, photoVersion: 5 }), true);
     assert.equal(isAwaitingProfile({ ...pending, profileSync: "synced" }), false);
+    assert.equal(isAwaitingProfile({ ...pending, profileSync: "manual" }), false);
+  });
+
+  it("a person entered by hand starts out waiting, but sample-style people do not", () => {
+    const typed = newRosterPerson({ deloitteEmail: "x@x.com", level: "Senior" }, NOW);
+    assert.equal(typed.profileSync, "pending");
+    assert.equal(typed.level, "Senior");
+    assert.equal(isAwaitingProfile(typed), true);
+    assert.equal(createEmployee({ deloitteEmail: "y@x.com" }, NOW).profileSync, "manual");
   });
 
   it("keeps a stale edit from bringing 'waiting' back or blanking a synced profile", () => {
@@ -152,7 +162,7 @@ describe("M365 profile", () => {
     assert.equal(saved.team, "Run");
   });
 
-  it("ends the wait when the profile is filled in by hand, and not before", () => {
+  it("keeps waiting when the profile is filled in by hand", () => {
     const pending = employeeFromEmail("jane.doe@deloitte.com", NOW);
     assert.equal(
       settleProfileSync({ ...pending, team: "Run" }, pending).profileSync,
@@ -160,9 +170,13 @@ describe("M365 profile", () => {
     );
     assert.equal(
       settleProfileSync({ ...pending, level: "Senior" }, pending).profileSync,
-      "manual",
+      "pending",
     );
     assert.equal(settleProfileSync(pending).profileSync, "pending");
+    assert.equal(
+      settleProfileSync({ ...pending, profileSync: "manual" }, pending).profileSync,
+      "manual",
+    );
   });
 });
 
@@ -282,6 +296,37 @@ describe("planImport", () => {
     assert.equal(plan.upserts[0].photoVersion, 5);
     assert.equal(plan.upserts[1].firstName, "New");
     assert.equal(plan.upserts[1].team, "Dup");
+  });
+
+  it("looks new and hand-entered people up in M365, and leaves a received profile alone", () => {
+    const existing = [
+      person({ id: "emp_aaaaaaaaaaaa", profileSync: "manual" }),
+      person({ id: "emp_bbbbbbbbbbbb", deloitteEmail: "s@x.com", profileSync: "synced" }),
+      person({
+        id: "emp_cccccccccccc",
+        deloitteEmail: "p@x.com",
+        profileSync: "pending",
+      }),
+    ];
+    const plan = planImport(
+      existing,
+      [
+        { row: 2, employee: { deloitteEmail: "a@x.com", team: "Core" } },
+        { row: 3, employee: { deloitteEmail: "s@x.com", team: "Core" } },
+        { row: 4, employee: { deloitteEmail: "p@x.com", team: "Core" } },
+        { row: 5, employee: { deloitteEmail: "n@x.com", level: "Senior" } },
+      ],
+      NOW,
+    );
+    assert.deepEqual(
+      plan.upserts.map((e) => e.profileSync),
+      ["pending", "synced", "pending", "pending"],
+    );
+    assert.equal(
+      plan.upserts[3].level,
+      "Senior",
+      "typed values are kept until the profile arrives",
+    );
   });
 });
 

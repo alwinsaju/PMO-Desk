@@ -26,6 +26,7 @@ import {
   isComplete,
   makeChecklist,
   newArrivals,
+  BULK_ARRIVALS,
   progressOf,
   sanitizeChecklists,
   toggleItem,
@@ -408,6 +409,18 @@ describe("checklists", () => {
       ["b"],
     );
     assert.deepEqual(next.seen.sort(), ["a", "b"]);
+  });
+  it("treats a bulk addition (an Excel import) as seen, without a checklist each", () => {
+    const many = Array.from({ length: BULK_ARRIVALS + 1 }, (_, i) =>
+      emp(`n${i}`, `New${i}`),
+    );
+    const bulk = newArrivals(["a"], [emp("a", "Ann"), ...many]);
+    assert.deepEqual(bulk.arrivals, []);
+    assert.equal(bulk.seen.length, many.length + 1);
+    const few = newArrivals(["a"], [emp("a", "Ann"), ...many.slice(0, BULK_ARRIVALS)]);
+    assert.equal(few.arrivals.length, BULK_ARRIVALS);
+    // once recorded, the same people are not new again
+    assert.deepEqual(newArrivals(bulk.seen, [emp("a", "Ann"), ...many]).arrivals, []);
   });
   it("drops malformed stored checklists", () => {
     assert.equal(

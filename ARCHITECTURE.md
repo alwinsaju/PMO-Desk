@@ -898,7 +898,14 @@ so an interrupted move can duplicate a person but never lose one.
 
 **Adding people and the M365 profile.** _Add employee_ takes one or many Deloitte emails
 (pasted, one per line). Each becomes a person flagged **Waiting for M365 profile**, with a
-provisional name taken from the address. A cloud flow cannot reach the loopback-only server, so
+provisional name taken from the address. So does everyone added through the full form ("Enter all
+details", `newRosterPerson`) and everyone new in an Excel import (`planImport`; an imported person who
+was entered by hand is also set to waiting, one whose profile already arrived is not). Waiting lasts
+until the profile arrives, whatever has been typed in meanwhile (`isAwaitingProfile` is just
+`profileSync === "pending"`); the profile then fills the fields it owns and keeps anything it lacks.
+Someone entered by hand earlier (`manual`) can be looked up from their profile pane with **Get M365
+profile**. The store asks the server to scan right after saving such people, so the request files are
+written at once. A cloud flow cannot reach the loopback-only server, so
 the hand-over is a OneDrive folder (`exchangeServer.ts`, `exchange.ts`): the scan writes
 `requests\<email>~<stamp>.json` for each waiting person, a Power Automate flow looks the person
 up in M365 and writes `profiles\<email>.json`, and the next scan applies it (through the same

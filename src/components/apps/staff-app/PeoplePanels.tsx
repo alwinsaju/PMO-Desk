@@ -9,6 +9,7 @@ import {
   isComplete,
   makeChecklist,
   newArrivals,
+  BULK_ARRIVALS,
   progressOf,
   toggleItem,
   type Checklist,
@@ -266,12 +267,15 @@ export function ChecklistsPanel() {
     const made: Checklist[] = arrivals
       .filter((e) => !known.has(`onboarding:${e.id}`))
       .map((e) => makeChecklist("onboarding", e, now, () => newId("cl")));
-    // Offboarding starts for anyone newly on the Offboarded list, once the first look has been taken.
+    // Offboarding starts for anyone newly on the Offboarded list, once the first look has been taken
+    // (a bulk move of more than BULK_ARRIVALS people at once gets none).
     const first = useStaffPrefs.getState().seenEmployees.length === 0;
     if (!first) {
-      for (const o of offboarded)
-        if (!known.has(`offboarding:${o.id}`))
+      const fresh = offboarded.filter((o) => !known.has(`offboarding:${o.id}`));
+      if (fresh.length <= BULK_ARRIVALS) {
+        for (const o of fresh)
           made.push(makeChecklist("offboarding", o, now, () => newId("cl")));
+      }
     }
     if (
       made.length > 0 ||

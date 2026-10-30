@@ -519,11 +519,11 @@ describe("M365 profile sync", () => {
     assert.equal(after.team, "Run");
   });
 
-  it("ends the wait when someone fills the profile in by hand", async () => {
+  it("keeps waiting when someone fills details in by hand before the profile arrives", async () => {
     const waiting = person("jane.doe@x.com", { profileSync: "pending" });
     await save([waiting]);
     await save([{ ...waiting, op: "Tax" }]);
-    assert.equal((await readStaff("employees", env))[0].profileSync, "manual");
+    assert.equal((await readStaff("employees", env))[0].profileSync, "pending");
   });
 
   it("fills the person with that email and stores the photo", async () => {

@@ -90,7 +90,9 @@ function ImportBody({ onClose }: { onClose: () => void }) {
       <DialogTitle>Import from Excel</DialogTitle>
       <DialogDescription>
         Use the Staff roster template. People are matched by Deloitte email: existing ones
-        are updated with the cells that have a value, new ones are added.
+        are updated with the cells that have a value, new ones are added. Everyone added
+        or entered by hand is then looked up in Microsoft 365, which fills in name, level,
+        offering portfolio, home office, phone and the picture.
       </DialogDescription>
 
       <div className="mt-5 flex flex-col gap-4">

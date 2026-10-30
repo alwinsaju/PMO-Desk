@@ -31,6 +31,12 @@ interface Collections {
 }
 
 const OFFLINE = "Can't reach the AI OS server. Try again in a moment.";
+
+/** True when a batch adds or changes someone who is waiting for an M365 profile. */
+const hasPendingProfile = (changes: unknown): boolean =>
+  ((changes as { upsert?: { profileSync?: string }[] }).upsert ?? []).some(
+    (p) => p.profileSync === "pending",
+  );
 export const SYNC_INTERVAL_MS = 20_000;
 
 export interface StaffState {
@@ -233,6 +239,12 @@ export const useStaffStore = create<StaffState>()((set, get) => {
           else confirmed[kind] = mergeChanges(confirmed[kind], changes as never) as never;
           settle();
           set(visible());
+          if (kind === "employees" && hasPendingProfile(changes)) {
+            // Ask M365 for the new people now rather than at the next poll.
+            void fetch("/api/staff/sync", { method: "POST" })
+              .then(() => reloadEmployees())
+              .catch(() => undefined);
+          }
           return { ok: true };
         } catch {
           settle();

@@ -126,8 +126,10 @@ synced keep the old value until you press **Refresh from M365** on their profile
 
 ## Test it
 
-1. In Staff Management: **Add employee**, type a Deloitte email, **Add**. The person shows
-   **Waiting for M365 profile**.
+1. In Staff Management: **Add employee**, type a Deloitte email, **Add** (or use **Enter all details**,
+   or **Import from Excel**: every person added that way is looked up too). The person shows
+   **Waiting for M365 profile**. Someone already on the roster can be looked up with **Get M365
+   profile** in their details pane.
 2. Within a minute or two the flow run appears in Power Automate > My flows > Run history.
 3. A `profiles\<email>.json` file appears in OneDrive and syncs down; within 20 seconds the
    person's fields and picture fill in and the "Waiting" tag disappears.

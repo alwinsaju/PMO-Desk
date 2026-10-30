@@ -104,6 +104,14 @@ export function createEmployee(
   };
 }
 
+/** The "enter all details" and spreadsheet path: a person to add to the roster, also looked up in M365. */
+export function newRosterPerson(
+  input: Partial<Employee> = {},
+  now: string = new Date().toISOString(),
+): Employee {
+  return createEmployee({ ...input, profileSync: "pending" }, now);
+}
+
 /** The "add by e-mail" path: everything the M365 profile will fill stays empty
  *  and the person is flagged as waiting for it. */
 export function employeeFromEmail(
@@ -204,30 +212,16 @@ export function applyProfile(
   return { ...next, profileSync: "synced", updatedAt: now };
 }
 
-/** True while the person still waits for their M365 profile. Names do not count as
- *  profile data (they are guessed from the email), but anything else the profile
- *  owns does: once it is filled in, by the flow or by hand, nothing is awaited. */
-export function isAwaitingProfile(
-  employee: Pick<
-    Employee,
-    "profileSync" | "level" | "op" | "phone" | "homeOffice" | "photoVersion"
-  >,
-): boolean {
-  return (
-    employee.profileSync === "pending" &&
-    !(
-      employee.level.trim() ||
-      employee.op.trim() ||
-      employee.phone.trim() ||
-      employee.homeOffice.trim() ||
-      employee.photoVersion > 0
-    )
-  );
+/** True while the person still waits for their M365 profile. A person added by email, by the
+ *  full form or by an Excel import starts out waiting and stays so until the profile arrives,
+ *  whatever has been typed in meanwhile (the profile fills blanks and replaces what it owns). */
+export function isAwaitingProfile(employee: Pick<Employee, "profileSync">): boolean {
+  return employee.profileSync === "pending";
 }
 
 /** The profile state to save for an edited person. An edit made from a copy that was
  *  loaded before the M365 profile arrived must not bring "waiting" back or blank the
- *  profile; an edit that fills the profile in by hand ends the wait too. */
+ *  profile. A person who is still waiting keeps waiting, even if the edit fills fields in. */
 export function settleProfileSync(incoming: Employee, stored?: Employee): Employee {
   if (incoming.profileSync !== "pending") return incoming;
   if (stored && stored.profileSync !== "pending") {
@@ -237,7 +231,7 @@ export function settleProfileSync(incoming: Employee, stored?: Employee): Employ
     }
     return next;
   }
-  return isAwaitingProfile(incoming) ? incoming : { ...incoming, profileSync: "manual" };
+  return incoming;
 }
 
 export function findByEmail<T extends Pick<Employee, "deloitteEmail">>(
@@ -530,12 +524,15 @@ export function planImport(
           ...employee,
           id: current.id,
           photoVersion: current.photoVersion,
+          // Someone entered by hand is now looked up in M365 too; a profile already received stays.
+          profileSync: current.profileSync === "manual" ? "pending" : current.profileSync,
           updatedAt: now,
         }
       : createEmployee(
           {
             ...employee,
             ...(employee.firstName || employee.lastName ? {} : nameFromEmail(key)),
+            profileSync: "pending",
           },
           now,
         );

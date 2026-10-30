@@ -69,8 +69,12 @@ export const isComplete = (list: Checklist): boolean => {
   return p.total > 0 && p.done === p.total;
 };
 
+/** More people than this appearing at once is a roster import or a first load, not new hires. */
+export const BULK_ARRIVALS = 10;
+
 /** People in the directory that were not there the last time the app looked. The very first look
- *  (nothing seen yet) only records everyone and starts no checklists. */
+ *  (nothing seen yet) only records everyone and starts no checklists, and neither does a bulk
+ *  addition (an Excel import): those people are recorded as seen without a checklist each. */
 export function newArrivals(
   seen: readonly string[],
   employees: readonly Employee[],
@@ -78,8 +82,9 @@ export function newArrivals(
   const ids = employees.map((e) => e.id);
   if (seen.length === 0) return { arrivals: [], seen: ids };
   const known = new Set(seen);
+  const arrivals = employees.filter((e) => !known.has(e.id));
   return {
-    arrivals: employees.filter((e) => !known.has(e.id)),
+    arrivals: arrivals.length > BULK_ARRIVALS ? [] : arrivals,
     seen: [...new Set([...seen, ...ids])],
   };
 }

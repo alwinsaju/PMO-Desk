@@ -165,7 +165,7 @@ export function EmployeePane({
                 </Button>
               </div>
             )}
-            {!pending && employee.profileSync === "synced" && (
+            {!pending && employee.profileSync !== "pending" && (
               <Button
                 variant="ghost"
                 size="sm"
@@ -173,7 +173,9 @@ export function EmployeePane({
                 disabled={busy}
                 onClick={() => void askAgain()}
               >
-                Refresh from M365
+                {employee.profileSync === "synced"
+                  ? "Refresh from M365"
+                  : "Get M365 profile"}
               </Button>
             )}
             {notice && (

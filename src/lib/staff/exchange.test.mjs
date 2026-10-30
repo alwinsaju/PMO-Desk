@@ -328,6 +328,43 @@ describe("exchange folder", () => {
     assert.equal(a.op, "");
   });
 
+  it("asks for the profile of a person added by hand or imported, even with details filled in", async () => {
+    const typed = createEmployee(
+      {
+        deloitteEmail: "typed@x.com",
+        firstName: "Tom",
+        level: "Analyst",
+        phone: "111",
+        profileSync: "pending",
+      },
+      NOW,
+    );
+    const plain = createEmployee({ deloitteEmail: "plain@x.com" }, NOW); // "manual": not asked
+    await save([typed, plain]);
+    const summary = await syncExchange(env, now);
+    assert.equal(summary.requested, 1);
+    const files = await readdir(path.join(dir, "ex", "requests"));
+    assert.deepEqual(
+      files.map((f) => f.split("~")[0]),
+      ["typed@x.com"],
+    );
+
+    await drop("typed@x.com.json", {
+      email: "typed@x.com",
+      firstName: "Thomas",
+      lastName: "Reed",
+      level: "Senior Consultant",
+      op: "DF&O IN BEN",
+    });
+    assert.equal((await syncExchange(env, now)).applied, 1);
+    const saved = (await readStaff("employees", env)).find((e) => e.id === typed.id);
+    assert.equal(saved.profileSync, "synced");
+    assert.equal(saved.level, "Senior Consultant");
+    assert.equal(saved.firstName, "Thomas");
+    assert.equal(saved.phone, "111", "a value the profile lacks is kept");
+    assert.deepEqual(await readdir(path.join(dir, "ex", "requests")), []);
+  });
+
   it("writes a fresh request when asked again", async () => {
     const p = employeeFromEmail("a@x.com", NOW);
     await save([p]);
