@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
+import { DownloadSimpleIcon } from "@phosphor-icons/react";
 import {
   Badge,
   Button,
@@ -14,7 +15,9 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui";
+import { downloadXlsx } from "@/lib/xlsx/download";
 import { readWorkbookSheets } from "./readWorkbook";
+import { reviewTemplate } from "./reviewTemplate";
 import {
   parsePastedText,
   planImport,
@@ -165,6 +168,18 @@ export function ReviewImportDialog({
                   : fileName
                     ? "Choose another file"
                     : "Choose workbook…"}
+              </Button>
+              <Button
+                variant="ghost"
+                onClick={() =>
+                  downloadXlsx(
+                    "review-subcategory2-template.xlsx",
+                    reviewTemplate(incidents, options),
+                  )
+                }
+              >
+                <DownloadSimpleIcon size={16} weight="bold" />
+                Download a blank template
               </Button>
               {fileName && (
                 <span className="text-ink-muted line-clamp-1 text-[12.5px]">

@@ -247,9 +247,63 @@ async function dropSchedules(ids: readonly string[], env: Env): Promise<void> {
   }
 }
 
+const nameKey = (name: string): string =>
+  name
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter(Boolean)
+    .sort()
+    .join(" ");
+
+const personKey = (p: Pick<Employee, "firstName" | "lastName">): string =>
+  nameKey(`${p.firstName} ${p.lastName}`);
+
+/** Deleting someone for good also removes their shift roster entry and its shifts.
+ *  Offboarding unlinked that entry, so it is found by name (in any order) among the
+ *  unlinked ones, and never when someone else still on file has the same name.
+ *  Caller holds the lock. */
+async function dropRosterEntries(
+  gone: readonly OffboardedEmployee[],
+  env: Env,
+): Promise<void> {
+  if (!gone.length) return;
+  const ids = new Set(gone.map((p) => p.id));
+  const names = new Set(gone.map(personKey));
+  const stillHere = new Set(
+    [
+      ...(await readCollection("employees", env)),
+      ...(await readCollection("offboarded", env)),
+    ].map(personKey),
+  );
+  const config = await readRosterConfig(env);
+  const dropped = new Set(
+    config.members
+      .filter((m) =>
+        m.employeeId
+          ? ids.has(m.employeeId)
+          : names.has(nameKey(m.name)) && !stillHere.has(nameKey(m.name)),
+      )
+      .map((m) => m.id),
+  );
+  if (!dropped.size) return;
+  await writeRosterConfig(
+    { ...config, members: config.members.filter((m) => !dropped.has(m.id)) },
+    env,
+  );
+  const shifts = await readCollection("shifts", env);
+  if (shifts.some((s) => dropped.has(s.memberId))) {
+    await writeCollection(
+      "shifts",
+      shifts.filter((s) => !dropped.has(s.memberId)),
+      env,
+    );
+  }
+}
+
 /** Applies a batch of upserts/removals to one collection, all or nothing, and
  *  returns the collection as saved. Removing a person also removes their shifts,
- *  time off and photo; for the offboarded list, removing deletes the profile for good. */
+ *  time off and photo; for the offboarded list, removing deletes the profile for good,
+ *  with their photo and shift roster entry. */
 export function applyChanges<K extends StaffKind>(
   kind: K,
   body: unknown,
@@ -313,7 +367,12 @@ export function applyChanges<K extends StaffKind>(
       });
       const next = mergeChanges(current, { upsert, remove: parsed.data.remove });
       await writeCollection("offboarded", next, env);
-      await removePhotos(parsed.data.remove ?? [], env);
+      const removed = new Set(parsed.data.remove ?? []);
+      await removePhotos([...removed], env);
+      await dropRosterEntries(
+        current.filter((p) => removed.has(p.id) && !next.some((n) => n.id === p.id)),
+        env,
+      );
       return next as Collections[K];
     }
 

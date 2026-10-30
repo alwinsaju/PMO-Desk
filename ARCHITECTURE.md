@@ -879,7 +879,11 @@ the person (all fields and the picture, stamped `offboardedAt`) from `employees.
 `offboarded.json`, so other apps and the Tasks engine stop seeing them, and drops their
 time-off requests. The _Offboarded_ tab lists them with search, **Edit** (the same form as the
 Directory), **Restore** (back onto the roster; refused when someone on the roster already has
-that email) and **Delete** (removes the profile and picture for good, after a confirmation).
+that email) and **Delete** (removes the profile for good, after a confirmation, and leaves no
+trace in the data folder: the picture, their shift roster entry and shifts, any request or
+profile files in the M365 exchange folder, and their checklists and "seen" entries in
+`staff-prefs.json`). The roster entry is found by name among the unlinked entries and is kept
+when someone else on file has the same name.
 The move is one locked server operation that writes the new copy before dropping the old one,
 so an interrupted move can duplicate a person but never lose one.
 
@@ -925,8 +929,18 @@ which pending requests wait. The exact flow is in `docs/staff-m365-flow.md`.
 directly; the person with that email gets those fields (empty or missing values never
 overwrite what is on file), the picture is stored, and the flag becomes _synced_. Unknown emails
 answer `404`. **Import from Excel** reads the template workbook in the browser and matches rows
-by email (existing people are updated with the cells that have a value; new ones are added);
-**Export** writes the same columns as CSV.
+by email (existing people are updated with the cells that have a value; new ones are added;
+only the email column is needed, every other cell may stay empty);
+**Export** writes the same columns as CSV. Every Excel import dialog (this one, the shift
+roster's and the Tasks review's _Import Subcategory2 values_) has **Download a blank template**:
+`src/lib/xlsx/writeXlsx.ts` builds a real `.xlsx` in the browser (nothing is sent anywhere),
+laid out the way that importer reads it, with a help sheet. The templates are
+`src/lib/staff/importTemplates.ts` (headings only; the shift roster grid starts from the
+current teams and people, with the days empty) and
+`src/components/apps/tasks-app/reviewTemplate.ts` (the review queue with Subcategory2 empty,
+and the allowed values). A template that is uploaded unfilled imports nothing and raises no error.
+The file inputs of Tasks (task exports from other systems) have no template: the columns belong
+to the task, not to the app.
 
 **Shift roster exclusion.** `Employee.excludeFromShiftRoster` (a switch in the detail pane and
 the edit dialog, the "Exclude from shift roster" column on import/export). The shift roster

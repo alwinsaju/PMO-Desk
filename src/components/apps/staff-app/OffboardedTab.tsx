@@ -11,6 +11,8 @@ import {
 import { Button, Input } from "@/components/ui";
 import { formatDate, todayIso } from "@/lib/staff/dates";
 import { NO_FILTER, displayName, filterEmployees } from "@/lib/staff/employees";
+import { useRosterStore } from "@/lib/staff/rosterStore";
+import { useStaffPrefs } from "@/lib/staff/staffPrefsStore";
 import { useStaffStore } from "@/lib/staff/staffStore";
 import type { OffboardedEmployee } from "@/lib/staff/types";
 import { EmployeeDialog } from "./EmployeeDialog";
@@ -60,8 +62,20 @@ export function OffboardedTab() {
     setError(null);
     const result = await commit("offboarded", { remove: [deleting.id] });
     setBusy(false);
-    if (result.ok) setDeleting(null);
-    else setError(result.reason);
+    if (result.ok) {
+      const id = deleting.id;
+      useStaffPrefs.getState().update((p) => ({
+        ...p,
+        checklists: p.checklists.filter((c) => c.employeeId !== id),
+        seenEmployees: p.seenEmployees.filter(
+          (s) => s !== id && s !== `offboarding:${id}`,
+        ),
+      }));
+      // Their roster entry and shifts went with them on the server.
+      void useRosterStore.getState().load();
+      void useStaffStore.getState().load();
+      setDeleting(null);
+    } else setError(result.reason);
   }
 
   return (

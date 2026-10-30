@@ -10,7 +10,8 @@ import {
   DialogFooter,
   DialogTitle,
 } from "@/components/ui";
-import { formatRange } from "@/lib/staff/dates";
+import { formatRange, todayIso } from "@/lib/staff/dates";
+import { rosterTemplate } from "@/lib/staff/importTemplates";
 import {
   findRosterSheet,
   parseRosterSheet,
@@ -19,6 +20,7 @@ import {
 } from "@/lib/staff/rosterImport";
 import { useRosterStore } from "@/lib/staff/rosterStore";
 import { useStaffStore } from "@/lib/staff/staffStore";
+import { TemplateDownloadButton } from "../TemplateDownloadButton";
 import { readWorkbookSheets } from "../tasks-app/readWorkbook";
 
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
@@ -94,9 +96,10 @@ function Body({ onClose }: { onClose: () => void }) {
     <>
       <DialogTitle>Import a shift roster</DialogTitle>
       <DialogDescription>
-        Reads the team&apos;s roster workbook (the “Resource” grid). People are matched by
-        name. Days with an entry in the file replace what is there; days left blank in the
-        file are not cleared.
+        Reads the team&apos;s roster workbook (the “Resource” grid); download a blank one
+        below with your teams and people already in it. People are matched by name. Days
+        with an entry in the file replace what is there; days left blank in the file are
+        not cleared.
       </DialogDescription>
 
       <div className="mt-5 flex flex-col gap-4">
@@ -126,6 +129,10 @@ function Body({ onClose }: { onClose: () => void }) {
             void read(e.target.files?.[0]);
             e.target.value = "";
           }}
+        />
+        <TemplateDownloadButton
+          fileName="shift-roster-template.xlsx"
+          sheets={() => rosterTemplate({ config, today: todayIso() })}
         />
 
         {plan && parsed && (

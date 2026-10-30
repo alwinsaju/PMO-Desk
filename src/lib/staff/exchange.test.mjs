@@ -22,7 +22,12 @@ import {
   shiftRosterPeople,
 } from "./employees.ts";
 import { emailFromRequestFile, parseProfileFile, requestFileName } from "./exchange.ts";
-import { resendRequest, resolveExchange, syncExchange } from "./exchangeServer.ts";
+import {
+  purgeExchangeFor,
+  resendRequest,
+  resolveExchange,
+  syncExchange,
+} from "./exchangeServer.ts";
 import { applyChanges, getPhoto, readStaff } from "./server.ts";
 
 const NOW = "2026-03-02T10:00:00.000Z";
@@ -228,6 +233,34 @@ describe("employees saved before the exclusion option existed", () => {
 });
 
 describe("exchange folder", () => {
+  it("purges only the files that belong to the people deleted", async () => {
+    const ex = path.join(dir, "ex");
+    for (const sub of ["requests", "profiles", "rejected"]) {
+      await mkdir(path.join(ex, sub), { recursive: true });
+    }
+    const files = [
+      "requests/a@x.com~m1.json",
+      "requests/aa@x.com~m1.json",
+      "profiles/A@x.com.json",
+      "profiles/aa@x.com.json",
+      "rejected/1700000000000-a@x.com.json",
+      "rejected/1700000000000-a@x.com.json.reason.txt",
+      "rejected/1700000000000-aa@x.com.json",
+    ];
+    for (const f of files) await writeFile(path.join(ex, ...f.split("/")), "{}");
+    assert.equal(await purgeExchangeFor(["a@x.com"], env), 4);
+    const left = [];
+    for (const sub of ["requests", "profiles", "rejected"]) {
+      for (const n of await readdir(path.join(ex, sub))) left.push(`${sub}/${n}`);
+    }
+    assert.deepEqual(left.sort(), [
+      "profiles/aa@x.com.json",
+      "rejected/1700000000000-aa@x.com.json",
+      "requests/aa@x.com~m1.json",
+    ]);
+    assert.equal(await purgeExchangeFor([], env), 0);
+  });
+
   it("uses the override, then OneDrive, then a local folder", async () => {
     assert.equal(resolveExchange(env).source, "env");
     const od = path.join(dir, "OneDrive - Deloitte");

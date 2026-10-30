@@ -204,6 +204,41 @@ export function syncExchange(
   return next;
 }
 
+/** Deletes every file the hand-over folder holds for these people: their requests,
+ *  a profile that has not been applied, and anything set aside as rejected. Used when
+ *  someone is deleted for good. A folder that does not exist yet is fine. */
+export async function purgeExchangeFor(
+  emails: readonly string[],
+  env: Env = process.env,
+): Promise<number> {
+  const wanted = emails.map((e) => e.trim().toLowerCase()).filter(Boolean);
+  if (!wanted.length) return 0;
+  const { dir } = resolveExchange(env);
+  let removed = 0;
+  for (const sub of [REQUESTS_DIR, PROFILES_DIR, REJECTED_DIR]) {
+    let names: string[];
+    try {
+      names = await readdir(path.join(dir, sub));
+    } catch {
+      continue;
+    }
+    for (const name of names) {
+      const lower = name.toLowerCase();
+      const owner =
+        sub === REQUESTS_DIR
+          ? (emailFromRequestFile(name)?.toLowerCase() ?? "")
+          : lower
+              .replace(/\.reason\.txt$/, "")
+              .replace(/\.json$/, "")
+              .replace(/^\d+-/, "");
+      if (!wanted.includes(owner)) continue;
+      await rm(path.join(dir, sub, name), { force: true });
+      removed++;
+    }
+  }
+  return removed;
+}
+
 /** Writes a fresh request for one waiting person (a new file, so the flow runs again). */
 export async function resendRequest(
   employeeId: string,

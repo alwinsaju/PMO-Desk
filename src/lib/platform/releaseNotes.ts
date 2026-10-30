@@ -15,6 +15,21 @@ export interface Release {
 /** Newest first. Add a release here when the version in package.json goes up. */
 export const RELEASES: readonly Release[] = [
   {
+    version: "6.0.1",
+    title: "AI OS 6.0.1",
+    groups: [
+      {
+        title: "Staff",
+        items: [
+          "Every Excel import now has Download a blank template: the directory, the shift roster and the Tasks review. Leave any cell empty; only the email is needed for the directory.",
+          "People added by hand or imported from Excel are looked up in Microsoft 365, and a person added earlier can be looked up with Get M365 profile.",
+          "Deleting someone from Offboarded removes everything kept about them: picture, roster entry and shifts, hand-over files and checklists.",
+          "Adding more than ten people at once no longer creates a checklist for each.",
+        ],
+      },
+    ],
+  },
+  {
     version: "6.0.0",
     title: "AI OS 6.0",
     groups: [

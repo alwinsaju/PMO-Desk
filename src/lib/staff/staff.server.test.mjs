@@ -461,6 +461,45 @@ describe("offboarding", () => {
     assert.equal(await getPhoto(a.id, env), null);
   });
 
+  it("deleting an offboarded profile also removes their roster entry and shifts", async () => {
+    const a = person("a@x.com", { firstName: "Jane", lastName: "Doe" });
+    const twin = person("t@x.com", { firstName: "Tom", lastName: "Twin" });
+    await save([a, twin]);
+    const [m1, m2, m3] = [
+      memberOf(1, a.id, { name: "Jane Doe" }),
+      memberOf(2, null, { name: "Twin, Tom" }),
+      memberOf(3, null, { name: "Someone Else" }),
+    ];
+    await saveMembers([m1, m2, m3]);
+    await applyChanges(
+      "shifts",
+      { upsert: [day(m1, "2026-03-02"), day(m3, "2026-03-02")] },
+      env,
+    );
+    await move("offboard", [a.id]);
+    await move("offboard", [twin.id]);
+    await move("restore", [twin.id]);
+    await applyChanges("offboarded", { remove: [a.id] }, env);
+    assert.deepEqual(
+      (await readRoster(env)).members.map((m) => m.id),
+      [m2.id, m3.id],
+    );
+    assert.deepEqual(
+      (await readStaff("shifts", env)).map((s) => s.memberId),
+      [m3.id],
+    );
+  });
+
+  it("keeps an unlinked roster entry when someone else on file has the same name", async () => {
+    const a = person("a@x.com", { firstName: "Jane", lastName: "Doe" });
+    const same = person("b@x.com", { firstName: "Jane", lastName: "Doe" });
+    await save([a, same]);
+    await saveMembers([memberOf(1, null, { name: "Jane Doe" })]);
+    await move("offboard", [a.id]);
+    await applyChanges("offboarded", { remove: [a.id] }, env);
+    assert.equal((await readRoster(env)).members.length, 1);
+  });
+
   it("stores and clears the photo of an offboarded person", async () => {
     const a = person("a@x.com");
     await save([a]);

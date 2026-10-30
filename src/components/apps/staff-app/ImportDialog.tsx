@@ -11,7 +11,9 @@ import {
   DialogTitle,
 } from "@/components/ui";
 import { parseRosterRows, planImport, type ImportResult } from "@/lib/staff/employees";
+import { employeeTemplate } from "@/lib/staff/importTemplates";
 import { useStaffStore } from "@/lib/staff/staffStore";
+import { TemplateDownloadButton } from "../TemplateDownloadButton";
 import { readWorkbookSheets } from "../tasks-app/readWorkbook";
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
@@ -89,10 +91,11 @@ function ImportBody({ onClose }: { onClose: () => void }) {
     <>
       <DialogTitle>Import from Excel</DialogTitle>
       <DialogDescription>
-        Use the Staff roster template. People are matched by Deloitte email: existing ones
-        are updated with the cells that have a value, new ones are added. Everyone added
-        or entered by hand is then looked up in Microsoft 365, which fills in name, level,
-        offering portfolio, home office, phone and the picture.
+        Use the Staff roster template (download a blank one below). People are matched by
+        Deloitte email: existing ones are updated with the cells that have a value, new
+        ones are added. Everyone added or entered by hand is then looked up in Microsoft
+        365, which fills in name, level, offering portfolio, home office, phone and the
+        picture.
       </DialogDescription>
 
       <div className="mt-5 flex flex-col gap-4">
@@ -122,6 +125,10 @@ function ImportBody({ onClose }: { onClose: () => void }) {
             void read(e.target.files?.[0]);
             e.target.value = "";
           }}
+        />
+        <TemplateDownloadButton
+          fileName="staff-roster-template.xlsx"
+          sheets={employeeTemplate}
         />
 
         {plan && result && (

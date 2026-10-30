@@ -417,9 +417,11 @@ export interface ImportResult {
 /** Turns sheet rows (first recognisable row = headers) into partial employees.
  *  Rows without a usable Deloitte email are skipped with the reason. */
 export function parseRosterRows(rows: readonly (readonly unknown[])[]): ImportResult {
-  const headerIndex = rows.findIndex(
-    (row) => row.filter((cell) => HEADER_LOOKUP.has(normalise(cell))).length >= 2,
-  );
+  const headerIndex = rows.findIndex((row) => {
+    const keys = row.map((cell) => HEADER_LOOKUP.get(normalise(cell)));
+    // The email column alone is enough: every other column is optional.
+    return keys.includes("deloitteEmail") || keys.filter(Boolean).length >= 2;
+  });
   if (headerIndex < 0) return { rows: [], skipped: [], headerFound: false };
 
   const columns = rows[headerIndex].map((cell) => HEADER_LOOKUP.get(normalise(cell)));
