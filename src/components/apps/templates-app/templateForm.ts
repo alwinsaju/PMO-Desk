@@ -1,0 +1,186 @@
+// The Templates app's editing logic, without React: the form's draft, what makes it
+// changed, which places it can be used in and what the live preview shows. Relative
+// `.ts` imports so `pnpm test` can load it under plain Node.
+import { checkInput, type TemplateErrors } from "../../../lib/templates/library.ts";
+import {
+  renderFields,
+  renderText,
+  tidyText,
+  type Rendered,
+  type Snippets,
+} from "../../../lib/templates/render.ts";
+import {
+  TARGETS,
+  allowedPlaceholders,
+  sampleValues,
+  targetsOfKind,
+  type PlaceholderDef,
+  type TemplateTarget,
+} from "../../../lib/templates/targets.ts";
+import type {
+  Template,
+  TemplateInput,
+  TemplateKind,
+} from "../../../lib/templates/types.ts";
+
+/** What the form holds: a template's fields; `id` is null for one not saved yet. */
+export interface Draft extends TemplateInput {
+  id: string | null;
+}
+
+export function blankDraft(kind: TemplateKind = "email"): Draft {
+  return {
+    id: null,
+    name: "",
+    kind,
+    description: "",
+    subject: "",
+    to: "",
+    cc: "",
+    body: "",
+    usedBy: [],
+  };
+}
+
+export function draftOf(template: Template): Draft {
+  return {
+    id: template.id,
+    name: template.name,
+    kind: template.kind,
+    description: template.description,
+    subject: template.subject,
+    to: template.to,
+    cc: template.cc,
+    body: template.body,
+    usedBy: [...template.usedBy],
+    starterId: template.starterId,
+  };
+}
+
+/** A copy that is saved as a new template, used nowhere until chosen. */
+export function copyOf(template: Template): Draft {
+  return {
+    ...draftOf(template),
+    id: null,
+    name: `${template.name} (copy)`,
+    usedBy: [],
+    starterId: undefined,
+  };
+}
+
+export function toInput(draft: Draft): TemplateInput {
+  const { id: _id, ...input } = draft;
+  return input;
+}
+
+const FIELDS = ["name", "kind", "description", "subject", "to", "cc", "body"] as const;
+
+/** Has the draft been changed from the saved template (or, for a new one, filled in)? */
+export function isDirty(draft: Draft, saved: Template | null): boolean {
+  if (!saved) {
+    return (
+      FIELDS.some((field) => draft[field] !== blankDraft(draft.kind)[field]) ||
+      draft.usedBy.length > 0
+    );
+  }
+  return (
+    FIELDS.some((field) => draft[field] !== saved[field]) ||
+    [...draft.usedBy].sort().join("|") !== [...saved.usedBy].sort().join("|")
+  );
+}
+
+/** Changing the kind drops the places that do not take the new one. */
+export function withKind(draft: Draft, kind: TemplateKind): Draft {
+  const keep = draft.usedBy.filter((key) =>
+    TARGETS.some((t) => t.key === key && t.kind === kind),
+  );
+  return { ...draft, kind, usedBy: keep };
+}
+
+export function withPlace(draft: Draft, key: string, on: boolean): Draft {
+  const rest = draft.usedBy.filter((k) => k !== key);
+  return { ...draft, usedBy: on ? [...rest, key] : rest };
+}
+
+/** The template (other than `exceptId`) that has the place now, if any. */
+export function holderOf(
+  templates: readonly Template[],
+  key: string,
+  exceptId: string | null,
+): Template | undefined {
+  return templates.find((tpl) => tpl.id !== exceptId && tpl.usedBy.includes(key));
+}
+
+export interface PlaceGroup {
+  heading: "Tasks" | "Apps";
+  targets: TemplateTarget[];
+}
+
+/** The places a template of this kind can be used in, tasks first. */
+export function placeGroups(kind: TemplateKind): PlaceGroup[] {
+  const targets = targetsOfKind(kind);
+  return (
+    [
+      { heading: "Tasks", targets: targets.filter((t) => t.type === "task") },
+      { heading: "Apps", targets: targets.filter((t) => t.type === "app") },
+    ] satisfies PlaceGroup[]
+  ).filter((group) => group.targets.length > 0);
+}
+
+/**
+ * The placeholders to offer: those every chosen place can fill; with no place
+ * chosen yet, all that any place of this kind offers (the choice then narrows them).
+ */
+export function offeredPlaceholders(
+  draft: Pick<Draft, "kind" | "usedBy">,
+): PlaceholderDef[] {
+  const targets =
+    draft.usedBy.length > 0
+      ? TARGETS.filter((t) => draft.usedBy.includes(t.key))
+      : targetsOfKind(draft.kind);
+  const common = allowedPlaceholders(draft.usedBy);
+  const seen = new Map<string, PlaceholderDef>();
+  for (const target of targets) {
+    for (const p of target.placeholders) {
+      if (!seen.has(p.name) && (common === null || common.has(p.name)))
+        seen.set(p.name, p);
+    }
+  }
+  return [...seen.values()];
+}
+
+/** Inserts `text` over the selection and says where the caret goes. */
+export function insertAt(
+  value: string,
+  start: number,
+  end: number,
+  text: string,
+): { value: string; caret: number } {
+  const from = Math.max(0, Math.min(start, value.length));
+  const to = Math.max(from, Math.min(end, value.length));
+  return {
+    value: value.slice(0, from) + text + value.slice(to),
+    caret: from + text.length,
+  };
+}
+
+/** The places whose example values the preview uses: the chosen ones, else every place of the kind. */
+const sampleKeys = (draft: Pick<Draft, "kind" | "usedBy">): string[] =>
+  draft.usedBy.length > 0 ? draft.usedBy : targetsOfKind(draft.kind).map((t) => t.key);
+
+/** The subject and message as they would read, with each place's sample values (and the library's snippets). */
+export function previewOf(draft: Draft, snippets?: Snippets): Rendered {
+  return renderFields(draft, sampleValues(sampleKeys(draft)), snippets);
+}
+
+/** The message with example values filled in and its `**bold**` markers kept, so
+ *  the preview can show them bold. */
+export function previewBodyOf(draft: Draft, snippets?: Snippets): string {
+  return tidyText(renderText(draft.body, sampleValues(sampleKeys(draft)), snippets));
+}
+
+/** What is wrong with the form now (nothing is shown until a field has been touched). */
+export function problems(draft: Draft): TemplateErrors {
+  const checked = checkInput(toInput(draft));
+  return checked.ok ? {} : checked.errors;
+}

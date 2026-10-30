@@ -17,6 +17,10 @@ export interface InAppToast {
 export interface OpenRequest {
   id: number;
   todoId: string | null;
+  /** Also start the chaser draft for that to-do (the command bar's "chase ..."). */
+  chaser: boolean;
+  /** Land on this to-do filter ("Show me" under an answer about overdue items). */
+  filter: "open" | "today" | "overdue" | "waiting" | null;
 }
 
 interface RemindersState {
@@ -33,7 +37,10 @@ interface RemindersState {
   setAttention: (count: number) => void;
   showToast: (toast: Omit<InAppToast, "id">) => void;
   dismissToast: () => void;
-  requestOpen: (todoId: string | null) => void;
+  requestOpen: (
+    todoId: string | null,
+    options?: { chaser?: boolean; filter?: OpenRequest["filter"] },
+  ) => void;
   clearOpenRequest: (id: number) => void;
 }
 
@@ -53,7 +60,15 @@ export const useRemindersStore = create<RemindersState>()((set) => ({
     set((state) => (state.attention === attention ? state : { attention })),
   showToast: (toast) => set({ toast: { ...toast, id: ++counter } }),
   dismissToast: () => set({ toast: null }),
-  requestOpen: (todoId) => set({ openRequest: { id: ++counter, todoId } }),
+  requestOpen: (todoId, options) =>
+    set({
+      openRequest: {
+        id: ++counter,
+        todoId,
+        chaser: options?.chaser === true,
+        filter: options?.filter ?? null,
+      },
+    }),
   clearOpenRequest: (id) =>
     set((state) => (state.openRequest?.id === id ? { openRequest: null } : state)),
 }));

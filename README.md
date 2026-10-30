@@ -7,18 +7,70 @@ on the user's computer (loopback only; the AI is a local Ollama model, no cloud 
 ## What it is today
 
 - **Desktop shell**: wallpaper, a dock, a window manager (drag, resize, minimize, maximize,
-  per-window human/AI control), light/dark and Deloitte themes, a tray icon, and a Settings
-  menu (gear) with a _Fast AI model_ switch, _Setup and health check_ and _Restart Tasks engine_.
+  per-window human/AI control; each app's window reopens where you left it), light/dark and
+  Deloitte themes, a tray icon, and a Settings
+  menu (gear) with a _Fast AI model_ switch, _Skip the lock screen_, _Setup and health check_ and _Restart Tasks engine_.
 - **Command bar with a local AI**: the AI can open, focus, minimize, maximize and close windows
   with a visible cursor and ownership handoff, and create, update and delete notes when Notes
-  is focused. It uses Ollama on `127.0.0.1`.
+  is focused. It uses Ollama on `127.0.0.1`. It also answers PMO questions from the real data,
+  by code (so a small model cannot invent a name or misread a date, and it works with Ollama
+  stopped): _"Who's off next Monday?"_ (Staff time off and the shift roster), _"What's overdue?"_,
+  _"What do I need to chase?"_, _"PMO status"_, and _"Prepare this week's aging report"_, which
+  opens the Tasks app on that task's Run form (you add the files and press Run; nothing is sent
+  without your approval). Anything it does not recognise goes to the model as before. An answer
+  stays on screen until you dismiss it (Esc or the close button) and can be copied; Ctrl+Space
+  jumps to the bar from anywhere; a misspelt day or task name gets a "Did you mean...?". It also
+  creates, snoozes and closes to-dos ("remind me to send the invoice Friday"; it asks first), says
+  when someone is back or what their shift is, lists what changed since yesterday, and can chain
+  steps ("open Tasks, then what's overdue"). Ctrl+K searches everything; Ctrl+, opens Settings.
+- **Dashboard**: one screen for what needs you today: open to-dos (overdue, due today and
+  tomorrow, waiting), overdue chasers, the status of the report tasks and the PMO weekly report
+  (running, needs review, failed, last run), and who is out this week or next (approved time off,
+  requests waiting, and the leave days the shift roster marks). It only reads; each card opens
+  the app behind it. **Customise** shows, hides, reorders and widens cards and saves named
+  layouts. Extra cards: a merged Today list, workload by person, how long to-dos have sat,
+  the sign-off pipeline, report health and this week against last. The desktop app shows a
+  "needs you" count on the dock and taskbar, a once-a-day briefing, and exports the dashboard
+  as a PNG or PDF.
+- **Templates**: a library of email and report templates (`src/lib/templates/`,
+  `src/components/apps/templates-app/`) so wording can be edited without touching a task
+  folder. Write a template with `{{placeholders}}` and `**bold**`, see a live preview with example
+  values, and choose which tasks and apps use it (the Aging, Backlog and Deployment mailers'
+  subject, To, Cc and message; the PMO sign-off request, chaser and weekly report). Each place uses
+  one template; choosing a place another template has moves it, and deleting a template puts a place
+  back to its own wording. Templates can have `{{#if overdue > 0}}…{{else}}…{{/if}}` blocks, reusable
+  snippets (`{{> Signature}}`), tags, other wordings per audience, a version history with
+  Restore, a test draft (an unsent mail) and a preview in the mail layout. Packs export and
+  import as one file. A new library starts with templates that reproduce today's wording, so
+  nothing changes until one is edited, and _Restore original wording_ brings a starter back. See
+  [`docs/templates.md`](./docs/templates.md).
 - **PMO To-Do**: turns messages dropped in a PMO inbox folder (Power Automate, an Outlook
   export script, or the Paste button) into reviewed to-dos with reminders, chasers, sign-off
   tracking and a weekly report. Nothing becomes a to-do without a human approving it. Cancelled
   to-dos can be deleted for good (**Clear cancelled** in the Done list, or **Delete** in one).
+  Repeating to-dos create their next round when you close one (with Undo). You can tick several
+  to-dos for bulk actions, save views, filter by tag, use a Board (drag between columns) and a
+  month Calendar (drag a to-do to a day), mark a to-do as blocked by another, rename a row in
+  place, plan the week, add to-dos from pasted meeting notes, escalate a quiet chase and hand a
+  to-do to a teammate from Staff. All of it stays on this computer; mail is only ever opened unsent.
+- **Tasks app** extras: a History tab (every run, who approved what, a failure in plain words,
+  trends), a Schedule tab (weekly or monthly reminders, optional self-preparing that always stops
+  at the review step, a send-later queue) and, before a run, a "What will happen" preview, a check
+  of the uploaded export and a comparison with the last run. Mail recipients are checked before
+  you confirm a send. In the desktop app, "Newest in Downloads" picks up a fresh export.
 - **Tasks engine** (`tasks-engine/`, Python/FastAPI) and the **Tasks app**: runs the task
   folders under `tasks/` (Shift Roster, December Disconnect, the weekly and monthly reports,
-  the deployment mailer) through prepare, review, approve and send gates.
+  the deployment mailer) through prepare, review, approve and send gates. A **Packs** tab adds
+  tasks without reinstalling: install a checksummed task pack (you confirm its fingerprint first),
+  or build a mailer from a table and a template with a wizard. See
+  [`docs/task-packs.md`](./docs/task-packs.md).
+- **Settings** (Ctrl+,): General (profile, start-up, command bar), Notifications, Shortcuts,
+  Accessibility and four platform tabs. **Data** shows the data folder and its size and backs up,
+  restores (after saving what it replaces) and exports to JSON or CSV. **Activity** is the audit log in
+  plain words. **Help** has a guided tour, sample data you can add and remove again, and three tasks
+  for each app. **About** shows the version and what's new, an update check that is off until you turn
+  it on (it only downloads an installer whose SHA-256 matches, and never runs it for you) and a
+  diagnostics file for support with passwords, tokens, emails and user names removed.
 - **Staff Management** (`src/lib/staff/`, `src/components/apps/staff-app/`): the roster of
   people. A Directory (the main columns in a list, everything else in a right-hand detail pane),
   a Shift roster (teams from the directory, each with its own shift schedule, in Day, Week,
@@ -27,7 +79,23 @@ on the user's computer (loopback only; the AI is a local Ollama model, no cloud 
   roster, kept on file and editable, restorable or deletable). It is meant to be the one list of people that
   the other apps read instead of an uploaded Excel file. Leave emails and M365 profiles are read in the
   background while AI OS runs (light local model, no window needed); the AI orb at the bottom right
-  tells you when a leave request waits for approval.
+  tells you when a leave request waits for approval. An **Insights** tab adds capacity per team with
+  minimum-cover rules, leave approval with a warning when cover would fall short and a templated reply
+  (unsent), leave balances, shift swaps, a fair weekend and holiday on-call rotation, roll-off and
+  contract-end alerts, birthdays and anniversaries, a skills matrix with "who can cover", an org
+  chart, onboarding and offboarding checklists, public holidays by rule, and exports (CSV for Excel
+  and calendar files). Click a name for a small profile card. Leave can be entered for several dates at once
+  ("5–7 Nov, 12 Nov"), and Settings has a colour-blind-safe roster palette.
+- **PMO Toolkit** (`src/lib/registers/`, `src/components/apps/toolkit/`): fourteen small tools, each its own
+  window opened from the toolkit, the command bar ("open raid log") or Ctrl+K: RAID log, meeting minutes
+  (action lines become to-dos you tick), timesheet chaser (leave is skipped; one draft for everyone missing),
+  decision log, SLA watcher (paste incidents; days per priority), change requests (weekly summary),
+  governance calendar (prep to-dos dated back from the meeting), stakeholder register (contact cadence),
+  vendor and contract tracker (notice deadlines), capacity planner (over-allocation against leave), invoice
+  readiness (what each invoice still lacks, month-end check), status report builder (RAG roll-up and report)
+  and lessons learned, and a document link library. Each shows what is late or due soon, can make a to-do
+  or an unsent chaser mail, exports CSV and is included in backups and data export. Late items appear in
+  the "needs you" count, the dock badge and an optional Dashboard card. Nothing is sent from any of them.
 - **First-run Setup screen**: checks and installs what a new computer lacks (Ollama, the AI
   model, the OneDrive folders, classic Outlook, the Tasks engine). A first install also creates one
   `OneDrive\AI-OS` folder for every flow and opens an animated first-time setup, one step at a time,
@@ -62,8 +130,11 @@ model in detail.
 
 Everything the installed app writes is under `%APPDATA%\ai-os` (Electron's user-data folder),
 never in the install folder, so a reinstall keeps it: `tasks-engine\` (task inputs, outputs,
-config, run history), `pmo\` (the PMO data folder: to-dos, queue, audit log, reports),
+config, run history and `task-packs\`, the installed task packs), `pmo\` (the PMO data folder: to-dos,
+queue, audit log, reports, and `backups\` with the safety copies Restore makes),
 `pmo\staff\` (the Staff Management roster, shifts, time off and profile pictures),
+`pmo\templates\` (the Template library, `library.json`; the Tasks engine reads the same file through
+`AI_OS_TEMPLATES_DIR`),
 `desktop.log`, and the app's settings files. The first-run Setup screen and `docs/clean-machine-test.md`
 describe how to test this on a new computer.
 
@@ -117,9 +188,9 @@ pnpm desktop:package
 The command first builds the private Python the installer carries (`pnpm runtime:python`; it needs any
 Python 3.9+ with pip on this machine and network access the first time, and reuses its download cache after).
 See `scripts/build-python-runtime.py` for how it is pinned. The installer is built from the working tree, so the gitignored files the tasks need (`tasks/*/templates`, `tasks/*/config`, `tasks/shared/roster-reference`, `tasks/shared/roster/Names.xlsx`) must be present on the machine that builds it; a fresh clone does not have them. The installer is written to
-`release/AI OS Setup 4.0.0.exe`. Run it
+`release/AI OS Setup 6.0.0.exe`. Run it
 once to install AI OS under `%LOCALAPPDATA%\Programs\AI OS` (or select a
-different folder in the installer). The installer wizard is branded to match the app (dark welcome and finish pages; the artwork is drawn by `python scripts/build-installer-art.py` and committed in `build/installer/`, so building needs no extra tools). It creates Start-menu and
+different folder in the installer). The installer wizard is branded to match the app (dark welcome and finish pages; the artwork is redrawn from `package.json`'s version by `pnpm installer:art` (part of `pnpm desktop:package`, needs Pillow, fonttools and brotli) into `build/installer/`). It creates Start-menu and
 desktop shortcuts; pin either to the Windows taskbar. The installed app does
 not need HTTPS, a browser tab, or a terminal.
 

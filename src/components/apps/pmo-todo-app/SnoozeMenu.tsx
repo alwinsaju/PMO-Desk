@@ -26,6 +26,7 @@ interface SnoozeMenuProps {
 
 const CHOICES: { id: SnoozeChoice; label: string }[] = [
   { id: "1h", label: "In 1 hour" },
+  { id: "after-lunch", label: "After lunch" },
   { id: "tomorrow", label: "Tomorrow" },
   { id: "monday", label: "Next Monday" },
 ];

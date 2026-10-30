@@ -151,6 +151,7 @@ export function sortTodos(todos: Todo[], today: string): Todo[] {
 
 export const TODO_FILTERS = [
   { id: "open", label: "Open" },
+  { id: "today", label: "Today" },
   { id: "overdue", label: "Overdue" },
   { id: "due-soon", label: "Due soon" },
   { id: "waiting", label: "Waiting" },
@@ -160,7 +161,8 @@ export const TODO_FILTERS = [
 export type TodoFilter = (typeof TODO_FILTERS)[number]["id"];
 
 /** Overdue = due before today; due soon = due today or tomorrow (the same
- *  windows the dock badge uses); waiting = "waiting on" is set; snoozed =
+ *  windows the dock badge uses); today = due today or earlier and not snoozed (what can
+ *  be acted on now); waiting = "waiting on" is set; snoozed =
  *  silenced until later; done = done or cancelled. Snoozed and waiting items
  *  also stay in "Open". `today` is the IST date the server reports. */
 export function matchesFilter(todo: Todo, filter: TodoFilter, today: string, now: Date) {
@@ -168,6 +170,8 @@ export function matchesFilter(todo: Todo, filter: TodoFilter, today: string, now
   switch (filter) {
     case "open":
       return open;
+    case "today":
+      return open && todo.dueAt !== null && todo.dueAt <= today && !isSnoozed(todo, now);
     case "overdue":
       return open && todo.dueAt !== null && todo.dueAt < today;
     case "due-soon":

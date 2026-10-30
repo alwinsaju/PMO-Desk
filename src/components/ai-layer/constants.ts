@@ -24,11 +24,6 @@ export const EMPTY_STATE_NOTICE_MS = 2800;
  *  this window, the mutation already happened the moment it started. */
 export const ACTION_HOLD_MS = 1300;
 
-/** How long a plain conversational reply's annotation bubble stays on
- *  screen before the sequence resets to idle. Longer than `ACTION_HOLD_MS`
- *  since there's real prose to read here, not just a short action label. */
-export const MESSAGE_HOLD_MS = 4500;
-
 /** How long a completed task's status (badge + presence ring) stays
  *  visible before the sequence resets to idle and the next submit is
  *  allowed. */

@@ -57,4 +57,9 @@ export interface AgentAnnotation {
   message: string;
   /** The point the bubble's tail points at. */
   position: ScreenPoint;
+  /** An answer to read, not a status: stays until dismissed (Esc, the close button or the
+   *  next question) and offers Copy. */
+  sticky?: boolean;
+  /** A link under the answer ("Show me in PMO To-Do"). */
+  action?: { label: string; run: () => void };
 }

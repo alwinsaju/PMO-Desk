@@ -12,12 +12,14 @@ import {
   Input,
 } from "@/components/ui";
 import { todayIso } from "@/lib/staff/dates";
+import { parseDateList } from "@/lib/staff/leave";
 import { displayName, sortEmployees } from "@/lib/staff/employees";
 import { useStaffStore } from "@/lib/staff/staffStore";
 import {
   STATUS_META,
   TIME_OFF_META,
   createTimeOff,
+  newRequestId,
   validateTimeOff,
   type TimeOffErrors,
 } from "@/lib/staff/timeoff";
@@ -80,18 +82,47 @@ function TimeOffForm({
   const set = <K extends keyof TimeOffRequest>(key: K, value: TimeOffRequest[K]) =>
     setDraft((d) => ({ ...d, [key]: value }));
 
+  // Several dates pasted at once ("5–7 Nov, 12 Nov"): one request per range.
+  const [pasted, setPasted] = useState("");
+  const parsed = useMemo(() => (pasted.trim() ? parseDateList(pasted) : null), [pasted]);
+  const ranges = parsed?.ranges ?? [];
+
   async function save() {
-    const request: TimeOffRequest = {
+    const base: TimeOffRequest = {
       ...draft,
       reason: draft.reason.trim(),
       decidedAt: draft.status === "pending" ? "" : new Date().toISOString(),
     };
-    const found = validateTimeOff(request, timeOff, ids);
+    const requests: TimeOffRequest[] =
+      ranges.length > 0
+        ? ranges.map((r) =>
+            createTimeOff({
+              ...base,
+              id: newRequestId(),
+              startDate: r.start,
+              endDate: r.end,
+            }),
+          )
+        : [base];
+    if (parsed && parsed.unreadable.length > 0)
+      return setError(`Could not read: ${parsed.unreadable.join(", ")}`);
+    const found = validateTimeOff(requests[0], timeOff, ids);
     setErrors(found);
     if (Object.keys(found).length > 0) return;
+    for (let i = 1; i < requests.length; i++) {
+      const more = validateTimeOff(
+        requests[i],
+        [...timeOff, ...requests.slice(0, i)],
+        ids,
+      );
+      if (Object.keys(more).length > 0)
+        return setError(
+          `${requests[i].startDate}: ${Object.values(more)[0] ?? "this request is not valid."}`,
+        );
+    }
     setBusy(true);
     setError(null);
-    const result = await commit("timeoff", { upsert: [request] });
+    const result = await commit("timeoff", { upsert: requests });
     setBusy(false);
     if (!result.ok) return setError(result.reason);
     onClose();
@@ -190,6 +221,26 @@ function TimeOffForm({
             onChange={(e) => set("reason", e.target.value)}
             placeholder="Optional"
           />
+        </Field>
+        <Field label="Several dates at once" htmlFor="to-paste" className="sm:col-span-2">
+          <Input
+            id="to-paste"
+            value={pasted}
+            onChange={(e) => setPasted(e.target.value)}
+            placeholder="Optional: 5–7 Nov, 12 Nov (replaces From and To)"
+          />
+          {parsed && (
+            <p className="text-ink-muted mt-1 text-[12px]" data-testid="pasted-dates">
+              {ranges.length > 0
+                ? `${ranges.length} request${ranges.length === 1 ? "" : "s"}: ${ranges
+                    .map((r) => (r.start === r.end ? r.start : `${r.start} to ${r.end}`))
+                    .join(", ")}`
+                : "No dates found yet."}
+              {parsed.unreadable.length > 0
+                ? ` Could not read: ${parsed.unreadable.join(", ")}.`
+                : ""}
+            </p>
+          )}
         </Field>
       </div>
 

@@ -19,6 +19,12 @@ export function windowShortcut(event: KeyLike): WindowShortcut | null {
   return null;
 }
 
+/** Ctrl+Space jumps to the command bar from anywhere, even while typing in an app. */
+export function isFocusBarShortcut(event: KeyLike): boolean {
+  if (!event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return false;
+  return event.key === " " || event.key === "Spacebar";
+}
+
 /** First candidate that is still usable (e.g. still in the document). */
 export function firstUsable<T>(
   candidates: ReadonlyArray<T | null | undefined>,

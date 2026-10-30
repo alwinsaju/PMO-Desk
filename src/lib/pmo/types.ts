@@ -387,8 +387,10 @@ export const TodoSchema = z.object({
   /** Chase after this many quiet working days; null = the global default. */
   chaserDays: z.number().int().min(1).max(MAX_CHASER_DAYS).nullable().default(null),
   tags: z.array(z.string()),
-  /** How often it repeats, as plain text ("weekly, before Tuesday"). Shown only:
-   *  nothing re-creates or re-reminds a repeating to-do. null = a one-off. */
+  /** Ids of to-dos that must finish before this one can (dependencies). Older records have none. */
+  blockedBy: z.array(z.string()).default([]),
+  /** How often it repeats, as plain text ("weekly, before Tuesday"). Closing it creates the
+   *  next round (or offers to, see Settings). null = a one-off. */
   recurrence: z.string().nullable().default(null),
   source: TodoSourceSchema,
   reminders: RemindersSchema,

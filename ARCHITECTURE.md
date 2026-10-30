@@ -1844,3 +1844,345 @@ AI request job, the stub, and the source scans), and
 key rules). The "nothing is ever sent" scans in `updates.server.test.mjs` and
 `signoff.server.test.mjs` cover the new modules: no mail, Outlook, network, tasks-engine or
 HTML-injection code, the only hand-off being the `mailto:` link.
+
+## Version 5: PMO command-bar actions, Dashboard and Template library
+
+Three additions on top of the existing apps. None of them sends anything: the command bar
+answers or opens a form, the Dashboard only reads, and templates only set the wording of a
+draft a person still reviews.
+
+### PMO actions in the command bar (`src/lib/ai-runtime/`, `/api/ai/pmo`, `/api/ai/command`)
+
+- **Two ways in, one answer.** `pmoIntent.ts` recognises the PMO questions deterministically
+  ("who's off next Monday?", "what's overdue?", "what do I need to chase?", "PMO status",
+  "prepare this week's aging report"); `CommandBar.tsx` then posts the intent to
+  `/api/ai/pmo`, which answers from the data **without the model** (instant, works with Ollama
+  stopped). Anything else goes to `/api/ai/command` as before, which now also offers the model
+  three tools (`whos_off`, `pmo_status`, `prepare_task`). The model only picks the tool and
+  passes the user's own words; both paths end in the same `answerPmoIntent` (`pmoAnswers.ts`),
+  so they cannot disagree. A small local model is unreliable at calendar arithmetic and at
+  not inventing names, which is why the dates and the facts are code.
+- **Pure parts** (all unit-tested): `whenPhrase.ts` (`resolveWhen`: today, tomorrow, weekdays
+  with "this"/"next", weeks, weekends, months, "next N days", several date spellings; weeks run
+  Monday to Sunday and "next Friday" is the Friday of next week), `pmoIntent.ts`, `pmoReply.ts`
+  (the wording of each answer; every name and date comes from the data), `pmoAnswers.ts`
+  (data comes in through `PmoDeps`, so tests pass fixtures) and `staff/whosOff.ts`.
+  `pmoAnswers.live.ts` is the only part that reads the real Staff files and PMO store.
+- **Who's off** = approved time off, plus requests still waiting (marked as such), plus the
+  roster's leave days (`status:pto`, `temp-pto`, `comp`, `sick`; not holidays, weekly offs or
+  on-call). A roster day the person's time off already covers is not listed twice, consecutive
+  days (across a weekend) join into one entry, and holidays in the range are listed apart.
+  "Today" is the PMO reminder time zone.
+- **Prepare a task** is an _action_, not a run: the bar opens the Tasks app and posts a
+  `RunRequest` to `tasksNavStore.ts`; the task's card is marked and its Run form opens
+  (`TaskActions.tsx`). A person adds the files and presses Run, and the usual review and
+  confirm gates still apply. A request nobody picks up within a minute is ignored. The task
+  names the bar understands are in `lib/tasks-engine/catalog.ts` (add an alias there).
+- The bar now knows the apps `pmo-todo`, `staff`, `dashboard` and `templates`
+  (`windowIntent.ts`). A plain reply stays on screen until it is dismissed (see v5.1 below).
+
+### Dashboard (`src/lib/dashboard/`, `src/components/apps/dashboard-app/`)
+
+No API of its own: it reads `/api/pmo/state`, the Staff store, `/api/staff/roster` and the
+Tasks engine (`/tasks`, `/tasks/<id>/history`) and `/api/pmo/reports`, through the same hooks
+the apps use. `dashboard/summary.ts` holds the arithmetic (`openTodos`, `overdueChasers`,
+`reportStatuses`, `awayWindow`), shared with the command bar so "what's overdue?" and the
+widget agree. A report task shows its state (running, needs review, ready to send, failed) or,
+when idle, how its last run ended; the PMO weekly report is "up to date" once a saved report
+reaches back to last Sunday. The Tasks engine being down shows a note instead of an empty card.
+
+### Template library (`src/lib/templates/`, `src/components/apps/templates-app/`, `/api/templates`)
+
+- **Storage.** One file, `<PMO data dir>\templates\library.json` (`AI_OS_TEMPLATES_DIR` overrides
+  it; `engineEnv()` sets it for the Tasks engine so the Python scripts read the same file). It is
+  written with the starter templates on the first read; a damaged file is reported and never
+  replaced. Writes go through the same atomic writer and per-folder lock as the Staff files.
+- **Model.** A template has a kind (`email` or `report`), a subject (or title line), To and Cc
+  (email), a body with `{{placeholders}}` and `**bold**`, and `usedBy`: the keys of the places that
+  use it. The places are the catalog in `targets.ts`: `task:weekly-aging-report`,
+  `task:weekly-backlog-report`, `task:deployment-dep-weekend-mailer`, `app:pmo-todo:signoff`,
+  `app:pmo-todo:chaser` and `app:pmo-todo:report`, each with the placeholders it can fill and
+  example values for the preview. **A place has at most one template**: saving one that claims a
+  place takes it from the previous holder (the reply lists who lost what). A template may only use
+  placeholders every one of its places can fill; a template used nowhere is not checked until it is
+  assigned. A placeholder with no value is left as typed, so a mistake is visible in the draft.
+  Reading `library.json` is lenient (a template is kept even if a place dropped a placeholder).
+- **Consumers.** _Tasks_: `build_email_data.py` of the three mail tasks calls
+  `template_lib.apply_email_template(<key>, data, values)` (`tasks/shared/template_lib/`), which
+  overrides the subject, To, Cc (a blank one keeps the task's own) and adds `body_html`;
+  `create_draft.ps1` uses `body_html` for the greeting and message when present, else its own
+  text. No library, no template for the key or an unreadable file means the script's own wording,
+  exactly as before. Values are HTML-escaped (a value the script wrote itself is passed as `Html`),
+  and a value cannot add a header line or make bold. _PMO To-Do_: `signoffRequest.ts`
+  (`buildSignoffTemplate({ template })`), the chaser dialog ("Use my template", filled by
+  `pmo/templateValues.ts`) and the weekly report (`applyReportTemplate` wraps what is copied or
+  mailed around `{{report}}`) fetch their template with `useAssignedTemplate(key)`.
+  The starters reproduce the built-in wording exactly (tests compare them with the built-in text
+  and with the Python HTML), so nothing changes until a template is edited.
+- **To add a place** (another task or app slot): add a `TARGETS` entry with its placeholders, call
+  the library where the text is made (Python `apply_email_template`, or `useAssignedTemplate` plus a
+  pure render function), and add a starter that reproduces today's wording if it should be on by
+  default.
+
+## Version 5.1: polish and shared building blocks
+
+Small, visible fixes plus the pieces later releases build on (the full plan is ideas 1-152; this is the
+first release of it). Nothing here sends anything. Logic is in pure, tested modules; components only wire
+it up.
+
+- **Saved preferences** (`src/lib/preferences/`). One server-backed store, `usePreferences` (the
+  reserved `preferences` key of `/api/ui-state`, so it survives a change of port), holds the Dashboard
+  period, "Skip the lock screen" and each app's last window rectangle. `schema.ts` sanitises whatever
+  comes back, field by field, so a damaged file falls back to defaults. Add a preference by extending
+  `Preferences`, `DEFAULT_PREFERENCES` and `sanitizePreferences`.
+- **Window placement** (`window-manager/windowPlacement.ts`). A window opens where that app's window
+  last was (refitted to the screen), else at a per-app default size (`APP_DEFAULT_SIZES`: Dashboard,
+  Templates, Staff and Tasks are wider), else the old cascade. A second window of the same app cascades
+  instead of landing on the first. Web apps are never remembered. Rectangles are saved 600 ms after the
+  last move or resize; a window that opened before the saved rectangles loaded and was not touched is
+  moved into place when they arrive (`pristineUpdates`).
+- **Window titles** (`windowTitles.ts`, `titleSuffixStore.ts`). An app can add live status after its
+  title: PMO To-Do shows "(3 need attention)", fed by `PmoReminders`.
+- **Toasts and notification history** (`src/lib/notifications/`, `ui/ToastHost.tsx`). `toast({ message,
+tone, action, key })` from anywhere; a repeated `key` replaces the earlier toast, errors and toasts
+  with an action stay longer, and every toast is kept in a capped history (the notification centre will
+  read it). PMO's own reminder toast is separate and unchanged.
+- **Command bar.** An answer to a question now stays until dismissed (Esc, the close button or the next
+  question) and has a Copy button (`AIAnnotationBubble`, `AgentAnnotation.sticky`). Ctrl+Space focuses
+  the bar from anywhere (`focusKeys.isFocusBarShortcut`). While the local model is asleep the bar says so,
+  with a running clock (`barText.ts`; the bar asks `/api/ai/runtime` alongside the request). A day or
+  task it cannot read gets a "Did you mean...?" when a near spelling is understood (`didYouMean.ts`:
+  the suggestion is only offered if the real parser accepts it). "Prepare ..." also raises a toast.
+- **PMO To-Do.** A quick-add box ("Send deck to Priya Fri", `pmo/quickAdd.ts`: only a day at the end
+  is a due date, shown under the box before saving), a **Today** filter (due today or earlier, not
+  snoozed), keyboard use of the list (`listKeys.ts`: J/K, E/Enter, D with an Undo toast, S) and a
+  first-run wizard that resumes where it was left and remembers your identity for a fresh data folder
+  (`pmo/firstRunMemory.ts`; browser storage only). Steps with a sensible default can be skipped.
+- **Dashboard.** A failed report row has a "View log" button that opens that task's details
+  (`tasksNavStore.requestDetail`). The period toggle is remembered.
+- **Templates.** The editor keeps what is typed (browser storage, per template) and offers it back if
+  the template has not changed since (`draftAutosave.ts`).
+- **Other.** The Content-Security-Policy moved to `src/lib/security/csp.mjs` (tested; the invalid
+  `http://[::1]:*` source that warned on every load is gone). Lazy apps show a skeleton while loading.
+  "Skip the lock screen" is in Quick settings.
+
+## Version 5.2: command bar, search, shell
+
+- **More the bar understands, still by code.** `pmoIntent.ts` gained "when is Ana back?", "what's Ben's
+  shift tomorrow?" and "what changed since yesterday?" (answered on the server by `pmoPeople.ts` from
+  the Staff and PMO data; names are matched by `findPeople`, several matches are asked about, never
+  guessed). `localIntent.ts` holds the commands done in the browser: create a to-do ("remind me to ...",
+  parsed by `pmo/quickAdd.ts`), snooze, mark done, chase, "did the backlog report run?" / "why did it
+  fail?" (`runInfo.ts`, from the engine's run history), "explain this screen" (`explain.ts`) and
+  "focus for 30 minutes". A command that names no to-do falls through to the model.
+- **Confirmation cards.** `barActions.ts` plans a to-do command (`matchTodo`, then an `ActionPlan`);
+  `localCommands.ts` runs it. Creating, closing and snoozing ask first according to
+  `preferences.confirmActions` (Settings > General); the card (`BarActionCard`, `barActionStore`) opens
+  with focus on Cancel and Esc cancels. Closing and snoozing show an Undo toast. Chasing only opens the
+  chaser draft (the PMO window starts it through `remindersStore.requestOpen(todoId, { chaser })`).
+- **History, audit, favourites.** Every command is written to `preferences.commandLog` (what was typed,
+  which tool answered, how it ended; capped at 100) and shown in Settings > General. Up/Down recall it,
+  Tab completes from it (`barSuggestions.ts`), a star pins a favourite, and the chips above the bar follow
+  the focused app. A chain ("open Tasks, then what's overdue") shows its plan and runs step by step
+  (`steps.ts`; every step must be understood, at most three; a cancelled or failed step stops the chain).
+  An answer can carry a "Show me in ..." link (`barLinks.ts`) that opens the app filtered.
+  `ModelHealthChip` offers to wake a sleeping model before you ask.
+- **Global search** (`lib/search/searchIndex.ts`, `components/search/GlobalSearch.tsx`): Ctrl+K searches
+  apps, to-dos, people, time off, templates and notes. The index is built when the box opens.
+- **Windows.** Snap (`windowSnap.ts`: Ctrl+Alt+arrows and 7/9/1/3, or drag to a screen edge), keep on
+  top (`WindowState.pinned`, a z-index boost), a Ctrl+Tab switcher (`windowSwitch.ts`,
+  `WindowShortcuts.tsx`) and the dock tooltip listing several open windows of an app.
+- **Focus mode** (`lib/focusMode.ts`, `focusModeStore.ts`): hides the dock and holds back toasts
+  (`pushToast(..., quiet)` still records them in the history; errors always show).
+- **Settings window** (`apps/settings-app`, `settingsNav.ts`; Ctrl+, or "All settings"): General,
+  Notifications (the toast history), Shortcuts (`lib/shortcuts.ts`; press ?) and Accessibility (reduce
+  motion, high contrast: attributes on `<html>` set by `ShellEffects`, styles in `styles/accessibility.css`).
+  An optional "Who's out today" card sits on the desktop (`DesktopWidget`).
+
+## Version 5.3: PMO To-Do
+
+- **Pure logic in one module**: `lib/pmo/pmoViews.ts` holds bulk actions (`bulkPatches` with
+  `bulkUndo`), tag rollups, board columns and `dropPatch`, the month grid, blocked-by checks
+  (`blockedState`, `wouldCycle`), look-alike detection (`similarTodos`), `flagReason`, `weeklyPlan`,
+  escalation text, `handoffNote`, `extractActionItems` and `matchReason`. All of it is covered by
+  `pmoViews.test.mjs`; the components only draw it and call the existing `/api/pmo/todos` routes.
+- **Recurrence.** `recurHelper.continueRecurrence` creates the next round when a repeating to-do is closed
+  (list, detail dialog or command bar) and offers Undo. With `preferences.autoRecur` off, the old
+  "Create next one" prompt is used. The server still only reports `nextOccurrence`; nothing repeats by
+  itself and no recurring reminders are sent.
+- **Dependencies.** `Todo.blockedBy` is a list of to-do ids, edited in the detail dialog (`TodoExtras`).
+  A loop is refused by `wouldCycle`; a blocker that is late or due after the dependant shows a warning.
+- **Views.** `ListTools` (search, tag, saved views kept in `preferences.savedViews`, tag rollups) and
+  `BulkBar`; `BoardTab` (HTML5 drag between To do, Waiting, Snoozed and Done; Waiting and Snoozed need
+  details, so the board says where to set them) and `CalendarTab` (drag a to-do to change its due day).
+  Bulk and drag changes are ordinary `PATCH` calls, run one after another by the server's lock.
+- **Planning and intake.** `PlanDialogs`: "Plan week" ranks the open to-dos with reasons;
+  "From notes" lists action-looking lines of pasted notes and creates only the ones you tick.
+  `UpdateCard` shows why a message was matched to a to-do (same Outlook or Teams conversation).
+- **Follow-up.** After three chaser rounds with no reply the detail dialog suggests an escalation
+  (opens an unsent mail); "Hand over" picks a teammate from Staff, sets the owner and gives a note
+  to copy or open unsent. Cancel and snooze (detail dialog, list row) show Undo toasts; a row can be
+  renamed in place; "After lunch" joined the snooze presets.
+
+## Version 5.4: Tasks and reports
+
+- **Pure logic in `lib/tasks/`** (all in `tasksLib.test.mjs`): `failureExplainer` (a traceback becomes a
+  title and steps; `retryLabel`), `taskSchedule` (weekly/monthly occurrences, `pendingOccurrence`),
+  `runHistory` (filters, durations, plain step names, a cautious "time left"), `inputCheck` (per-task
+  column rules in `INPUT_RULES`, snapshots of an export and `compareSnapshots`), `recipientCheck`,
+  `sendQueue`, `dryRun` and `automation` (what the background watcher reports).
+- **Saved separately.** `tasksPrefsStore` persists under its own `tasks-prefs` ui-state key (schedules,
+  the send-later queue, snapshots, last recipients, last file names) because snapshots can be large;
+  `sanitizeTasksPrefs` repairs anything hand-edited.
+- **Background.** `TasksBackground` (mounted by the desktop, so it works with the Tasks window closed)
+  polls the engine every 20 s while AI OS is open: notices when a task needs you, fails or finishes (toast,
+  plus a system notice while hidden), reminds for due schedules (an overdue one is reported once as
+  "missed"), starts a task that is set to prepare itself only when its files are present (it still stops at
+  the first review step), and sends a queued mail only if the task is still at its send step and the draft's
+  recipients are exactly what was approved at queue time. A queued send older than 15 minutes is never sent
+  by itself.
+- **Run form.** `StartTaskDialog` shows "What will happen" (built from the manifest), reads a chosen
+  export in the browser (`readWorkbookSheets`) and reports missing columns, a stale export or repeated
+  numbers before the run, and compares it with the last run's snapshot (committed when the run starts).
+  The confirm dialog (`RecipientReview`) warns about recipients that changed since the last confirmed send,
+  outside addresses (domains come from the Staff directory) and large attachments, and can queue the send.
+- **Tasks window.** Workflows, History (`HistoryTab`: filters, approvals, plain-words failures,
+  per-task trend lines) and Schedule (`ScheduleTab`). A failed card says what went wrong
+  (`FailureHelp`) and the button reads "Retry from <step>" (the engine already resumes after the last
+  finished step). A running card shows a plain step name, "Step N of M" and a rough time left.
+- **Desktop file helpers.** `desktop/export-picker.cjs` + `files:*` IPC (`preload.cjs`): "Newest in
+  Downloads" and "Browse…". The page names only an extension and a name prefix, never a path; only the
+  Downloads folder is read, the name is validated (`isSafeName`), and the file dialog reopens in the
+  folder of the last file.
+- **Not done in 5.4.** The new-mailer wizard (item 37) needs the task-pack format and moves to 5.7.
+  Item 38 (choose attachments) is a warning only: the draft's attachments are shown and large ones are
+  flagged, but they are changed in Outlook, because the send scripts decide what to attach.
+
+## Version 5.5: Staff and roster
+
+- **Pure logic in `lib/staff/`** (all in `staffInsights.test.mjs`): `capacity` (people working per team and
+  day, `coverageGaps`, `leaveImpact`), `leave` (balances, the templated reply, `parseDateList`, swaps),
+  `onCall` (fair-share rotation), `holidayRules` (public holidays computed from rules: fixed dates, nth
+  weekday, Easter; lunar festivals are deliberately not guessed), `people` (30/14/7-day end alerts,
+  birthdays and anniversaries, skills matrix, `whoCanCover`, org chart), `checklists`, `exportFiles` (CSV
+  with a BOM so Excel opens it, and all-day ICS), `profileCard` and `staffPrefs`.
+- **Saved separately.** `staffPrefsStore` persists under the `staff-prefs` ui-state key: minimum cover per
+  team, the yearly leave allowance, swap requests, checklists and the directory ids already seen.
+  `Employee.birthday` ("MM-DD") is a new optional field (default ""); anniversaries use the staffing start
+  date. The workbook import and export columns are unchanged.
+- **Insights tab** (`InsightsTab`): Capacity, People, Leave balances, Swaps, On call, Skills, Org chart,
+  Checklists, Holidays and Export. `LeaveApprovals` (also on the Dashboard as "Staff to act on") approves or
+  rejects through the normal `timeoff` commit, warns when approval would take a team under its minimum
+  and offers the reply as an unsent mail. An approved swap writes both days through the `shifts` commit,
+  marked as swaps. Onboarding checklists start for people who appear in the directory after the first
+  look (the first look only records who is there); offboarding ones for people newly on the Offboarded list.
+- **Everywhere.** `PersonName` opens a profile card (the Dashboard's "who's out" rows and the Insights lists);
+  the leave dialog accepts several dates at once; Settings > Accessibility has the colour-blind-safe roster
+  (`data-roster-colours="safe"` on `<html>`, Okabe-Ito hues with a pattern on every shift,
+  `styles/roster-colors.css`). The roster legend was already outside the scrolling grid, so it stays visible.
+- **Not done in 5.5.** Exports are CSV (opens in Excel) and ICS, not .xlsx, to avoid adding a spreadsheet
+  writer; a native .xlsx can follow if wanted.
+
+## Version 5.6: Dashboard and Templates
+
+- **Dashboard logic in `lib/dashboard/`** (`insights.test.mjs`): `todayList`, `workloadByOwner`,
+  `agingBuckets`, `signoffPipeline`, `reportHealth`, `weekOverWeek`, `briefingText`/`briefingDue` and
+  `needsYouTotal` are pure functions over data the Dashboard already loads (`useDashboardData` now also
+  returns run histories). `layout.ts` holds the widget list, order, hidden and wide flags and named
+  layouts; the new cards are hidden by default so the default Dashboard is unchanged. Layouts and
+  briefing settings persist under the `dashboard-prefs` ui-state key.
+- **Shell.** `NeedsYouBadge` sums to-dos, approvals, leave requests and tasks needing review
+  (`needsYouStore`) into the dock badge and `bridge.setBadge`; it is the only caller of `setBadge`.
+  `BriefingBackground` shows one toast a day. The `view:capture` and `view:save` IPC calls render the
+  Dashboard to a PNG or a one-page PDF through a hidden window and a save dialog; `exportView.ts`
+  stitches tall captures.
+- **Templates.** `render.ts` gained `{{#if name [op value]}}…{{else}}…{{/if}}` (operators `> >= < <= = !=`,
+  nestable) and `{{> snippet}}` partials. Snippets are templates of kind `snippet`. `resolveTemplate`
+  inlines them and supports `?variant=`. The Python twin (`tasks/shared/template_lib/library.py`) mirrors
+  the syntax and shares test vectors with `render.test.mjs`, so tasks and the app render alike.
+  Templates also carry `tags`, `variants` and `history` (20 versions, recorded by `updateTemplate`).
+  `pack.ts` exports and imports a pack (imported templates are named uniquely and used nowhere);
+  `usage.ts` records when each template last produced a draft (`template-usage` key).
+- **New places** for templates: leave approved and rejected, birthday, anniversary, escalation and
+  hand-over, each with a starter that reproduces the previous wording.
+- **Not done in 5.6.** The week card has no AI narrative (code only). Python tasks use the main wording,
+  not variants. The PNG/PDF save dialog is not driven by the automated desktop test.
+
+## Version 6.0: the PMO Toolkit
+
+- **One definition per tool** (`lib/registers/defs.ts`): fields with types (text, long text, select, date,
+  number with bounds, person, https-only url, tags, yes/no), a title, a status with closed values, a due and
+  an owner key, columns, a sort and an alert rule. `records.ts` cleans every record to its definition
+  (unknown keys dropped, a plain refusal for a bad value, two-field rules such as end after start). `alerts.ts`
+  holds the rules (due date, RAID review and age, SLA by priority, contract notice window, stakeholder contact
+  cadence, governance prep, invoice blockers, RAG) and `summarise` counts open, late and soon.
+  `timesheets.ts`, `capacity.ts`, `reports.ts` (status report, change summary, month-end check, to-do seed)
+  and `slaImport.ts` (pasted incidents) are pure. Tests: `registers.test.mjs`.
+- **Storage and routes.** One file per tool in `<data>/registers/<tool>.json`, written atomically under the
+  data-folder mutex through the same definition (`server.ts`); a damaged file is reported and never
+  overwritten. Routes: `GET|POST /api/registers/<tool>` (`upsert`, `remove`, `config`; at most 500 records per
+  call, 5000 per tool) and `GET /api/registers/summary`, behind the same-origin guard. Backups include the folder
+  (it is part of the data folder); JSON and CSV export add each non-empty tool.
+- **UI.** `RegisterApp` is the generic list (search, status filter, show closed, CSV, alert chips, add and
+  edit dialog with delete confirmation, make a to-do, an unsent chaser mail to the owner). `useRegister` ignores a
+  read that started before a write finished, so a refresh cannot bring older data back. Tools with more have
+  a panel (`extras/`: SLA settings and import, change summary, month-end check, status report, minutes and
+  governance to-dos) or their own screen (`TimesheetApp`, `CapacityGrid`). Every tool is a window registered
+  under its own id; `toolApps` in `pinnedApps.ts` lists them (not as dock tiles; the dock gains one PMO
+  Toolkit tile). The command bar (`windowIntent.ts` aliases), Ctrl+K (records are searchable) and the
+  Dashboard ("PMO toolkit" card, hidden by default) know them. `RegistersBackground` reads the summaries
+  each minute for the "needs you" count and the toolkit's dock badge.
+- **Limits.** The decision, lesson and document tools are plain lists. Capacity uses approved leave from Staff
+  but not shifts or holidays. The timesheet chaser does not read a timesheet system; who has filed is entered or
+  pasted. Records are not linked to Staff by id (a person is a name), so renaming someone does not rename them
+  in a register.
+
+## Version 5.7: platform and trust
+
+- **Pure and server code in `lib/platform/`** (`platform.test.mjs`, `platformLibs.test.mjs`):
+  - `zip.ts` is a small zip writer and reader on `node:zlib` (stored or deflated entries; no encryption or
+    zip64). Names are checked against "zip slip" (`..`, absolute, drive and backslash paths), sizes and
+    entry counts are capped, and every entry's CRC is verified.
+  - `backup.ts` zips the data folder (`resolveDataDir()`: to-dos, queue, staff, templates, `ui-state`,
+    the audit log) with a manifest. It leaves out `logs/` and `backups/`. `restoreBackup` validates first, saves the
+    current data as `backups/before-restore-<time>.zip` (the latest 3 are kept), then replaces the files; the
+    route holds the PMO mutex and needs `X-AI-OS-Confirm: restore`.
+  - `dataExport.ts` (JSON, or CSV files in a zip; the private `gender` field is never exported),
+    `auditView.ts` / `auditServer.ts` (the audit log in plain words, with filters), `redact.ts` and
+    `diagnostics.ts` (versions, counts and the end of two logs with secrets, emails, long ids, user names and
+    UNC paths removed; no record text, no AI call log).
+  - `updates.ts` is the opt-in update check: a small JSON file at an address the person enters (https only,
+    private and loopback hosts refused, manifest on the same site as the installer, SHA-256 required). The
+    installer is downloaded into Downloads, hashed, and only then given its final name. The shell's
+    `platform:open-installer` starts it, and only for a file name the download could have made
+    (`desktop/platform-shell.cjs`). Off by default. `updateCheck.ts` and `version.ts` are the page-safe parts.
+  - Client-side: `platformPrefs` (key `platform-prefs`: profile, last seen version, tour, sample data, update
+    settings), `profile.ts`, `releaseNotes.ts`, `appHelp.ts`, `tour.ts`, `sampleData.ts`, `friendlyError.ts`
+    (plain sentences plus a cleaned "Copy details" text) and `reportError.ts`.
+- **Routes** (`/api/platform/*`, all behind the same-origin guard, reads included): `info`, `audit`, `backup`,
+  `restore` (`?check=1` only reads), `export?kind=json|csv`, `diagnostics`, `update/check`, `update/download`.
+  Downloads are POSTs so another page cannot trigger them.
+- **Settings** gains Data (folder, size, back up, restore, export), Activity, Help (tour, sample data, three
+  tasks per app) and About (version, what's new, updates, diagnostics). Profile (PMO lead or Team member) is
+  in General. It is a convenience, not a lock: it changes the default Dashboard (a customised one is kept) and
+  hides Approve and Reject on leave. `PlatformBackground` shows the tour offer or "what's new" once, and runs
+  the daily update check only when enabled. `GuidedTour` is a small card above the dock.
+- **Sample data** is ordinary data that can be found again: to-dos tagged `sample`, people with an
+  `@example.com` address and their leave. Removing it deletes exactly those.
+- **Task packs** (`tasks-engine/taskpacks.py`, `pack_mailer.py`, routes `/task-packs*`): a zip with `pack.json`
+  listing every file's SHA-256. Installing is refused unless the checksums match and nothing is unlisted;
+  names cannot leave the pack's folder; only `.json .py .ps1 .md .txt .html .csv` and images are allowed; the
+  task may only use the step types the engine knows, its commands must be files in the pack and inputs must
+  land under `input/` or `config/`. The pack's _fingerprint_ (SHA-256 of its manifest) is shown and must be
+  typed back before the Install button works. A pack cannot replace a built-in task, an upgrade keeps the
+  pack's `input/`, `output/` and `config/`, and a pack whose task is mid-run cannot be changed or removed.
+  Packs live in `<data>/task-packs` (so the working-copy sync never prunes them) and run in place;
+  `AI_OS_TASKS_SHARED` points their scripts at the shared libraries.
+- **The mailer wizard** builds such a pack from a name, recipients, wording (or a template name in the
+  Templates app, looked up at run time) and the kind of table. It copies `tasks-engine/pack-templates/mailer/`
+  (`build_email_data.py` fills the wording and a table; `create_draft.ps1` and `send_draft.ps1` use the same
+  draft-token method as the report tasks). The run still stops at review and confirm.
+- **Not done or limited in 5.7.** The update download and installer start were verified with fakes in unit
+  tests, not against a live https site. The mailer's PowerShell steps were not run against Outlook in the
+  automated desktop test (they would create a real draft); they follow the report tasks' scripts. Plain
+  "Copy details" errors are on every new screen; older screens keep their own messages.

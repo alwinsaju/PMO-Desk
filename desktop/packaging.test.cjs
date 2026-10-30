@@ -61,6 +61,31 @@ describe("desktop packaging", () => {
     assert.doesNotMatch(preload, /require\((?!"electron")/);
   });
 
+  it("hands over workbooks only by name from Downloads or through a native dialog", () => {
+    const preload = readFileSync(path.join(__dirname, "preload.cjs"), "utf8");
+    assert.match(
+      preload,
+      /newestDownload: \(want\) => ipcRenderer\.invoke\("files:newest-download"/,
+    );
+    for (const channel of [
+      "files:newest-download",
+      "files:read-download",
+      "files:choose",
+      "view:capture",
+      "view:save",
+      "platform:open-data-folder",
+      "platform:open-installer",
+    ]) {
+      const handler = new RegExp(
+        `ipcMain\\.handle\\("${channel}"[\\s\\S]*?\\n\\}\\);`,
+      ).exec(main);
+      assert.ok(handler, `main.cjs handles ${channel}`);
+      assert.match(handler[0], /!isFromMainWindow\(event\)/, channel);
+    }
+    assert.match(main, /app\.getPath\("downloads"\)/);
+    assert.match(main, /exportPicker\.isSafeName\(name, extensions\)/);
+  });
+
   it("answers the setup screen's folder picker only for the main window", () => {
     const handler =
       /ipcMain\.handle\("setup:choose-folder", async \(event\) => \{([\s\S]*?)\n\}\);/.exec(
@@ -215,8 +240,18 @@ describe("desktop packaging", () => {
       );
       assert.match(
         pkg.scripts["desktop:package"],
-        /^pnpm runtime:python && pnpm build && electron-builder/,
+        /^pnpm runtime:python && pnpm installer:art && pnpm build && electron-builder/,
       );
+    });
+
+    it("redraws the installer artwork from package.json's version on every package", () => {
+      assert.equal(pkg.scripts["installer:art"], "python scripts/build-installer-art.py");
+      const art = readFileSync(
+        path.join(root, "scripts", "build-installer-art.py"),
+        "utf8",
+      );
+      assert.match(art, /Version \{app_version\(\)\}/);
+      assert.doesNotMatch(art, /"Version \d/);
     });
 
     it("keeps the asar off so Python can read the task folders", () => {

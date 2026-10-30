@@ -1,0 +1,488 @@
+"use client";
+
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  CopyIcon,
+  FloppyDiskIcon,
+  ArrowCounterClockwiseIcon,
+  TrashIcon,
+} from "@phosphor-icons/react";
+import { Button, Input } from "@/components/ui";
+import { cn } from "@/lib/cn";
+import { boldSegments, snippetsFrom } from "@/lib/templates/render";
+import { MailPreview } from "./MailPreview";
+import { TARGETS, targetLabel } from "@/lib/templates/targets";
+import { starterById } from "@/lib/templates/starters";
+import {
+  KIND_LABEL,
+  LIMITS,
+  type Template,
+  type TemplateInput,
+} from "@/lib/templates/types";
+import type { TemplateErrors } from "@/lib/templates/library";
+import {
+  Field,
+  FieldError,
+  Note,
+  QuickChip,
+  ScrollBody,
+  SectionLabel,
+  Segmented,
+  TextArea,
+} from "../pmo-todo-app/parts";
+import { clearDraft, loadDraft, saveDraft, type DraftStorage } from "./draftAutosave";
+import {
+  holderOf,
+  insertAt,
+  isDirty,
+  offeredPlaceholders,
+  placeGroups,
+  previewBodyOf,
+  previewOf,
+  problems,
+  toInput,
+  withKind,
+  withPlace,
+  type Draft,
+} from "./templateForm";
+
+const browserStorage = (): DraftStorage | null => {
+  try {
+    return typeof window === "undefined" ? null : window.localStorage;
+  } catch {
+    return null;
+  }
+};
+
+/** A draft kept from an unsaved edit of this template, if it still applies and differs. */
+function restoredDraft(template: Template | null): Draft | null {
+  if (!template) return null;
+  const kept = loadDraft(browserStorage(), template.id, template.updatedAt, Date.now());
+  return kept && isDirty(kept, template) ? kept : null;
+}
+
+interface TemplateEditorProps {
+  /** The template being edited; null for a new one (then `seed` is the starting form). */
+  template: Template | null;
+  seed: Draft;
+  /** Every saved template, to say who has a place now. */
+  templates: readonly Template[];
+  busy: boolean;
+  error: string | null;
+  /** Per-field refusals from the server's last answer. */
+  serverFields: Record<string, string> | null;
+  onDirtyChange: (dirty: boolean) => void;
+  onSave: (input: TemplateInput) => void;
+  onDuplicate: () => void;
+  onDelete: () => void;
+}
+
+const KIND_OPTIONS = (["email", "report"] as const).map((value) => ({
+  value,
+  label: KIND_LABEL[value],
+}));
+
+/**
+ * The form for one template: wording on the left, where it is used and a live
+ * preview on the right. The form holds its own draft; the parent hears only whether
+ * it is changed, and gets the input when Save is pressed. Remounted (by `key`) for
+ * each template, so nothing leaks from one to the next.
+ */
+export function TemplateEditor({
+  template,
+  seed,
+  templates,
+  busy,
+  error,
+  serverFields,
+  onDirtyChange,
+  onSave,
+  onDuplicate,
+  onDelete,
+}: TemplateEditorProps) {
+  const [draft, setDraft] = useState<Draft>(() => restoredDraft(template) ?? seed);
+  // A draft kept from an earlier, unsaved edit was put back; say so and let it be dropped.
+  const [restored, setRestored] = useState(() => draft !== seed && template !== null);
+  const [attempted, setAttempted] = useState(false);
+  const bodyRef = useRef<HTMLTextAreaElement>(null);
+
+  const change = (next: Draft) => {
+    setDraft(next);
+    onDirtyChange(isDirty(next, template));
+  };
+
+  // Tell the parent about a restored draft, and keep what is typed so a close does not lose it.
+  useEffect(() => {
+    onDirtyChange(isDirty(draft, template));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, for the draft the form started with
+  }, []);
+  useEffect(() => {
+    if (!template) return;
+    const storage = browserStorage();
+    if (isDirty(draft, template)) {
+      saveDraft(storage, template.id, draft, template.updatedAt, Date.now());
+    } else {
+      clearDraft(storage, template.id);
+    }
+  }, [draft, template]);
+
+  const discardRestored = () => {
+    if (template) clearDraft(browserStorage(), template.id);
+    setDraft(seed);
+    setRestored(false);
+    onDirtyChange(false);
+  };
+
+  const errors = useMemo(() => problems(draft), [draft]);
+  const shown = visibleErrors(errors, draft, attempted);
+  const snippets = useMemo(() => snippetsFrom(templates), [templates]);
+  const preview = useMemo(() => previewOf(draft, snippets), [draft, snippets]);
+  const [mailLayout, setMailLayout] = useState(false);
+  const tokens = useMemo(() => offeredPlaceholders(draft), [draft]);
+  const dirty = isDirty(draft, template);
+  const starter = starterById(draft.starterId);
+  const isEmail = draft.kind === "email";
+
+  const insertToken = (name: string) => {
+    const area = bodyRef.current;
+    const at = area
+      ? [area.selectionStart, area.selectionEnd]
+      : [draft.body.length, draft.body.length];
+    const out = insertAt(draft.body, at[0], at[1], `{{${name}}}`);
+    change({ ...draft, body: out.value });
+    requestAnimationFrame(() => {
+      area?.focus();
+      area?.setSelectionRange(out.caret, out.caret);
+    });
+  };
+
+  const save = () => {
+    setAttempted(true);
+    if (Object.keys(errors).length === 0) onSave(toInput(draft));
+  };
+
+  const restoreOriginal = () => {
+    if (!starter) return;
+    change({ ...draft, ...starter, id: draft.id, usedBy: draft.usedBy });
+  };
+
+  const fieldError = (field: keyof TemplateErrors) =>
+    shown[field] ?? serverFields?.[field];
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <header className="border-line flex shrink-0 flex-wrap items-center gap-2 border-b px-5 py-3">
+        <h2 className="text-ink min-w-0 flex-1 truncate text-[16px] font-bold">
+          {template ? template.name : "New template"}
+        </h2>
+        {starter && (
+          <Button variant="ghost" size="sm" onClick={restoreOriginal} disabled={busy}>
+            <ArrowCounterClockwiseIcon size={14} />
+            Restore original wording
+          </Button>
+        )}
+        {template && (
+          <>
+            <Button variant="ghost" size="sm" onClick={onDuplicate} disabled={busy}>
+              <CopyIcon size={14} />
+              Duplicate
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onDelete}
+              disabled={busy}
+              className="text-red"
+            >
+              <TrashIcon size={14} />
+              Delete
+            </Button>
+          </>
+        )}
+        <Button
+          size="sm"
+          onClick={save}
+          disabled={busy || !dirty}
+          data-testid="template-save"
+        >
+          <FloppyDiskIcon size={14} />
+          {busy ? "Saving…" : "Save"}
+        </Button>
+      </header>
+
+      <ScrollBody className="@container px-5 py-4">
+        {restored && (
+          <Note tone="accent" className="mb-4 flex flex-wrap items-center gap-2">
+            <span className="min-w-0 flex-1">
+              Your unsaved changes from last time are back.
+            </span>
+            <Button variant="ghost" size="sm" onClick={discardRestored}>
+              Discard them
+            </Button>
+          </Note>
+        )}
+        {error && (
+          <Note tone="danger" role="alert" className="mb-4">
+            {error}
+          </Note>
+        )}
+        <div className="grid grid-cols-1 gap-6 @3xl:grid-cols-[minmax(0,1fr)_minmax(0,22rem)]">
+          <div className="flex min-w-0 flex-col gap-4">
+            <div className="grid grid-cols-1 gap-4 @xl:grid-cols-[minmax(0,1fr)_auto]">
+              <Field label="Name">
+                <Input
+                  value={draft.name}
+                  maxLength={LIMITS.name}
+                  placeholder="Aging report email"
+                  aria-invalid={!!fieldError("name")}
+                  onChange={(e) => change({ ...draft, name: e.target.value })}
+                  data-testid="template-name"
+                />
+                <FieldError message={fieldError("name")} />
+              </Field>
+              <Field label="Type">
+                <Segmented
+                  value={draft.kind}
+                  options={KIND_OPTIONS}
+                  onChange={(kind) => change(withKind(draft, kind))}
+                />
+                <FieldError message={fieldError("kind")} />
+              </Field>
+            </div>
+
+            <Field label="Description (optional)">
+              <Input
+                value={draft.description}
+                maxLength={LIMITS.description}
+                placeholder="What it is for"
+                onChange={(e) => change({ ...draft, description: e.target.value })}
+              />
+            </Field>
+
+            {isEmail && (
+              <div className="grid grid-cols-1 gap-4 @xl:grid-cols-2">
+                <Field label="To">
+                  <Input
+                    value={draft.to}
+                    placeholder="Leave blank to keep the task's own"
+                    onChange={(e) => change({ ...draft, to: e.target.value })}
+                  />
+                  <FieldError message={fieldError("to")} />
+                </Field>
+                <Field label="Cc">
+                  <Input
+                    value={draft.cc}
+                    placeholder="Leave blank to keep the task's own"
+                    onChange={(e) => change({ ...draft, cc: e.target.value })}
+                  />
+                  <FieldError message={fieldError("cc")} />
+                </Field>
+              </div>
+            )}
+
+            <Field label={isEmail ? "Subject" : "Title line"}>
+              <Input
+                value={draft.subject}
+                maxLength={LIMITS.subject}
+                placeholder={
+                  isEmail ? "Aging Incidents | {{date_subject}}" : "{{title}}: {{period}}"
+                }
+                aria-invalid={!!fieldError("subject")}
+                onChange={(e) => change({ ...draft, subject: e.target.value })}
+              />
+              <FieldError message={fieldError("subject")} />
+            </Field>
+
+            <div className="flex flex-col gap-1.5">
+              <SectionLabel>Insert a value</SectionLabel>
+              <div className="flex flex-wrap gap-1.5" aria-label="Placeholders">
+                {tokens.map((token) => (
+                  <QuickChip
+                    key={token.name}
+                    title={`${token.description}. Example: ${token.sample.split("\n")[0]}`}
+                    onClick={() => insertToken(token.name)}
+                  >
+                    {`{{${token.name}}}`}
+                  </QuickChip>
+                ))}
+              </div>
+              <Field label={isEmail ? "Message" : "Report layout"}>
+                <TextArea
+                  ref={bodyRef}
+                  value={draft.body}
+                  rows={12}
+                  maxLength={LIMITS.body}
+                  aria-invalid={!!fieldError("body")}
+                  className="min-h-56 font-mono text-[13px] leading-relaxed"
+                  onChange={(e) => change({ ...draft, body: e.target.value })}
+                  data-testid="template-body"
+                />
+                <FieldError message={fieldError("body")} />
+              </Field>
+              <p className="text-ink-muted text-[12px] leading-relaxed">
+                Leave a blank line between paragraphs. Put <code>**two stars**</code>{" "}
+                around words to make them bold in an email. A value that is missing stays
+                as you typed it, so you can spot it in the draft.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <SectionLabel>Used by</SectionLabel>
+              <p className="text-ink-muted text-[12px] leading-relaxed">
+                Choose which tasks and apps use this{" "}
+                {KIND_LABEL[draft.kind].toLowerCase()} template. Each place uses one
+                template, so choosing a place another template has moves it here.
+              </p>
+              {placeGroups(draft.kind).map((group) => (
+                <fieldset key={group.heading} className="flex flex-col gap-1">
+                  <legend className="text-ink-soft mb-1 text-[12.5px] font-semibold">
+                    {group.heading}
+                  </legend>
+                  {group.targets.map((target) => {
+                    const holder = holderOf(templates, target.key, draft.id);
+                    const checked = draft.usedBy.includes(target.key);
+                    return (
+                      <label
+                        key={target.key}
+                        className="border-line bg-card rounded-control flex cursor-pointer items-start gap-3 border px-3 py-2"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(e) =>
+                            change(withPlace(draft, target.key, e.target.checked))
+                          }
+                          className="accent-accent mt-0.5 h-4 w-4 shrink-0"
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="text-ink block text-[13.5px] font-semibold">
+                            {targetLabel(target)}
+                          </span>
+                          {holder && (
+                            <span
+                              className={cn(
+                                "block text-[12px]",
+                                checked ? "text-amber" : "text-ink-muted",
+                              )}
+                            >
+                              {checked
+                                ? `Replaces “${holder.name}”, which uses it now.`
+                                : `Now uses “${holder.name}”.`}
+                            </span>
+                          )}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </fieldset>
+              ))}
+              <FieldError message={fieldError("usedBy")} />
+            </div>
+          </div>
+
+          <aside
+            aria-label="Preview"
+            className="flex min-w-0 flex-col gap-2 @3xl:sticky @3xl:top-0 @3xl:self-start"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <SectionLabel>Preview with example values</SectionLabel>
+              {isEmail && (
+                <span className="flex gap-1" role="group" aria-label="Preview layout">
+                  <Button
+                    size="sm"
+                    variant={mailLayout ? "ghost" : "secondary"}
+                    onClick={() => setMailLayout(false)}
+                  >
+                    Plain
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={mailLayout ? "secondary" : "ghost"}
+                    onClick={() => setMailLayout(true)}
+                    data-testid="preview-mail-layout"
+                  >
+                    Mail layout
+                  </Button>
+                </span>
+              )}
+            </div>
+            {isEmail && mailLayout && (
+              <MailPreview
+                from="You"
+                to={preview.to}
+                cc={preview.cc}
+                subject={preview.subject}
+                body={draft.body.trim() ? previewBodyOf(draft, snippets) : ""}
+              />
+            )}
+            <div
+              className={`border-line bg-card rounded-card flex flex-col gap-3 border p-4 ${isEmail && mailLayout ? "hidden" : ""}`}
+            >
+              {isEmail && (preview.to || preview.cc) && (
+                <dl className="text-ink-muted grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[12px]">
+                  {preview.to && (
+                    <>
+                      <dt className="font-semibold">To</dt>
+                      <dd className="text-ink-soft break-words">{preview.to}</dd>
+                    </>
+                  )}
+                  {preview.cc && (
+                    <>
+                      <dt className="font-semibold">Cc</dt>
+                      <dd className="text-ink-soft break-words">{preview.cc}</dd>
+                    </>
+                  )}
+                </dl>
+              )}
+              <p className="text-ink text-[14px] font-bold break-words">
+                {preview.subject || (
+                  <span className="text-ink-muted font-normal">
+                    {isEmail ? "(no subject: the task keeps its own)" : "(no title line)"}
+                  </span>
+                )}
+              </p>
+              <div className="border-line text-ink-soft border-t pt-3 text-[13.5px] leading-relaxed break-words whitespace-pre-wrap">
+                {draft.body.trim() ? (
+                  boldSegments(previewBodyOf(draft, snippets)).map((part, index) =>
+                    part.bold ? (
+                      <strong key={index}>{part.text}</strong>
+                    ) : (
+                      <span key={index}>{part.text}</span>
+                    ),
+                  )
+                ) : (
+                  <span className="text-ink-muted">The message appears here.</span>
+                )}
+              </div>
+            </div>
+            <p className="text-ink-muted text-[12px] leading-relaxed">
+              {draft.usedBy.length > 0
+                ? `Example values from ${draft.usedBy
+                    .map((key) => TARGETS.find((t) => t.key === key)?.label)
+                    .filter(Boolean)
+                    .join(", ")}.`
+                : "Example values. Choose where it is used to see that place's values."}
+            </p>
+          </aside>
+        </div>
+      </ScrollBody>
+    </div>
+  );
+}
+
+/** Errors to show now: all after a Save attempt; before that, only the ones that are
+ *  about what was typed (not "this is still empty"). */
+function visibleErrors(
+  errors: TemplateErrors,
+  draft: Draft,
+  attempted: boolean,
+): TemplateErrors {
+  if (attempted) return errors;
+  const out: TemplateErrors = {};
+  if (errors.body && draft.body.trim()) out.body = errors.body;
+  if (errors.usedBy) out.usedBy = errors.usedBy;
+  if (errors.subject) out.subject = errors.subject;
+  if (errors.to) out.to = errors.to;
+  if (errors.cc) out.cc = errors.cc;
+  return out;
+}

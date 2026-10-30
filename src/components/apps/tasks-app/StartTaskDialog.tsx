@@ -46,6 +46,21 @@ import {
   type SelectChoice,
 } from "./startForm";
 import { refusalText } from "./taskPresenter";
+import { readWorkbookSheets } from "./readWorkbook";
+import {
+  checkSheets,
+  compareSnapshots,
+  comparisonText,
+  pushSnapshot,
+  ruleFor,
+  snapshotFrom,
+  type Comparison,
+  type InputCheck,
+  type RunSnapshot,
+} from "@/lib/tasks/inputCheck";
+import { dryRunPlan } from "@/lib/tasks/dryRun";
+import { getDesktopBridge } from "@/lib/pmo/desktopBridge";
+import { useTasksPrefs } from "@/lib/tasks/tasksPrefsStore";
 import type { ActionResult, InputStatus, OptionsFile, Task, TaskInputDef } from "./types";
 
 interface StartTaskDialogProps {
@@ -85,6 +100,11 @@ export function StartTaskDialog({
   const [selections, setSelections] = useState<Record<string, string>>({});
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
+  // What reading each chosen export found (non-blocking), and its snapshot, which becomes the
+  // comparison base once the run starts.
+  const [fileChecks, setFileChecks] = useState<Record<string, InputCheck>>({});
+  const [comparisons, setComparisons] = useState<Record<string, Comparison>>({});
+  const pendingSnapshots = useRef<Record<string, RunSnapshot>>({});
   // Guards async results from a previous opening of the dialog, and (for
   // `checkSeq`) from a superseded `prepare` call.
   const session = useRef(0);
@@ -130,6 +150,9 @@ export function StartTaskDialog({
     setSelections({});
     setStarting(false);
     setStartError(null);
+    setFileChecks({});
+    setComparisons({});
+    pendingSnapshots.current = {};
     void getInputs(task.id).then((reply) => {
       if (session.current !== mine) return;
       if (reply.ok && reply.inputs) {
@@ -188,6 +211,42 @@ export function StartTaskDialog({
       return rest;
     });
     setBusy((b) => ({ ...b, [input.id]: true }));
+    // Read the export on this computer while it uploads: a wrong sheet or a missing column is better
+    // found now than after a failed run. It only warns; the upload goes ahead either way.
+    const rule = ruleFor(task.id, input.id);
+    if (rule) {
+      void readWorkbookSheets(file)
+        .then((sheets) => {
+          if (session.current !== mine) return;
+          const now = new Date();
+          setFileChecks((c) => ({ ...c, [input.id]: checkSheets(sheets, rule, now) }));
+          const snap = snapshotFrom(task.id, sheets, rule, now);
+          if (!snap) return;
+          pendingSnapshots.current[input.id] = snap;
+          const last = useTasksPrefs
+            .getState()
+            .snapshots.filter((s) => s.taskId === task.id && s.rows.length > 0)
+            .at(-1);
+          setComparisons((c) => {
+            const next = { ...c };
+            if (last) next[input.id] = compareSnapshots(last, snap);
+            else delete next[input.id];
+            return next;
+          });
+        })
+        .catch(() => {
+          if (session.current !== mine) return;
+          setFileChecks((c) => ({
+            ...c,
+            [input.id]: {
+              ok: false,
+              problems: ["This file could not be read as an Excel workbook."],
+              warnings: [],
+              rows: 0,
+            },
+          }));
+        });
+    }
     const reply = await uploadInput(task.id, input.id, file);
     if (session.current !== mine) return;
     setBusy((b) => ({ ...b, [input.id]: false }));
@@ -195,6 +254,10 @@ export function StartTaskDialog({
       setFileErrors((e) => ({ ...e, [input.id]: reply.reason ?? "The upload failed." }));
       return;
     }
+    useTasksPrefs.getState().update((t) => ({
+      ...t,
+      lastFiles: { ...t.lastFiles, [`${task.id}:${input.id}`]: file.name },
+    }));
     const next = applyUpload(statusesRef.current, input, reply, file);
     statusesRef.current = next;
     setStatuses(next);
@@ -237,6 +300,14 @@ export function StartTaskDialog({
         : "";
       setStartError(`${refusalText(result)}${needs}`);
     } else {
+      // The export this run reads becomes the base the next run is compared with.
+      const snaps = Object.values(pendingSnapshots.current);
+      if (snaps.length > 0) {
+        useTasksPrefs.getState().update((t) => ({
+          ...t,
+          snapshots: snaps.reduce((list, s) => pushSnapshot(list, s), t.snapshots),
+        }));
+      }
       onOpenChange(false);
     }
   };
@@ -245,6 +316,8 @@ export function StartTaskDialog({
   const sourceLine = holidaySourceLine(options);
   const canStart =
     loadState === "ready" && missing.length === 0 && !uploading && !starting;
+  const plan = useMemo(() => dryRunPlan(task, statuses), [task, statuses]);
+  const lastFiles = useTasksPrefs((s) => s.lastFiles);
 
   return (
     <Dialog open={open} onOpenChange={(next) => !starting && onOpenChange(next)}>
@@ -268,17 +341,55 @@ export function StartTaskDialog({
             <section className="flex flex-col gap-2" aria-label="Files">
               <SectionLabel>Files</SectionLabel>
               {files.map((input) => (
-                <FileInput
-                  key={input.id}
-                  input={input}
-                  status={statuses.find((s) => s.id === input.id)}
-                  busy={Boolean(busy[input.id])}
-                  disabled={starting}
-                  error={fileErrors[input.id]}
-                  onFile={(file) => upload(input, file)}
-                />
+                <div key={input.id} className="flex flex-col gap-1.5">
+                  <FileInput
+                    input={input}
+                    status={statuses.find((s) => s.id === input.id)}
+                    busy={Boolean(busy[input.id])}
+                    disabled={starting}
+                    error={fileErrors[input.id]}
+                    lastFile={lastFiles[`${task.id}:${input.id}`]}
+                    onFile={(file) => upload(input, file)}
+                  />
+                  <InputFindings
+                    check={fileChecks[input.id]}
+                    comparison={comparisons[input.id]}
+                  />
+                </div>
               ))}
             </section>
+
+            <details
+              className="border-line rounded-card border px-4 py-3"
+              data-testid="dry-run"
+            >
+              <summary className="text-ink cursor-pointer text-[13.5px] font-semibold">
+                What will happen
+              </summary>
+              <ol className="mt-2.5 flex flex-col gap-1.5 text-[13px]">
+                {plan.lines.map((line, i) => (
+                  <li key={`${line.text}-${i}`} className="flex items-start gap-2">
+                    <span className="text-ink-muted w-5 shrink-0 text-right">
+                      {i + 1}.
+                    </span>
+                    <span className="text-ink">
+                      {line.text}
+                      {line.kind === "you" && (
+                        <span className="text-accent-ink ml-2 text-[11.5px] font-semibold">
+                          you decide
+                        </span>
+                      )}
+                      {line.kind === "outside" && (
+                        <span className="text-amber ml-2 text-[11.5px] font-semibold">
+                          leaves this computer
+                        </span>
+                      )}
+                    </span>
+                  </li>
+                ))}
+              </ol>
+              <p className="text-ink-muted mt-2.5 text-[12.5px]">{plan.note}</p>
+            </details>
 
             {hasPrepare(task) && (
               <section className="flex flex-col gap-2" aria-label="Check inputs">
@@ -385,6 +496,7 @@ function FileInput({
   busy,
   disabled,
   error,
+  lastFile,
   onFile,
 }: {
   input: TaskInputDef;
@@ -392,6 +504,8 @@ function FileInput({
   busy: boolean;
   disabled: boolean;
   error: string | undefined;
+  /** The file name used here last time, shown as a hint when nothing is uploaded. */
+  lastFile?: string;
   onFile: (file: File) => void;
 }) {
   const [dragging, setDragging] = useState(false);
@@ -485,6 +599,11 @@ function FileInput({
                 Drop the file here, or choose it.
               </p>
               {emptyHint && <p className="text-ink-muted text-xs">{emptyHint}</p>}
+              {lastFile && (
+                <p className="text-ink-muted text-xs" data-testid="last-file">
+                  Last time: {lastFile}
+                </p>
+              )}
             </>
           )}
         </div>
@@ -506,12 +625,123 @@ function FileInput({
           {present ? "Replace" : "Choose file"}
         </Button>
       </div>
+      <DesktopPickers input={input} disabled={disabled || busy} onFile={onFile} />
       {error && (
         <p className="text-red text-[12.5px]" role="alert">
           {error}
         </p>
       )}
     </div>
+  );
+}
+
+/** In the desktop app only: use the newest matching export in Downloads (after you see which file it is),
+ *  or browse in a dialog that opens where the last file came from. The page never names a path. */
+function DesktopPickers({
+  input,
+  disabled,
+  onFile,
+}: {
+  input: TaskInputDef;
+  disabled: boolean;
+  onFile: (file: File) => void;
+}) {
+  const files = getDesktopBridge()?.files;
+  const [found, setFound] = useState<{ name: string; mtimeMs: number } | "none" | null>(
+    null,
+  );
+  const extensions = (input.accept ?? []).filter((e) => /^\.[a-z0-9]{1,8}$/i.test(e));
+  if (!files || input.type !== "file" || extensions.length === 0) return null;
+
+  const take = (picked: { name: string; data: Uint8Array } | null) => {
+    if (picked) onFile(new File([picked.data as BlobPart], picked.name));
+  };
+  const look = async () => {
+    const hit = await files.newestDownload({
+      extensions,
+      prefix: input.id === "incident" ? "incident" : undefined,
+    });
+    setFound(hit ?? "none");
+  };
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 pl-1" data-testid="desktop-pickers">
+      <Button variant="ghost" size="sm" disabled={disabled} onClick={() => void look()}>
+        Newest in Downloads
+      </Button>
+      <Button
+        variant="ghost"
+        size="sm"
+        disabled={disabled}
+        onClick={() => void files.choose(extensions).then(take)}
+      >
+        Browse…
+      </Button>
+      {found === "none" && (
+        <span className="text-ink-muted text-[12.5px]">
+          No matching file in Downloads.
+        </span>
+      )}
+      {found && found !== "none" && (
+        <span className="text-ink-soft flex flex-wrap items-center gap-2 text-[12.5px]">
+          {found.name} (changed{" "}
+          {new Date(found.mtimeMs).toLocaleString("en-GB", {
+            day: "numeric",
+            month: "short",
+            hour: "2-digit",
+            minute: "2-digit",
+          })}
+          )
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              const name = found.name;
+              setFound(null);
+              void files.readDownload(name, extensions).then(take);
+            }}
+          >
+            Use it
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setFound(null)}>
+            Not this
+          </Button>
+        </span>
+      )}
+    </div>
+  );
+}
+
+/** What reading a chosen export found, and how it differs from the last run's. */
+function InputFindings({
+  check,
+  comparison,
+}: {
+  check: InputCheck | undefined;
+  comparison: Comparison | undefined;
+}) {
+  if (!check && !comparison) return null;
+  return (
+    <ul className="flex flex-col gap-1 text-[12.5px]" data-testid="input-findings">
+      {check?.problems.map((text) => (
+        <li key={text} className="text-red" role="alert">
+          {text}
+        </li>
+      ))}
+      {check?.warnings.map((text) => (
+        <li key={text} className="text-amber">
+          {text}
+        </li>
+      ))}
+      {check?.ok && check.warnings.length === 0 && (
+        <li className="text-success">Looks right: {check.rows} rows.</li>
+      )}
+      {comparison && (
+        <li className="text-ink-soft" data-testid="run-comparison">
+          Since the last run: {comparisonText(comparison)}
+        </li>
+      )}
+    </ul>
   );
 }
 

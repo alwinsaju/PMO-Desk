@@ -28,7 +28,9 @@ WORKSPACE_DIR = os.path.dirname(AGENT_DIR)
 OUTPUT_DIR = os.path.join(AGENT_DIR, "output")
 
 sys.path.insert(0, os.path.join(WORKSPACE_DIR, "shared", "roster"))
+sys.path.insert(0, os.path.join(WORKSPACE_DIR, "shared"))
 from name_matching import load_roster  # noqa: E402
+from template_lib import apply_email_template  # noqa: E402
 
 # Draft addressing lives here so create_draft.ps1 and the 'Confirm & send' dialog show the same values.
 MAIL_TO = "USPDTOperate <uspdtoperate@deloitte.com>"
@@ -99,6 +101,17 @@ def main():
         "grand_total": grand_total_row["count"],
         "rows": rows,
     }
+    # A template chosen in the Templates app replaces the subject, recipients and message above.
+    apply_email_template(
+        "task:weekly-aging-report",
+        data,
+        {
+            "date_subject": sidecar["cutoff_date_subject"],
+            "date_full": sidecar["cutoff_date_full"],
+            "total": grand_total_row["count"],
+            "people": sum(1 for row in rows if row["type"] == "name"),
+        },
+    )
     out_path = os.path.join(OUTPUT_DIR, "email-data.json")
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)

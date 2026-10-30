@@ -1,17 +1,25 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ScrollArea, Tabs, TabsList, TabsTrigger } from "@/components/ui";
 import { EngineDownNotice } from "./EngineDownNotice";
+import { HistoryTab } from "./HistoryTab";
+import { PacksTab } from "./PacksTab";
+import { ScheduleTab } from "./ScheduleTab";
+import { useTasksPrefs } from "@/lib/tasks/tasksPrefsStore";
 import { TaskCard } from "./TaskCard";
 import { TaskDetailDialog } from "./TaskDetailDialog";
 import { useTasksData } from "./useTasksData";
+import { isFreshRunRequest, useTasksNav } from "./tasksNavStore";
 import type { Task } from "./types";
 
 /** The header's filter tabs, derived purely from each task's own `state`
  *  (no extra data): "Needs you" = waiting at a human gate or failed,
  *  "Running" = working/finishing, "Idle" = resting. */
 type TaskFilter = "all" | "needs" | "running" | "idle";
+
+/** The window's own sections: the workflow cards, every past run, and schedules plus the send-later queue. */
+type TasksView = "workflows" | "history" | "schedule" | "packs";
 
 const NEEDS_YOU = new Set<Task["state"]>(["awaiting_review", "awaiting_send", "error"]);
 const RUNNING = new Set<Task["state"]>(["working", "finishing"]);
@@ -45,6 +53,36 @@ export function TasksApp({ windowId }: { windowId: string }) {
   const { tasks, connection, hasLoadedOnce, refetch } = useTasksData();
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [filter, setFilter] = useState<TaskFilter>("all");
+  const [view, setView] = useState<TasksView>("workflows");
+  const queued = useTasksPrefs((s) => s.queue.length);
+  // The task the command bar asked for ("prepare the aging report"): its card is marked
+  // for a few seconds, and its Run form opens (see TaskActions).
+  const [highlightId, setHighlightId] = useState<string | null>(null);
+  const runRequest = useTasksNav((s) => s.runRequest);
+  useEffect(() => {
+    if (!runRequest) return;
+    setFilter("all");
+    setView("workflows");
+    setHighlightId(runRequest.taskId);
+  }, [runRequest]);
+  useEffect(() => {
+    if (!highlightId) return;
+    const timer = setTimeout(() => setHighlightId(null), 4000);
+    return () => clearTimeout(timer);
+  }, [highlightId]);
+
+  // The Dashboard's "View log": open that task's details once the list has loaded.
+  const detailRequest = useTasksNav((s) => s.detailRequest);
+  useEffect(() => {
+    if (!detailRequest || !hasLoadedOnce) return;
+    useTasksNav.getState().clearDetailRequest(detailRequest.id);
+    if (!isFreshRunRequest(detailRequest)) return;
+    setFilter("all");
+    setView("workflows");
+    if (tasks.some((task) => task.id === detailRequest.taskId)) {
+      setSelectedTaskId(detailRequest.taskId);
+    }
+  }, [detailRequest, hasLoadedOnce, tasks]);
 
   const selectedTask = useMemo(
     () =>
@@ -91,8 +129,27 @@ export function TasksApp({ windowId }: { windowId: string }) {
     <div data-window-id={windowId} className="flex h-full w-full flex-col">
       {connection === "offline" && <EngineDownNotice compact />}
 
+      <div className="px-6 pt-1 pb-2">
+        <Tabs value={view} onValueChange={(v) => setView(v as TasksView)}>
+          <TabsList aria-label="Tasks views">
+            <TabsTrigger value="workflows">Workflows</TabsTrigger>
+            <TabsTrigger value="history">History</TabsTrigger>
+            <TabsTrigger value="schedule" count={queued || undefined}>
+              Schedule
+            </TabsTrigger>
+            <TabsTrigger value="packs">Packs</TabsTrigger>
+          </TabsList>
+        </Tabs>
+      </div>
+
       <ScrollArea className="min-h-0 flex-1">
-        {tasks.length === 0 ? (
+        {view === "history" ? (
+          <HistoryTab tasks={tasks} />
+        ) : view === "schedule" ? (
+          <ScheduleTab tasks={tasks} onSettled={refetch} />
+        ) : view === "packs" ? (
+          <PacksTab onChanged={refetch} />
+        ) : tasks.length === 0 ? (
           <div className="flex h-full items-center justify-center p-6">
             <p className="text-ink-faint text-sm">
               No tasks found in this workspace yet.
@@ -133,6 +190,7 @@ export function TasksApp({ windowId }: { windowId: string }) {
                     onSettled={refetch}
                     onOpenDetail={setSelectedTaskId}
                     index={index}
+                    highlighted={task.id === highlightId}
                   />
                 ))}
               </div>

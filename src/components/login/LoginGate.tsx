@@ -1,6 +1,7 @@
 "use client";
 
-import { useLayoutEffect, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useState, type ReactNode } from "react";
+import { usePreferences } from "@/lib/preferences/preferencesStore";
 import { LoginScreen } from "./LoginScreen";
 
 /** sessionStorage (not localStorage): once unlocked, stay unlocked for the
@@ -48,6 +49,12 @@ export function LoginGate({ children }: { children: ReactNode }) {
       // screen, same as a genuinely fresh session.
     }
   }, []);
+
+  // "Skip the lock screen": once the saved preference has loaded, go straight in.
+  const instantUnlock = usePreferences((s) => s.instantUnlock);
+  useEffect(() => {
+    if (instantUnlock && lockState === "locked") handleExitComplete();
+  }, [instantUnlock, lockState]);
 
   function handleUnlock() {
     setLockState((state) => (state === "locked" ? "unlocking" : state));

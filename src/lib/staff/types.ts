@@ -40,6 +40,8 @@ export interface Employee {
   /** Kept on file but never shown in the lists or the detail pane. */
   gender: string;
   clientManager: string;
+  /** "MM-DD" or "yyyy-mm-dd", "" when unknown. Only used for the birthday reminders. */
+  birthday: string;
   /** Left out of the shift planner (and any shift roster built from this list). */
   excludeFromShiftRoster: boolean;
   /** 0 = no photo; otherwise a cache-busting stamp for /api/staff/photos/<id>. */

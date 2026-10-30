@@ -3,6 +3,7 @@
 import { useDrag } from "@use-gesture/react";
 import { useWindowStore, windowClampConfig } from "./windowStore";
 import { clampToViewport } from "./windowGeometry";
+import { edgeZone } from "./windowSnap";
 
 /** `data-gesture` on the window node while a drag/resize is live: tokens.css
  *  gives only that window `will-change: transform` + contained chrome. */
@@ -41,7 +42,7 @@ export function useWindowDrag(
   const { disabled = false } = options;
 
   return useDrag(
-    ({ offset: [rawX, rawY], first, last }) => {
+    ({ offset: [rawX, rawY], xy, first, last }) => {
       if (disabled) return;
       const size = useWindowStore.getState().windows[id]?.size;
       const { x, y } = size
@@ -58,7 +59,13 @@ export function useWindowDrag(
         if (last) markGesture(el, false);
       }
       if (last) {
-        useWindowStore.getState().moveWindow(id, { x, y });
+        // Let go at the left or right edge of the screen: snap to half (or a quarter near a corner).
+        const zone = edgeZone(
+          { x: xy[0], y: xy[1] },
+          { width: window.innerWidth, height: window.innerHeight },
+        );
+        if (zone) useWindowStore.getState().snapWindow(id, zone);
+        else useWindowStore.getState().moveWindow(id, { x, y });
       }
     },
     {

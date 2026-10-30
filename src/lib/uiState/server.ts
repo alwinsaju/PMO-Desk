@@ -14,6 +14,11 @@ export const UI_STATE_KEYS = [
   "pinned-apps",
   "installed-apps",
   "preferences",
+  "tasks-prefs",
+  "staff-prefs",
+  "dashboard-prefs",
+  "template-usage",
+  "platform-prefs",
 ] as const;
 export type UiStateKey = (typeof UI_STATE_KEYS)[number];
 

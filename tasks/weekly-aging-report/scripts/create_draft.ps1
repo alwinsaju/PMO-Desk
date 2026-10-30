@@ -144,13 +144,25 @@ $logoBar = @"
 <table cellspacing=0 cellpadding=0 style='border-collapse:collapse;width:100%;margin-top:6pt'><tr><td style='background:$takedaRed;height:2pt;line-height:2pt;font-size:1pt'>&nbsp;</td></tr></table>
 "@
 
+$textStyle = "font-size:11.0pt;font-family:'Aptos Narrow',sans-serif;color:$textColor"
+
+# The greeting and message. A template chosen in the Templates app arrives as
+# body_html (from build_email_data.py); without one, the original wording is used.
+if ($data.body_html) {
+    $introHtml = [string]$data.body_html
+} else {
+    $introHtml = @"
+<p class=MsoNormal><span style="$textStyle">Hi Team,</span><o:p></o:p></p>
+<p class=MsoNormal>&nbsp;<o:p></o:p></p>
+<p class=MsoNormal><span style="$textStyle">Please find below the list of <b>$($data.grand_total) incidents</b> that were last updated prior to <b>$($data.date_str_full)</b>. We request that the assigned owners <b>prioritize review and next steps</b> for these items.</span><o:p></o:p></p>
+"@
+}
+
 $contentHtml = @"
 <div class=WordSection1>
 $logoBar
 <p class=MsoNormal>&nbsp;<o:p></o:p></p>
-<p class=MsoNormal><span style="font-size:11.0pt;font-family:'Aptos Narrow',sans-serif;color:$textColor">Hi Team,</span><o:p></o:p></p>
-<p class=MsoNormal>&nbsp;<o:p></o:p></p>
-<p class=MsoNormal><span style="font-size:11.0pt;font-family:'Aptos Narrow',sans-serif;color:$textColor">Please find below the list of <b>$($data.grand_total) incidents</b> that were last updated prior to <b>$($data.date_str_full)</b>. We request that the assigned owners <b>prioritize review and next steps</b> for these items.</span><o:p></o:p></p>
+$introHtml
 <p class=MsoNormal>&nbsp;<o:p></o:p></p>
 $tableHtml
 <p class=MsoNormal>&nbsp;<o:p></o:p></p>

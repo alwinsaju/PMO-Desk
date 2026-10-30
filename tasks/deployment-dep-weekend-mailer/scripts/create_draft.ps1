@@ -150,13 +150,25 @@ if ($data.body_date.single) {
     $bodyDateHtml = "<b><span style='color:black'>$($data.body_date.range_text)</span></b>"
 }
 
+$textStyle = "font-size:11.0pt;font-family:'Aptos Narrow',sans-serif;color:$textColor"
+
+# The greeting and message. A template chosen in the Templates app arrives as
+# body_html (from build_email_data.py); without one, the original wording is used.
+if ($data.body_html) {
+    $introHtml = [string]$data.body_html
+} else {
+    $introHtml = @"
+<p class=MsoNormal><span style="$textStyle">Hi Team,</span><o:p></o:p></p>
+<p class=MsoNormal>&nbsp;<o:p></o:p></p>
+<p class=MsoNormal><span style="$textStyle">Please find below, the deployment and POC details for $bodyDateHtml</span><o:p></o:p></p>
+"@
+}
+
 $contentHtml = @"
 <div class=WordSection1>
 $logoBar
 <p class=MsoNormal>&nbsp;<o:p></o:p></p>
-<p class=MsoNormal><span style="font-size:11.0pt;font-family:'Aptos Narrow',sans-serif;color:$textColor">Hi Team,</span><o:p></o:p></p>
-<p class=MsoNormal>&nbsp;<o:p></o:p></p>
-<p class=MsoNormal><span style="font-size:11.0pt;font-family:'Aptos Narrow',sans-serif;color:$textColor">Please find below, the deployment and POC details for $bodyDateHtml</span><o:p></o:p></p>
+$introHtml
 <p class=MsoNormal>&nbsp;<o:p></o:p></p>
 $deployTableHtml
 <p class=MsoNormal>&nbsp;<o:p></o:p></p>

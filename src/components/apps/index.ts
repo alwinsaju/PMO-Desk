@@ -19,6 +19,7 @@ import "./browser-app";
 import "./tasks-app";
 // PMO To-Do registers lazily from here so its code is not in the first bundle.
 import { registerLazyApp } from "./registry";
+import { REGISTER_IDS } from "@/lib/registers/defs";
 import "./web-app"; // generic window every REAL App Store catalog entry opens into
 import "../app-store"; // the App Store is also opened as a window
 
@@ -28,3 +29,21 @@ registerLazyApp("pmo-todo", () =>
 registerLazyApp("staff", () =>
   import("./staff-app/StaffApp").then((m) => ({ default: m.StaffApp })),
 );
+registerLazyApp("templates", () =>
+  import("./templates-app/TemplatesApp").then((m) => ({ default: m.TemplatesApp })),
+);
+registerLazyApp("dashboard", () =>
+  import("./dashboard-app/DashboardApp").then((m) => ({ default: m.DashboardApp })),
+);
+registerLazyApp("settings", () =>
+  import("./settings-app/SettingsApp").then((m) => ({ default: m.SettingsApp })),
+);
+registerLazyApp("pmo-toolkit", () =>
+  import("./toolkit/ToolkitApp").then((m) => ({ default: m.ToolkitApp })),
+);
+// Each PMO tool is its own window, registered under its own id.
+for (const id of REGISTER_IDS) {
+  registerLazyApp(id, () =>
+    import("./toolkit/tools").then((m) => ({ default: m.toolComponent(id) })),
+  );
+}

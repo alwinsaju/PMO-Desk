@@ -1,16 +1,22 @@
 "use client";
 
-import { memo, useCallback } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui";
+import { cn } from "@/lib/cn";
 import { diffSummary } from "./diffView";
 import { flagsSummary } from "./flagsView";
 import { formSummary } from "./formGate";
 import { StepTracker } from "./StepTracker";
 import { TaskActions } from "./TaskActions";
 import { TaskStateBadge } from "./TaskStateBadge";
-import { statusSentence } from "./taskPresenter";
+import { latestArtifactNotification, statusSentence } from "./taskPresenter";
+import { OpenFileButtons } from "./OpenFileButtons";
+import { explainFailure, lastLine } from "@/lib/tasks/failureExplainer";
+import { plainStepName, stepPosition, timeLeftText } from "@/lib/tasks/runHistory";
+import { fetchTaskHistory } from "./api";
+
 import { useGateData, type GateData } from "./useGateData";
-import type { Task } from "./types";
+import type { HistoryRun, Task } from "./types";
 
 interface TaskCardProps {
   task: Task;
@@ -20,6 +26,8 @@ interface TaskCardProps {
   onOpenDetail: (taskId: string) => void;
   /** Position in the grid — only staggers the entrance animation. */
   index?: number;
+  /** The command bar picked this task: ring it and bring it into view. */
+  highlighted?: boolean;
 }
 
 /**
@@ -36,20 +44,47 @@ export const TaskCard = memo(function TaskCard({
   onSettled,
   onOpenDetail,
   index = 0,
+  highlighted = false,
 }: TaskCardProps) {
   const taskId = task.id;
+  const cardRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (highlighted)
+      cardRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [highlighted]);
   const openDetail = useCallback(() => onOpenDetail(taskId), [onOpenDetail, taskId]);
   // Data behind a form/flags/diff gate, when the task is waiting at one
   // (always idle for the four older tasks). Action decisions — the legacy
   // incident-review check, the Run form, gate blocks — live in TaskActions.
   const gate = useGateData(task);
   const gateLine = gateSummary(gate);
+  // A rough "time left" for a run on its own steps, from this task's earlier runs.
+  const [runs, setRuns] = useState<HistoryRun[]>([]);
+  const working = task.state === "working";
+  useEffect(() => {
+    if (!working) return;
+    let cancelled = false;
+    void fetchTaskHistory(taskId)
+      .then((r) => {
+        if (!cancelled) setRuns(r);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [working, taskId]);
+  const timeLeft = timeLeftText(task, runs);
 
   return (
     <article
+      ref={cardRef}
       data-task-card
+      data-highlighted={highlighted || undefined}
       style={{ animationDelay: `${Math.min(index, 8) * 70}ms` }}
-      className="spot animate-rise rounded-card border-line bg-card flex min-w-0 flex-col border px-5 pt-5 pb-4"
+      className={cn(
+        "spot animate-rise rounded-card border-line bg-card flex min-w-0 flex-col border px-5 pt-5 pb-4",
+        highlighted && "ring-focus ring-2",
+      )}
     >
       <header className="flex items-center gap-2.5">
         <h3
@@ -70,13 +105,18 @@ export const TaskCard = memo(function TaskCard({
           className="rounded-control bg-red-soft text-red px-3 py-2"
           title={task.error}
         >
-          <p className="line-clamp-2 font-mono text-[11.5px] leading-normal [overflow-wrap:anywhere]">
-            {task.error}
+          <p className="text-[12.5px] leading-snug font-semibold">
+            {explainFailure(task.error).title}
+          </p>
+          <p className="line-clamp-1 font-mono text-[11px] leading-normal [overflow-wrap:anywhere]">
+            {lastLine(task.error)}
           </p>
         </div>
       ) : (
         <p className="text-ink-soft line-clamp-2 min-h-5 text-[13.5px]">
-          {statusSentence(task)}
+          {task.state === "working" || task.state === "finishing"
+            ? `${plainStepName(task, task.currentStep)}… (${stepPosition(task) ?? ""}${timeLeft ? `, ${timeLeft}` : ""})`
+            : statusSentence(task)}
         </p>
       )}
 
@@ -87,6 +127,13 @@ export const TaskCard = memo(function TaskCard({
         >
           {gateLine}
         </p>
+      )}
+      {task.state === "resting" && latestArtifactNotification(task) && (
+        <OpenFileButtons
+          taskId={task.id}
+          notification={latestArtifactNotification(task)!}
+          className="mt-2"
+        />
       )}
 
       <footer className="mt-auto flex flex-wrap items-end gap-x-2 gap-y-2 pt-3.5">

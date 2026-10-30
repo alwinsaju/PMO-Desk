@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import io
+import json
 import sys
 from pathlib import Path
 
@@ -20,6 +21,12 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "build" / "installer"
+
+
+def app_version() -> str:
+    """The version printed on the welcome page: always package.json's, so it cannot go stale."""
+    return json.loads((ROOT / "package.json").read_text(encoding="utf-8"))["version"]
+
 FONT_WOFF2 = (
     ROOT
     / "node_modules"
@@ -108,7 +115,7 @@ def sidebar() -> Image.Image:
     small = figtree(10, 500)
     for i, line in enumerate(("You and a local AI,", "working side by side.")):
         draw.text((20 * s, (246 + i * 14) * s), line, font=small, fill=(*MUTED, 255), anchor="ls")
-    draw.text((20 * s, 298 * s), "Version 4.0", font=figtree(9, 600), fill=(*MUTED, 200), anchor="ls")
+    draw.text((20 * s, 298 * s), f"Version {app_version()}", font=figtree(9, 600), fill=(*MUTED, 200), anchor="ls")
     return finish(canvas, w, h)
 
 

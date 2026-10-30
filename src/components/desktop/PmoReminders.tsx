@@ -3,6 +3,9 @@
 import { useEffect } from "react";
 import { BellRingingIcon, ClipboardTextIcon, XIcon } from "@phosphor-icons/react";
 import { useWindowStore } from "@/components/window-manager";
+import { useTitleSuffixes } from "@/components/window-manager/titleSuffixStore";
+import { useFocusActive } from "@/lib/focusModeStore";
+import { attentionSuffix } from "@/components/window-manager/windowTitles";
 import { IconButton } from "@/components/ui";
 import { usePmoReminders } from "@/components/apps/pmo-todo-app/usePmoReminders";
 import { useRemindersStore } from "@/components/apps/pmo-todo-app/remindersStore";
@@ -33,9 +36,20 @@ export function PmoReminders() {
   return (
     <>
       <TitlePrefix />
+      <WindowTitleSuffix />
       <ReminderToast />
     </>
   );
+}
+
+/** "PMO To-Do (3 need attention)" in the title bar, in step with the dock badge. */
+function WindowTitleSuffix() {
+  const attention = useRemindersStore((s) => s.attention);
+  useEffect(() => {
+    useTitleSuffixes.getState().setAppTitleSuffix(PMO_APP_ID, attentionSuffix(attention));
+    return () => useTitleSuffixes.getState().setAppTitleSuffix(PMO_APP_ID, null);
+  }, [attention]);
+  return null;
 }
 
 const stripPrefix = (title: string) => title.replace(/^\(\d+\)\s/, "");
@@ -70,6 +84,7 @@ function TitlePrefix() {
 function ReminderToast() {
   const toast = useRemindersStore((s) => s.toast);
   const dismiss = useRemindersStore((s) => s.dismissToast);
+  const quiet = useFocusActive();
 
   useEffect(() => {
     if (!toast) return;
@@ -77,7 +92,7 @@ function ReminderToast() {
     return () => clearTimeout(timer);
   }, [toast, dismiss]);
 
-  if (!toast) return null;
+  if (!toast || quiet) return null;
   return (
     <div
       role="status"

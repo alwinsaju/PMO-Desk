@@ -26,6 +26,8 @@ import { ReviewPanel } from "./ReviewPanel";
 import { StepTracker } from "./StepTracker";
 import { TaskActions } from "./TaskActions";
 import { TaskStateBadge } from "./TaskStateBadge";
+import { FailureHelp } from "./FailureHelp";
+import { explainFailure } from "@/lib/tasks/failureExplainer";
 import {
   describeApproval,
   gateTabLabel,
@@ -141,7 +143,7 @@ export const TaskDetailDialog = memo(function TaskDetailDialog({
             </div>
             <DialogDescription className="mt-2 line-clamp-1 text-[13.5px]">
               {lastTask.state === "error" && lastTask.error
-                ? lastTask.error
+                ? explainFailure(lastTask.error).title
                 : statusSentence(lastTask)}
             </DialogDescription>
 
@@ -186,6 +188,7 @@ export const TaskDetailDialog = memo(function TaskDetailDialog({
             <div className="mt-5 mb-1">
               <StepTracker task={lastTask} />
             </div>
+            <FailureHelp task={lastTask} />
 
             {lastTask.notifications.length > 0 && !gateType && (
               <div className="mt-4 flex flex-col gap-2">

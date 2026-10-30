@@ -21,6 +21,8 @@ interface TaskActionBarProps {
    *  render exactly as before). */
   /** Text of the Run button — "Run" unless Run opens a form first. */
   runLabel?: string;
+  /** Text of the Retry button on a failed run (it resumes after the last finished step). */
+  retryLabel?: string;
   /** Text of the confirm button at an awaiting_send gate. */
   confirmLabel?: string;
   /** While set, Approve is disabled and this explains why. */
@@ -58,6 +60,7 @@ export function TaskActionBar({
   reviewBlock = null,
   onOpenReview,
   runLabel = "Run",
+  retryLabel = "Retry",
   confirmLabel = DEFAULT_CONFIRM_LABEL,
   approveBlocked = null,
   sendBlocked = null,
@@ -86,7 +89,7 @@ export function TaskActionBar({
       buttons = (
         <>
           <Button disabled={isBusy} onClick={onStart}>
-            {pending === "start" ? "Retrying…" : "Retry"}
+            {pending === "start" ? "Retrying…" : retryLabel}
           </Button>
           <Button variant="outline" disabled={isBusy} onClick={onReset}>
             {pending === "reset" ? "Resetting…" : "Reset"}

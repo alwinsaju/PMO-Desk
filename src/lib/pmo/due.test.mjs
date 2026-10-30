@@ -584,6 +584,16 @@ describe("attentionSummary (the dock badge)", () => {
 
 describe("snooze", () => {
   const p = prefs();
+  it("after lunch is 14:00 today, or tomorrow morning once that has passed", () => {
+    assert.equal(
+      snoozeUntil("after-lunch", ist("2026-10-23T11:00"), p).toISOString(),
+      ist("2026-10-23T14:00").toISOString(),
+    );
+    assert.equal(
+      snoozeUntil("after-lunch", ist("2026-10-23T15:00"), p).toISOString(),
+      ist("2026-10-24T09:00").toISOString(),
+    );
+  });
   it("offers one hour, tomorrow 09:00 IST and next Monday 09:00 IST", () => {
     const friEvening = ist("2026-10-23T20:15");
     assert.equal(

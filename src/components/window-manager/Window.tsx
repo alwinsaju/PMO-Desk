@@ -10,6 +10,8 @@ import { windowFxMode } from "@/lib/displayFx";
 import { firstUsable, windowShortcut } from "@/lib/focusKeys";
 import { getAppComponent } from "@/components/apps/registry";
 import { useWindowStore } from "./windowStore";
+import { useTitleSuffixes } from "./titleSuffixStore";
+import { titleWithSuffix } from "./windowTitles";
 import { AppErrorBoundary } from "./AppErrorBoundary";
 import { WindowTitleBar } from "./WindowTitleBar";
 import { ResizeHandles } from "./ResizeHandles";
@@ -21,6 +23,9 @@ import type { WindowState } from "./types";
 interface WindowProps {
   id: string;
 }
+
+/** Added to a pinned window's z-index; larger than any focus counter reaches in a session. */
+const PINNED_Z_BOOST = 1_000_000;
 
 interface Rect {
   x: number;
@@ -104,6 +109,10 @@ export function Window({ id }: WindowProps) {
   const maximizeWindow = useWindowStore((s) => s.maximizeWindow);
   const closeWindow = useWindowStore((s) => s.closeWindow);
   const focusWindow = useWindowStore((s) => s.focusWindow);
+  const togglePinned = useWindowStore((s) => s.togglePinned);
+  const titleSuffix = useTitleSuffixes((s) =>
+    liveWindow ? s.suffixes[liveWindow.appId] : undefined,
+  );
   const fxMode = useWindowStore((s) =>
     windowFxMode({
       openCount: Object.keys(s.windows).length,
@@ -320,28 +329,31 @@ export function Window({ id }: WindowProps) {
     );
   }
 
+  // A pinned window stays above every unpinned one, however they are focused.
+  const stackIndex = data.zIndex + (data.pinned ? PINNED_Z_BOOST : 0);
   const outerStyle: CSSProperties = transitionRect
     ? {
-        zIndex: data.zIndex,
+        zIndex: stackIndex,
         width: transitionRect.width,
         height: transitionRect.height,
         transform: `translate3d(${transitionRect.x}px, ${transitionRect.y}px, 0)`,
       }
     : data.isMaximized
       ? {
-          zIndex: data.zIndex,
+          zIndex: stackIndex,
           top: MAXIMIZED_INSETS.top,
           bottom: MAXIMIZED_INSETS.bottom,
           left: MAXIMIZED_INSETS.side,
           right: MAXIMIZED_INSETS.side,
         }
       : {
-          zIndex: data.zIndex,
+          zIndex: stackIndex,
           width: data.size.width,
           height: data.size.height,
           transform: `translate3d(${data.position.x}px, ${data.position.y}px, 0)`,
         };
 
+  const shownTitle = titleWithSuffix(data.title, titleSuffix);
   const exitAnimation =
     exitIntent === "minimizing"
       ? { opacity: 0, scale: 0.08 }
@@ -359,7 +371,7 @@ export function Window({ id }: WindowProps) {
       data-controlled-by={data.controlledBy}
       role="dialog"
       aria-modal="false"
-      aria-label={data.title}
+      aria-label={shownTitle}
       tabIndex={-1}
       style={outerStyle}
       className="pointer-events-auto absolute outline-none"
@@ -389,10 +401,12 @@ export function Window({ id }: WindowProps) {
       >
         <WindowTitleBar
           id={id}
-          title={data.title}
+          title={shownTitle}
           icon={data.icon}
           isFocused={data.isFocused}
           isMaximized={data.isMaximized}
+          isPinned={data.pinned === true}
+          onPinToggle={() => togglePinned(id)}
           dragDisabled={transitionRect !== null}
           rootRef={outerRef}
           onMinimize={requestMinimize}
@@ -419,11 +433,28 @@ export function Window({ id }: WindowProps) {
   );
 }
 
-/** Shown for the instant a lazily loaded app's code is still arriving. */
+/** Shown while a lazily loaded app's code is still arriving: the rough layout of an app
+ *  (header, filter pills, rows) so the window does not jump when the real content lands. */
 function AppLoading() {
+  const bar = "bg-chip rounded-control motion-safe:animate-pulse";
   return (
-    <div className="flex h-full w-full items-center justify-center p-6">
-      <p className="text-ink-faint text-sm">Loading…</p>
+    <div
+      role="status"
+      aria-label="Loading"
+      className="flex h-full w-full flex-col gap-4 p-6"
+    >
+      <span className="sr-only">Loading…</span>
+      <div className={cn(bar, "h-6 w-48")} />
+      <div className="flex gap-2">
+        <div className={cn(bar, "h-7 w-20 rounded-full")} />
+        <div className={cn(bar, "h-7 w-24 rounded-full")} />
+        <div className={cn(bar, "h-7 w-16 rounded-full")} />
+      </div>
+      <div className="flex flex-col gap-3">
+        {[0, 1, 2, 3].map((row) => (
+          <div key={row} className={cn(bar, "h-14 w-full")} />
+        ))}
+      </div>
     </div>
   );
 }

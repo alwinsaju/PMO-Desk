@@ -50,6 +50,8 @@ interface DockTileProps {
   /** A count to draw on the tile's corner (e.g. items needing attention);
    *  0 or undefined draws nothing. Purely visual: the tile behaves the same. */
   badge?: number;
+  /** Titles of this app's open windows; the tooltip lists them when there are several. */
+  windowTitles?: string[];
   /** `draggable`/`onDragStart`/`onDragEnd` for a tile that can be dragged to
    *  reorder — Dock.tsx passes these only for pinned tiles. The drop side
    *  (where it lands) is Dock.tsx's wrapper around this tile. */
@@ -81,14 +83,20 @@ export function DockTile({
   canReset,
   running = "none",
   badge = 0,
+  windowTitles = [],
   dragProps,
 }: DockTileProps) {
   const badgeLabel = badgeText(badge);
+  // Several windows of one app: the tooltip lists them (a preview of what is open).
+  const tooltip =
+    windowTitles.length > 1
+      ? `${badgedLabel(label, badge)}: ${windowTitles.join(" · ")}`
+      : badgedLabel(label, badge);
   return (
     <ContextMenu>
       <ContextMenuTrigger className="contents">
         <span className="relative inline-flex">
-          <Tooltip label={badgedLabel(label, badge)} side="bottom" sideOffset={16}>
+          <Tooltip label={tooltip} side="bottom" sideOffset={16}>
             <button
               type="button"
               aria-label={badgedLabel(label, badge)}

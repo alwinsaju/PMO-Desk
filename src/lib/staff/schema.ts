@@ -45,6 +45,12 @@ export const employeeSchema = z.object({
   workdayId: text(60),
   gender: text(40),
   clientManager: text(),
+  birthday: z
+    .string()
+    .trim()
+    .max(10)
+    .refine((v) => v === "" || /^(\d{4}-)?\d{2}-\d{2}$/.test(v), "Use MM-DD.")
+    .default(""),
   excludeFromShiftRoster: z.boolean().default(false),
   photoVersion: z.number().int().min(0),
   profileSync: z.enum(["pending", "synced", "manual"]),

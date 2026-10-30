@@ -5,6 +5,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui";
 import { useStaffStore, useStaffSync } from "@/lib/staff/staffStore";
 import type { TimeOffStatus } from "@/lib/staff/types";
 import { DirectoryTab } from "./DirectoryTab";
+import { InsightsTab } from "./InsightsTab";
 import { OffboardedTab } from "./OffboardedTab";
 import { ShiftRoster } from "./ShiftRoster";
 import { useStaffNav } from "./staffNavStore";
@@ -53,6 +54,7 @@ export function StaffApp({ windowId }: { windowId: string }) {
             <TabsTrigger value="offboarded" count={left > 0 ? left : undefined}>
               Offboarded
             </TabsTrigger>
+            <TabsTrigger value="insights">Insights</TabsTrigger>
           </TabsList>
         </div>
         <TabsContent value="directory" forceMount className={PANEL}>
@@ -66,6 +68,9 @@ export function StaffApp({ windowId }: { windowId: string }) {
         </TabsContent>
         <TabsContent value="offboarded" forceMount className={PANEL}>
           <OffboardedTab />
+        </TabsContent>
+        <TabsContent value="insights" forceMount className={PANEL}>
+          <InsightsTab />
         </TabsContent>
       </Tabs>
     </div>

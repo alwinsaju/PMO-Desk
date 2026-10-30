@@ -13,9 +13,12 @@ import {
   GearSixIcon,
   LightningIcon,
   ListChecksIcon,
+  LockKeyOpenIcon,
   MoonIcon,
   RobotIcon,
+  SlidersHorizontalIcon,
   SunIcon,
+  TargetIcon,
 } from "@phosphor-icons/react";
 import {
   DropdownMenu,
@@ -28,6 +31,10 @@ import {
 } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { useSetupUi } from "@/components/setup/setupStore";
+import { usePreferences } from "@/lib/preferences/preferencesStore";
+import { openSettings } from "@/components/apps/settings-app/settingsNav";
+import { useFocusActive, useFocusMode } from "@/lib/focusModeStore";
+import { remainingText } from "@/lib/focusMode";
 import { useBrand } from "@/lib/useBrand";
 import { restoreAppearanceFromServer } from "@/lib/theme";
 import { useTheme } from "@/lib/useTheme";
@@ -347,9 +354,75 @@ function SetupRow() {
   );
 }
 
+/** "Skip the lock screen" - opens straight to the desktop. The lock screen is only a
+ *  welcome screen, so this is a convenience, not a security setting. */
+function InstantUnlockRow() {
+  const instantUnlock = usePreferences((s) => s.instantUnlock);
+  const setInstantUnlock = usePreferences((s) => s.setInstantUnlock);
+  return (
+    <DropdownMenuSwitchItem
+      checked={instantUnlock}
+      onCheckedChange={setInstantUnlock}
+      className="group py-2.5"
+    >
+      <RowBody
+        icon={<LockKeyOpenIcon size={18} weight="regular" aria-hidden />}
+        title="Skip the lock screen"
+        hint="Open straight to the desktop"
+      />
+    </DropdownMenuSwitchItem>
+  );
+}
+
+/** "Focus mode" - hides the dock and holds back notices for 25 minutes (or say "focus for 40
+ *  minutes" in the command bar). Errors still show; everything held is in the notification list. */
+function FocusModeRow() {
+  const until = useFocusMode((s) => s.until);
+  const active = useFocusActive();
+  const start = useFocusMode((s) => s.start);
+  const stop = useFocusMode((s) => s.stop);
+  return (
+    <DropdownMenuSwitchItem
+      checked={active}
+      onCheckedChange={(on) => (on ? start() : stop())}
+      className="group py-2.5"
+    >
+      <RowBody
+        icon={<TargetIcon size={18} weight="regular" aria-hidden />}
+        title="Focus mode"
+        hint={
+          active
+            ? remainingText(until, Date.now())
+            : "Hide the dock, quiet notices (25 min)"
+        }
+      />
+    </DropdownMenuSwitchItem>
+  );
+}
+
+/** "All settings" - the Settings window: command-bar confirmations and history, notifications,
+ *  shortcuts and accessibility in one place. */
+function AllSettingsRow() {
+  return (
+    <DropdownMenuItem
+      onSelect={() => openSettings("general")}
+      className="group gap-3 py-2.5"
+    >
+      <RowBody
+        icon={<SlidersHorizontalIcon size={18} weight="regular" aria-hidden />}
+        title="All settings"
+        hint="Notifications, shortcuts, accessibility (Ctrl+,)"
+      />
+    </DropdownMenuItem>
+  );
+}
+
 const settingsRows: { id: string; Row: ComponentType }[] = [
   { id: "dark-mode", Row: DarkModeRow },
   { id: "deloitte-mode", Row: DeloitteModeRow },
+  { id: "instant-unlock", Row: InstantUnlockRow },
+  { id: "focus-mode", Row: FocusModeRow },
+  { id: "all-settings", Row: AllSettingsRow },
   { id: "hardware-acceleration", Row: HardwareAccelerationRow },
   { id: "fast-model", Row: FastModelRow },
   { id: "restart-engine", Row: RestartEngineRow },

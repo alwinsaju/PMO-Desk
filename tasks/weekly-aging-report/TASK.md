@@ -37,6 +37,9 @@ Since the pivot is filtered to the roster, every "name" row should already have 
 ## Branding (Deloitte x Takeda)
 Reuses the exact palette and logo lockup built for the backlog report - see [weekly-backlog-report/TASK.md](../weekly-backlog-report/TASK.md#branding-deloitte-x-takeda) for the full rationale. The two logo files now live in the workspace-level `../shared/assets/` (moved there once this report needed them too, per this workspace's rule against duplicating shared assets across task folders) - both reports' `create_draft.ps1` reference that shared path.
 
+## Wording (Template library)
+The subject, To, Cc and the greeting/message above the table can be changed without touching this folder: in the AI OS **Templates** app, a template ticked for *Aging Report* replaces them (placeholders `{{date_subject}}`, `{{date_full}}`, `{{total}}`, `{{people}}`). `build_email_data.py` asks `shared/template_lib` for the template for the key `task:weekly-aging-report` and writes the result into `email-data.json` (`subject`, `to`, `cc`, `body_html`); `create_draft.ps1` uses `body_html` when present and its own text otherwise, so with no library or no template for this task the draft is unchanged. The table, logos and attachment are not part of a template. See [docs/templates.md](../../docs/templates.md).
+
 ## Technical notes
 - No browser automation - ServiceNow export is a manual, out-of-band step performed by the user.
 - No `Recalc-Workbook.ps1` step - this report's workbook has no formulas to recalculate.

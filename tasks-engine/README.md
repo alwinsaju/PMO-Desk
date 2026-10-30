@@ -38,6 +38,7 @@ instead of starting its own.
 | `AI_OS_TASKS_DIR` | Folder holding the task folders and `shared/`. Default: `../tasks`. |
 | `AI_OS_TASKS_DATA_DIR` | Switches on the working copy (see below): tasks run from `<dir>/tasks`, history is `<dir>/history.jsonl`. Unset (the default from the repo): tasks run in place and history is `tasks-engine/.data/history.jsonl` (gitignored). The installed app sets it to a `tasks-engine` folder inside its app-data folder. |
 | `AI_OS_TASKS_PYTHON` | Python used to launch the engine (and so every task step). The installed app points it at the Python it bundles. |
+| `AI_OS_TEMPLATES_DIR` | Folder holding the Template library's `library.json`. The UI server sets it for the engine it launches (default: `templates` inside the PMO data folder); the mail tasks read their subject, recipients and message from it through `tasks/shared/template_lib`. Unset or empty library = each task's own wording. |
 | `AI_OS_TASKS_ENGINE_URL` | Set on the UI server to use an engine you started by hand. |
 
 ## Data and the installed app

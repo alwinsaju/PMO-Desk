@@ -151,6 +151,7 @@ export function buildTodo(draft: TodoDraft, context: BuildTodoContext): Todo {
     waitingSince: waitingOn ? (draft.waitingSince ?? context.now) : null,
     chaserDays: null,
     tags: draft.tags,
+    blockedBy: [],
     recurrence: trimToNull(draft.recurrence),
     source,
     // Phase 1 sends no notifications; the shape is here so a later phase
@@ -258,6 +259,8 @@ export const TodoPatchSchema = z.object({
   /** Chase after this many quiet working days; null = the global default. */
   chaserDays: z.number().int().min(1).max(MAX_CHASER_DAYS).nullable().optional(),
   tags: z.array(z.string()).max(10).optional(),
+  /** The to-dos this one waits for (replaces the list; itself is ignored). */
+  blockedBy: z.array(z.string()).max(10).optional(),
   status: TodoStatusSchema.optional(),
   /** Silence this to-do's reminders until this instant (ISO); null un-snoozes. */
   snoozedUntil: z
@@ -340,7 +343,7 @@ const FIELD_KEYS = [
   "waitingSince",
   "chaserDays",
   "tags",
-  "addActionItems",
+  "blockedBy",
   "editActionItems",
   "removeActionItemIds",
   "addCheckpoints",
@@ -372,6 +375,9 @@ export function applyTodoPatch(todo: Todo, patch: TodoPatch, now: string): Patch
   if (patch.priority !== undefined) next.priority = patch.priority;
   let history = todo.history ?? [];
   if (patch.tags !== undefined) next.tags = patch.tags;
+  if (patch.blockedBy !== undefined) {
+    next.blockedBy = [...new Set(patch.blockedBy)].filter((id) => id !== todo.id);
+  }
   if (patch.chaserDays !== undefined) next.chaserDays = patch.chaserDays;
   if (patch.waitingOn !== undefined) {
     const before = trimToNull(todo.waitingOn);

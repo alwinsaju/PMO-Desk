@@ -20,6 +20,8 @@ const path = require("node:path");
 const displaySettings = require("./display-settings.cjs");
 const launchConfig = require("./launch-config.cjs");
 const childEnv = require("./child-env.cjs");
+const exportPicker = require("./export-picker.cjs");
+const platformShell = require("./platform-shell.cjs");
 const { warmDevRoutes } = require("./dev-warmup.cjs");
 const { describeExitCode } = require("./exit-code.cjs");
 const portRetry = require("./port-retry.cjs");
@@ -920,6 +922,176 @@ ipcMain.handle("setup:choose-folder", async (event) => {
     properties: ["openDirectory"],
   });
   return result.canceled ? null : (result.filePaths[0] ?? null);
+});
+
+/** Where the last uploaded export came from, so the next file dialog opens there. */
+const lastUploadDirFile = () =>
+  path.join(app.getPath("userData"), "last-upload-dir.json");
+
+function readLastUploadDir() {
+  try {
+    const dir = JSON.parse(fs.readFileSync(lastUploadDirFile(), "utf8")).dir;
+    return typeof dir === "string" && fs.statSync(dir).isDirectory() ? dir : null;
+  } catch {
+    return null;
+  }
+}
+
+function readExportFile(dir, name) {
+  const full = path.join(dir, name);
+  const stat = fs.statSync(full);
+  if (!stat.isFile() || stat.size > exportPicker.MAX_BYTES) return null;
+  return { name, data: fs.readFileSync(full) };
+}
+
+/** The Run form's "newest export in Downloads": the page names only an extension and a name prefix,
+ *  never a path, and only the Downloads folder is read. */
+ipcMain.handle("files:newest-download", (event, want) => {
+  if (!isFromMainWindow(event) || !want || typeof want !== "object") return null;
+  try {
+    const dir = app.getPath("downloads");
+    const entries = fs.readdirSync(dir, { withFileTypes: true }).flatMap((d) => {
+      try {
+        const stat = fs.statSync(path.join(dir, d.name));
+        return [
+          { name: d.name, mtimeMs: stat.mtimeMs, size: stat.size, isFile: stat.isFile() },
+        ];
+      } catch {
+        return [];
+      }
+    });
+    return exportPicker.newestMatching(entries, want);
+  } catch {
+    return null;
+  }
+});
+
+ipcMain.handle("files:read-download", (event, name, extensions) => {
+  if (!isFromMainWindow(event) || !exportPicker.isSafeName(name, extensions)) return null;
+  try {
+    return readExportFile(app.getPath("downloads"), name);
+  } catch {
+    return null;
+  }
+});
+
+/** Where the Dashboard export lands first: the page captures its own screen in slices and asks to save the result. */
+const MAX_CAPTURE = 6000;
+const MAX_PNG_BYTES = 80 * 1024 * 1024;
+
+ipcMain.handle("view:capture", async (event, rect) => {
+  if (!isFromMainWindow(event) || !mainWindow || !rect || typeof rect !== "object")
+    return null;
+  const { x, y, width, height } = rect;
+  const ok = [x, y, width, height].every((n) => Number.isFinite(n));
+  if (!ok || width <= 0 || height <= 0 || width > MAX_CAPTURE || height > MAX_CAPTURE)
+    return null;
+  try {
+    const image = await mainWindow.webContents.capturePage({
+      x: Math.round(x),
+      y: Math.round(y),
+      width: Math.round(width),
+      height: Math.round(height),
+    });
+    return image.toPNG();
+  } catch {
+    return null;
+  }
+});
+
+/** Saves a picture the page made from its captures, as a PNG or a one-page PDF, wherever the person
+ *  chooses in the save dialog. The page supplies image bytes and a short name, never a path. */
+ipcMain.handle("view:save", async (event, format, baseName, png) => {
+  if (!isFromMainWindow(event) || !mainWindow) return null;
+  if (format !== "png" && format !== "pdf") return null;
+  const bytes = Buffer.isBuffer(png)
+    ? png
+    : png instanceof Uint8Array
+      ? Buffer.from(png)
+      : null;
+  if (!bytes || bytes.length === 0 || bytes.length > MAX_PNG_BYTES) return null;
+  const name =
+    typeof baseName === "string" && /^[A-Za-z0-9._ -]{1,60}$/.test(baseName)
+      ? baseName
+      : "export";
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: format === "pdf" ? "Save as PDF" : "Save as picture",
+    defaultPath: path.join(app.getPath("downloads"), `${name}.${format}`),
+    filters: [
+      format === "pdf"
+        ? { name: "PDF", extensions: ["pdf"] }
+        : { name: "PNG", extensions: ["png"] },
+    ],
+  });
+  if (result.canceled || !result.filePath) return null;
+  try {
+    if (format === "png") {
+      fs.writeFileSync(result.filePath, bytes);
+      return result.filePath;
+    }
+    const printer = new BrowserWindow({ show: false, webPreferences: { sandbox: true } });
+    try {
+      const html = `<!doctype html><meta charset="utf-8"><style>@page{margin:8mm}body{margin:0}img{width:100%;display:block}</style><img src="data:image/png;base64,${bytes.toString("base64")}">`;
+      await printer.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+      const pdf = await printer.webContents.printToPDF({
+        printBackground: true,
+        pageSize: "A4",
+      });
+      fs.writeFileSync(result.filePath, pdf);
+    } finally {
+      printer.destroy();
+    }
+    return result.filePath;
+  } catch (error) {
+    desktopLog(`Could not save the export: ${error && error.message}`, "error");
+    return null;
+  }
+});
+
+/** A native file dialog that opens where the last export came from (else Downloads). */
+ipcMain.handle("files:choose", async (event, extensions) => {
+  const exts = exportPicker.cleanExtensions(extensions);
+  if (!isFromMainWindow(event) || !mainWindow || exts.length === 0) return null;
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: "Choose the file",
+    defaultPath: readLastUploadDir() ?? app.getPath("downloads"),
+    properties: ["openFile"],
+    filters: [{ name: "Files", extensions: exts.map((e) => e.slice(1)) }],
+  });
+  if (result.canceled || !result.filePaths[0]) return null;
+  const chosen = result.filePaths[0];
+  try {
+    fs.writeFileSync(lastUploadDirFile(), JSON.stringify({ dir: path.dirname(chosen) }));
+  } catch {
+    // Remembering the folder is a convenience only.
+  }
+  try {
+    return readExportFile(path.dirname(chosen), path.basename(chosen));
+  } catch {
+    return null;
+  }
+});
+
+/** Settings > Data: "Open folder" shows the data folder in Explorer. The page names no path. */
+ipcMain.handle("platform:open-data-folder", async (event) => {
+  if (!isFromMainWindow(event)) return false;
+  const dir = path.join(app.getPath("userData"), "pmo");
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    return (await shell.openPath(dir)) === "";
+  } catch {
+    return false;
+  }
+});
+
+/** Settings > About: start the installer that the update download saved in Downloads. The page names
+ *  only the file name, which must look like one the download makes. */
+ipcMain.handle("platform:open-installer", async (event, name) => {
+  if (!isFromMainWindow(event)) return false;
+  const file = platformShell.installerPath(app.getPath("downloads"), name);
+  if (!file || !fs.existsSync(file)) return false;
+  desktopLog(`Starting the downloaded installer ${name}.`);
+  return (await shell.openPath(file)) === "";
 });
 
 ipcMain.handle("display:set-hardware-acceleration", (event, enabled) => {

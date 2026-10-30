@@ -1,12 +1,18 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { toast } from "@/lib/notifications/toastStore";
+import { enqueue, type QueuedSend } from "@/lib/tasks/sendQueue";
+import { retryLabel } from "@/lib/tasks/failureExplainer";
+import { plainStepName } from "@/lib/tasks/runHistory";
+import { useTasksPrefs } from "@/lib/tasks/tasksPrefsStore";
 import { ConfirmActionDialog } from "./ConfirmActionDialog";
 import { confirmCopy, needsConfirm, type ConfirmAction } from "./confirmCopy";
 import { blockingSummary } from "./diffView";
 import { StartTaskDialog } from "./StartTaskDialog";
 import { TaskActionBar } from "./TaskActionBar";
 import { gateActionLabel, hasStartForm, pausedStep } from "./taskPresenter";
+import { isFreshRunRequest, useTasksNav } from "./tasksNavStore";
 import { useTaskAction } from "./useTaskAction";
 import type { GateData } from "./useGateData";
 import type { Task } from "./types";
@@ -69,6 +75,15 @@ export function TaskActions({
   // state) reuses the inputs already uploaded and starts straight away.
   const runOpensForm = task.state === "resting" && hasStartForm(task);
 
+  // The command bar asked for this task's Run form ("prepare this week's aging report").
+  const runRequest = useTasksNav((s) => s.runRequest);
+  const clearRunRequest = useTasksNav((s) => s.clearRunRequest);
+  useEffect(() => {
+    if (!runRequest || runRequest.taskId !== task.id) return;
+    if (runOpensForm && isFreshRunRequest(runRequest)) setFormOpen(true);
+    clearRunRequest(runRequest.id);
+  }, [runRequest, task.id, runOpensForm, clearRunRequest]);
+
   let approveBlocked: string | null = null;
   let sendBlocked: string | null = null;
   if (gate.gate === "form" && gate.form && gate.form.pending.length > 0) {
@@ -100,6 +115,9 @@ export function TaskActions({
         lastFailure={action.lastFailure}
         reviewBlock={action.reviewBlock}
         runLabel={runOpensForm ? "Run…" : "Run"}
+        retryLabel={retryLabel(
+          task.currentStep ? plainStepName(task, task.currentStep) : null,
+        )}
         confirmLabel={step?.label || undefined}
         approveBlocked={approveBlocked}
         sendBlocked={sendBlocked}
@@ -119,6 +137,27 @@ export function TaskActions({
         taskId={task.id}
         onConfirm={runConfirmed}
         onCancel={() => setConfirming(null)}
+        onQueue={(at, summary) => {
+          setConfirming(null);
+          const item: QueuedSend = {
+            id: `q${Date.now().toString(36)}`,
+            taskId: task.id,
+            taskName: task.displayName,
+            at: at.toISOString(),
+            queuedAt: new Date().toISOString(),
+            subject: summary.subject,
+            recipients: { to: summary.to, cc: summary.cc },
+          };
+          useTasksPrefs.getState().update((t) => ({
+            ...t,
+            queue: enqueue(t.queue, item),
+            recipients: { ...t.recipients, [task.id]: item.recipients },
+          }));
+          toast({
+            tone: "success",
+            message: `Queued: ${task.displayName} will be sent ${at.toLocaleString("en-GB", { weekday: "short", hour: "2-digit", minute: "2-digit" })} if AI OS is open.`,
+          });
+        }}
       />
       {hasStartForm(task) && (
         <StartTaskDialog

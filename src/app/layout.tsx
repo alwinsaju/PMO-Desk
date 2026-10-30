@@ -3,6 +3,7 @@ import localFont from "next/font/local";
 import Script from "next/script";
 import { ServiceWorkerRegistration } from "@/components/pwa/ServiceWorkerRegistration";
 import { GlobalSpotlight } from "@/components/ui/GlobalSpotlight";
+import { ToastHost } from "@/components/ui/ToastHost";
 import { TooltipProvider } from "@/components/ui/Tooltip";
 import { getFxInitScript } from "@/lib/displayFx";
 import { getThemeInitScript } from "@/lib/theme";
@@ -116,6 +117,7 @@ export default function RootLayout({
             later phase share one delayDuration/skipDelayDuration config
             instead of every tooltip user having to remember to add it. */}
         <TooltipProvider delayDuration={300}>{children}</TooltipProvider>
+        <ToastHost />
       </body>
     </html>
   );

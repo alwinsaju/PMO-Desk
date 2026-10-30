@@ -10,7 +10,6 @@ import { NeedsAttentionStrip } from "./NeedsAttentionStrip";
 import { NewTodoDialog } from "./NewTodoDialog";
 import { PasteIntakeDialog } from "./PasteIntakeDialog";
 import { useDockBadgeStore } from "@/components/taskbar/dockBadgeStore";
-import { getDesktopBridge } from "@/lib/pmo/desktopBridge";
 import { needsFirstRun } from "@/lib/pmo/firstRun";
 import type { Proposal } from "@/lib/pmo/types";
 import { PanelMessage, ScrollBody } from "./parts";
@@ -20,9 +19,11 @@ import { ReportsTab } from "./ReportsTab";
 import { ReviewQueue } from "./ReviewQueue";
 import { SettingsDialog } from "./SettingsDialog";
 import { TodoDetailDialog } from "./TodoDetailDialog";
-import { TodoList } from "./TodoList";
+import { TodoList, type TodoViewChoice } from "./TodoList";
+import { BoardTab } from "./BoardTab";
+import { CalendarTab } from "./CalendarTab";
 import { UndoRejectBar, type RejectedItem } from "./UndoRejectBar";
-import { reviewCount as countReview, type TodoFilter, type TodoSort } from "./queueView";
+import { reviewCount as countReview } from "./queueView";
 import { initialReportView, type ReportViewState } from "./reportView";
 import { usePmoData } from "./usePmoData";
 
@@ -48,9 +49,11 @@ export function PmoTodoApp({ windowId }: { windowId: string }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   // View choices live here, not in the tab content, which unmounts when you
   // switch tabs: coming back finds the same filter, sort and open sections.
-  const [todoView, setTodoView] = useState<{ filter: TodoFilter; sort: TodoSort }>({
+  const [todoView, setTodoView] = useState<TodoViewChoice>({
     filter: "open",
     sort: "due",
+    tag: null,
+    text: "",
   });
   const [filteredReason, setFilteredReason] = useState<string | null>(null);
   // The weekly report's period choice and draft live here too: the tab's
@@ -70,6 +73,8 @@ export function PmoTodoApp({ windowId }: { windowId: string }) {
   const [notTaskOpen, setNotTaskOpen] = useState(false);
   const [nextOffer, setNextOffer] = useState<NextOffer | null>(null);
   const [justRejected, setJustRejected] = useState<RejectedItem | null>(null);
+  // The to-do whose chaser draft the command bar asked to start ("chase Sam on ...").
+  const [autoChaserFor, setAutoChaserFor] = useState<string | null>(null);
   const rememberRejected = (p: Proposal) =>
     setJustRejected({ id: p.id, title: p.draft?.title || p.summary.subject });
 
@@ -82,7 +87,12 @@ export function PmoTodoApp({ windowId }: { windowId: string }) {
   useEffect(() => {
     if (!openRequest || !loaded) return;
     setTab("todos");
+    if (openRequest.filter) {
+      const filter = openRequest.filter;
+      setTodoView((view) => ({ ...view, filter }));
+    }
     if (openRequest.todoId) setTodoId(openRequest.todoId);
+    setAutoChaserFor(openRequest.chaser ? openRequest.todoId : null);
     clearOpenRequest(openRequest.id);
   }, [openRequest, loaded, clearOpenRequest]);
 
@@ -93,7 +103,6 @@ export function PmoTodoApp({ windowId }: { windowId: string }) {
     if (attention === undefined) return;
     useRemindersStore.getState().setAttention(attention);
     useDockBadgeStore.getState().setBadge("pmo-todo", attention);
-    getDesktopBridge()?.setBadge(attention);
   }, [attention]);
 
   if (!state) {
@@ -138,6 +147,8 @@ export function PmoTodoApp({ windowId }: { windowId: string }) {
                 count={reviewCount}
               />
               <TabButton value="todos" short="To-Do" full="To-Do" count={openCount} />
+              <TabButton value="board" short="Board" full="Board" />
+              <TabButton value="calendar" short="Cal" full="Calendar" />
               <TabButton
                 value="filtered"
                 short="Filtered"
@@ -188,6 +199,12 @@ export function PmoTodoApp({ windowId }: { windowId: string }) {
             onSettled={refetch}
           />
         </Panel>
+        <Panel value="board">
+          <BoardTab state={state} onOpen={setTodoId} onSettled={refetch} />
+        </Panel>
+        <Panel value="calendar">
+          <CalendarTab state={state} onOpen={setTodoId} onSettled={refetch} />
+        </Panel>
         <Panel value="filtered">
           <FilteredList
             state={state}
@@ -215,10 +232,13 @@ export function PmoTodoApp({ windowId }: { windowId: string }) {
       <TodoDetailDialog
         todo={todo}
         today={state.today}
+        allTodos={state.todos}
         reminders={state.config.reminders}
         nowIso={state.serverTime}
         chaser={todo ? state.chasers?.[todo.id] : undefined}
         signoffDraft={todo ? state.signoffDrafts?.[todo.id] : undefined}
+        autoChaser={todo !== null && autoChaserFor === todo.id}
+        onAutoChaserHandled={() => setAutoChaserFor(null)}
         nextOffer={nextOffer}
         onNextOffer={setNextOffer}
         me={state.config.me}

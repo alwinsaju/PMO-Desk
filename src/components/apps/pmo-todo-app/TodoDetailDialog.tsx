@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Button,
   Dialog,
@@ -30,6 +30,7 @@ import {
   type Todo,
 } from "@/lib/pmo/types";
 import { ChaserDialog } from "./ChaserDialog";
+import { continueRecurrence } from "./recurHelper";
 import {
   clearCancelled,
   createTodo,
@@ -55,12 +56,16 @@ import { formatDay, repeatsText } from "./queueView";
 import { cn } from "@/lib/cn";
 import { TimelineTab } from "./TimelineTab";
 import { ActionItemsEditor, CheckpointsEditor } from "./TodoEditors";
+import { BlockedByField, EscalationNote, HandoffDialog } from "./TodoExtras";
+import { toast } from "@/lib/notifications/toastStore";
 import { WaitingPanel } from "./WaitingPanel";
 
 interface TodoDetailDialogProps {
   /** null closes the dialog. */
   todo: Todo | null;
   today: string;
+  /** Every to-do, for the blocked-by picker. */
+  allTodos: readonly Todo[];
   /** Reminder preferences and the server's clock, for the snooze presets. */
   reminders: ReminderPrefs;
   nowIso: string;
@@ -68,6 +73,9 @@ interface TodoDetailDialogProps {
   chaser?: ChaserJob;
   /** The AI-improved sign-off request text for this to-do, if one was started. */
   signoffDraft?: ChaserJob;
+  /** Start the chaser draft as soon as this to-do is shown (the command bar asked for it). */
+  autoChaser?: boolean;
+  onAutoChaserHandled?: () => void;
   /** The next round of a repeating to-do that was just marked done, if any. */
   nextOffer?: NextOffer | null;
   onNextOffer?: (offer: NextOffer | null) => void;
@@ -111,10 +119,13 @@ const checkpointSignature = (todo: Todo) =>
 export function TodoDetailDialog({
   todo,
   today,
+  allTodos,
   reminders,
   nowIso,
   chaser,
   signoffDraft,
+  autoChaser,
+  onAutoChaserHandled,
   nextOffer,
   onNextOffer,
   me,
@@ -129,6 +140,7 @@ export function TodoDetailDialog({
   const [error, setError] = useState<string | null>(null);
   const [dismissedOffer, setDismissedOffer] = useState<string | null>(null);
   const [chaserOpen, setChaserOpen] = useState(false);
+  const [handoffOpen, setHandoffOpen] = useState(false);
   /** The sign-off checkpoint whose request dialog is open. */
   const [signoffFor, setSignoffFor] = useState<string | null>(null);
 
@@ -139,6 +151,7 @@ export function TodoDetailDialog({
     setDirty(false);
     setError(null);
     setChaserOpen(false);
+    setHandoffOpen(false);
     setSignoffFor(null);
   }
   const shown = todo ?? last;
@@ -154,7 +167,10 @@ export function TodoDetailDialog({
         return false;
       }
       if (reply.nextOccurrence) {
-        onNextOffer?.({ todo: reply.todo, dueAt: reply.nextOccurrence.dueAt });
+        const next = reply.nextOccurrence;
+        await continueRecurrence(reply.todo, next, today, () =>
+          onNextOffer?.({ todo: reply.todo, dueAt: next.dueAt }),
+        );
       }
       onSettled();
       return true;
@@ -164,6 +180,20 @@ export function TodoDetailDialog({
     } finally {
       setBusy(false);
     }
+  };
+
+  /** Cancel or snooze with an Undo toast that puts the to-do back as it was. */
+  const applyWithUndo = async (patch: TodoPatch, message: string, undo: TodoPatch) => {
+    const done = await apply(patch);
+    if (!done) return;
+    toast({
+      key: `undo-${shown.id}`,
+      message,
+      action: {
+        label: "Undo",
+        run: () => void patchTodo(shown.id, undo).then(() => onSettled()),
+      },
+    });
   };
 
   /** Delete a cancelled to-do for good, then close the dialog. */
@@ -304,7 +334,13 @@ export function TodoDetailDialog({
               prefs={reminders}
               nowIso={nowIso}
               disabled={busy}
-              onSnooze={(until) => void apply({ snoozedUntil: until })}
+              onSnooze={(until) =>
+                void applyWithUndo(
+                  { snoozedUntil: until },
+                  until ? "Snoozed." : "Woken up.",
+                  { snoozedUntil: shown.reminders.snoozedUntil ?? null },
+                )
+              }
             />
           )}
         </div>
@@ -442,6 +478,14 @@ export function TodoDetailDialog({
                   />
                   This is mine (I am the owner)
                 </label>
+                {open && (
+                  <EscalationNote
+                    todo={shown}
+                    nowIso={nowIso}
+                    prefs={reminders}
+                    me={me}
+                  />
+                )}
                 <WaitingPanel
                   todo={shown}
                   prefs={reminders}
@@ -471,6 +515,13 @@ export function TodoDetailDialog({
                     </span>
                   </Field>
                 </div>
+                <BlockedByField
+                  todo={shown}
+                  all={allTodos}
+                  today={today}
+                  busy={busy}
+                  apply={apply}
+                />
                 <Field label="Priority">
                   <Segmented
                     value={fields.priority}
@@ -556,9 +607,22 @@ export function TodoDetailDialog({
                 <Button
                   variant="ghost"
                   disabled={busy}
-                  onClick={() => void apply({ status: "cancelled" })}
+                  onClick={() =>
+                    void applyWithUndo(
+                      { status: "cancelled" },
+                      `Cancelled "${shown.title}".`,
+                      { status: "open" },
+                    )
+                  }
                 >
                   Cancel to-do
+                </Button>
+                <Button
+                  variant="ghost"
+                  disabled={busy}
+                  onClick={() => setHandoffOpen(true)}
+                >
+                  Hand over
                 </Button>
               </>
             ) : (
@@ -594,13 +658,44 @@ export function TodoDetailDialog({
         }}
         onSettled={onSettled}
       />
+      <HandoffDialog
+        todo={shown}
+        me={me}
+        open={handoffOpen && open}
+        busy={busy}
+        apply={apply}
+        onOpenChange={setHandoffOpen}
+      />
       <ChaserDialog
         todo={shown}
         job={chaser}
+        me={me}
+        reminders={reminders}
+        nowIso={nowIso}
         open={chaserOpen && open}
         onOpenChange={setChaserOpen}
         onSettled={onSettled}
       />
+      {autoChaser && open && (
+        <RunOnce
+          run={() => {
+            void draftChaser();
+            onAutoChaserHandled?.();
+          }}
+        />
+      )}
     </Dialog>
   );
+}
+
+/** Runs `run` once when it first appears (a way to start something from inside a render
+ *  that comes after the component's early returns). */
+function RunOnce({ run }: { run: () => void }) {
+  const started = useRef(false);
+  useEffect(() => {
+    if (started.current) return;
+    started.current = true;
+    run();
+  }, [run]);
+  return null;
 }

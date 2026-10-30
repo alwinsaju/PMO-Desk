@@ -27,6 +27,8 @@ export interface WindowState {
   zIndex: number;
   isMinimized: boolean;
   isMaximized: boolean;
+  /** Stays above the other windows (until unpinned), whichever one is focused. */
+  pinned?: boolean;
   /** Exactly one window is focused at a time (or none, if all are minimized). */
   isFocused: boolean;
   controlledBy: ControlledBy;

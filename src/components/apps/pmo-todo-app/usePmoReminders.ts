@@ -105,7 +105,6 @@ export function usePmoReminders(onOpen: (todoId: string | null) => void) {
         if (attention !== null && !cancelled) {
           useRemindersStore.getState().setAttention(attention);
           useDockBadgeStore.getState().setBadge(PMO_APP_ID, attention);
-          bridge?.setBadge(attention);
         }
       } catch {
         // Server not reachable right now: keep the last badge, try next minute.

@@ -11,7 +11,11 @@
 import net from "node:net";
 import { spawnSync, type ChildProcess } from "node:child_process";
 import { withoutTlsOverride } from "../../../lib/security/childEnv.ts";
-import { engineAuthHeaders, getEngineAuth } from "../../../lib/tasks-engine/engineAuth.ts";
+import {
+  engineAuthHeaders,
+  getEngineAuth,
+} from "../../../lib/tasks-engine/engineAuth.ts";
+import { templatesDir } from "../../../lib/templates/server.ts";
 
 declare global {
   var aiOsDesktopEngine: ChildProcess | undefined;
@@ -119,6 +123,8 @@ export function engineEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.Process
     if (!key.toUpperCase().startsWith("PYTHON")) env[key] = value;
   }
   env.PYTHONNOUSERSITE = "1";
+  // Task scripts read the template library from the same folder the app writes.
+  env.AI_OS_TEMPLATES_DIR = templatesDir(base);
   const auth = getEngineAuth();
   env.AI_OS_ENGINE_TOKEN = auth.token;
   env.AI_OS_ENGINE_INSTANCE = auth.instance;

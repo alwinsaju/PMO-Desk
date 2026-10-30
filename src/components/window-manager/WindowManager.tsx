@@ -15,6 +15,7 @@ import { useEffect } from "react";
 import { preloadApps } from "@/components/apps/registry";
 import { useVisibleWindowIds, useWindowStore } from "./windowStore";
 import { Window } from "./Window";
+import { WindowShortcuts } from "./WindowShortcuts";
 
 const RECLAMP_DEBOUNCE_MS = 150;
 
@@ -86,6 +87,7 @@ export function WindowManager() {
       {ids.map((id) => (
         <Window key={id} id={id} />
       ))}
+      <WindowShortcuts />
     </div>
   );
 }

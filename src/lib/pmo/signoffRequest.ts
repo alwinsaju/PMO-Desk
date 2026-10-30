@@ -10,6 +10,8 @@ import { dayLabel } from "./report.ts";
 import { approverEmail, approverName } from "./signoff.ts";
 import { istStamp } from "./time.ts";
 import type { PmoConfig, Todo } from "./types.ts";
+import { renderFields } from "../templates/render.ts";
+import type { Template } from "../templates/types.ts";
 
 /** Bump on every wording change; logged with each AI call. */
 export const SIGNOFF_PROMPT_VERSION = 1;
@@ -70,21 +72,15 @@ export interface SignoffTemplateInput {
   approver: string | null | undefined;
   /** My first name, for the sign-off of the message. */
   myName: string;
+  /** A template from the Template library; without one the built-in wording is used. */
+  template?: Pick<Template, "subject" | "to" | "cc" | "body"> | null;
 }
 
-/**
- * The deterministic request: who, what is being approved, by when (from the due
- * date) and where the request came from, in plain text. No model is involved, so
- * the dialog can show it the moment it opens.
- */
-export function buildSignoffTemplate(input: SignoffTemplateInput): {
-  text: string;
-  subject: string;
-  to: string | null;
-} {
+/** The pieces of a sign-off request, by the names a template can use
+ *  (targets.ts, `app:pmo-todo:signoff`). */
+export function signoffValues(input: SignoffTemplateInput): Record<string, string> {
   const { todo } = input;
   const name = approverName(input.approver);
-  const greeting = name ? `Hi ${firstWord(name) || name},` : "Hi,";
   const by = todo.dueAt ? ` by ${dayLabel(todo.dueAt, true)}` : "";
   const what = whatIsBeingApproved(todo);
   const link = contextLink(todo);
@@ -98,11 +94,42 @@ export function buildSignoffTemplate(input: SignoffTemplateInput): {
             ? `This follows the ${noun} "${subject}"${todo.source.sender ? ` from ${flat(todo.source.sender, 80)}` : ""}.`
             : ""
         }${link ? `${subject ? "\n" : ""}Original message: ${link}` : ""}`;
+  return {
+    greeting: name ? `Hi ${firstWord(name) || name},` : "Hi,",
+    title: flat(todo.title, 120),
+    by_date: by,
+    summary: what ? ` ${what}` : "",
+    context,
+    my_name: input.myName,
+  };
+}
+
+/**
+ * The deterministic request: who, what is being approved, by when (from the due
+ * date) and where the request came from, in plain text. No model is involved, so
+ * the dialog can show it the moment it opens. A template from the Template
+ * library, when one is set for sign-off requests, replaces the built-in wording.
+ */
+export function buildSignoffTemplate(input: SignoffTemplateInput): {
+  text: string;
+  subject: string;
+  to: string | null;
+} {
+  const { todo } = input;
+  const values = signoffValues(input);
+  if (input.template) {
+    const rendered = renderFields(input.template, values);
+    return {
+      text: rendered.body,
+      subject: (rendered.subject || defaultSignoffSubject(todo)).slice(0, 150),
+      to: rendered.to || approverEmail(input.approver),
+    };
+  }
   const lines = [
-    greeting,
+    values.greeting,
     "",
-    `Could you please review and sign off "${flat(todo.title, 120)}"${by}?${what ? ` ${what}` : ""}`,
-    ...(context ? ["", context] : []),
+    `Could you please review and sign off "${values.title}"${values.by_date}?${values.summary}`,
+    ...(values.context ? ["", values.context] : []),
     "",
     "A short reply confirming your approval is all I need. If anything has to change first, tell me what and I will update it and send it back to you.",
     "",

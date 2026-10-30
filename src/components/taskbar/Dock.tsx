@@ -8,6 +8,8 @@ import { useShallow } from "zustand/react/shallow";
 import { appCatalog, appIcons } from "@/components/app-store/appCatalog";
 import { runAppPrimaryAction } from "@/components/app-store/appActions";
 import { useWindowStore } from "@/components/window-manager";
+import { useTitleSuffixes } from "@/components/window-manager/titleSuffixStore";
+import { titleWithSuffix } from "@/components/window-manager/windowTitles";
 import { Tooltip } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { springSnappy } from "@/lib/motion";
@@ -160,6 +162,22 @@ export function Dock() {
     ),
   );
   const badges = useDockBadgeStore((s) => s.badges);
+  // Each open window as "appId<NUL>title", so a tile's tooltip can list them.
+  const windowEntries = useWindowStore(
+    useShallow((s) =>
+      Object.values(s.windows).flatMap((w) => {
+        const id = appIdForWindow(w, appIdByUrl, knownAppIds);
+        return id ? [`${id}\u0000${w.title}`] : [];
+      }),
+    ),
+  );
+  const titleSuffixes = useTitleSuffixes((s) => s.suffixes);
+  const titlesOf = (appId: string): string[] =>
+    windowEntries
+      .filter((entry) => entry.startsWith(`${appId}\u0000`))
+      .map((entry) =>
+        titleWithSuffix(entry.slice(appId.length + 1), titleSuffixes[appId]),
+      );
   const [isDropTarget, setIsDropTarget] = useState(false);
   const [dropHint, setDropHint] = useState<{ id: string; after: boolean } | null>(null);
   const draggingTileId = useRef<string | null>(null);
@@ -347,6 +365,7 @@ export function Dock() {
                 onResetTaskbar={resetPinnedApps}
                 canReset={canReset}
                 badge={badges[id]}
+                windowTitles={titlesOf(id)}
                 dragProps={
                   pinned
                     ? {

@@ -153,6 +153,13 @@ describe("engine identity and token", () => {
     assert.equal(env.AI_OS_ENGINE_TOKEN, token);
     assert.equal(env.AI_OS_ENGINE_INSTANCE, instance);
   });
+
+  it("points task scripts at the template library folder", () => {
+    const explicit = engineEnv({ AI_OS_TEMPLATES_DIR: "C:\\data\\tpl" });
+    assert.equal(explicit.AI_OS_TEMPLATES_DIR, path.resolve("C:\\data\\tpl"));
+    const derived = engineEnv({ AI_OS_PMO_DATA_DIR: "C:\\data\\pmo" });
+    assert.equal(derived.AI_OS_TEMPLATES_DIR, path.join(path.resolve("C:\\data\\pmo"), "templates"));
+  });
 });
 
 describe("pickFreePort", () => {

@@ -20,7 +20,9 @@ import {
   type SavedReportSummary,
 } from "../../../lib/pmo/report.ts";
 import { insertNarrative } from "../../../lib/pmo/reportNarrative.ts";
-import type { ReportNarrativeJob } from "../../../lib/pmo/types.ts";
+import { applyReportTemplate } from "../../../lib/pmo/templateValues.ts";
+import type { PmoConfig, ReportNarrativeJob } from "../../../lib/pmo/types.ts";
+import type { Template } from "../../../lib/templates/types.ts";
 
 // --- the period -----------------------------------------------------------------------
 
@@ -287,22 +289,48 @@ export function addNarrative(draft: ReportDraft, job: ReportNarrativeJob): Repor
 
 // --- copy and mail ----------------------------------------------------------------------
 
+/** Puts the report text inside the report template from the Template library:
+ *  returns the new subject and message. */
+export type ReportWrap = (text: string) => { subject: string; body: string };
+
+/** The wrapper for a report template, or undefined when none is set. */
+export function reportWrap(
+  template: Pick<Template, "subject" | "to" | "cc" | "body"> | null | undefined,
+  draft: Pick<ReportDraft, "title" | "periodLabel">,
+  me: Pick<PmoConfig["me"], "names">,
+): ReportWrap | undefined {
+  if (!template) return undefined;
+  return (text) =>
+    applyReportTemplate(template, text, {
+      title: draft.title,
+      periodLabel: draft.periodLabel,
+      me,
+    });
+}
+
 /** What each Copy button puts on the clipboard: the editor as Markdown, or as
- *  plain text for Outlook and Teams. */
+ *  plain text for Outlook and Teams, inside the report template when one is set. */
 export function copyText(
   draft: Pick<ReportDraft, "text">,
   as: "text" | "markdown",
+  wrap?: ReportWrap,
 ): string {
-  return as === "markdown" ? draft.text : markdownToPlainText(draft.text);
+  const text = as === "markdown" ? draft.text : markdownToPlainText(draft.text);
+  return wrap ? wrap(text).body : text;
 }
 
 /** An unsent compose window with the plain text, only while it fits in a link. */
 export function mailLink(
   draft: Pick<ReportDraft, "text" | "title" | "periodLabel">,
+  wrap?: ReportWrap,
 ): Mailto {
+  const plain = markdownToPlainText(draft.text);
+  const wrapped = wrap?.(plain);
   return buildMailto({
-    subject: `${draft.title}: ${draft.periodLabel}`.replace(/\s+/g, " ").slice(0, 150),
-    body: markdownToPlainText(draft.text),
+    subject: (wrapped?.subject || `${draft.title}: ${draft.periodLabel}`)
+      .replace(/\s+/g, " ")
+      .slice(0, 150),
+    body: wrapped?.body ?? plain,
   });
 }
 

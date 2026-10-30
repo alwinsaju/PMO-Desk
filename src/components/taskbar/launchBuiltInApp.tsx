@@ -2,13 +2,13 @@
 
 import { useWindowStore } from "@/components/window-manager";
 import { planOpenApp } from "@/lib/ai-runtime/windowIntent";
-import { builtInApps } from "./pinnedApps";
+import { builtInApps, toolApps } from "./pinnedApps";
 
 /** Opens a new window for a built-in app — the one path the dock tiles and
  *  the AI command bar share. Returns the window id, or undefined for an
  *  unknown app id. */
 export function launchBuiltInApp(appId: string): string | undefined {
-  const app = builtInApps.find((a) => a.id === appId);
+  const app = [...builtInApps, ...toolApps].find((a) => a.id === appId);
   if (!app) return undefined;
   const IconGlyph = app.icon;
   return useWindowStore.getState().openWindow(app.id, {

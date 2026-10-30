@@ -1,6 +1,6 @@
 {
   "name": "ai-os",
-  "version": "4.0.0",
+  "version": "6.0.0",
   "description": "A desktop workspace where a human and AI agent work together.",
   "private": true,
   "main": "desktop/main.cjs",
@@ -14,7 +14,8 @@
     "start": "next start",
     "desktop": "electron .",
     "runtime:python": "python scripts/build-python-runtime.py build",
-    "desktop:package": "pnpm runtime:python && pnpm build && electron-builder --win nsis",
+    "installer:art": "python scripts/build-installer-art.py",
+    "desktop:package": "pnpm runtime:python && pnpm installer:art && pnpm build && electron-builder --win nsis",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "node --no-warnings --test \"src/**/*.test.mjs\" \"desktop/*.test.cjs\"",

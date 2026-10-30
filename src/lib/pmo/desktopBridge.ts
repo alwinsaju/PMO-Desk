@@ -11,6 +11,37 @@ export interface AiOsDesktopBridge {
   setBadge: (count: number) => void;
   /** Folder picker over the main window; null when cancelled. */
   chooseFolder?: () => Promise<string | null>;
+  /** Tasks Run form helpers (the shell supplies the folders; the page names no path). */
+  files?: {
+    newestDownload: (want: {
+      extensions: string[];
+      prefix?: string;
+    }) => Promise<{ name: string; mtimeMs: number; size: number } | null>;
+    readDownload: (
+      name: string,
+      extensions: string[],
+    ) => Promise<{ name: string; data: Uint8Array } | null>;
+    choose: (extensions: string[]) => Promise<{ name: string; data: Uint8Array } | null>;
+  };
+  /** Settings > Data and About: show the data folder, start a downloaded installer. */
+  platform?: {
+    openDataFolder: () => Promise<boolean>;
+    openInstaller: (name: string) => Promise<boolean>;
+  };
+  /** The Dashboard export: capture a rectangle of the window as PNG bytes, then save a picture or PDF. */
+  view?: {
+    capture: (rect: {
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    }) => Promise<Uint8Array | null>;
+    save: (
+      format: "png" | "pdf",
+      name: string,
+      png: Uint8Array,
+    ) => Promise<string | null>;
+  };
 }
 
 declare global {

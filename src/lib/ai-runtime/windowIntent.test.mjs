@@ -18,6 +18,14 @@ describe("resolveOpenIntent", () => {
     assert.equal(resolveOpenIntent("show my browser"), "browser");
     assert.equal(resolveOpenIntent("open app store"), "app-store");
   });
+  it("resolves the PMO apps by their usual names", () => {
+    assert.equal(resolveOpenIntent("open the dashboard"), "dashboard");
+    assert.equal(resolveOpenIntent("open PMO To-Do"), "pmo-todo");
+    assert.equal(resolveOpenIntent("show my to-dos"), "pmo-todo");
+    assert.equal(resolveOpenIntent("launch staff management"), "staff");
+    assert.equal(resolveOpenIntent("open the template library"), "templates");
+    assert.equal(resolveOpenIntent("Open Templates"), "templates");
+  });
   it("leaves compound or unknown requests to the model", () => {
     assert.equal(resolveOpenIntent("open notes and write a poem"), null);
     assert.equal(resolveOpenIntent("open the pod bay doors"), null);

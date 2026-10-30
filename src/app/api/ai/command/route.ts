@@ -1,14 +1,20 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getAiRuntimeConfig, startExternalCall } from "@/lib/ai-runtime";
-import { resolveWindowTarget } from "@/lib/ai-runtime/windowIntent";
+import { answerPmoIntent } from "@/lib/ai-runtime/pmoAnswers";
+import { livePmoDeps } from "@/lib/ai-runtime/pmoAnswers.live";
+import { suggestTask } from "@/lib/ai-runtime/didYouMean";
+import { unknownTaskReply } from "@/lib/ai-runtime/pmoReply";
+import { PMO_TOPICS, type PmoIntent } from "@/lib/ai-runtime/pmoIntent";
+import { AI_APP_IDS, resolveWindowTarget } from "@/lib/ai-runtime/windowIntent";
 import { readBodyCapped } from "@/lib/pmo/server/bodyCap";
+import { findTask, KNOWN_TASKS } from "@/lib/tasks-engine/catalog";
 import type {
-  AiCommandAppId,
   AiCommandRequest,
   AiCommandRequestNote,
   AiCommandResult,
   NoteToolName,
+  PmoToolName,
   WindowToolName,
 } from "./types";
 
@@ -74,13 +80,7 @@ const WINDOW_TOOL_NAMES: readonly WindowToolName[] = [
   "maximize_window",
   "close_window",
 ];
-const AI_APP_IDS: readonly AiCommandAppId[] = [
-  "files",
-  "notes",
-  "browser",
-  "tasks",
-  "app-store",
-];
+const PMO_TOOL_NAMES: readonly PmoToolName[] = ["whos_off", "pmo_status", "prepare_task"];
 
 function isNoteToolName(value: string): value is NoteToolName {
   return (NOTE_TOOL_NAMES as readonly string[]).includes(value);
@@ -88,6 +88,10 @@ function isNoteToolName(value: string): value is NoteToolName {
 
 function isWindowToolName(value: string): value is WindowToolName {
   return (WINDOW_TOOL_NAMES as readonly string[]).includes(value);
+}
+
+function isPmoToolName(value: string): value is PmoToolName {
+  return (PMO_TOOL_NAMES as readonly string[]).includes(value);
 }
 
 /**
@@ -229,6 +233,57 @@ const WINDOW_TOOLS = [
   },
 ] as const;
 
+const PMO_TOOLS = [
+  {
+    type: "function",
+    function: {
+      name: "whos_off",
+      description:
+        'Answer who is off, out, away or on leave (from the staff time-off tracker and shift roster). Use it for questions like "who is off next Monday?" or "is anyone out this week?".',
+      parameters: {
+        type: "object",
+        properties: {
+          when: {
+            type: "string",
+            description:
+              'The day or period, in the user\'s own words, e.g. "today", "tomorrow", "next Monday", "this week", "5 Nov". Leave empty for today.',
+          },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "pmo_status",
+      description:
+        "Answer a question about the user's PMO to-dos: what is overdue, what needs chasing, how many are open, or a general summary.",
+      parameters: {
+        type: "object",
+        properties: { topic: { type: "string", enum: PMO_TOPICS } },
+        required: ["topic"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "prepare_task",
+      description: `Get a task ready to run: opens the Tasks app with that task's Run form. Use it when the user asks to prepare, build, generate or run one of: ${KNOWN_TASKS.map((t) => t.label).join(", ")}. It only starts the form; nothing is sent.`,
+      parameters: {
+        type: "object",
+        properties: {
+          task: {
+            type: "string",
+            description: `The task, by name or id. Ids: ${KNOWN_TASKS.map((t) => t.id).join(", ")}.`,
+          },
+        },
+        required: ["task"],
+      },
+    },
+  },
+] as const;
+
 const requestSchema = z.object({
   prompt: z.string().trim().min(1),
   focusedApp: z.object({
@@ -249,6 +304,9 @@ const updateNoteArgsSchema = z.object({
 const deleteNoteArgsSchema = z.object({ id: z.string().min(1) });
 const windowIdArgsSchema = z.object({ id: z.string().min(1) });
 const openAppArgsSchema = z.object({ appId: z.enum(AI_APP_IDS) });
+const whosOffArgsSchema = z.object({ when: z.string().max(120).optional() });
+const pmoStatusArgsSchema = z.object({ topic: z.enum(PMO_TOPICS) });
+const prepareTaskArgsSchema = z.object({ task: z.string().min(1).max(120) });
 
 /**
  * POST /api/ai/command -> AiCommandResult (see types.ts). Accepts the
@@ -322,7 +380,9 @@ export async function POST(request: Request) {
       },
       { role: "user", content: body.prompt },
     ],
-    tools: notesEnabled ? [...WINDOW_TOOLS, ...NOTE_TOOLS] : WINDOW_TOOLS,
+    tools: notesEnabled
+      ? [...WINDOW_TOOLS, ...PMO_TOOLS, ...NOTE_TOOLS]
+      : [...WINDOW_TOOLS, ...PMO_TOOLS],
   };
 
   let response: Response;
@@ -372,7 +432,9 @@ export async function POST(request: Request) {
   }
   call.done(payload);
 
-  return NextResponse.json(interpretOllamaResponse(payload, existingNotes, body.windows));
+  return NextResponse.json(
+    await interpretOllamaResponse(payload, existingNotes, body.windows),
+  );
 }
 
 function buildSystemPrompt(
@@ -387,6 +449,7 @@ function buildSystemPrompt(
     windows.length > 0
       ? `Open windows:\n${windows.map((window) => `- id: ${window.id} - ${window.title} (${window.appId})`).join("\n")}`
       : "There are no open windows.",
+    "You also have PMO tools. Call whos_off for any question about who is off, out, away or on leave, passing the day or period in the user's own words. Call pmo_status for questions about overdue to-dos, chasers or how many to-dos are open. Call prepare_task when the user asks to prepare, build, generate or run one of the report tasks. Never answer those questions from memory: the tools read the real data.",
   ];
 
   if (notesEnabled) {
@@ -406,11 +469,11 @@ function buildSystemPrompt(
   return sections.join("\n\n");
 }
 
-function interpretOllamaResponse(
+async function interpretOllamaResponse(
   payload: unknown,
   existingNotes: AiCommandRequestNote[],
   windows: AiCommandRequest["windows"],
-): AiCommandResult {
+): Promise<AiCommandResult> {
   const message = isRecord(payload) ? payload.message : undefined;
   if (!isRecord(message)) {
     return {
@@ -437,11 +500,11 @@ function interpretOllamaResponse(
   };
 }
 
-function interpretToolCall(
+async function interpretToolCall(
   rawCall: unknown,
   existingNotes: AiCommandRequestNote[],
   windows: AiCommandRequest["windows"],
-): AiCommandResult {
+): Promise<AiCommandResult> {
   const fn = isRecord(rawCall) ? rawCall.function : undefined;
   if (!isRecord(fn)) {
     return {
@@ -452,7 +515,10 @@ function interpretToolCall(
   }
 
   const name = fn.name;
-  if (typeof name !== "string" || (!isNoteToolName(name) && !isWindowToolName(name))) {
+  if (
+    typeof name !== "string" ||
+    (!isNoteToolName(name) && !isWindowToolName(name) && !isPmoToolName(name))
+  ) {
     return {
       type: "error",
       kind: "malformed",
@@ -469,9 +535,60 @@ function interpretToolCall(
     };
   }
 
+  if (isPmoToolName(name)) return runPmoTool(name, args);
   return isNoteToolName(name)
     ? validateNoteAction(name, args, existingNotes)
     : validateWindowAction(name, args, windows);
+}
+
+/**
+ * The PMO tools. The model only picks the tool and the user's own words; the answer
+ * is worked out from the real Staff and PMO data by code (src/lib/ai-runtime/
+ * pmoAnswers.ts), so a small model can neither invent a name nor mistake a date.
+ */
+async function runPmoTool(
+  name: PmoToolName,
+  args: Record<string, unknown>,
+): Promise<AiCommandResult> {
+  const invalid = (): AiCommandResult => ({
+    type: "error",
+    kind: "malformed",
+    message: `The local AI model called ${name} with invalid arguments.`,
+  });
+
+  let intent: PmoIntent;
+  if (name === "whos_off") {
+    const parsed = whosOffArgsSchema.safeParse(args);
+    if (!parsed.success) return invalid();
+    intent = { kind: "whos_off", when: parsed.data.when?.trim() ?? "" };
+  } else if (name === "pmo_status") {
+    const parsed = pmoStatusArgsSchema.safeParse(args);
+    if (!parsed.success) return invalid();
+    intent = { kind: "pmo_status", topic: parsed.data.topic };
+  } else {
+    const parsed = prepareTaskArgsSchema.safeParse(args);
+    if (!parsed.success) return invalid();
+    const task = findTask(parsed.data.task);
+    if (!task) {
+      return {
+        type: "error",
+        kind: "malformed",
+        message: unknownTaskReply(parsed.data.task, suggestTask(parsed.data.task)),
+      };
+    }
+    intent = { kind: "prepare_task", taskId: task.id };
+  }
+
+  try {
+    return await answerPmoIntent(intent, livePmoDeps);
+  } catch (error) {
+    console.error("[ai/command] PMO tool failed:", error);
+    return {
+      type: "error",
+      kind: "unreachable",
+      message: "Couldn't read the staff and to-do data just now.",
+    };
+  }
 }
 
 /**

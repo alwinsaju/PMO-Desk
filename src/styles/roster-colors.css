@@ -196,3 +196,104 @@
 .rd-off {
   background-color: var(--rh-off-fg);
 }
+
+/* Colour-blind-safe roster (Settings > Accessibility): the Okabe-Ito palette, whose hues stay apart for the
+   common kinds of colour blindness, and a pattern on every shift so colour is never the only cue. */
+:root[data-roster-colours="safe"] {
+  --rh-s1-bg: #cfe8f6;
+  --rh-s1-fg: #00507a;
+  --rh-s2-bg: #fbe3a6;
+  --rh-s2-fg: #6b4a00;
+  --rh-s3-bg: #c6ebdd;
+  --rh-s3-fg: #006b4e;
+  --rh-s4-bg: #f6d6e5;
+  --rh-s4-fg: #7a2d57;
+  --rh-s5-bg: #f9d3b8;
+  --rh-s5-fg: #8a3b00;
+  --rh-ns-bg: #b9d2e8;
+  --rh-ns-fg: #0b3a63;
+  --rh-cst-bg: #fcf6a8;
+  --rh-cst-fg: #5c5400;
+  --rh-pst-bg: #e2c3d8;
+  --rh-pst-fg: #5d2347;
+}
+:root[data-theme="dark"][data-roster-colours="safe"] {
+  --rh-s1-bg: #12384d;
+  --rh-s1-fg: #8fd0f5;
+  --rh-s2-bg: #4a3a0d;
+  --rh-s2-fg: #f5d067;
+  --rh-s3-bg: #0f3d31;
+  --rh-s3-fg: #7fe0bd;
+  --rh-s4-bg: #4a2236;
+  --rh-s4-fg: #f2a9cc;
+  --rh-s5-bg: #4d2a10;
+  --rh-s5-fg: #f5b27a;
+  --rh-ns-bg: #14304d;
+  --rh-ns-fg: #a6c8ec;
+  --rh-cst-bg: #3f3b0b;
+  --rh-cst-fg: #f1e769;
+  --rh-pst-bg: #3d2132;
+  --rh-pst-fg: #dfa9c9;
+}
+:root[data-roster-colours="safe"] .rh-s1 {
+  background-image: repeating-linear-gradient(
+    45deg,
+    color-mix(in srgb, currentColor 24%, transparent) 0 2px,
+    transparent 2px 7px
+  );
+}
+:root[data-roster-colours="safe"] .rh-s2 {
+  background-image: radial-gradient(
+    color-mix(in srgb, currentColor 32%, transparent) 1.2px,
+    transparent 1.4px
+  );
+  background-size: 6px 6px;
+}
+:root[data-roster-colours="safe"] .rh-s3 {
+  background-image: repeating-linear-gradient(
+    0deg,
+    color-mix(in srgb, currentColor 24%, transparent) 0 2px,
+    transparent 2px 7px
+  );
+}
+:root[data-roster-colours="safe"] .rh-s4 {
+  background-image: repeating-linear-gradient(
+    90deg,
+    color-mix(in srgb, currentColor 24%, transparent) 0 2px,
+    transparent 2px 7px
+  );
+}
+:root[data-roster-colours="safe"] .rh-s5 {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    color-mix(in srgb, currentColor 24%, transparent) 0 2px,
+    transparent 2px 7px
+  );
+}
+:root[data-roster-colours="safe"] .rh-ns {
+  background-image: repeating-linear-gradient(
+    45deg,
+    color-mix(in srgb, currentColor 22%, transparent) 0 4px,
+    transparent 4px 10px
+  );
+}
+:root[data-roster-colours="safe"] .rh-cst {
+  background-image: radial-gradient(
+    color-mix(in srgb, currentColor 30%, transparent) 1.6px,
+    transparent 1.8px
+  );
+  background-size: 9px 9px;
+}
+:root[data-roster-colours="safe"] .rh-pst {
+  background-image:
+    repeating-linear-gradient(
+      45deg,
+      color-mix(in srgb, currentColor 20%, transparent) 0 1.5px,
+      transparent 1.5px 7px
+    ),
+    repeating-linear-gradient(
+      -45deg,
+      color-mix(in srgb, currentColor 20%, transparent) 0 1.5px,
+      transparent 1.5px 7px
+    );
+}

@@ -1,21 +1,27 @@
 "use client";
 
-import { memo, useState } from "react";
+import { memo, useRef, useState, type KeyboardEvent } from "react";
 import {
   BellSlashIcon,
+  CalendarCheckIcon,
   CheckIcon,
   FlagIcon,
   HourglassMediumIcon,
+  NotePencilIcon,
+  PencilSimpleIcon,
   PlusIcon,
   RepeatIcon,
   SealCheckIcon,
   TrashIcon,
 } from "@phosphor-icons/react";
-import { Button, Progress } from "@/components/ui";
+import { Button, Input, Progress } from "@/components/ui";
 import { cn } from "@/lib/cn";
+import { toast } from "@/lib/notifications/toastStore";
 import { describeInstant } from "@/lib/pmo/due";
+import { MAX_QUICK_ADD_LENGTH, parseQuickAdd } from "@/lib/pmo/quickAdd";
+import { emptyDraft } from "@/lib/pmo/todoLogic";
 import type { PmoState, ReminderPrefs, Todo } from "@/lib/pmo/types";
-import { clearCancelled, patchTodo, type NextOffer } from "./api";
+import { clearCancelled, createTodo, patchTodo, type NextOffer } from "./api";
 import {
   CONTENT_WIDTH,
   Chip,
@@ -29,6 +35,11 @@ import {
   type ChipTone,
 } from "./parts";
 import { SnoozeMenu } from "./SnoozeMenu";
+import { isTypingTarget, listKeyAction } from "./listKeys";
+import { continueRecurrence } from "./recurHelper";
+import { BulkBar, ListTools } from "./ListTools";
+import { MeetingNotesDialog, PlanWeekDialog } from "./PlanDialogs";
+import { applyExtras, flagReason, similarTodos } from "@/lib/pmo/pmoViews";
 import { signoffBadgeText, signoffRowView } from "./signoffUi";
 import {
   SOURCE_LABEL,
@@ -49,6 +60,10 @@ import {
 export interface TodoViewChoice {
   filter: TodoFilter;
   sort: TodoSort;
+  /** Only to-dos with this tag. */
+  tag: string | null;
+  /** Only to-dos whose text has all these words. */
+  text: string;
 }
 
 interface TodoListProps {
@@ -65,6 +80,7 @@ interface TodoListProps {
 
 const EMPTY: Record<TodoFilter, string> = {
   open: "No open to-dos. Approve something from the Review Queue, or create one yourself.",
+  today: "Nothing is due today or earlier. Enjoy the quiet.",
   overdue: "Nothing is overdue.",
   "due-soon": "Nothing is due today or tomorrow.",
   waiting: "You are not waiting on anyone.",
@@ -84,15 +100,95 @@ export function TodoList({
   const { filter, sort } = view;
   const now = new Date(state.serverTime);
   const counts = countByFilter(state.todos, state.today, now);
-  const visible = sortTodosBy(
-    filterTodos(state.todos, filter, state.today, now),
-    sort,
-    state.today,
+  const visible = applyExtras(
+    sortTodosBy(filterTodos(state.todos, filter, state.today, now), sort, state.today),
+    { tag: view.tag, text: view.text },
   );
+  // Why each to-do needs a look, worked out once here so the cards stay plain.
+  const flags = new Map(
+    visible.map((t) => [
+      t.id,
+      flagReason(t, state.todos, state.today, now, state.config.reminders),
+    ]),
+  );
+  const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
+  const [planOpen, setPlanOpen] = useState(false);
+  const [notesOpen, setNotesOpen] = useState(false);
+  const selectedTodos = state.todos.filter((t) => selectedIds.has(t.id));
+  const toggleSelected = (id: string) =>
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
   const cancelledCount = state.todos.filter((todo) => todo.status === "cancelled").length;
   // Whole minutes, so a card only redraws when something it shows can differ
   // (the server clock moves on every 3 s poll).
   const nowMinute = new Date(Math.floor(now.getTime() / 60_000) * 60_000).toISOString();
+
+  const listRef = useRef<HTMLDivElement>(null);
+
+  /** "D": close the to-do, with an Undo (a repeating one opens its next-occurrence offer instead). */
+  async function markDone(todo: Todo) {
+    if (todo.status !== "open") return;
+    try {
+      const reply = await patchTodo(todo.id, { status: "done" });
+      if (!reply.ok) {
+        toast({ tone: "danger", message: reply.reason });
+        return;
+      }
+      if (reply.nextOccurrence) {
+        const next = reply.nextOccurrence;
+        await continueRecurrence(reply.todo, next, state.today, () => {
+          onNextOffer({ todo: reply.todo, dueAt: next.dueAt });
+          onOpen(todo.id);
+        });
+      } else {
+        toast({
+          key: `done-${todo.id}`,
+          message: `Marked "${todo.title}" done.`,
+          action: {
+            label: "Undo",
+            run: () => void patchTodo(todo.id, { status: "open" }).then(onSettled),
+          },
+        });
+      }
+    } catch {
+      toast({ tone: "danger", message: "Could not reach the app server." });
+    }
+    onSettled();
+  }
+
+  function handleListKey(event: KeyboardEvent<HTMLDivElement>) {
+    const target = event.target as HTMLElement;
+    if (isTypingTarget(target)) return;
+    const cards = Array.from(
+      listRef.current?.querySelectorAll<HTMLElement>("[data-todo-card]") ?? [],
+    );
+    const current = cards.findIndex((card) => card.contains(target));
+    const action = listKeyAction(event, current, cards.length);
+    if (!action) return;
+    // Enter on a button inside a card is that button's own click.
+    if (event.key === "Enter" && !target.hasAttribute("data-todo-card")) return;
+    event.preventDefault();
+    if (action.type === "move") {
+      cards[action.index]?.focus();
+      cards[action.index]?.scrollIntoView({ block: "nearest" });
+      return;
+    }
+    const card = cards[current];
+    const todo = visible.find((t) => t.id === card?.dataset.todoId);
+    if (!card || !todo) return;
+    if (action.type === "open") onOpen(todo.id);
+    else if (action.type === "done") void markDone(todo);
+    else {
+      card
+        .querySelector<HTMLElement>(
+          '[aria-label="Snooze reminders"], [aria-label="Change snooze"]',
+        )
+        ?.click();
+    }
+  }
 
   return (
     <div className="flex flex-col">
@@ -133,6 +229,26 @@ export function TodoList({
             </NativeSelect>
           </label>
           <Button
+            variant="ghost"
+            className="shrink-0 px-3"
+            aria-label="Plan my week"
+            title="Plan my week"
+            onClick={() => setPlanOpen(true)}
+          >
+            <CalendarCheckIcon size={15} />
+            <span className="hidden @2xl:inline">Plan week</span>
+          </Button>
+          <Button
+            variant="ghost"
+            className="shrink-0 px-3"
+            aria-label="From meeting notes"
+            title="Add to-dos from meeting notes"
+            onClick={() => setNotesOpen(true)}
+          >
+            <NotePencilIcon size={15} />
+            <span className="hidden @2xl:inline">From notes</span>
+          </Button>
+          <Button
             className="shrink-0 px-3 @xl:px-[17px]"
             aria-label="New to-do"
             onClick={onNew}
@@ -147,10 +263,31 @@ export function TodoList({
         <ClearCancelledBar count={cancelledCount} onSettled={onSettled} />
       )}
 
+      <QuickAddBar today={state.today} todos={state.todos} onSettled={onSettled} />
+      <ListTools state={state} view={view} onViewChange={onViewChange} />
+      {selectedTodos.length > 0 && (
+        <BulkBar
+          selected={selectedTodos}
+          state={state}
+          onClear={() => setSelectedIds(new Set())}
+          onSettled={onSettled}
+        />
+      )}
+
       {visible.length === 0 ? (
         <PanelMessage className="min-h-56">{EMPTY[filter]}</PanelMessage>
       ) : (
-        <div className={cn(CONTENT_WIDTH, GUTTER_X, "flex flex-col gap-2.5 pt-3.5 pb-6")}>
+        <div
+          ref={listRef}
+          tabIndex={0}
+          aria-label="To-do list. J and K move, E opens, D marks done, S snoozes."
+          onKeyDown={handleListKey}
+          className={cn(
+            CONTENT_WIDTH,
+            GUTTER_X,
+            "focus-visible:ring-focus rounded-control flex flex-col gap-2.5 pt-3.5 pb-6 outline-none focus-visible:ring-2",
+          )}
+        >
           {visible.map((todo, index) => (
             <TodoCard
               key={todo.id}
@@ -159,12 +296,113 @@ export function TodoList({
               nowIso={nowMinute}
               prefs={state.config.reminders}
               index={index}
+              flag={flags.get(todo.id) ?? null}
+              selected={selectedIds.has(todo.id)}
+              onToggleSelected={toggleSelected}
               onOpen={onOpen}
               onNextOffer={onNextOffer}
               onSettled={onSettled}
             />
           ))}
+          <p className="text-ink-faint pt-1 text-center text-[11.5px]">
+            Keyboard: J / K move · E open · D done · S snooze
+          </p>
         </div>
+      )}
+      <PlanWeekDialog
+        state={state}
+        open={planOpen}
+        onOpenChange={setPlanOpen}
+        onOpenTodo={onOpen}
+      />
+      <MeetingNotesDialog
+        state={state}
+        open={notesOpen}
+        onOpenChange={setNotesOpen}
+        onSettled={onSettled}
+      />
+    </div>
+  );
+}
+
+/** Type a to-do and press Enter: "Send deck to Priya Fri" is created for you, due that Friday.
+ *  The day shown under the box is what will be saved, so there are no surprises. */
+function QuickAddBar({
+  today,
+  todos,
+  onSettled,
+}: {
+  today: string;
+  todos: readonly Todo[];
+  onSettled: () => void;
+}) {
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const parsed = parseQuickAdd(text, today);
+  const lookAlike = parsed ? similarTodos(parsed.title, todos, 1)[0] : undefined;
+
+  const add = async () => {
+    if (!parsed || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const reply = await createTodo({
+        ...emptyDraft(parsed.title),
+        owner: { name: null, email: null, isMe: true },
+        dueAt: parsed.dueAt,
+      });
+      if (!reply.ok) {
+        setError(reply.reason);
+        return;
+      }
+      setText("");
+      onSettled();
+      toast({
+        key: "quick-add",
+        tone: "success",
+        message: parsed.dueAt
+          ? `Added "${parsed.title}", due ${formatDay(parsed.dueAt, today)}.`
+          : `Added "${parsed.title}".`,
+      });
+    } catch {
+      setError("Could not reach the app server.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className={cn(CONTENT_WIDTH, GUTTER_X, "pt-3")}>
+      <Input
+        value={text}
+        disabled={busy}
+        maxLength={MAX_QUICK_ADD_LENGTH}
+        aria-label="Quick add a to-do"
+        placeholder="Add a to-do and press Enter, e.g. Send deck to Priya Fri"
+        onChange={(event) => setText(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            void add();
+          }
+        }}
+      />
+      {error ? (
+        <p role="alert" className="text-red mt-1.5 text-[12px] font-semibold">
+          {error}
+        </p>
+      ) : (
+        parsed && (
+          <p className="text-ink-muted mt-1.5 text-[12px]" aria-live="polite">
+            {parsed.dueAt ? `Due ${formatDay(parsed.dueAt, today)}` : "No due date"}
+            {lookAlike && (
+              <span className="text-amber ml-2 font-semibold">
+                Looks like an existing to-do: “{lookAlike.title}”
+              </span>
+            )}
+          </p>
+        )
       )}
     </div>
   );
@@ -255,6 +493,9 @@ const TodoCard = memo(function TodoCard({
   nowIso,
   prefs,
   index,
+  flag,
+  selected,
+  onToggleSelected,
   onOpen,
   onNextOffer,
   onSettled,
@@ -265,6 +506,10 @@ const TodoCard = memo(function TodoCard({
   prefs: ReminderPrefs;
   /** Position in the list; only staggers the entrance animation. */
   index: number;
+  /** One line on why it needs a look ("Overdue by 3 days"), worked out by the list. */
+  flag: string | null;
+  selected: boolean;
+  onToggleSelected: (todoId: string) => void;
   onOpen: (todoId: string) => void;
   onNextOffer: (offer: NextOffer) => void;
   onSettled: () => void;
@@ -306,8 +551,11 @@ const TodoCard = memo(function TodoCard({
       // A repeating to-do closed from the list: open it, where the offer to
       // create the next one is shown.
       if (reply.ok && reply.nextOccurrence) {
-        onNextOffer({ todo: reply.todo, dueAt: reply.nextOccurrence.dueAt });
-        onOpen(todo.id);
+        const next = reply.nextOccurrence;
+        await continueRecurrence(reply.todo, next, today, () => {
+          onNextOffer({ todo: reply.todo, dueAt: next.dueAt });
+          onOpen(todo.id);
+        });
       }
       onSettled();
     } finally {
@@ -317,12 +565,38 @@ const TodoCard = memo(function TodoCard({
   const toggle = (id: string, done: boolean) =>
     change({ actionItems: [{ id, done }] }, id);
 
+  const [editing, setEditing] = useState(false);
+  const [draftTitle, setDraftTitle] = useState(todo.title);
+  const startEditing = () => {
+    setDraftTitle(todo.title);
+    setEditing(true);
+  };
+  const saveTitle = async () => {
+    setEditing(false);
+    const title = draftTitle.trim();
+    if (title && title !== todo.title) await change({ title }, "title");
+  };
+
   return (
     <article
+      data-todo-card
+      data-todo-id={todo.id}
+      tabIndex={-1}
       style={{ animationDelay: `${Math.min(index, 8) * 45}ms` }}
-      className={cn(ROW_CARD, "flex flex-col", !row.open && "opacity-65")}
+      className={cn(
+        ROW_CARD,
+        "focus-visible:ring-focus flex flex-col outline-none focus-visible:ring-2",
+        !row.open && "opacity-65",
+      )}
     >
       <div className="flex min-h-16 items-center gap-3.5 py-3 pr-3 pl-4">
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={() => onToggleSelected(todo.id)}
+          aria-label={`Tick ${todo.title}`}
+          className="accent-accent h-4 w-4 shrink-0 cursor-pointer"
+        />
         <span
           aria-hidden
           className={cn(
@@ -330,41 +604,77 @@ const TodoCard = memo(function TodoCard({
             PRIORITY_BAR[todo.priority],
           )}
         />
-        <button
-          type="button"
-          onClick={() => onOpen(todo.id)}
-          title={todo.title}
-          className="focus-visible:ring-focus rounded-control flex min-w-0 flex-1 flex-col gap-0.5 text-left outline-none focus-visible:ring-2"
-        >
-          <span
-            className={cn(
-              "block truncate text-[14.5px] font-semibold",
-              row.open ? "text-ink" : "text-ink-muted line-through",
-            )}
+        {editing ? (
+          <Input
+            autoFocus
+            value={draftTitle}
+            maxLength={200}
+            aria-label={`Rename ${todo.title}`}
+            onChange={(event) => setDraftTitle(event.target.value)}
+            onBlur={() => void saveTitle()}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") void saveTitle();
+              if (event.key === "Escape") setEditing(false);
+            }}
+            className="min-w-0 flex-1"
+          />
+        ) : (
+          <button
+            type="button"
+            onClick={() => onOpen(todo.id)}
+            title={todo.title}
+            className="focus-visible:ring-focus rounded-control flex min-w-0 flex-1 flex-col gap-0.5 text-left outline-none focus-visible:ring-2"
           >
-            {todo.title}
-          </span>
-          <span className="text-ink-muted flex min-w-0 items-center gap-x-3 overflow-hidden text-[12.5px] whitespace-nowrap">
-            <span className="min-w-0 truncate">
-              <span className="text-ink-muted">Owner </span>
-              <span className="text-ink-soft font-semibold">
-                {ownerLabel(todo.owner)}
+            <span
+              className={cn(
+                "block truncate text-[14.5px] font-semibold",
+                row.open ? "text-ink" : "text-ink-muted line-through",
+              )}
+            >
+              {todo.title}
+            </span>
+            <span className="text-ink-muted flex min-w-0 items-center gap-x-3 overflow-hidden text-[12.5px] whitespace-nowrap">
+              <span className="min-w-0 truncate">
+                <span className="text-ink-muted">Owner </span>
+                <span className="text-ink-soft font-semibold">
+                  {ownerLabel(todo.owner)}
+                </span>
+              </span>
+              <span className={cn("shrink-0", row.overdue && "text-red font-semibold")}>
+                {row.dueText}
+              </span>
+              {flag && (
+                <span
+                  data-testid="flag-reason"
+                  className="text-amber shrink-0 font-semibold"
+                >
+                  {flag}
+                </span>
+              )}
+              {todo.priority === "high" && (
+                <span className="text-ink-soft inline-flex shrink-0 items-center gap-1 font-semibold">
+                  <FlagIcon size={12} weight="fill" />
+                  High priority
+                </span>
+              )}
+              <span className="text-ink-muted hidden shrink-0 @lg:inline">
+                {SOURCE_LABEL[todo.source.source]}
               </span>
             </span>
-            <span className={cn("shrink-0", row.overdue && "text-red font-semibold")}>
-              {row.dueText}
-            </span>
-            {todo.priority === "high" && (
-              <span className="text-ink-soft inline-flex shrink-0 items-center gap-1 font-semibold">
-                <FlagIcon size={12} weight="fill" />
-                High priority
-              </span>
-            )}
-            <span className="text-ink-muted hidden shrink-0 @lg:inline">
-              {SOURCE_LABEL[todo.source.source]}
-            </span>
-          </span>
-        </button>
+          </button>
+        )}
+        {row.open && !editing && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="shrink-0 px-2"
+            aria-label={`Rename ${todo.title}`}
+            title="Rename"
+            onClick={startEditing}
+          >
+            <PencilSimpleIcon size={14} />
+          </Button>
+        )}
         <Chip tone={dueChip.tone} fixedWidth={92} className="shrink-0">
           {dueChip.label}
         </Chip>
@@ -375,7 +685,20 @@ const TodoCard = memo(function TodoCard({
             nowIso={nowIso}
             variant="icon"
             disabled={busyId === "snooze"}
-            onSnooze={(until) => void change({ snoozedUntil: until }, "snooze")}
+            onSnooze={(until) => {
+              const before = todo.reminders.snoozedUntil ?? null;
+              void change({ snoozedUntil: until }, "snooze").then(() =>
+                toast({
+                  key: `snooze-${todo.id}`,
+                  message: until ? `Snoozed "${todo.title}".` : `Woke "${todo.title}".`,
+                  action: {
+                    label: "Undo",
+                    run: () =>
+                      void patchTodo(todo.id, { snoozedUntil: before }).then(onSettled),
+                  },
+                }),
+              );
+            }}
           />
         )}
       </div>

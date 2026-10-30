@@ -24,6 +24,8 @@ from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 from starlette.datastructures import Headers
 
+import pack_mailer
+import taskpacks
 import workcopy
 
 log = logging.getLogger("tasks-engine")
@@ -50,6 +52,8 @@ DEFINITIONS_ROOT = Path(os.environ.get("AI_OS_TASKS_DIR") or ROOT_DIR / "tasks")
 _data_dir_env = os.environ.get("AI_OS_TASKS_DATA_DIR")
 DATA_DIR = Path(_data_dir_env or ENGINE_DIR / ".data").resolve()
 TASKS_ROOT = DATA_DIR / "tasks" if _data_dir_env else DEFINITIONS_ROOT
+# Installed task packs (see taskpacks.py) live beside the working copy so a sync never prunes them.
+PACKS_ROOT = DATA_DIR / "task-packs"
 WORKCOPY_REMOVED = 0
 if _data_dir_env:
     WORKCOPY_REMOVED = workcopy.sync(DEFINITIONS_ROOT, TASKS_ROOT)
@@ -250,6 +254,8 @@ def _step_env() -> dict:
     return {
         **os.environ,
         "AI_OS_TASKS_PYTHON": STEP_PYTHON,
+        # Where the shared libraries are, for task packs (built-in tasks find ../shared themselves).
+        "AI_OS_TASKS_SHARED": str(TASKS_ROOT / "shared"),
         "PYTHONNOUSERSITE": "1",
         # Python steps read and write UTF-8 whatever the Windows code page (matches the pipe decoding in run_step).
         "PYTHONUTF8": "1",
@@ -305,6 +311,37 @@ def discover_tasks():
             continue
         tasks[task.id] = task
         _ensure_task_dirs(task)
+    _discover_packs()
+
+
+def _load_pack_task(folder: Path) -> Task:
+    """A Task from an installed pack's folder (the pack was validated when it was installed)."""
+    manifest = json.loads((folder / "task.json").read_text(encoding="utf-8-sig"))
+    problem = _manifest_problem(manifest)
+    if problem:
+        raise ValueError(problem)
+    if manifest["id"] != folder.name:
+        raise ValueError("the pack's task id does not match its folder")
+    if manifest["id"] in tasks:
+        raise ValueError(f"{manifest['id']!r} is already a task")
+    task = Task(manifest, folder)
+    tasks[task.id] = task
+    _ensure_task_dirs(task)
+    return task
+
+
+def _discover_packs() -> None:
+    """Add the installed task packs. A pack can never replace a built-in task, and a broken one is skipped."""
+    if not PACKS_ROOT.is_dir():
+        return
+    for folder in sorted(PACKS_ROOT.iterdir()):
+        if folder.name.startswith(".") or not folder.is_dir() or not (folder / "task.json").exists():
+            continue
+        try:
+            _load_pack_task(folder)
+        except Exception as exc:  # noqa: BLE001 - one broken pack must not stop the others
+            log.warning("skipping task pack %s: %s: %s", folder.name, type(exc).__name__, exc)
+            task_load_errors.append({"folder": f"task-packs/{folder.name}", "reason": f"{type(exc).__name__}: {exc}"})
 
 
 # --- Run state ---------------------------------------------------------------
@@ -2334,6 +2371,101 @@ def get_draft_summary(task_id: str):
         }
     except _Refusal as exc:
         return exc.payload()
+
+
+# --- Task packs ---------------------------------------------------------------------
+# Add, list and remove tasks without reinstalling the app (validation: taskpacks.py).
+
+class _PackWizardBody(BaseModel):
+    answers: dict
+
+
+async def _pack_body(request: Request) -> bytes:
+    """The request body, never holding more than a pack may be."""
+    declared = request.headers.get("content-length", "")
+    if declared.isdigit() and int(declared) > taskpacks.MAX_ZIP_BYTES:
+        raise taskpacks.PackError("That pack is larger than 30 MB.")
+    chunks: list[bytes] = []
+    total = 0
+    async for chunk in request.stream():
+        total += len(chunk)
+        if total > taskpacks.MAX_ZIP_BYTES:
+            raise taskpacks.PackError("That pack is larger than 30 MB.")
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+def _pack_refusal(exc: Exception) -> JSONResponse:
+    return JSONResponse({"ok": False, "reason": str(exc)}, status_code=400)
+
+
+def _installed_pack_ids() -> set[str]:
+    return {p["id"] for p in taskpacks.list_packs(PACKS_ROOT)}
+
+
+def _install_pack(data: bytes, fingerprint: str) -> dict:
+    """Validate, install and load a pack. An upgrade of a task that is mid-run is refused."""
+    info = taskpacks.inspect_pack(data)
+    pack_ids = _installed_pack_ids()
+    existing = tasks.get(info["id"])
+    if existing is not None and info["id"] in pack_ids and existing.state != "resting":
+        raise taskpacks.PackError("Finish or reset this task before installing a new version of it.")
+    result = taskpacks.install_pack(data, PACKS_ROOT, set(tasks) - pack_ids, fingerprint)
+    tasks.pop(info["id"], None)
+    try:
+        _load_pack_task(PACKS_ROOT / info["id"])
+    except Exception as exc:  # noqa: BLE001 - validated already; never leave a half-installed pack behind
+        taskpacks.remove_pack(PACKS_ROOT, info["id"])
+        raise taskpacks.PackError(f"The pack could not be loaded: {exc}") from exc
+    return result
+
+
+@app.get("/task-packs")
+async def list_task_packs():
+    return {"ok": True, "packs": taskpacks.list_packs(PACKS_ROOT)}
+
+
+@app.post("/task-packs/inspect")
+async def inspect_task_pack(request: Request):
+    """What a pack contains and its fingerprint, without installing it."""
+    try:
+        info = taskpacks.inspect_pack(await _pack_body(request))
+    except taskpacks.PackError as exc:
+        return _pack_refusal(exc)
+    return {"ok": True, "pack": taskpacks.public_info(info), "installed": info["id"] in _installed_pack_ids()}
+
+
+@app.post("/task-packs/install")
+async def install_task_pack(request: Request, fingerprint: str = Query("")):
+    """Install a pack whose fingerprint the person confirmed."""
+    try:
+        return {"ok": True, "pack": _install_pack(await _pack_body(request), fingerprint)}
+    except taskpacks.PackError as exc:
+        return _pack_refusal(exc)
+
+
+@app.delete("/task-packs/{pack_id}")
+async def remove_task_pack(pack_id: str):
+    if pack_id not in _installed_pack_ids():
+        return JSONResponse({"ok": False, "reason": "That pack is not installed."}, status_code=404)
+    task = tasks.get(pack_id)
+    if task is not None and task.state != "resting":
+        return JSONResponse({"ok": False, "reason": "Finish or reset this task before removing it."}, status_code=409)
+    tasks.pop(pack_id, None)
+    taskpacks.remove_pack(PACKS_ROOT, pack_id)
+    return {"ok": True}
+
+
+@app.post("/task-packs/mailer")
+async def create_mailer_pack(body: _PackWizardBody):
+    """The new-mailer wizard: build a mailer pack from the answers and install it."""
+    try:
+        taken = set(tasks)
+        _, data = pack_mailer.build_mailer_pack(body.answers, taken)
+        fingerprint = taskpacks.inspect_pack(data)["fingerprint"]
+        return {"ok": True, "pack": _install_pack(data, fingerprint)}
+    except (taskpacks.PackError, pack_mailer.WizardError) as exc:
+        return _pack_refusal(exc)
 
 
 discover_tasks()

@@ -94,6 +94,7 @@ export function createEmployee(
     workdayId: "",
     gender: "",
     clientManager: "",
+    birthday: "",
     excludeFromShiftRoster: false,
     photoVersion: 0,
     profileSync: "manual",

@@ -1,7 +1,34 @@
 // Pure resolution of "open/focus an app" requests for the AI command bar.
 // No React, no stores — CommandBar.tsx and the command route both use it.
 
-export const AI_APP_IDS = ["files", "notes", "browser", "tasks", "app-store"] as const;
+import { TOOLKIT_ALIASES, TOOL_ALIASES } from "../registers/defs.ts";
+
+export const AI_APP_IDS = [
+  "files",
+  "notes",
+  "browser",
+  "tasks",
+  "app-store",
+  "pmo-todo",
+  "staff",
+  "dashboard",
+  "templates",
+  "pmo-toolkit",
+  "raid",
+  "minutes",
+  "timesheets",
+  "decisions",
+  "sla",
+  "changes",
+  "governance",
+  "stakeholders",
+  "vendors",
+  "capacity",
+  "invoices",
+  "status-report",
+  "lessons",
+  "doclinks",
+] as const;
 export type AiAppId = (typeof AI_APP_IDS)[number];
 
 export interface WindowRef {
@@ -12,11 +39,34 @@ export interface WindowRef {
 }
 
 const APP_ALIASES: Record<AiAppId, readonly string[]> = {
+  ...TOOL_ALIASES,
+  "pmo-toolkit": TOOLKIT_ALIASES,
   files: ["files", "file", "file explorer", "my files"],
   notes: ["notes", "note", "notepad"],
   browser: ["browser", "web browser", "web", "internet"],
   tasks: ["tasks", "task", "task list", "tasks app"],
   "app-store": ["app store", "app-store", "appstore", "store", "apps"],
+  "pmo-todo": [
+    "pmo to-do",
+    "pmo to do",
+    "pmo todo",
+    "pmo",
+    "pmo app",
+    "to-do",
+    "to do",
+    "todo",
+    "to-dos",
+    "todos",
+  ],
+  staff: ["staff", "staff management", "staff app", "directory", "employees"],
+  dashboard: ["dashboard", "my dashboard", "pmo dashboard", "overview"],
+  templates: [
+    "templates",
+    "template",
+    "template library",
+    "email templates",
+    "report templates",
+  ],
 };
 
 function normalize(text: string): string {

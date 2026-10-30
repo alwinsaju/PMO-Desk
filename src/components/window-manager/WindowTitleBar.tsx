@@ -11,6 +11,9 @@ interface WindowTitleBarProps {
   icon?: ReactNode;
   isFocused: boolean;
   isMaximized: boolean;
+  /** Pinned: stays above the other windows. */
+  isPinned?: boolean;
+  onPinToggle?: () => void;
   /** True only while Window.tsx's own imperative maximize/restore spring is
    *  mid-flight (see its `transitionRect` state). Separate from
    *  `isMaximized` on purpose: `isMaximized` flips the instant the toggle is
@@ -40,6 +43,8 @@ export function WindowTitleBar({
   icon,
   isFocused,
   isMaximized,
+  isPinned = false,
+  onPinToggle,
   dragDisabled = false,
   rootRef,
   onMinimize,
@@ -83,6 +88,8 @@ export function WindowTitleBar({
       </span>
       <WindowControls
         isMaximized={isMaximized}
+        isPinned={isPinned}
+        onPinToggle={onPinToggle}
         onMinimize={onMinimize}
         onMaximizeToggle={onMaximizeToggle}
         onClose={onClose}

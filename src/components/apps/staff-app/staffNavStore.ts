@@ -7,7 +7,7 @@ import type { TimeOffStatus } from "@/lib/staff/types";
  *  StaffApp consumes it, whether the window was already open or has just been opened. */
 export interface StaffOpenRequest {
   id: number;
-  tab: "directory" | "shifts" | "timeoff" | "offboarded";
+  tab: "directory" | "shifts" | "timeoff" | "offboarded" | "insights";
   /** The Time off status filter to apply with the "timeoff" tab. */
   timeOffStatus?: TimeOffStatus | "";
 }

@@ -10,22 +10,32 @@ import {
   DialogTitle,
   Input,
 } from "@/components/ui";
-import { buildMailto } from "@/lib/pmo/chaser";
-import type { ChaserJob, Todo } from "@/lib/pmo/types";
+import { buildMailto, defaultChaserSubject } from "@/lib/pmo/chaser";
+import { chaserDialogFields, chaserValues } from "@/lib/pmo/templateValues";
+import { myFirstName } from "@/lib/pmo/signoffRequest";
+import type { ChaserJob, PmoConfig, ReminderPrefs, Todo } from "@/lib/pmo/types";
 import { discardChaser, startChaser } from "./api";
 import { ErrorLine, Field, Note, ScrollBody, TextArea } from "./parts";
+import { useAssignedTemplate } from "../templates-app/useAssignedTemplate";
+import { markTemplateUsed } from "@/lib/templates/usageStore";
 
 interface ChaserDialogProps {
   todo: Todo;
   /** The draft for this to-do (from the polled state), if any. */
   job: ChaserJob | undefined;
+  /** Who "me" is, the reminder settings and the server's clock: what a chaser
+   *  template needs to fill in its sign-off and how long you have waited. */
+  me: PmoConfig["me"];
+  reminders: ReminderPrefs;
+  nowIso: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSettled: () => void;
 }
 
 /**
- * Review, edit and copy a follow-up drafted by the LOCAL model. Nothing here
+ * Review, edit and copy a follow-up drafted by the LOCAL model, or written from
+ * the chaser template in the Template library. Nothing here
  * sends anything: Copy puts the text on the clipboard, and "Open as unsent
  * draft" is a plain mailto: link the browser/OS hands to the user's own mail
  * program, which only opens a compose window. The model's text is untrusted and
@@ -34,6 +44,9 @@ interface ChaserDialogProps {
 export function ChaserDialog({
   todo,
   job,
+  me,
+  reminders,
+  nowIso,
   open,
   onOpenChange,
   onSettled,
@@ -45,17 +58,52 @@ export function ChaserDialog({
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The person chose the template's wording: the model's draft no longer overwrites the fields.
+  const [fromTemplate, setFromTemplate] = useState(false);
   const textRef = useRef<HTMLTextAreaElement>(null);
+  const [variant, setVariant] = useState<string | null>(null);
+  const template = useAssignedTemplate("app:pmo-todo:chaser", open, variant);
 
   // Seed the editable fields once per finished draft (not on every poll, which
   // would overwrite what the person is typing).
-  if (job?.status === "ready" && job.id !== seededFor) {
+  if (job?.status === "ready" && job.id !== seededFor && !fromTemplate) {
     setSeededFor(job.id);
     setText(job.text ?? "");
     setSubject(job.subject ?? "");
     setTo(job.to ?? "");
     setCopied(false);
   }
+
+  const useTemplate = () => {
+    if (!template) return;
+    const written = chaserDialogFields(
+      template,
+      chaserValues({
+        todo,
+        now: new Date(nowIso),
+        prefs: reminders,
+        myName: myFirstName(me),
+      }),
+      { subject: defaultChaserSubject(todo), to: job?.to ?? "" },
+    );
+    setText(written.body);
+    setSubject(written.subject);
+    setTo(written.to);
+    setFromTemplate(true);
+    setCopied(false);
+    setError(null);
+    markTemplateUsed(template.id);
+  };
+
+  const useModelDraft = () => {
+    if (job?.status !== "ready") return;
+    setText(job.text ?? "");
+    setSubject(job.subject ?? "");
+    setTo(job.to ?? "");
+    setFromTemplate(false);
+    setSeededFor(job.id);
+    setCopied(false);
+  };
 
   const draftAgain = async () => {
     setBusy(true);
@@ -112,6 +160,8 @@ export function ChaserDialog({
   const drafting = job?.status === "drafting";
   const ready = job?.status === "ready";
   const failed = job?.status === "failed";
+  const editing = ready || fromTemplate;
+  if (!open && fromTemplate) setFromTemplate(false);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -124,19 +174,47 @@ export function ChaserDialog({
           Chaser to {todo.waitingOn ?? "the person you are waiting on"}
         </DialogTitle>
         <DialogDescription className="shrink-0 text-[13px]">
-          Drafted by the local model from this to-do. Edit it, then copy it. This app
-          never sends anything.
+          {template
+            ? "Drafted by the local model from this to-do, or written from your template. Edit it, then copy it. This app never sends anything."
+            : "Drafted by the local model from this to-do. Edit it, then copy it. This app never sends anything."}
         </DialogDescription>
 
-        {(!job || drafting) && (
+        {!editing && (!job || drafting) && (
           <Note role="status" className="mt-4 flex items-center gap-2.5">
             <span className="bg-accent motion-safe:animate-blink h-2 w-2 shrink-0 rounded-full" />
             Drafting… (can take a minute on this PC). You can close this window; the draft
             will be waiting on the to-do.
           </Note>
         )}
+        {template && !editing && (
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            {(template.variants?.length ?? 0) > 0 && (
+              <select
+                aria-label="Wording of the template"
+                data-testid="chaser-variant"
+                value={variant ?? ""}
+                onChange={(e) => setVariant(e.target.value || null)}
+                className="rounded-control border-line bg-surface-elevated h-9 border px-2.5 text-[13px]"
+              >
+                <option value="">Main wording</option>
+                {template.variants?.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.label}
+                  </option>
+                ))}
+              </select>
+            )}
+            <Button
+              variant="outline"
+              onClick={useTemplate}
+              data-testid="chaser-use-template"
+            >
+              Use my template “{template.name}” now
+            </Button>
+          </div>
+        )}
 
-        {failed && (
+        {failed && !editing && (
           <div role="alert" className="mt-4 flex flex-col gap-2">
             <Note tone="danger">{job.error ?? "The draft failed."}</Note>
             <div>
@@ -147,7 +225,7 @@ export function ChaserDialog({
           </div>
         )}
 
-        {ready && (
+        {editing && (
           <>
             <ScrollBody className="mt-4 flex flex-col gap-3 pr-2">
               <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
@@ -212,6 +290,16 @@ export function ChaserDialog({
               <Button variant="ghost" disabled={busy} onClick={draftAgain}>
                 Draft again
               </Button>
+              {template && (
+                <Button variant="ghost" onClick={useTemplate}>
+                  Use my template
+                </Button>
+              )}
+              {fromTemplate && ready && (
+                <Button variant="ghost" onClick={useModelDraft}>
+                  Use AI draft
+                </Button>
+              )}
               <Button variant="ghost" disabled={busy} onClick={() => void discard()}>
                 Discard
               </Button>

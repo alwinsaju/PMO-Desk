@@ -19,9 +19,11 @@ Usage: python build_email_data.py
 """
 import datetime
 import glob
+import html
 import json
 import os
 import re
+import sys
 
 import openpyxl
 
@@ -30,6 +32,9 @@ WORKSPACE_DIR = os.path.dirname(AGENT_DIR)
 INPUT_DIR = os.path.join(AGENT_DIR, "input")
 OUTPUT_DIR = os.path.join(AGENT_DIR, "output")
 ROSTER_PATH = os.path.join(WORKSPACE_DIR, "shared", "roster", "Names.xlsx")
+
+sys.path.insert(0, os.path.join(WORKSPACE_DIR, "shared"))
+from template_lib import Html, apply_email_template  # noqa: E402
 
 # Draft addressing lives here so create_draft.ps1 and the 'Confirm & send' dialog show the same values.
 MAIL_TO = "USPDTOperate <uspdtoperate@deloitte.com>"
@@ -42,6 +47,15 @@ def ordinal(n):
     if 11 <= n % 100 <= 13:
         return f"{n}th"
     return f"{n}{ORDINAL_SUFFIXES.get(n % 10, 'th')}"
+
+
+def body_date_html(body_date):
+    """The date as create_draft.ps1 writes it in the message (bold, with a raised ordinal suffix)."""
+    if body_date.get("single"):
+        inner = f"{body_date['day']}<sup>{body_date['suffix']}</sup> {html.escape(str(body_date['month']))}"
+    else:
+        inner = html.escape(str(body_date.get("range_text", "")))
+    return Html(f"<b><span style='color:black'>{inner}</span></b>")
 
 
 def find_workbook():
@@ -333,6 +347,12 @@ def main():
         "deployment_rows": deployment_rows,
         "activities_rows": activities_rows,
     }
+    # A template chosen in the Templates app replaces the subject, recipients and message above.
+    apply_email_template(
+        "task:deployment-dep-weekend-mailer",
+        data,
+        {"date": date_str, "body_date": body_date_html(body_date), "title": block_title},
+    )
     out_path = os.path.join(OUTPUT_DIR, "email-data.json")
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, default=str)

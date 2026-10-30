@@ -16,13 +16,30 @@
 "use client";
 
 import {
+  CalendarCheckIcon,
+  ChartBarIcon,
+  ChartPieSliceIcon,
   ClipboardTextIcon,
+  ClockCountdownIcon,
+  FileTextIcon,
   FolderIcon,
+  GavelIcon,
+  GitDiffIcon,
   GlobeIcon,
+  HandshakeIcon,
   IdentificationBadgeIcon,
+  LightbulbIcon,
+  LinkSimpleIcon,
+  ListBulletsIcon,
   ListChecksIcon,
   NotePencilIcon,
+  ReceiptIcon,
   SquaresFourIcon,
+  TimerIcon,
+  ToolboxIcon,
+  TrafficSignalIcon,
+  UsersThreeIcon,
+  WarningDiamondIcon,
   type Icon,
 } from "@phosphor-icons/react";
 
@@ -63,9 +80,12 @@ export interface BuiltInApp {
  * now merged into one user-editable layout in pinnedAppsStore.ts.
  */
 export const builtInApps = [
+  { id: "dashboard", title: "Dashboard", icon: ChartPieSliceIcon },
   { id: "pmo-todo", title: "PMO To-Do", icon: ClipboardTextIcon },
   { id: "tasks", title: "Tasks", icon: ListChecksIcon },
   { id: "staff", title: "Staff Management", icon: IdentificationBadgeIcon },
+  { id: "templates", title: "Templates", icon: FileTextIcon },
+  { id: "pmo-toolkit", title: "PMO Toolkit", icon: ToolboxIcon },
   { id: "files", title: "Files", icon: FolderIcon },
   { id: "notes", title: "Notes", icon: NotePencilIcon },
   { id: "browser", title: "Browser", icon: GlobeIcon },
@@ -73,6 +93,25 @@ export const builtInApps = [
 ] satisfies readonly BuiltInApp[];
 
 export type PinnedApp = BuiltInApp;
+
+/** The PMO toolkit's tools. They open from the PMO Toolkit window, the command bar and search; they are not
+ *  dock tiles of their own, so the dock stays short. */
+export const toolApps = [
+  { id: "raid", title: "RAID log", icon: WarningDiamondIcon },
+  { id: "minutes", title: "Meeting minutes", icon: ListBulletsIcon },
+  { id: "timesheets", title: "Timesheet chaser", icon: ClockCountdownIcon },
+  { id: "decisions", title: "Decision log", icon: GavelIcon },
+  { id: "sla", title: "SLA watcher", icon: TimerIcon },
+  { id: "changes", title: "Change requests", icon: GitDiffIcon },
+  { id: "governance", title: "Governance calendar", icon: CalendarCheckIcon },
+  { id: "stakeholders", title: "Stakeholder register", icon: UsersThreeIcon },
+  { id: "vendors", title: "Vendor and contract tracker", icon: HandshakeIcon },
+  { id: "capacity", title: "Capacity planner", icon: ChartBarIcon },
+  { id: "invoices", title: "Invoice readiness", icon: ReceiptIcon },
+  { id: "status-report", title: "Status report builder", icon: TrafficSignalIcon },
+  { id: "lessons", title: "Lessons learned", icon: LightbulbIcon },
+  { id: "doclinks", title: "Document and link library", icon: LinkSimpleIcon },
+] satisfies readonly BuiltInApp[];
 
 /** Ids of every built-in app, in default taskbar order. */
 export const builtInAppIds: readonly string[] = builtInApps.map((app) => app.id);

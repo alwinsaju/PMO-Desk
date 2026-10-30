@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   CheckIcon,
   CopyIcon,
@@ -22,6 +22,8 @@ import type { Checkpoint, ChaserJob, PmoConfig, Todo } from "@/lib/pmo/types";
 import { discardSignoffDraft, requestSignoff, startSignoffDraft } from "./api";
 import { ErrorLine, Field, Note, QuickChip, ScrollBody, TextArea } from "./parts";
 import { approverSuggestions } from "./signoffUi";
+import { useAssignedTemplate } from "../templates-app/useAssignedTemplate";
+import { markTemplateUsed } from "@/lib/templates/usageStore";
 
 interface SignoffRequestDialogProps {
   todo: Todo;
@@ -67,13 +69,21 @@ export function SignoffRequestDialog({
   const [startedJob, setStartedJob] = useState<string | null>(null);
   const [handledJob, setHandledJob] = useState<string | null>(null);
   const textRef = useRef<HTMLTextAreaElement>(null);
+  // The sign-off template from the Template library (undefined while it is read).
+  const assigned = useAssignedTemplate("app:pmo-todo:signoff", open);
 
   const templateFor = (who: string) =>
-    buildSignoffTemplate({ todo, approver: who, myName: myFirstName(me) });
+    buildSignoffTemplate({
+      todo,
+      approver: who,
+      myName: myFirstName(me),
+      template: assigned,
+    });
 
   // Seed once each time the dialog opens for a checkpoint (not on every poll,
-  // which would overwrite what the person is typing).
-  const seedKey = open && checkpoint ? `${todo.id}:${checkpoint.id}` : null;
+  // which would overwrite what the person is typing), once the template is known.
+  const seedKey =
+    open && checkpoint && assigned !== undefined ? `${todo.id}:${checkpoint.id}` : null;
   if (seedKey && seedKey !== seededFor) {
     const saved = signoffOf(checkpoint!).approver ?? "";
     const template = templateFor(saved);
@@ -89,6 +99,10 @@ export function SignoffRequestDialog({
     setHandledJob(null);
   }
   if (!open && seededFor !== null) setSeededFor(null);
+  // A draft was made from the template: note it for the Templates app's "last used".
+  useEffect(() => {
+    if (seededFor) markTemplateUsed(assigned?.id);
+  }, [seededFor, assigned?.id]);
 
   if (!checkpoint) return null;
 

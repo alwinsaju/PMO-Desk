@@ -47,6 +47,7 @@ type TextKey =
   | "op"
   | "team"
   | "clientManager"
+  | "birthday"
   | "homeOffice"
   | "milestone"
   | "deloittePersonId"
@@ -471,6 +472,7 @@ function EmployeeForm({
         {text("offering", "Offering", { list: "offering" })}
         {text("team", "Team", { list: "team" })}
         {text("clientManager", "Client manager")}
+        {text("birthday", "Birthday (MM-DD)", { placeholder: "e.g. 03-14" })}
         <Field label="Location" htmlFor="emp-location">
           <select
             id="emp-location"

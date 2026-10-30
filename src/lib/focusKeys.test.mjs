@@ -1,6 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { firstUsable, trapTarget, windowShortcut } from "./focusKeys.ts";
+import {
+  firstUsable,
+  isFocusBarShortcut,
+  trapTarget,
+  windowShortcut,
+} from "./focusKeys.ts";
 
 test("Ctrl+W closes and Ctrl+M minimises, case-insensitively", () => {
   assert.equal(windowShortcut({ key: "w", ctrlKey: true }), "close");
@@ -14,6 +19,16 @@ test("other keys and modifier combinations are ignored", () => {
   assert.equal(windowShortcut({ key: "w", ctrlKey: true, shiftKey: true }), null);
   assert.equal(windowShortcut({ key: "w", ctrlKey: true, altKey: true }), null);
   assert.equal(windowShortcut({ key: "m", ctrlKey: true, metaKey: true }), null);
+});
+
+test("Ctrl+Space focuses the command bar, and only that combination", () => {
+  assert.equal(isFocusBarShortcut({ key: " ", ctrlKey: true }), true);
+  assert.equal(isFocusBarShortcut({ key: "Spacebar", ctrlKey: true }), true);
+  assert.equal(isFocusBarShortcut({ key: " " }), false);
+  assert.equal(isFocusBarShortcut({ key: " ", ctrlKey: true, shiftKey: true }), false);
+  assert.equal(isFocusBarShortcut({ key: " ", ctrlKey: true, altKey: true }), false);
+  assert.equal(isFocusBarShortcut({ key: " ", ctrlKey: true, metaKey: true }), false);
+  assert.equal(isFocusBarShortcut({ key: "k", ctrlKey: true }), false);
 });
 
 test("firstUsable skips missing and unusable candidates", () => {

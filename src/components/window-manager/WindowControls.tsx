@@ -4,12 +4,15 @@ import {
   ArrowsInSimpleIcon,
   ArrowsOutSimpleIcon,
   MinusIcon,
+  PushPinIcon,
   XIcon,
 } from "@phosphor-icons/react";
 import { cn } from "@/lib/cn";
 
 interface WindowControlsProps {
   isMaximized: boolean;
+  isPinned?: boolean;
+  onPinToggle?: () => void;
   onMinimize: () => void;
   onMaximizeToggle: () => void;
   onClose: () => void;
@@ -36,12 +39,32 @@ const revealedOnDemand =
  */
 export function WindowControls({
   isMaximized,
+  isPinned = false,
+  onPinToggle,
   onMinimize,
   onMaximizeToggle,
   onClose,
 }: WindowControlsProps) {
   return (
     <div className="flex items-center gap-1">
+      {onPinToggle && (
+        <button
+          type="button"
+          aria-label={isPinned ? "Unpin from top" : "Keep on top"}
+          aria-pressed={isPinned}
+          title={isPinned ? "Unpin from top" : "Keep on top"}
+          onClick={(e) => {
+            e.stopPropagation();
+            onPinToggle();
+          }}
+          className={cn(
+            controlButtonClassName,
+            isPinned ? "text-accent-ink opacity-100" : revealedOnDemand,
+          )}
+        >
+          <PushPinIcon size={15} weight={isPinned ? "fill" : "bold"} />
+        </button>
+      )}
       <button
         type="button"
         aria-label="Minimize"

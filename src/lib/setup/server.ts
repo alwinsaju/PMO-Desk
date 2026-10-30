@@ -27,6 +27,7 @@ import { allowedModels, saveModelChoice } from "@/lib/ai-runtime/modelChoice";
 import { withoutTlsOverride } from "@/lib/security/childEnv";
 import { Store } from "@/lib/pmo/server/store";
 import { resolveDataDir } from "@/lib/pmo/server/paths";
+import { appVersion } from "@/lib/platform/appInfo";
 import { isAwaitingProfile } from "@/lib/staff/employees";
 import { ptoMailState } from "@/lib/staff/ptoMailServer";
 import { readStaff } from "@/lib/staff/server";
@@ -210,20 +211,6 @@ const selfTestIo: SelfTestIo = {
     writeFileSync(file, text);
   },
 };
-
-/** The desktop shell sets AI_OS_APP_VERSION; `pnpm dev` falls back to package.json. */
-function appVersion(): string {
-  const fromEnv = process.env.AI_OS_APP_VERSION?.trim();
-  if (fromEnv) return fromEnv;
-  try {
-    const pkg = JSON.parse(
-      readFileSync(path.join(process.cwd(), "package.json"), "utf8"),
-    );
-    return typeof pkg.version === "string" ? pkg.version : "unknown";
-  } catch {
-    return "unknown";
-  }
-}
 
 export async function collectFacts(
   context: StatusContext = "refresh",

@@ -319,11 +319,24 @@ describe("to-do filters and sorting", () => {
     todo({ title: "cancelled", status: "cancelled", waitingOn: "Sam" }),
   ];
 
-  it("offers open, overdue, due soon, waiting, snoozed and done", () => {
+  it("offers open, today, overdue, due soon, waiting, snoozed and done", () => {
     assert.deepEqual(
       TODO_FILTERS.map((f) => f.id),
-      ["open", "overdue", "due-soon", "waiting", "snoozed", "done"],
+      ["open", "today", "overdue", "due-soon", "waiting", "snoozed", "done"],
     );
+  });
+
+  it("'today' is what can be acted on now: due today or earlier and not snoozed", () => {
+    const run = (filter) => ids(filterTodos(all, filter, today, now));
+    assert.deepEqual(run("today"), ["late", "today"]);
+    // A snooze that has passed brings the to-do back.
+    const later = new Date("2026-10-27T04:00:00Z");
+    assert.deepEqual(ids(filterTodos(all, "today", "2026-10-27", later)), [
+      "late",
+      "today",
+      "tomorrow",
+      "snoozed",
+    ]);
   });
 
   it("filters by the same windows the dock badge uses", () => {
@@ -351,6 +364,7 @@ describe("to-do filters and sorting", () => {
   it("counts every filter", () => {
     assert.deepEqual(countByFilter(all, today, now), {
       open: 6,
+      today: 2,
       overdue: 2,
       "due-soon": 2,
       waiting: 1,

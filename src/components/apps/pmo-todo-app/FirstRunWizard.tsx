@@ -13,6 +13,15 @@ import {
   type FirstRunForm,
 } from "@/lib/pmo/firstRun";
 import type { FirstRunSuggestions } from "@/lib/pmo/server/firstRun";
+import {
+  clearProgress,
+  loadProgress,
+  saveProfile,
+  saveProgress,
+  skippedStepForm,
+  withRememberedProfile,
+  type WizardStorage,
+} from "@/lib/pmo/firstRunMemory";
 import { createInboxFolder, fetchFirstRunSuggestions, finishFirstRun } from "./api";
 import { ErrorLine, Field, NativeSelect, Note, ScrollBody, SectionLabel } from "./parts";
 
@@ -26,6 +35,17 @@ const detectedTimeZone = () => {
 
 const supportedTimeZones = () =>
   typeof Intl.supportedValuesOf === "function" ? Intl.supportedValuesOf("timeZone") : [];
+
+const baseForm = () =>
+  initialFirstRunForm({ suggestedName: "", detectedTimeZone: detectedTimeZone() });
+
+const browserStorage = (): WizardStorage | null => {
+  try {
+    return typeof window === "undefined" ? null : window.localStorage;
+  } catch {
+    return null;
+  }
+};
 
 /** A folder the person may use as the inbox: `parent` is where PMO-Inbox would be created. */
 interface FolderChoice {
@@ -47,10 +67,13 @@ export function FirstRunWizard({
   windowId: string;
   onDone: () => void;
 }) {
-  const [form, setForm] = useState<FirstRunForm>(() =>
-    initialFirstRunForm({ suggestedName: "", detectedTimeZone: detectedTimeZone() }),
+  const [resumed] = useState(() =>
+    loadProgress(browserStorage(), baseForm(), Date.now()),
   );
-  const [step, setStep] = useState(0);
+  const [form, setForm] = useState<FirstRunForm>(
+    () => resumed?.form ?? withRememberedProfile(browserStorage(), baseForm()),
+  );
+  const [step, setStep] = useState(resumed?.step ?? 0);
   const [problems, setProblems] = useState<string[]>([]);
   const [serverError, setServerError] = useState<string | null>(null);
   const [suggestions, setSuggestions] = useState<FirstRunSuggestions | null>(null);
@@ -61,6 +84,10 @@ export function FirstRunWizard({
   >(null);
   const [busy, setBusy] = useState(false);
 
+  // Keep the place, so closing the window does not start the wizard over.
+  useEffect(() => {
+    saveProgress(browserStorage(), { step, form }, Date.now());
+  }, [step, form]);
   useEffect(() => {
     let cancelled = false;
     fetchFirstRunSuggestions()
@@ -104,6 +131,21 @@ export function FirstRunWizard({
     setStep(step + 1);
   }
 
+  function skip() {
+    const skipped = skippedStepForm(current.id, form, detectedTimeZone());
+    if (!skipped) return;
+    const found = stepProblems(current.id, skipped);
+    if (found.length > 0) return setProblems(found);
+    setProblems([]);
+    setServerError(null);
+    setForm(
+      FIRST_RUN_STEPS[step + 1]?.id === "domains"
+        ? withSuggestedDomain(skipped)
+        : skipped,
+    );
+    setStep(step + 1);
+  }
+
   async function finish(confirmNonEmpty = false) {
     const result = firstRunPayload(form);
     if (!result.ok) return setProblems(result.problems);
@@ -111,7 +153,12 @@ export function FirstRunWizard({
     setServerError(null);
     try {
       const reply = await finishFirstRun({ ...result.payload, confirmNonEmpty });
-      if (reply.ok) return onDone();
+      if (reply.ok) {
+        // Done: forget the unfinished place, but remember who you are for the next data folder.
+        saveProfile(browserStorage(), form);
+        clearProgress(browserStorage());
+        return onDone();
+      }
       setServerError(reply.reason);
       setConfirmFolder(reply.needsConfirmation ? { action: "finish" } : null);
     } catch {
@@ -161,6 +208,11 @@ export function FirstRunWizard({
               Set up PMO To-Do - step {step + 1} of {FIRST_RUN_STEPS.length}
             </SectionLabel>
             <h2 className="text-ink text-xl font-semibold">{current.title}</h2>
+            {resumed && step === resumed.step && (
+              <p className="text-ink-muted text-[13px] leading-relaxed">
+                Welcome back: your earlier answers are filled in.
+              </p>
+            )}
             <p className="text-ink-muted text-[13px] leading-relaxed">
               Nothing is read from your mail until you finish this. Everything stays on
               this computer.
@@ -344,7 +396,14 @@ export function FirstRunWizard({
                 {busy ? "Saving..." : "Finish setup"}
               </Button>
             ) : (
-              <Button onClick={next}>Next</Button>
+              <span className="flex items-center gap-2">
+                {skippedStepForm(current.id, form, detectedTimeZone()) && (
+                  <Button variant="ghost" onClick={skip}>
+                    Skip for now
+                  </Button>
+                )}
+                <Button onClick={next}>Next</Button>
+              </span>
             )}
           </div>
         </div>

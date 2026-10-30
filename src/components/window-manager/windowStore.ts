@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { useShallow } from "zustand/react/shallow";
 import { windowDefaults, sizes, zIndex as zIndexTokens } from "@/lib/tokens";
+import { usePreferences } from "@/lib/preferences/preferencesStore";
 import type {
   ControlledBy,
   OpenWindowOptions,
@@ -9,11 +10,16 @@ import type {
   WindowState,
 } from "./types";
 import {
-  defaultWindowGeometry,
   fitRectToViewport,
   type FitConfig,
+  type Rect,
   type Viewport,
 } from "./windowGeometry";
+import { pristineUpdates, rectsToRemember, startingGeometry } from "./windowPlacement";
+import { snapRect, type SnapZone } from "./windowSnap";
+
+/** How long after the last move or resize a window's rectangle is saved. */
+const REMEMBER_WINDOW_DELAY_MS = 600;
 
 /** Numbers behind every "keep the title bar reachable" clamp. */
 export const windowClampConfig: FitConfig = {
@@ -45,6 +51,10 @@ export interface WindowStoreState {
   restoreWindow: (id: string) => void;
   /** Toggles maximize on/off, restoring the pre-maximize bounds on toggle-off. */
   maximizeWindow: (id: string) => void;
+  /** Put the window on half or a quarter of the screen (leaves maximised). */
+  snapWindow: (id: string, zone: SnapZone) => void;
+  /** Keep the window above the others (or stop). */
+  togglePinned: (id: string) => void;
   setWindowControlledBy: (
     id: string,
     controlledBy: ControlledBy,
@@ -101,6 +111,12 @@ function topmostRemaining(
   return best?.id;
 }
 
+/** Windows opened before the saved rectangles had loaded, by id (see pristineUpdates). */
+const pristineGeometry = new Map<
+  string,
+  { position: WindowPosition; size: WindowSize }
+>();
+
 export const useWindowStore = create<WindowStoreState>()((set) => ({
   windows: {},
   nextZIndex: zIndexTokens.windowBase,
@@ -113,15 +129,20 @@ export const useWindowStore = create<WindowStoreState>()((set) => ({
         : `win-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
     set((state) => {
-      // One uniform default size for every app (shrunk to fit the viewport),
-      // with a small cascade per new window. See windowGeometry.ts.
-      const geometry = defaultWindowGeometry(
-        state.openCount,
-        typeof window !== "undefined"
-          ? { width: window.innerWidth, height: window.innerHeight }
-          : null,
-        windowDefaults,
-      );
+      // Where this app's window last was, else a per-app default size, else the
+      // cascade. See windowPlacement.ts.
+      const geometry = startingGeometry({
+        appId,
+        openCount: state.openCount,
+        viewport:
+          typeof window !== "undefined"
+            ? { width: window.innerWidth, height: window.innerHeight }
+            : null,
+        config: windowDefaults,
+        fit: windowClampConfig,
+        remembered: usePreferences.getState().windowRects,
+        sameAppOpen: Object.values(state.windows).some((w) => w.appId === appId),
+      });
       const position: WindowPosition = options.position ?? geometry.position;
       const size: WindowSize = options.size ?? geometry.size;
       const zIndex = state.nextZIndex;
@@ -145,6 +166,11 @@ export const useWindowStore = create<WindowStoreState>()((set) => ({
       };
 
       const withNewWindow = { ...state.windows, [id]: newWindow };
+      // Opened before the saved rectangles have loaded: remember the exact objects it was
+      // given, so it can be moved to its saved place if nobody touches it first.
+      if (!options.position && !options.size && !usePreferences.persist.hasHydrated()) {
+        pristineGeometry.set(id, { position, size });
+      }
 
       return {
         windows: withExclusiveFocus(withNewWindow, id, zIndex),
@@ -292,6 +318,43 @@ export const useWindowStore = create<WindowStoreState>()((set) => ({
     });
   },
 
+  snapWindow: (id, zone) => {
+    set((state) => {
+      const w = state.windows[id];
+      if (!w) return state;
+      const rect = snapRect(
+        zone,
+        { width: window.innerWidth, height: window.innerHeight },
+        windowDefaults.insets,
+      );
+      const min = w.minSize ?? windowDefaults.minSize;
+      const zIndex = state.nextZIndex;
+      const updated: WindowState = {
+        ...w,
+        isMaximized: false,
+        isMinimized: false,
+        restoreBounds: undefined,
+        position: { x: rect.x, y: rect.y },
+        size: {
+          width: Math.max(min.width, rect.width),
+          height: Math.max(min.height, rect.height),
+        },
+      };
+      return {
+        windows: withExclusiveFocus({ ...state.windows, [id]: updated }, id, zIndex),
+        nextZIndex: zIndex + 1,
+      };
+    });
+  },
+
+  togglePinned: (id) => {
+    set((state) => {
+      const w = state.windows[id];
+      if (!w) return state;
+      return { windows: { ...state.windows, [id]: { ...w, pinned: !w.pinned } } };
+    });
+  },
+
   setWindowControlledBy: (id, controlledBy, aiTaskId) => {
     set((state) => {
       const w = state.windows[id];
@@ -309,6 +372,45 @@ export const useWindowStore = create<WindowStoreState>()((set) => ({
     });
   },
 }));
+
+// Remember where each app's window was left, a moment after the last move or resize
+// (a drag changes the position on every pointer move).
+if (typeof window !== "undefined") {
+  // The saved rectangles load from the app's server a moment after start; a window that
+  // opened sooner and has not been touched yet moves to its saved place.
+  const placeUntouchedWindows = () => {
+    const updates = pristineUpdates({
+      windows: useWindowStore.getState().windows,
+      pristine: pristineGeometry,
+      viewport: { width: window.innerWidth, height: window.innerHeight },
+      config: windowDefaults,
+      fit: windowClampConfig,
+      remembered: usePreferences.getState().windowRects,
+    });
+    pristineGeometry.clear();
+    for (const { id, geometry } of updates) {
+      useWindowStore.getState().moveWindow(id, geometry.position);
+      useWindowStore.getState().resizeWindow(id, geometry.size);
+    }
+  };
+  usePreferences.persist.onFinishHydration(placeUntouchedWindows);
+  if (usePreferences.persist.hasHydrated()) placeUntouchedWindows();
+
+  const pending = new Map<string, Rect>();
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  useWindowStore.subscribe((state, previous) => {
+    for (const { appId, rect } of rectsToRemember(previous.windows, state.windows)) {
+      pending.set(appId, rect);
+    }
+    if (pending.size === 0 || timer) return;
+    timer = setTimeout(() => {
+      timer = null;
+      for (const [appId, rect] of pending)
+        usePreferences.getState().rememberWindow(appId, rect);
+      pending.clear();
+    }, REMEMBER_WINDOW_DELAY_MS);
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Convenience selector hooks. Prefer these (or a per-id selector shaped like

@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { ArrowRightIcon, SealCheckIcon, WarningIcon } from "@phosphor-icons/react";
 import { Button } from "@/components/ui";
 import { cn } from "@/lib/cn";
+import { matchReason } from "@/lib/pmo/pmoViews";
 import { MAX_AI_ATTEMPTS, type PmoState, type Proposal } from "@/lib/pmo/types";
 import {
   UNTICKED_REASON_TEXT,
@@ -120,6 +121,12 @@ export function UpdateCard({ proposal, state, onOpenTodo, onSettled }: UpdateCar
             {" · "}
             {relativeTime(summary.receivedAt, Date.parse(state.serverTime))}
             {summary.subject ? ` · ${summary.subject}` : ""}
+          </p>
+          <p
+            data-testid="match-reason"
+            className="text-ink-muted min-w-0 truncate text-[12px]"
+          >
+            Why it matched: {matchReason(update.threadKey)}
           </p>
           <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5 empty:hidden">
             {ready && plan && (

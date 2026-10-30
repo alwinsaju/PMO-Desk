@@ -4,6 +4,7 @@
 // the same pattern) — imported by both route.ts (the server side) and
 // CommandBar.tsx (the one client caller), the same way tasks-app/types.ts
 // is shared between that app's api.ts and its UI.
+import type { AiAppId } from "@/lib/ai-runtime/windowIntent";
 
 /** Existing note context sent up for the "focused app is Notes" case — id +
  *  title ONLY, never full content, so the model can reference a specific
@@ -35,8 +36,11 @@ export interface AiCommandRequest {
 export type NoteToolName = "create_note" | "update_note" | "delete_note";
 export type WindowToolName =
   "open_app" | "focus_window" | "minimize_window" | "maximize_window" | "close_window";
+/** PMO tools: answered from the Staff roster and the PMO to-dos by code (whos_off,
+ *  pmo_status), or turned into an action for the bar (prepare_task). */
+export type PmoToolName = "whos_off" | "pmo_status" | "prepare_task";
 
-export type AiCommandAppId = "files" | "notes" | "browser" | "tasks" | "app-store";
+export type AiCommandAppId = AiAppId;
 
 /** A validated tool-call decision — by the time this reaches the client,
  *  the route has already checked `name` against a fixed allowlist and
@@ -53,7 +57,9 @@ export type AiCommandAction =
   | { type: "action"; name: "focus_window"; arguments: { id: string } }
   | { type: "action"; name: "minimize_window"; arguments: { id: string } }
   | { type: "action"; name: "maximize_window"; arguments: { id: string } }
-  | { type: "action"; name: "close_window"; arguments: { id: string } };
+  | { type: "action"; name: "close_window"; arguments: { id: string } }
+  /** Open the Tasks app with that task's Run form ready. Starts nothing by itself. */
+  | { type: "action"; name: "prepare_task"; arguments: { taskId: string } };
 
 export type AiCommandErrorKind = "unreachable" | "timeout" | "malformed";
 

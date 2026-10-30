@@ -12,9 +12,11 @@ import {
 import { openOrFocusBuiltInApp } from "@/components/taskbar/launchBuiltInApp";
 
 const OPEN_ENTRIES = [
+  { appId: "dashboard", label: "Open Dashboard" },
   { appId: "pmo-todo", label: "Open PMO To-Do" },
   { appId: "tasks", label: "Open Tasks" },
   { appId: "staff", label: "Open Staff Management" },
+  { appId: "templates", label: "Open Templates" },
   { appId: "notes", label: "Open Notes" },
 ] as const;
 

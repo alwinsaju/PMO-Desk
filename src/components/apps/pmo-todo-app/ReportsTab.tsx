@@ -12,6 +12,7 @@ import { Button, Input } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import type { SavedReportSummary } from "@/lib/pmo/report";
 import type { PmoState, ReportNarrativeJob } from "@/lib/pmo/types";
+import { useAssignedTemplate } from "../templates-app/useAssignedTemplate";
 import {
   fetchReport,
   fetchReportNarrative,
@@ -44,6 +45,7 @@ import {
   markSaved,
   narrativeView,
   periodRequest,
+  reportWrap,
   saveBody,
   saveState,
   savedRows,
@@ -107,6 +109,9 @@ export function ReportsTab({ state, view, onViewChange }: ReportsTabProps) {
   const [armed, setArmed] = useState<string | null>(null);
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const timeZone = state.config.reminders.timeZone;
+  // The report template from the Template library, if one is set (wraps what is copied or mailed).
+  const reportTemplate = useAssignedTemplate("app:pmo-todo:report");
+  const wrap = draft ? reportWrap(reportTemplate, draft, state.config.me) : undefined;
 
   const patchView = useCallback(
     (patch: Partial<ReportViewState>) => onViewChange({ ...view, ...patch }),
@@ -257,7 +262,7 @@ export function ReportsTab({ state, view, onViewChange }: ReportsTabProps) {
 
   async function copy(as: "text" | "markdown") {
     if (!draft) return;
-    const ok = await copyToClipboard(copyText(draft, as));
+    const ok = await copyToClipboard(copyText(draft, as, wrap));
     if (!ok)
       return setError("Could not copy automatically. Select the text and press Ctrl+C.");
     setError(null);
@@ -269,12 +274,12 @@ export function ReportsTab({ state, view, onViewChange }: ReportsTabProps) {
   const status = narrativeView(job, draft);
   const drafting = status.kind === "drafting" || startingJob;
   const save_ = draft ? saveState(draft) : null;
-  const mailto = draft ? mailLink(draft) : null;
+  const mailto = draft ? mailLink(draft, wrap) : null;
   const rows = savedRows(saved ?? [], timeZone);
   const chips = draft ? summaryChips(draft.summary) : [];
   const statusText = `${notice ?? save_?.label ?? ""}${
     mailto && !mailto.ok && !notice ? ". Too long for a mail link: use Copy." : ""
-  }`;
+  }${wrap && reportTemplate ? ` · Copy and mail use the template “${reportTemplate.name}”` : ""}`;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
