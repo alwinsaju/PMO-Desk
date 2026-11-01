@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Button,
   Switch,
@@ -25,6 +25,7 @@ import { AboutTab } from "./AboutTab";
 import { DataTab } from "./DataTab";
 import { HelpTab } from "./HelpTab";
 import { Row, Section, when } from "./SettingsParts";
+import { SettingsSearchBox, SettingsSearchResults } from "./SettingsSearch";
 import { useDashboardPrefs } from "@/lib/dashboard/dashboardPrefsStore";
 import { usePlatformPrefs } from "@/lib/platform/platformPrefsStore";
 import {
@@ -75,6 +76,7 @@ function General() {
     <>
       <Section title="Profile">
         <Row
+          settingId="profile"
           title="How you use AI OS"
           hint={`${PROFILES[profile].hint} This is a convenience, not a lock: you can switch any time.`}
         >
@@ -92,18 +94,12 @@ function General() {
           </select>
         </Row>
       </Section>
-      <Section title="Start up and focus">
+      <Section
+        title="Lock screen and desktop"
+        description="What you see when AI OS starts."
+      >
         <Row
-          title="Repeating to-dos create the next one"
-          hint="When you close a repeating to-do, the next round is created at once (with an Undo). Off: you are asked."
-        >
-          <Switch
-            checked={autoRecur}
-            onCheckedChange={setAutoRecur}
-            aria-label="Repeating to-dos create the next one"
-          />
-        </Row>
-        <Row
+          settingId="desktop-widget"
           title="Who's out today on the desktop"
           hint="A small card behind your windows."
         >
@@ -113,7 +109,11 @@ function General() {
             aria-label="Who's out today on the desktop"
           />
         </Row>
-        <Row title="Skip the lock screen" hint="Open straight to the desktop.">
+        <Row
+          settingId="instant-unlock"
+          title="Skip the lock screen"
+          hint="Open straight to the desktop."
+        >
           <Switch
             checked={instantUnlock}
             onCheckedChange={setInstantUnlock}
@@ -121,6 +121,7 @@ function General() {
           />
         </Row>
         <Row
+          settingId="lock-summary"
           title="Show what needs you on the lock screen"
           hint="A line under the clock: how many things need you and what they are."
         >
@@ -130,7 +131,23 @@ function General() {
             aria-label="Show what needs you on the lock screen"
           />
         </Row>
+      </Section>
+      <Section title="To-dos">
         <Row
+          settingId="auto-recur"
+          title="Repeating to-dos create the next one"
+          hint="When you close a repeating to-do, the next round is created at once (with an Undo). Off: you are asked."
+        >
+          <Switch
+            checked={autoRecur}
+            onCheckedChange={setAutoRecur}
+            aria-label="Repeating to-dos create the next one"
+          />
+        </Row>
+      </Section>
+      <Section title="Focus">
+        <Row
+          settingId="focus-mode"
           title="Focus mode"
           hint={
             focusOn
@@ -146,10 +163,14 @@ function General() {
         </Row>
       </Section>
 
-      <Section title="The command bar asks first">
+      <Section
+        title="The command bar asks first"
+        description="Before it acts for you, the command bar can show an “Are you sure?” card."
+      >
         {CONFIRM_KEYS.map((key) => (
           <Row
             key={key}
+            settingId={`confirm-${key}`}
             title={CONFIRM_LABEL[key]}
             hint="Show an “Are you sure?” card before it happens."
           >
@@ -165,7 +186,7 @@ function General() {
         </p>
       </Section>
 
-      <Section title="Command history">
+      <Section title="Command history" settingId="command-history">
         {log.length === 0 ? (
           <p className="text-ink-muted py-2 text-[13px]">
             Nothing yet. What you ask the command bar is listed here.
@@ -209,7 +230,7 @@ function Notifications() {
   const clear = useToasts((s) => s.clearHistory);
   const items = [...history].reverse();
   return (
-    <Section title="Everything shown this session">
+    <Section title="Everything shown this session" settingId="notification-history">
       {items.length === 0 ? (
         <p className="text-ink-muted py-2 text-[13px]">No notifications yet.</p>
       ) : (
@@ -253,6 +274,7 @@ function Shortcuts() {
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         aria-label="Filter shortcuts"
+        data-setting-id="shortcut-list"
         {...noSpellcheck}
         placeholder="Filter shortcuts"
         className="border-line bg-chip text-ink rounded-control mb-4 w-full border px-3 py-2 text-[13.5px] outline-none"
@@ -288,6 +310,7 @@ function Accessibility() {
   return (
     <Section title="Display">
       <Row
+        settingId="reduce-motion"
         title="Reduce motion"
         hint="No animation or easing. Also follows your computer's own setting."
       >
@@ -298,6 +321,7 @@ function Accessibility() {
         />
       </Row>
       <Row
+        settingId="high-contrast"
         title="High contrast"
         hint="Stronger text, clearer borders and a thick keyboard focus ring."
       >
@@ -308,6 +332,7 @@ function Accessibility() {
         />
       </Row>
       <Row
+        settingId="colour-blind-roster"
         title="Colour-blind-safe roster"
         hint="The shift roster uses colours that stay apart for colour-blind readers, and each shift also gets a pattern."
       >
@@ -326,6 +351,17 @@ function Accessibility() {
   );
 }
 
+const TAB_ORDER: readonly SettingsTab[] = [
+  "general",
+  "notifications",
+  "shortcuts",
+  "accessibility",
+  "data",
+  "activity",
+  "help",
+  "about",
+];
+
 const TAB_LABELS: Record<SettingsTab, string> = {
   general: "General",
   notifications: "Notifications",
@@ -341,59 +377,122 @@ const TAB_LABELS: Record<SettingsTab, string> = {
  *  asks first, its history, notifications, shortcuts and accessibility. */
 export function SettingsApp({ windowId }: { windowId: string }) {
   const [tab, setTab] = useState<SettingsTab>("general");
+  const [query, setQuery] = useState("");
+  const [jump, setJump] = useState<{ id: string; n: number } | null>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const searching = query.trim() !== "";
   useWindowContext(windowId, TAB_LABELS[tab]);
   const request = useSettingsNav((s) => s.request);
   useEffect(() => {
     if (!request) return;
     setTab(request.tab);
+    setQuery("");
     useSettingsNav.getState().clear(request.id);
   }, [request]);
 
+  // After a search result is chosen the tab has rendered: bring the row into view and flash it.
+  useEffect(() => {
+    if (!jump) return;
+    let row: HTMLElement | null = null;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const show = () => {
+      row =
+        rootRef.current?.querySelector<HTMLElement>(`[data-setting-id="${jump.id}"]`) ??
+        null;
+      if (!row) return false;
+      row.scrollIntoView({ block: "center" });
+      row.dataset.flash = "true";
+      timer = setTimeout(() => row && delete row.dataset.flash, 1800);
+      return true;
+    };
+    const frame = show() ? 0 : requestAnimationFrame(show);
+    return () => {
+      cancelAnimationFrame(frame);
+      clearTimeout(timer);
+      if (row) delete row.dataset.flash;
+    };
+  }, [jump]);
+
+  const goTo = (next: SettingsTab) => {
+    setQuery("");
+    setTab(next);
+  };
+
   return (
-    <div data-window-id={windowId} className="flex h-full w-full flex-col">
+    <div
+      ref={rootRef}
+      data-window-id={windowId}
+      className="@container flex h-full w-full flex-col"
+    >
+      <div className="flex px-6 pt-1 pb-3">
+        <SettingsSearchBox value={query} onChange={setQuery} />
+      </div>
       <Tabs
         value={tab}
-        onValueChange={(v) => setTab(v as SettingsTab)}
+        onValueChange={(v) => goTo(v as SettingsTab)}
         className="flex min-h-0 flex-1 flex-col"
       >
-        <div className="px-6 pt-1 pb-3">
-          <TabsList aria-label="Settings sections">
-            <TabsTrigger value="general">General</TabsTrigger>
-            <TabsTrigger value="notifications">Notifications</TabsTrigger>
-            <TabsTrigger value="shortcuts">Shortcuts</TabsTrigger>
-            <TabsTrigger value="accessibility">Accessibility</TabsTrigger>
-            <TabsTrigger value="data">Data</TabsTrigger>
-            <TabsTrigger value="activity">Activity</TabsTrigger>
-            <TabsTrigger value="help">Help</TabsTrigger>
-            <TabsTrigger value="about">About</TabsTrigger>
+        <div className="px-6 pb-3">
+          {/* Eight tabs only fit in a wide window; a narrow one gets a list instead of a sideways scroll. */}
+          <TabsList aria-label="Settings sections" className="hidden @3xl:inline-flex">
+            {TAB_ORDER.map((id) => (
+              <TabsTrigger key={id} value={id}>
+                {TAB_LABELS[id]}
+              </TabsTrigger>
+            ))}
           </TabsList>
+          <select
+            value={tab}
+            onChange={(e) => goTo(e.target.value as SettingsTab)}
+            aria-label="Settings section"
+            className="border-line bg-chip text-ink rounded-control w-full border px-3 py-2 text-[13.5px] font-semibold @3xl:hidden"
+          >
+            {TAB_ORDER.map((id) => (
+              <option key={id} value={id}>
+                {TAB_LABELS[id]}
+              </option>
+            ))}
+          </select>
         </div>
         <div className="scroll-thin min-h-0 flex-1 overflow-y-auto px-6 pb-6">
           <div className="mx-auto max-w-2xl">
-            <TabsContent value="general">
-              <General />
-            </TabsContent>
-            <TabsContent value="notifications">
-              <Notifications />
-            </TabsContent>
-            <TabsContent value="shortcuts">
-              <Shortcuts />
-            </TabsContent>
-            <TabsContent value="accessibility">
-              <Accessibility />
-            </TabsContent>
-            <TabsContent value="data">
-              <DataTab />
-            </TabsContent>
-            <TabsContent value="activity">
-              <ActivityTab />
-            </TabsContent>
-            <TabsContent value="help">
-              <HelpTab />
-            </TabsContent>
-            <TabsContent value="about">
-              <AboutTab />
-            </TabsContent>
+            {searching ? (
+              <SettingsSearchResults
+                query={query}
+                onPick={(entry) => {
+                  setQuery("");
+                  setTab(entry.tab);
+                  setJump((j) => ({ id: entry.id, n: (j?.n ?? 0) + 1 }));
+                }}
+              />
+            ) : (
+              <>
+                <TabsContent value="general">
+                  <General />
+                </TabsContent>
+                <TabsContent value="notifications">
+                  <Notifications />
+                </TabsContent>
+                <TabsContent value="shortcuts">
+                  <Shortcuts />
+                </TabsContent>
+                <TabsContent value="accessibility">
+                  <Accessibility />
+                </TabsContent>
+                <TabsContent value="data">
+                  <DataTab />
+                </TabsContent>
+                <TabsContent value="activity">
+                  <ActivityTab />
+                </TabsContent>
+                <TabsContent value="help">
+                  <HelpTab />
+                </TabsContent>
+                <TabsContent value="about">
+                  <AboutTab />
+                </TabsContent>
+              </>
+            )}
           </div>
         </div>
       </Tabs>

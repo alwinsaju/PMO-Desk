@@ -41,12 +41,17 @@ export function HelpTab() {
   return (
     <>
       <Section title="Get started">
-        <Row title="Guided tour" hint="A one-minute walk through the main apps.">
+        <Row
+          settingId="guided-tour"
+          title="Guided tour"
+          hint="A one-minute walk through the main apps."
+        >
           <Button size="sm" onClick={startTour}>
             Start the tour
           </Button>
         </Row>
         <Row
+          settingId="sample-data"
           title="Sample data"
           hint="Adds a few made-up to-dos, people and leave so every app has something to show. Only those records are removed again."
         >
@@ -82,7 +87,7 @@ export function HelpTab() {
         </ul>
       </Section>
 
-      <Section title="Help for each app">
+      <Section title="Help for each app" settingId="app-help">
         <div className="divide-line divide-y">
           {APP_HELP.map((help) => (
             <details key={help.appId} className="py-2" data-testid={`help-${help.appId}`}>

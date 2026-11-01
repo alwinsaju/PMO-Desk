@@ -20,6 +20,7 @@ const pick = (s: PlatformPrefs): PlatformPrefs => ({
   tourDone: s.tourDone,
   sampleLoaded: s.sampleLoaded,
   updates: s.updates,
+  lastBackupAt: s.lastBackupAt,
 });
 
 export const usePlatformPrefs = create<PlatformPrefsState>()(
