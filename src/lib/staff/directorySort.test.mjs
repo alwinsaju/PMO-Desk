@@ -5,6 +5,7 @@ import {
   createEmployee,
   defaultSortDir,
   sortEmployees,
+  teamsChatUrl,
   toggleSort,
 } from "./employees.ts";
 
@@ -93,5 +94,14 @@ describe("toggleSort", () => {
       key: "recent",
       dir: "desc",
     });
+  });
+});
+
+describe("teamsChatUrl", () => {
+  it("builds a chat link for the address", () => {
+    assert.equal(
+      teamsChatUrl(" jane.doe+x@deloitte.com "),
+      "https://teams.microsoft.com/l/chat/0/0?users=jane.doe%2Bx%40deloitte.com",
+    );
   });
 });

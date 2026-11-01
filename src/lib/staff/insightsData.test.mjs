@@ -9,6 +9,7 @@ import {
   holidayMonth,
   tagWeight,
 } from "./insightsData.ts";
+import { birthdayLabel } from "./people.ts";
 import { overlappingLeave, pendingLeaveOn } from "./timeoffView.ts";
 
 const emp = (over = {}) => ({
@@ -271,6 +272,15 @@ describe("tagWeight", () => {
       [1, 1, 3, 4, 4],
     );
     assert.equal(tagWeight(5, 5, 5), 2);
+  });
+});
+
+describe("birthdayLabel", () => {
+  it("writes a stored birthday as day and month", () => {
+    assert.equal(birthdayLabel("03-14"), "14 Mar");
+    assert.equal(birthdayLabel("1990-12-01"), "1 Dec");
+    assert.equal(birthdayLabel(""), "");
+    assert.equal(birthdayLabel("13-40"), "");
   });
 });
 

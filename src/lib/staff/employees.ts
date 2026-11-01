@@ -56,6 +56,10 @@ export function displayName(
   return fullName(employee) || employee.deloitteEmail;
 }
 
+/** Opens a Teams chat with the person (the web link also opens the Teams app). */
+export const teamsChatUrl = (email: string): string =>
+  `https://teams.microsoft.com/l/chat/0/0?users=${encodeURIComponent(email.trim())}`;
+
 export function initials(
   employee: Pick<Employee, "firstName" | "lastName" | "deloitteEmail">,
 ): string {

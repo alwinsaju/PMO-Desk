@@ -2,6 +2,7 @@
 
 import { useState, Fragment, type ReactNode } from "react";
 import {
+  ChatCircleDotsIcon,
   EnvelopeSimpleIcon,
   PencilSimpleIcon,
   TrashIcon,
@@ -9,12 +10,18 @@ import {
 } from "@phosphor-icons/react";
 import { Button, IconButton, Switch } from "@/components/ui";
 import { formatDate, formatRange, relativeDays, todayIso } from "@/lib/staff/dates";
-import { displayName, isAwaitingProfile, rollOffStatus } from "@/lib/staff/employees";
+import {
+  displayName,
+  isAwaitingProfile,
+  rollOffStatus,
+  teamsChatUrl,
+} from "@/lib/staff/employees";
 import { emailBreakParts } from "@/lib/staff/emailBreaks";
+import { birthdayLabel } from "@/lib/staff/people";
 import { TIME_OFF_META, upcomingLeave } from "@/lib/staff/timeoff";
 import { useStaffStore } from "@/lib/staff/staffStore";
 import type { Employee } from "@/lib/staff/types";
-import { ConfirmDialog, DASH, EmployeeAvatar, TonePill } from "./parts";
+import { ConfirmDialog, DASH, EmployeeAvatar, LocationChip, TonePill } from "./parts";
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -147,70 +154,93 @@ export function EmployeePane({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="relative flex flex-col gap-4 px-5 pt-5 pb-4">
-        <IconButton
-          aria-label="Close details"
-          size="sm"
-          shape="round"
-          onClick={onClose}
-          className="absolute top-3 right-3"
-        >
-          <XIcon />
-        </IconButton>
-        <div className="flex items-center gap-4">
-          <EmployeeAvatar employee={employee} size="xl" />
-          <div className="min-w-0 pr-7">
-            <h3 className="text-ink text-[19px] leading-tight font-bold break-words">
-              {displayName(employee)}
-            </h3>
-            {subtitle && (
-              <p className="text-ink-muted mt-0.5 text-[13px] break-words">{subtitle}</p>
-            )}
-            {pending && (
-              <div className="mt-2 flex flex-wrap items-center gap-2">
-                <TonePill tone="info">Waiting for M365 profile</TonePill>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-6 px-2 text-[12px]"
-                  disabled={busy}
-                  onClick={() => void askAgain()}
-                >
-                  Request again
-                </Button>
+      <div className="px-4 pt-4 pb-3">
+        <div className="border-line bg-card rounded-card relative border p-4">
+          <IconButton
+            aria-label="Close details"
+            size="sm"
+            shape="round"
+            onClick={onClose}
+            className="absolute top-2 right-2"
+          >
+            <XIcon />
+          </IconButton>
+          <div className="flex items-center gap-4">
+            <EmployeeAvatar employee={employee} size="xl" />
+            <div className="min-w-0 pr-5">
+              <h3 className="text-ink text-[18px] leading-tight font-bold break-words">
+                {displayName(employee)}
+              </h3>
+              {subtitle && (
+                <p className="text-ink-muted mt-0.5 text-[13px] break-words">
+                  {subtitle}
+                </p>
+              )}
+              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                <LocationChip location={employee.location} />
+                {employee.team && (
+                  <span className="bg-chip text-ink-soft rounded-chip inline-flex h-6 items-center px-2.5 text-[12px] leading-none font-semibold">
+                    {employee.team}
+                  </span>
+                )}
+                {pending && <TonePill tone="info">Waiting for M365 profile</TonePill>}
               </div>
-            )}
-            {!pending && employee.profileSync !== "pending" && (
+            </div>
+          </div>
+          <div className="mt-4 grid grid-cols-3 gap-2">
+            <Button variant="outline" size="sm" asChild>
+              <a href={`mailto:${employee.deloitteEmail}`}>
+                <EnvelopeSimpleIcon size={14} weight="bold" />
+                Email
+              </a>
+            </Button>
+            <Button variant="outline" size="sm" asChild>
+              <a
+                href={teamsChatUrl(employee.deloitteEmail)}
+                target="_blank"
+                rel="noreferrer"
+              >
+                <ChatCircleDotsIcon size={14} weight="bold" />
+                Teams
+              </a>
+            </Button>
+            <Button size="sm" onClick={onEdit}>
+              <PencilSimpleIcon size={14} weight="bold" />
+              Edit
+            </Button>
+          </div>
+          <div className="mt-2.5 flex min-h-6 flex-wrap items-center gap-x-2">
+            {pending ? (
               <Button
                 variant="ghost"
                 size="sm"
-                className="mt-1.5 -ml-2 h-6 px-2 text-[12px]"
+                className="-ml-2 h-6 px-2 text-[12px]"
                 disabled={busy}
                 onClick={() => void askAgain()}
               >
-                {employee.profileSync === "synced"
-                  ? "Refresh from M365"
-                  : "Get M365 profile"}
+                Request M365 profile again
               </Button>
+            ) : (
+              employee.profileSync !== "pending" && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="-ml-2 h-6 px-2 text-[12px]"
+                  disabled={busy}
+                  onClick={() => void askAgain()}
+                >
+                  {employee.profileSync === "synced"
+                    ? "Refresh from M365"
+                    : "Get M365 profile"}
+                </Button>
+              )
             )}
             {notice && (
-              <p role="status" className="text-ink-muted mt-1.5 text-[12px]">
+              <p role="status" className="text-ink-muted text-[12px]">
                 {notice}
               </p>
             )}
           </div>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" className="flex-1" onClick={onEdit}>
-            <PencilSimpleIcon size={14} weight="bold" />
-            Edit info
-          </Button>
-          <Button variant="outline" size="sm" className="flex-1" asChild>
-            <a href={`mailto:${employee.deloitteEmail}`}>
-              <EnvelopeSimpleIcon size={14} weight="bold" />
-              Email
-            </a>
-          </Button>
         </div>
       </div>
 
@@ -225,6 +255,9 @@ export function EmployeePane({
           <Row label="Phone" fromProfile pending={pending}>
             {employee.phone}
           </Row>
+          <Row label="Home office" fromProfile pending={pending}>
+            {employee.homeOffice}
+          </Row>
         </Section>
 
         <Section title="Work">
@@ -238,9 +271,6 @@ export function EmployeePane({
           <Row label="Team">{employee.team}</Row>
           <Row label="Client manager">{employee.clientManager}</Row>
           <Row label="Location">{employee.location}</Row>
-          <Row label="Home office" fromProfile pending={pending}>
-            {employee.homeOffice}
-          </Row>
           <Row label="Milestone">{employee.milestone}</Row>
           <Row label="Campus recruit">{employee.campus ? "Yes" : "No"}</Row>
           <Row label="Shift roster">
@@ -263,19 +293,14 @@ export function EmployeePane({
           </Row>
         </Section>
 
-        <Section title="Engagement">
+        <Section title="Dates">
           <Row label="Roll-off">
             {employee.rollOffDate ? <RollOff date={employee.rollOffDate} /> : ""}
           </Row>
           <Row label="Staffit start">{formatDate(employee.staffitStartDate)}</Row>
           <Row label="Staffit end">{formatDate(employee.staffitEndDate)}</Row>
           <Row label="Contract end">{formatDate(employee.contractEndDate)}</Row>
-        </Section>
-
-        <Section title="Identifiers">
-          <Row label="Person ID">{employee.deloittePersonId}</Row>
-          <Row label="Network ID">{employee.networkId}</Row>
-          <Row label="Workday ID">{employee.workdayId}</Row>
+          <Row label="Birthday">{birthdayLabel(employee.birthday)}</Row>
         </Section>
 
         <section className="border-line border-t px-5 py-4">
@@ -289,7 +314,7 @@ export function EmployeePane({
               {employee.skills.map((skill) => (
                 <li
                   key={skill}
-                  className="bg-chip text-ink-soft rounded-chip px-2.5 py-1 text-[12px] font-semibold"
+                  className="bg-accent-soft text-accent-ink rounded-chip px-2.5 py-1 text-[12px] font-semibold"
                 >
                   {skill}
                 </li>
@@ -320,6 +345,12 @@ export function EmployeePane({
             </ul>
           </section>
         )}
+
+        <Section title="Identifiers">
+          <Row label="Person ID">{employee.deloittePersonId}</Row>
+          <Row label="Network ID">{employee.networkId}</Row>
+          <Row label="Workday ID">{employee.workdayId}</Row>
+        </Section>
 
         <div className="border-line border-t px-5 py-4">
           <Button
