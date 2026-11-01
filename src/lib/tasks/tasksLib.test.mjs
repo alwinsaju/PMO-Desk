@@ -6,6 +6,7 @@ import { explainFailure, lastLine, retryLabel } from "./failureExplainer.ts";
 import {
   defaultSchedule,
   latestOccurrence,
+  nextOccurrence,
   occursOn,
   pendingOccurrence,
   sanitizeSchedules,
@@ -81,6 +82,19 @@ describe("schedule", () => {
   it("counts today only after its time", () => {
     assert.equal(latestOccurrence(weekly, new Date(2026, 9, 27, 8, 0)), "2026-10-20");
     assert.equal(latestOccurrence(weekly, new Date(2026, 9, 27, 9, 30)), "2026-10-27");
+  });
+  it("finds the next run: later today, else the next matching day", () => {
+    assert.deepEqual(nextOccurrence(weekly, new Date(2026, 9, 27, 8, 0)), {
+      day: "2026-10-27",
+      time: "09:00",
+    });
+    assert.deepEqual(nextOccurrence(weekly, new Date(2026, 9, 27, 9, 0)), {
+      day: "2026-11-03",
+      time: "09:00",
+    });
+    const monthly = { ...defaultSchedule("t"), cadence: "monthly", dayOfMonth: 31 };
+    assert.equal(nextOccurrence(monthly, new Date(2026, 3, 1, 10, 0)).day, "2026-04-30");
+    assert.equal(nextOccurrence(weekly, new Date(2026, 9, 27, 10, 0), 3), null);
   });
   it("reports due today, missed earlier and nothing once handled", () => {
     const now = new Date(2026, 9, 27, 10, 0);

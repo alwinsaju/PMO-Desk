@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowClockwiseIcon } from "@phosphor-icons/react";
-import { Button, Input } from "@/components/ui";
+import { ArrowClockwiseIcon, ClockCounterClockwiseIcon } from "@phosphor-icons/react";
+import { Button, EmptyState, Input } from "@/components/ui";
+import { noSpellcheck } from "@/lib/ui/noSpellcheck";
 import { explainFailure } from "@/lib/tasks/failureExplainer";
 import { byPriority, sparkline } from "@/lib/tasks/inputCheck";
 import {
@@ -29,7 +30,13 @@ const when = (iso: string) =>
   });
 
 /** Every task's past runs in one list: filter, see who approved what, and read a failure in plain words. */
-export function HistoryTab({ tasks }: { tasks: Task[] }) {
+export function HistoryTab({
+  tasks,
+  onOpenWorkflows,
+}: {
+  tasks: Task[];
+  onOpenWorkflows: () => void;
+}) {
   const [runs, setRuns] = useState<HistoryRun[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<HistoryFilter>(NO_FILTER);
@@ -110,6 +117,7 @@ export function HistoryTab({ tasks }: { tasks: Task[] }) {
           <option value="90">Last 90 days</option>
         </select>
         <Input
+          {...noSpellcheck}
           aria-label="Search runs"
           placeholder="Search runs"
           className="min-w-40 flex-1"
@@ -122,14 +130,18 @@ export function HistoryTab({ tasks }: { tasks: Task[] }) {
         </Button>
       </div>
 
-      <p className="text-ink-muted text-[13px]" data-testid="history-summary">
-        {summary.total} run{summary.total === 1 ? "" : "s"}
-        {summary.successPercent !== null ? ` · ${summary.successPercent}% completed` : ""}
-        {summary.failed ? ` · ${summary.failed} failed` : ""}
-        {summary.medianMs !== null
-          ? ` · typically ${formatDuration(summary.medianMs)}`
-          : ""}
-      </p>
+      {runs.length > 0 && (
+        <p className="text-ink-muted text-[13px]" data-testid="history-summary">
+          {summary.total} run{summary.total === 1 ? "" : "s"}
+          {summary.successPercent !== null
+            ? ` · ${summary.successPercent}% completed`
+            : ""}
+          {summary.failed ? ` · ${summary.failed} failed` : ""}
+          {summary.medianMs !== null
+            ? ` · typically ${formatDuration(summary.medianMs)}`
+            : ""}
+        </p>
+      )}
 
       {trends.length > 0 && (
         <section
@@ -185,8 +197,28 @@ export function HistoryTab({ tasks }: { tasks: Task[] }) {
 
       {loading && runs.length === 0 ? (
         <p className="text-ink-muted text-[13px]">Reading run history…</p>
+      ) : runs.length === 0 ? (
+        <EmptyState
+          data-testid="history-empty"
+          icon={<ClockCounterClockwiseIcon size={22} />}
+          headline="No runs yet"
+          description="Each time a workflow runs, it is listed here with who approved it and how it went."
+          action={
+            <Button size="sm" onClick={onOpenWorkflows}>
+              Go to Workflows
+            </Button>
+          }
+        />
       ) : shown.length === 0 ? (
-        <p className="text-ink-faint py-6 text-center text-sm">No runs match.</p>
+        <EmptyState
+          compact
+          headline="No runs match these filters"
+          action={
+            <Button variant="outline" size="sm" onClick={() => setFilter(NO_FILTER)}>
+              Clear filters
+            </Button>
+          }
+        />
       ) : (
         <ul className="flex flex-col gap-2">
           {shown.map((run) => {

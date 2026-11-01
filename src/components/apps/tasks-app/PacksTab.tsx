@@ -1,12 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { PackageIcon } from "@phosphor-icons/react";
 import {
   Button,
   Dialog,
   DialogContent,
   DialogDescription,
   DialogTitle,
+  EmptyState,
 } from "@/components/ui";
 import { toast } from "@/lib/notifications/toastStore";
 import { Field, TextArea } from "../pmo-todo-app/parts";
@@ -185,7 +187,7 @@ export function PacksTab({ onChanged }: { onChanged: () => void }) {
   };
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-6 pt-2 pb-6">
+    <div className="flex w-full flex-col gap-4 px-6 pt-2 pb-6" data-testid="packs-tab">
       <div className="flex flex-wrap items-center gap-2">
         <p className="text-ink-muted min-w-48 flex-1 text-[13px]">
           Add a task without reinstalling AI OS. A pack is checked against its checksums
@@ -208,10 +210,11 @@ export function PacksTab({ onChanged }: { onChanged: () => void }) {
       </div>
       {error && <PackErrorLine error={error} />}
       {packs && packs.length === 0 && (
-        <p className="text-ink-muted text-[13px]">
-          No packs are installed. Build a mailer with “New mailer…”, or install a pack
-          someone gave you.
-        </p>
+        <EmptyState
+          icon={<PackageIcon size={22} />}
+          headline="No packs installed"
+          description="Build a mailer with “New mailer…”, or install a pack someone gave you."
+        />
       )}
       {packs && packs.length > 0 && (
         <ul className="divide-line divide-y" aria-label="Installed packs">

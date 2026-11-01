@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ScrollArea, Tabs, TabsList, TabsTrigger } from "@/components/ui";
+import { useWindowContext } from "@/components/window-manager";
 import { EngineDownNotice } from "./EngineDownNotice";
 import { HistoryTab } from "./HistoryTab";
 import { PacksTab } from "./PacksTab";
@@ -20,6 +21,13 @@ type TaskFilter = "all" | "needs" | "running" | "idle";
 
 /** The window's own sections: the workflow cards, every past run, and schedules plus the send-later queue. */
 type TasksView = "workflows" | "history" | "schedule" | "packs";
+
+const VIEW_LABEL: Record<TasksView, string> = {
+  workflows: "Workflows",
+  history: "History",
+  schedule: "Schedule",
+  packs: "Packs",
+};
 
 const NEEDS_YOU = new Set<Task["state"]>(["awaiting_review", "awaiting_send", "error"]);
 const RUNNING = new Set<Task["state"]>(["working", "finishing"]);
@@ -54,6 +62,7 @@ export function TasksApp({ windowId }: { windowId: string }) {
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [filter, setFilter] = useState<TaskFilter>("all");
   const [view, setView] = useState<TasksView>("workflows");
+  useWindowContext(windowId, hasLoadedOnce ? VIEW_LABEL[view] : null);
   const queued = useTasksPrefs((s) => s.queue.length);
   // The task the command bar asked for ("prepare the aging report"): its card is marked
   // for a few seconds, and its Run form opens (see TaskActions).
@@ -144,7 +153,7 @@ export function TasksApp({ windowId }: { windowId: string }) {
 
       <ScrollArea className="min-h-0 flex-1">
         {view === "history" ? (
-          <HistoryTab tasks={tasks} />
+          <HistoryTab tasks={tasks} onOpenWorkflows={() => setView("workflows")} />
         ) : view === "schedule" ? (
           <ScheduleTab tasks={tasks} onSettled={refetch} />
         ) : view === "packs" ? (
