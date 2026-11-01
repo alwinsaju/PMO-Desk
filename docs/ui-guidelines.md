@@ -10,6 +10,26 @@ Decisions for the shared UI (see `docs/qa/uiux-2026-10-30/IMPLEMENTATION-PLAN.md
 - Opening a modal closes every open `Tooltip` and `Popover` first (QA-15). This is central: `Dialog` announces via `ui/modalEvents.ts` and the two primitives subscribe, so callers need no code. Use the `ui` `Tooltip` / `Popover`, not the raw Radix ones, to get this.
 - Do not nest a dialog inside popover content: the popover closes when the dialog opens and would take the dialog with it. Render the dialog as a sibling and open it from the popover's handler.
 
+## Toasts
+
+`toast()` (`lib/notifications/toastStore.ts`, drawn by `ui/ToastHost.tsx`) is for short, non-blocking confirmations. Every toast looks the same:
+
+- **Position:** one stack, bottom-right inside the _active window_ (the host measures the focused window and follows it when dragged, resized or maximised), so a toast never hangs half outside it. With no window, or too little of it on screen, it sits at the bottom-right of the screen above the command bar.
+- **Tone and icon:** `success` (check), `info` (i, the default), `warning` (triangle), `danger` (cross, the error tone; announced as an alert). Pick the tone that matches the outcome, not the colour you like.
+- **Content:** a one-line `message` (<= 400 characters, tidied); an optional bold `title` (<= 80) above it ("Staff member added" / "Aarav Sharma was added to the Directory"). Say what happened and where to find it; do not just echo a button label.
+- **Auto-dismiss:** 5 s; errors and toasts with an action stay 9 s; `durationMs: 0` keeps it until dismissed. Hovering or focusing a toast pauses its timer. Every toast also goes to the notification history (`title: message`).
+- **Action:** at most one button (`action: { label: "Undo", run }`). Use it for Undo after a delete, snooze or cancel; running it dismisses the toast. A repeated `key` replaces the earlier toast instead of stacking (max 4 visible).
+- Focus mode holds back everything but errors.
+
+```ts
+toast({
+  tone: "success",
+  title: "To-do closed",
+  message: "Send weekly report",
+  action: { label: "Undo", run: reopen },
+});
+```
+
 ## Type scale, spacing, focus, contrast
 
 **Type scale** (tokens `--type-*`, utilities in `globals.css`):

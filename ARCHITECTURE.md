@@ -1969,9 +1969,11 @@ it up.
 - **Window titles** (`windowTitles.ts`, `titleSuffixStore.ts`). An app can add live status after its
   title: PMO To-Do shows "(3 need attention)", fed by `PmoReminders`.
 - **Toasts and notification history** (`src/lib/notifications/`, `ui/ToastHost.tsx`). `toast({ message,
-tone, action, key })` from anywhere; a repeated `key` replaces the earlier toast, errors and toasts
+title, tone, action, key })` from anywhere; a repeated `key` replaces the earlier toast, errors and toasts
   with an action stay longer, and every toast is kept in a capped history (the notification centre will
-  read it). PMO's own reminder toast is separate and unchanged.
+  read it). The stack is drawn in the bottom-right of the focused window (`toastAnchor.ts`; screen
+  corner as the fallback) with a tone icon, and pauses while hovered. See `docs/ui-guidelines.md`.
+  PMO's own reminder toast is separate and unchanged.
 - **Command bar.** An answer to a question now stays until dismissed (Esc, the close button or the next
   question) and has a Copy button (`AIAnnotationBubble`, `AgentAnnotation.sticky`). Ctrl+Space focuses
   the bar from anywhere (`focusKeys.isFocusBarShortcut`). While the local model is asleep the bar says so,
