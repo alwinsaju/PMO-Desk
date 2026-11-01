@@ -4,7 +4,7 @@ import { notificationFiles } from "./taskPresenter.ts";
 import type { HistoryRun, OutputFile, Task, TaskNotification } from "./types.ts";
 
 export interface RunOutput {
-  notificationId: string;
+  notification: TaskNotification;
   /** The primary file the engine will open. */
   file: OutputFile;
 }
@@ -35,7 +35,7 @@ export function outputForRun(
     if (!Number.isFinite(at) || at < from || at > to) continue;
     const file = notificationFiles(n)[0];
     if (file && (!best || at >= best.at)) {
-      best = { at, output: { notificationId: n.id, file } };
+      best = { at, output: { notification: n, file } };
     }
   }
   return best?.output ?? null;

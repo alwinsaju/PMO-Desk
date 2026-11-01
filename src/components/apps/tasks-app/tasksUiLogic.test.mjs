@@ -27,14 +27,17 @@ const run = {
 
 describe("outputForRun", () => {
   it("picks the newest file written during the run", () => {
+    const late = note("late", "2026-06-10T09:04:10Z", [
+      { label: "Plan", path: "C:\\b.xlsx" },
+    ]);
     const out = outputForRun(run, [
       note("early", "2026-06-10T09:01:00Z", [{ label: null, path: "C:\\a.xlsx" }]),
-      note("late", "2026-06-10T09:04:10Z", [{ label: "Plan", path: "C:\\b.xlsx" }]),
+      late,
       note("other-day", "2026-06-09T09:02:00Z", [{ label: null, path: "C:\\c.xlsx" }]),
       note("no-file", "2026-06-10T09:04:20Z", undefined),
     ]);
     assert.deepEqual(out, {
-      notificationId: "late",
+      notification: late,
       file: { label: "Plan", path: "C:\\b.xlsx" },
     });
   });
@@ -60,7 +63,7 @@ describe("historyRows", () => {
     assert.equal(rows[0].taskName, "t");
     assert.deepEqual(rows[0].pill, { label: "Completed", tone: "success" });
     assert.equal(rows[0].duration, "4 min");
-    assert.equal(rows[0].output?.notificationId, "n");
+    assert.equal(rows[0].output?.notification.id, "n");
     assert.deepEqual(rows[1].pill, { label: "Failed", tone: "danger" });
     assert.equal(rows[1].taskName, "Named");
     assert.equal(rows[1].key, "t:r2");
