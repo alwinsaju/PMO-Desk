@@ -2,7 +2,7 @@
 
 import type { ButtonHTMLAttributes } from "react";
 import type { Icon } from "@phosphor-icons/react";
-import { badgeText, badgedLabel } from "./dockBadge";
+import { badgeText, badgedLabel, tileHover } from "./dockBadge";
 import { cn } from "@/lib/cn";
 import {
   ContextMenu,
@@ -50,6 +50,8 @@ interface DockTileProps {
   /** A count to draw on the tile's corner (e.g. items needing attention);
    *  0 or undefined draws nothing. Purely visual: the tile behaves the same. */
   badge?: number;
+  /** What the badge number is made of, shown on hover ("2 PMO items, 1 time-off request"). */
+  badgeMeaning?: string;
   /** Titles of this app's open windows; the tooltip lists them when there are several. */
   windowTitles?: string[];
   /** `draggable`/`onDragStart`/`onDragEnd` for a tile that can be dragged to
@@ -83,46 +85,56 @@ export function DockTile({
   canReset,
   running = "none",
   badge = 0,
+  badgeMeaning,
   windowTitles = [],
   dragProps,
 }: DockTileProps) {
   const badgeLabel = badgeText(badge);
-  // Several windows of one app: the tooltip lists them (a preview of what is open).
-  const tooltip =
-    windowTitles.length > 1
-      ? `${badgedLabel(label, badge)}: ${windowTitles.join(" · ")}`
-      : badgedLabel(label, badge);
+  const hover = tileHover({ label, running, badge, meaning: badgeMeaning, windowTitles });
   return (
     <ContextMenu>
       <ContextMenuTrigger className="contents">
         <span className="relative inline-flex">
-          <Tooltip label={tooltip} side="bottom" sideOffset={16}>
+          <Tooltip
+            label={
+              <span className="flex max-w-64 flex-col gap-0.5">
+                <span>{hover.title}</span>
+                {hover.lines.map((line) => (
+                  <span
+                    key={line}
+                    className="text-ink-inverse/75 text-[12px] font-normal"
+                  >
+                    {line}
+                  </span>
+                ))}
+              </span>
+            }
+            side="bottom"
+            sideOffset={16}
+          >
             <button
               type="button"
               aria-label={badgedLabel(label, badge)}
-              aria-description={
-                running === "open"
-                  ? "Open"
-                  : running === "minimized"
-                    ? "Minimized"
-                    : undefined
-              }
+              aria-description={hover.lines.join(". ") || undefined}
               data-running={running}
               data-dock-app={appId}
               onClick={onClick}
-              className={dockTileClassName}
+              className={cn(dockTileClassName, "data-[running=open]:text-accent-ink")}
               {...dragProps}
             >
-              <IconGlyph size={23} />
+              <IconGlyph size={23} weight={running === "open" ? "fill" : "regular"} />
             </button>
           </Tooltip>
           <i
             aria-hidden
+            data-dock-dot={running}
             className={cn(
-              "pointer-events-none absolute bottom-[3px] left-1/2 -ml-0.5 h-1 w-1 rounded-full not-italic",
+              "pointer-events-none absolute bottom-[3px] left-1/2 -ml-[3px] h-1.5 w-1.5 rounded-full not-italic",
               "ease-spring transition-[opacity,transform,background-color] duration-300",
               running === "none" ? "scale-0 opacity-0" : "scale-100 opacity-100",
-              running === "minimized" ? "bg-ink-faint" : "bg-accent-ink",
+              running === "minimized"
+                ? "border-ink-faint border bg-transparent"
+                : "bg-accent-ink ring-surface-elevated ring-1",
             )}
           />
           {badgeLabel && (

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { Fragment, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { DragEvent } from "react";
 import { motion } from "motion/react";
 import { PlusIcon, type Icon } from "@phosphor-icons/react";
@@ -15,6 +15,7 @@ import { cn } from "@/lib/cn";
 import { springSnappy } from "@/lib/motion";
 import { AppMenu } from "./AppMenu";
 import { createDockAutoHide } from "./dockAutoHide";
+import { dockCapacity, splitDockItems } from "./dockOverflow";
 import { DockTile, dockTileClassName, type TileRunState } from "./DockTile";
 import { builtInAppIds, builtInApps } from "./pinnedApps";
 import { launchBuiltInApp } from "./launchBuiltInApp";
@@ -95,6 +96,12 @@ function clickPinnedTile(appId: string) {
 }
 
 const subscribeNever = () => () => {};
+const WIDE_SCREEN = 1920;
+
+function subscribeResize(onChange: () => void) {
+  window.addEventListener("resize", onChange);
+  return () => window.removeEventListener("resize", onChange);
+}
 
 /**
  * Top-centered floating pill dock — the app launcher/taskbar. A plain
@@ -162,6 +169,7 @@ export function Dock() {
     ),
   );
   const badges = useDockBadgeStore((s) => s.badges);
+  const meanings = useDockBadgeStore((s) => s.meanings);
   // Each open window as "appId<NUL>title", so a tile's tooltip can list them.
   const windowEntries = useWindowStore(
     useShallow((s) =>
@@ -223,9 +231,20 @@ export function Dock() {
   const effectivePinnedIds = hydrated ? pinnedIds : defaultPinnedIds(builtInAppIds);
   // Drop ids that no longer resolve to an app — defensive only (a stale id
   // from a since-edited catalog); nothing here removes apps at runtime.
-  const items = buildTaskbarItems(
+  const allItems = buildTaskbarItems(
     effectivePinnedIds.filter((id) => taskbarApps.has(id)),
     openAppIds,
+  );
+  const viewportWidth = useSyncExternalStore(
+    subscribeResize,
+    () => window.innerWidth,
+    () => WIDE_SCREEN,
+  );
+  // On a narrow screen the tail of the dock moves into the App Menu ("more apps").
+  const { shown: items, hidden: hiddenItems } = splitDockItems(
+    allItems,
+    dockCapacity(viewportWidth),
+    new Set(openAppIds),
   );
   const canReset = !isDefaultPinnedIds(effectivePinnedIds, builtInAppIds);
 
@@ -331,68 +350,75 @@ export function Dock() {
           isDropTarget && "ring-focus ring-offset-surface ring-2 ring-offset-2",
         )}
       >
-        {items.map(({ id, pinned }) => {
+        {items.map(({ id, pinned }, index) => {
           const app = taskbarApps.get(id)!;
+          // Apps that are only here because a window is open sit after a thin
+          // divider, apart from the pinned ones.
+          const startsTemporary = !pinned && index > 0 && items[index - 1].pinned;
           return (
-            // Newly-added tiles pop in rather than snapping into existence
-            // (not on first paint — `settled` is false until after the first
-            // hydrated render), and `layout` lets the rest of this row settle
-            // into its new position smoothly when a tile is added, removed or
-            // moved — no exit animation on removal (see AICursor.tsx's doc
-            // comment: an unmount-driven `exit` isn't reliable in this
-            // project's React 19 + motion setup), so a removed tile just
-            // disappears while its neighbors slide over. The wrapper is also
-            // the per-tile drag-over/drop target for reordering.
-            <motion.div
-              key={id}
-              layout
-              initial={settled.current ? { opacity: 0, scale: 0.5 } : false}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={springSnappy}
-              className="relative"
-              onDragOver={pinned ? (event) => handleTileDragOver(event, id) : undefined}
-              onDrop={pinned ? (event) => handleTileDrop(event, id) : undefined}
-            >
-              <DockTile
-                appId={id}
-                label={app.label}
-                icon={app.icon}
-                onClick={pinned ? () => clickPinnedTile(id) : () => focusAppWindow(id)}
-                onNewWindow={app.launch}
-                running={runStateOf(id)}
-                pinned={pinned}
-                onTogglePinned={() => (pinned ? unpinApp(id) : pinApp(id))}
-                onResetTaskbar={resetPinnedApps}
-                canReset={canReset}
-                badge={badges[id]}
-                windowTitles={titlesOf(id)}
-                dragProps={
-                  pinned
-                    ? {
-                        draggable: true,
-                        onDragStart: (event) => {
-                          event.dataTransfer.setData(APP_DRAG_MIME_TYPE, id);
-                          event.dataTransfer.effectAllowed = "copyMove";
-                          draggingTileId.current = id;
-                        },
-                        onDragEnd: () => {
-                          draggingTileId.current = null;
-                          clearDragState();
-                        },
-                      }
-                    : undefined
-                }
-              />
-              {dropHint?.id === id && (
-                <span
-                  aria-hidden
-                  className={cn(
-                    "bg-accent-ink pointer-events-none absolute top-1 bottom-1 w-0.5 rounded-full",
-                    dropHint.after ? "-right-[4px]" : "-left-[4px]",
-                  )}
-                />
+            <Fragment key={id}>
+              {startsTemporary && (
+                <div aria-hidden className="bg-line mx-0.5 h-[18px] w-px" />
               )}
-            </motion.div>
+              // Newly-added tiles pop in rather than snapping into existence // (not on
+              first paint — `settled` is false until after the first // hydrated render),
+              and `layout` lets the rest of this row settle // into its new position
+              smoothly when a tile is added, removed or // moved — no exit animation on
+              removal (see AICursor.tsx's doc // comment: an unmount-driven `exit` isn't
+              reliable in this // project's React 19 + motion setup), so a removed tile
+              just // disappears while its neighbors slide over. The wrapper is also //
+              the per-tile drag-over/drop target for reordering.
+              <motion.div
+                layout
+                initial={settled.current ? { opacity: 0, scale: 0.5 } : false}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={springSnappy}
+                className="relative"
+                onDragOver={pinned ? (event) => handleTileDragOver(event, id) : undefined}
+                onDrop={pinned ? (event) => handleTileDrop(event, id) : undefined}
+              >
+                <DockTile
+                  appId={id}
+                  label={app.label}
+                  icon={app.icon}
+                  onClick={pinned ? () => clickPinnedTile(id) : () => focusAppWindow(id)}
+                  onNewWindow={app.launch}
+                  running={runStateOf(id)}
+                  pinned={pinned}
+                  onTogglePinned={() => (pinned ? unpinApp(id) : pinApp(id))}
+                  onResetTaskbar={resetPinnedApps}
+                  canReset={canReset}
+                  badge={badges[id]}
+                  badgeMeaning={meanings[id]}
+                  windowTitles={titlesOf(id)}
+                  dragProps={
+                    pinned
+                      ? {
+                          draggable: true,
+                          onDragStart: (event) => {
+                            event.dataTransfer.setData(APP_DRAG_MIME_TYPE, id);
+                            event.dataTransfer.effectAllowed = "copyMove";
+                            draggingTileId.current = id;
+                          },
+                          onDragEnd: () => {
+                            draggingTileId.current = null;
+                            clearDragState();
+                          },
+                        }
+                      : undefined
+                  }
+                />
+                {dropHint?.id === id && (
+                  <span
+                    aria-hidden
+                    className={cn(
+                      "bg-accent-ink pointer-events-none absolute top-1 bottom-1 w-0.5 rounded-full",
+                      dropHint.after ? "-right-[4px]" : "-left-[4px]",
+                    )}
+                  />
+                )}
+              </motion.div>
+            </Fragment>
           );
         })}
 
@@ -400,20 +426,26 @@ export function Dock() {
           <div aria-hidden className="bg-line-strong mx-1 h-[26px] w-px" />
         )}
 
-        <AppMenu />
+        <div
+          role="group"
+          aria-label="Launchers"
+          className="bg-chip/70 border-line flex items-center gap-1 rounded-[calc(var(--radius-tile)+4px)] border p-[3px]"
+        >
+          <AppMenu hiddenCount={hiddenItems.length} />
 
-        {showAppStoreShortcut(items) && (
-          <Tooltip label="Get more apps" side="bottom" sideOffset={16}>
-            <button
-              type="button"
-              aria-label="Open App Store"
-              onClick={openAppStore}
-              className={dockTileClassName}
-            >
-              <PlusIcon size={23} />
-            </button>
-          </Tooltip>
-        )}
+          {showAppStoreShortcut(items) && (
+            <Tooltip label="Get more apps" side="bottom" sideOffset={16}>
+              <button
+                type="button"
+                aria-label="Open App Store"
+                onClick={openAppStore}
+                className={dockTileClassName}
+              >
+                <PlusIcon size={23} />
+              </button>
+            </Tooltip>
+          )}
+        </div>
       </div>
     </nav>
   );
