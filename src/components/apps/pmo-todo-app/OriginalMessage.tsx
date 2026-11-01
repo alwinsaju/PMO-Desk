@@ -3,10 +3,14 @@
 import { useEffect, useState } from "react";
 import { ArrowSquareOutIcon } from "@phosphor-icons/react";
 import { displayText } from "@/lib/pmo/preprocess";
-import { locateQuote } from "@/lib/pmo/quote";
+import { quoteSegments } from "@/lib/pmo/quote";
 import type { Intake } from "@/lib/pmo/types";
 import { fetchRaw } from "./api";
 import { ScrollBody, SourceBadge, Spinner } from "./parts";
+
+/** A long message can put the quote below the fold: bring it into view. */
+const scrollIntoView = (element: HTMLElement | null) =>
+  element?.scrollIntoView?.({ block: "nearest" });
 
 interface OriginalMessageProps {
   intakeId: string;
@@ -75,7 +79,7 @@ export function OriginalMessage({ intakeId, quote, className }: OriginalMessageP
     );
 
   const text = displayText(intake);
-  const at = locateQuote(text, quote);
+  const segments = quoteSegments(text, quote);
   const sender = [
     intake.sender.name,
     intake.sender.address && `<${intake.sender.address}>`,
@@ -127,19 +131,19 @@ export function OriginalMessage({ intakeId, quote, className }: OriginalMessageP
       </div>
       <ScrollBody className="mt-3 pr-2">
         <p className="text-ink text-[14px] leading-[1.65] break-words whitespace-pre-wrap">
-          {at ? (
-            <>
-              {text.slice(0, at.start)}
+          {segments.map((segment, index) =>
+            segment.mark ? (
               <mark
+                key={index}
+                ref={scrollIntoView}
                 data-testid="quote-highlight"
                 className="bg-accent/25 rounded px-[3px] py-px text-inherit"
               >
-                {text.slice(at.start, at.end)}
+                {segment.text}
               </mark>
-              {text.slice(at.end)}
-            </>
-          ) : (
-            text
+            ) : (
+              segment.text
+            ),
           )}
         </p>
       </ScrollBody>

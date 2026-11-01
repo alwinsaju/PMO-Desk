@@ -1303,7 +1303,11 @@ counts) but not the Teams default-deny.
 _Settings_ (`SettingsDialog`, form logic in `settingsForm.ts`) edits
 `config.json` through GET/PUT `/api/pmo/config`, validated by the same
 `PmoConfigPatchSchema` (GUID tenant ids, domains, emails, retention bounds) with
-inline per-entry errors, and shows the inbox and data paths read-only. The
+inline per-entry errors, and shows the inbox and data paths read-only. It has four
+tabs (`settingsTabs.ts` says which field is on which): **Me** (names, emails, report
+heading, read-only paths), **Senders** (allowed and blocked domains and terms,
+retention), **Reminders**, and **Teams (advanced)**. A tab that holds a mistake shows
+a red dot, and Save jumps to the first one. The
 Filtered tab filters by reason and, per item, offers the one-click rule change
 (_Allow this tenant_ / _Allow \<domain\>_) and the steps to resend. It cannot
 "move to review": the text of a filtered message is discarded at filter time on
@@ -1637,6 +1641,14 @@ shrunk to the shell's 360x240 minimum; dialogs are portaled to the viewport).
   buttons lose their text below ~670 px and fold into one "More actions" menu below
   ~510 px. Use `@md:` / `@lg:` / `@xl:` / `@2xl:` inside the app, not `sm:`/`md:`
   (those follow the screen, and only dialogs, which live on the screen, use them).
+- **Review Queue layout.** Wider than 900 px (`reviewPaneView.reviewLayout`, measured by
+  `useElementWidth`) the queue is a two-pane view: the list on the left (a row shows the
+  source, subject, a one-line summary, when it arrived and the "AI could not structure"
+  badge) and `ProposalReview` on the right, with the draft beside the original message (the
+  verified quote highlighted, `quote.quoteSegments`) when the pane is wide enough and a footer
+  with Reject / Approve that stays in view. Approving or rejecting selects the next row
+  (`resolveSelection`); edits not yet saved are staged when you switch rows. At 900 px or
+  less the same `ProposalReview` opens in `ProposalDialog`, as before.
 - Scrolling is a plain overflow container, `ScrollBody` (`parts.tsx`), never the
   Radix `ScrollArea` here: Radix wraps its content in a `display: table` box that
   grows to the widest child (so `truncate` and `min-w-0` do nothing and the right
@@ -1749,8 +1761,10 @@ narrative? }` saves under `<data dir>\reports\`: `<yyyy-mm-dd>-<id>.md` is revis
   `GET /api/pmo/reports` lists them and `GET /api/pmo/reports/[id]?rev=N` reopens one.
 - **UI** (`ReportsTab.tsx`, view-model `reportView.ts`). The period and the draft live in
   `PmoTodoApp` (the tab unmounts on a switch; the person's edits must not). A period
-  menu and _Generate_; the highlights card; the editor (a `<textarea>`: report text is
-  never rendered as HTML); previous reports with _Open_; and a sticky footer of _Copy as
+  menu and _Generate_; the highlights card; the report itself, as a **Preview** card
+  (`ReportPreviewCard`, read by `lib/pmo/reportPreview.ts`: title, summary tiles and
+  headed lists, drawn as plain text) or, with **Edit**, the editor (a `<textarea>`:
+  report text is never rendered as HTML); previous reports with _Open_; and a sticky footer of _Copy as
   text_, _Copy as Markdown_, _Save_ and the status line ("Not saved yet", "Unsaved
   changes (saved: revision 1)", "Saved as revision 2"). Replacing edits that are not
   saved (Generate again, Open another report) needs a second click. The footer is one
@@ -2044,9 +2058,11 @@ title, tone, action, key })` from anywhere; a repeated `key` replaces the earlie
   snoozed), keyboard use of the list (`listKeys.ts`: J/K, E/Enter, D with an Undo toast, S) and a
   first-run wizard that resumes where it was left and remembers your identity for a fresh data folder
   (`pmo/firstRunMemory.ts`; browser storage only). Steps with a sensible default can be skipped.
-  The wizard shows a numbered stepper, one intro per step and, on the last step, a summary whose
-  rows jump back to the step to change (`pmo/wizardView.ts`). Settings keeps the Teams tenant and
-  chat-ID help under a closed "Advanced: Microsoft Teams" disclosure.
+  The wizard shows a numbered stepper, an icon tile and one intro per step and, on the last step,
+  a summary whose rows jump back to the step to change; after Finish a "You're set" screen lists
+  what happens next and its button opens the Review Queue (`pmo/wizardView.ts`, `WizardParts.tsx`;
+  `PmoTodoApp` keeps the wizard up until then). Settings keeps the Teams tenant and
+  chat-ID help on its own "Teams (advanced)" tab.
 - **Dashboard.** A failed report row has a "View log" button that opens that task's details
   (`tasksNavStore.requestDetail`). The period toggle is remembered.
 - **Templates.** The editor keeps what is typed (browser storage, per template) and offers it back if
@@ -2111,9 +2127,15 @@ title, tone, action, key })` from anywhere; a repeated `key` replaces the earlie
 - **Views.** `ListTools` (quick-add, search, tag filter and saved views kept in
   `preferences.savedViews` on one row; the tag rollup is behind a "Tag stats" toggle) and `BulkBar`;
   the filter chips wrap instead of clipping. `BoardTab` (HTML5 drag between To do, Waiting, Snoozed
-  and Done; Waiting and Snoozed need details, so the board says where to set them) and `CalendarTab`
-  (opens on the current week under a sticky month header, `pmoViews.weekIndexOf`; a busy day lists
-  two items and expands from "+N more"; drag a to-do to change its due day).
+  and Done, with a grip on each card, a dashed highlight on the column it is over and the same
+  priority stripe, due chip and owner/waiting avatars as the list; Waiting and Snoozed need
+  details, so the board says where to set them) and `CalendarTab`
+  (a **Week / Month** switch (`lib/pmo/calendarView.ts`); opens on the current week under a
+  sticky period header, `pmoViews.weekIndexOf`; each to-do has a priority dot, and a busy day's
+  "+N more" opens a popover listing them all; drag a to-do to change its due day).
+  To-do cards show owner and waiting-on as initials avatars (`lib/pmo/cardView.ts`) and keep
+  their action items collapsed until opened; the open state is remembered per card for the
+  session (`expandedCardsStore.ts`).
   Bulk and drag changes are ordinary `PATCH` calls, run one after another by the server's lock.
 - **Planning and intake.** `PlanDialogs`: "Plan week" ranks the open to-dos with reasons;
   "From notes" lists action-looking lines of pasted notes and creates only the ones you tick.

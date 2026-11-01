@@ -10,8 +10,9 @@ import {
   type ReactNode,
 } from "react";
 import { CaretRightIcon, CircleNotchIcon } from "@phosphor-icons/react";
-import { Badge, type BadgeProps, type BadgeVariant } from "@/components/ui";
+import { Avatar, Badge, type BadgeProps, type BadgeVariant } from "@/components/ui";
 import { cn } from "@/lib/cn";
+import { initials } from "@/lib/pmo/cardView";
 import type { Proposal, StructuringInfo } from "@/lib/pmo/types";
 import {
   FALLBACK_HINT,
@@ -129,6 +130,25 @@ export const STICKY_BAR =
 
 /** A pane that holds an original message (or any quoted text). */
 export const MESSAGE_PANE = "border-line bg-card rounded-card flex flex-col border p-4";
+
+/** A small round avatar with initials, then the person's name (or `label`). The
+ *  initials come from `name`; `null` shows "?" (nobody assigned). */
+export function PersonTag({
+  name,
+  label,
+  className,
+}: {
+  name: string | null;
+  label?: string;
+  className?: string;
+}) {
+  return (
+    <span className={cn("inline-flex min-w-0 items-center gap-1.5", className)}>
+      <Avatar aria-hidden className="h-5 w-5 text-[10px]" fallback={initials(name)} />
+      <span className="min-w-0 truncate">{label ?? name ?? "Unassigned"}</span>
+    </span>
+  );
+}
 
 /** A small spinning ring for a pending state. Decorative: the text beside it says
  *  what is happening. */

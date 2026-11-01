@@ -60,7 +60,7 @@ on the user's computer (loopback only; the AI is a local Ollama model, no cloud 
   to-dos can be deleted for good (**Clear cancelled** in the Done list, or **Delete** in one).
   Repeating to-dos create their next round when you close one (with Undo). You can tick several
   to-dos for bulk actions, save views, filter by tag, use a Board (drag between columns) and a
-  month Calendar (drag a to-do to a day), mark a to-do as blocked by another, rename a row in
+  Week or Month Calendar (drag a to-do to a day), mark a to-do as blocked by another, rename a row in
   place, plan the week, add to-dos from pasted meeting notes, escalate a quiet chase and hand a
   to-do to a teammate from Staff. All of it stays on this computer; mail is only ever opened unsent.
 - **Tasks app** extras: a History tab (every run, who approved what, a failure in plain words,

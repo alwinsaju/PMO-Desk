@@ -9,7 +9,12 @@ import {
   DialogDescription,
   DialogTitle,
   Input,
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
 } from "@/components/ui";
+import { cn } from "@/lib/cn";
 import {
   DEFAULT_REPORT_TITLE,
   DEFAULT_RETENTION_DAYS,
@@ -25,7 +30,6 @@ import { updateConfig } from "./api";
 import { DOMAIN_NOUN, EMAIL_NOUN } from "./listFeedbackView";
 import { ListFeedback } from "./ListFeedback";
 import {
-  Disclosure,
   ErrorLine,
   Field,
   FieldError,
@@ -45,6 +49,7 @@ import {
   type ListField,
   type RemindersForm,
 } from "./settingsForm";
+import { SETTINGS_TABS, tabsWithProblems, type SettingsTabId } from "./settingsTabs";
 
 const WEEKDAYS = [
   { day: 1, label: "Mon" },
@@ -63,9 +68,10 @@ interface SettingsDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
-/** Edits config.json through GET/PUT /api/pmo/config. Everything is checked
- *  with the same zod schema the server uses, so a mistake is shown next to the
- *  field before anything is sent. */
+/** Edits config.json through GET/PUT /api/pmo/config, one tab per kind of setting
+ *  (Me, Senders, Reminders, Teams). Everything is checked with the same zod
+ *  schema the server uses, so a mistake is shown next to the field before
+ *  anything is sent, and Save takes you to the first tab that has one. */
 export function SettingsDialog({
   state,
   open,
@@ -77,8 +83,7 @@ export function SettingsDialog({
   const [serverError, setServerError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [teamsOpen, setTeamsOpen] = useState(false);
-  const teamsError = Boolean(errors.allowedTenantIds || errors.teamsChatAllowlist);
+  const [tab, setTab] = useState<SettingsTabId>("me");
   const desktop = useRemindersStore((s) => s.desktop);
   const configRef = useRef(state.config);
   configRef.current = state.config;
@@ -90,7 +95,7 @@ export function SettingsDialog({
     setErrors({});
     setServerError(null);
     setSaved(false);
-    setTeamsOpen(false);
+    setTab("me");
   }, [open]);
 
   const set = (patch: Partial<FormText>) => {
@@ -104,7 +109,12 @@ export function SettingsDialog({
   async function save() {
     setServerError(null);
     const built = buildPatch(form);
-    if (built.errors) return setErrors(built.errors);
+    if (built.errors) {
+      setErrors(built.errors);
+      const [first] = tabsWithProblems(Object.keys(built.errors));
+      if (first) setTab(first);
+      return;
+    }
     setErrors({});
     setBusy(true);
     try {
@@ -125,9 +135,11 @@ export function SettingsDialog({
     allowedSenderDomains: checkedList("allowedSenderDomains", form.allowedSenderDomains),
     blockedDomains: checkedList("blockedDomains", form.blockedDomains),
   };
-  const hasInvalidEntries = Object.values(parsedLists).some(
-    (parsed) => parsed.invalid.length > 0,
-  );
+  const invalidFields = Object.entries(parsedLists)
+    .filter(([, parsed]) => parsed.invalid.length > 0)
+    .map(([field]) => field);
+  const hasInvalidEntries = invalidFields.length > 0;
+  const problemTabs = tabsWithProblems([...Object.keys(errors), ...invalidFields]);
   const savedProblems = malformedConfigEntries(state.config);
 
   const listBox = (
@@ -167,64 +179,328 @@ export function SettingsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-full max-w-2xl flex-col px-[30px] pt-7 pb-6">
+      <DialogContent className="flex h-[min(86vh,720px)] max-h-full max-w-2xl flex-col px-[30px] pt-7 pb-6">
         <DialogTitle className="shrink-0">PMO settings</DialogTitle>
         <DialogDescription className="shrink-0">
           One entry per line. Changes apply to the next scan; nothing already in the queue
           is re-filtered.
         </DialogDescription>
 
-        <ScrollBody className="mt-4 pr-2">
-          <div className="flex flex-col gap-7">
-            <Section title="About you">
-              <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
-                {listBox(
-                  "names",
-                  "Your names and aliases",
-                  "Pat Example",
-                  4,
-                  "How the model recognises a request addressed to you (first name, nickname, ...).",
+        <Tabs
+          value={tab}
+          onValueChange={(value) => setTab(value as SettingsTabId)}
+          className="mt-4 flex min-h-0 flex-1 flex-col"
+        >
+          <TabsList aria-label="Settings sections" className="max-w-full self-start">
+            {SETTINGS_TABS.map(({ id, label }) => (
+              <TabsTrigger key={id} value={id} className="px-3.5">
+                {label}
+                {problemTabs.includes(id) && (
+                  <>
+                    <span
+                      aria-hidden
+                      className="bg-red size-2 shrink-0 rounded-full"
+                      data-testid={`tab-problem-${id}`}
+                    />
+                    <span className="sr-only">has a problem</span>
+                  </>
                 )}
-                {listBox(
-                  "emails",
-                  "Your email addresses",
-                  "you@company.com",
-                  4,
-                  "One address per line (commas work too).",
-                )}
-              </div>
-            </Section>
+              </TabsTrigger>
+            ))}
+          </TabsList>
 
-            <Section title="Who is allowed in">
-              {savedProblems.length > 0 && (
-                <Note tone="warning">
-                  {savedProblems.length === 1
-                    ? "1 saved entry is not valid"
-                    : `${savedProblems.length} saved entries are not valid`}{" "}
-                  ({savedProblems.map((p) => p.value || "(not text)").join(", ")}). They
-                  never match any mail, so mail may be filtered by mistake. Correct or
-                  remove them in the lists below, then save.
-                </Note>
-              )}
-              {listBox(
-                "allowedSenderDomains",
-                "Allowed sender domains (Outlook)",
-                "company.com",
-                2,
-                "One domain per line (commas work too). Email from any other domain is filtered and discarded, so check the list carefully. Subdomains match (us.company.com matches company.com).",
-              )}
-              <Disclosure
-                summary="Advanced: Microsoft Teams"
-                open={teamsOpen || teamsError}
-                onOpenChange={setTeamsOpen}
-              >
+          <ScrollBody className="mt-4 pr-2">
+            <TabsContent value="me" className={TAB_PANEL}>
+              <Section title="About you">
+                <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
+                  {listBox(
+                    "names",
+                    "Your names and aliases",
+                    "Pat Example",
+                    4,
+                    "How the model recognises a request addressed to you (first name, nickname, ...).",
+                  )}
+                  {listBox(
+                    "emails",
+                    "Your email addresses",
+                    "you@company.com",
+                    4,
+                    "One address per line (commas work too).",
+                  )}
+                </div>
+              </Section>
+
+              <Section title="Weekly report">
+                <p className="text-ink-muted text-[12px] leading-relaxed">
+                  The heading of the Reports tab&apos;s weekly status. The report covers
+                  the to-dos in this app only, and nothing in it is sent anywhere.
+                </p>
+                <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
+                  <Field label="Report title">
+                    <Input
+                      value={form.reportTitle}
+                      disabled={busy}
+                      maxLength={MAX_REPORT_TITLE_CHARS}
+                      placeholder={DEFAULT_REPORT_TITLE}
+                      aria-invalid={errors["report.title"] ? true : undefined}
+                      onChange={(event) => set({ reportTitle: event.target.value })}
+                    />
+                    <FieldError message={errors["report.title"]} />
+                  </Field>
+                  <Field label="Project name (optional)">
+                    <Input
+                      value={form.reportProject}
+                      disabled={busy}
+                      maxLength={MAX_REPORT_TITLE_CHARS}
+                      placeholder="Shown before the title"
+                      aria-invalid={errors["report.projectName"] ? true : undefined}
+                      onChange={(event) => set({ reportProject: event.target.value })}
+                    />
+                    <FieldError message={errors["report.projectName"]} />
+                  </Field>
+                </div>
+                <span className="text-ink-muted text-[12px] leading-relaxed">
+                  Saved reports are kept on this computer until you delete them; they are
+                  never purged by the retention setting.
+                </span>
+              </Section>
+
+              <Section title="Where things are (read only)">
+                <PathRow
+                  label="Inbox folder"
+                  value={state.ingest.inboxDir}
+                  note="Where the flows, the Outlook script and Paste drop files. Change inboxDir in config.json (applies on the next scan), unless the environment variable AI_OS_PMO_INBOX_DIR is set."
+                />
+                <PathRow
+                  label="Data folder"
+                  value={state.dataDir}
+                  note="config.json, the queue, to-dos, logs and the audit trail live here, on this computer only."
+                />
+              </Section>
+            </TabsContent>
+
+            <TabsContent value="senders" className={TAB_PANEL}>
+              <Section title="Who is allowed in">
+                {savedProblems.length > 0 && (
+                  <Note tone="warning">
+                    {savedProblems.length === 1
+                      ? "1 saved entry is not valid"
+                      : `${savedProblems.length} saved entries are not valid`}{" "}
+                    ({savedProblems.map((p) => p.value || "(not text)").join(", ")}). They
+                    never match any mail, so mail may be filtered by mistake. Correct or
+                    remove them in the lists below, then save.
+                  </Note>
+                )}
+                {listBox(
+                  "allowedSenderDomains",
+                  "Allowed sender domains (Outlook)",
+                  "company.com",
+                  2,
+                  "One domain per line (commas work too). Email from any other domain is filtered and discarded, so check the list carefully. Subdomains match (us.company.com matches company.com).",
+                )}
+              </Section>
+
+              <Section title="Always blocked">
+                <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
+                  {listBox(
+                    "blockedDomains",
+                    "Blocked domains",
+                    "other-company.example",
+                    3,
+                    "A sender or recipient on one of these is filtered, even if the sender is allowed.",
+                  )}
+                  {listBox(
+                    "blockedTerms",
+                    "Blocked terms",
+                    "a client or project name",
+                    3,
+                    "Filtered if one appears in the subject or text (any case).",
+                  )}
+                </div>
+              </Section>
+
+              <Section title="Retention">
+                <Field label="Keep logs and finished items for (days)">
+                  <Input
+                    inputMode="numeric"
+                    value={form.retentionDays}
+                    disabled={busy}
+                    className="w-32"
+                    aria-invalid={errors.retentionDays ? true : undefined}
+                    onChange={(event) => set({ retentionDays: event.target.value })}
+                  />
+                  <span className="text-ink-muted text-[12px] leading-relaxed">
+                    {MIN_RETENTION_DAYS} to {MAX_RETENTION_DAYS} days, default{" "}
+                    {DEFAULT_RETENTION_DAYS}. After this, logs and the saved message text
+                    of a closed to-do or a rejected item are deleted daily. Open to-dos
+                    keep their message. Filtered records and unreadable files are cleared
+                    after 30 days.
+                  </span>
+                  <FieldError message={errors.retentionDays} />
+                </Field>
+              </Section>
+            </TabsContent>
+
+            <TabsContent value="reminders" className={TAB_PANEL}>
+              <Section title="Reminders">
+                <p className="text-ink-muted text-[12px] leading-relaxed">
+                  Reminders are shown on this computer only; nothing is sent to anyone. A
+                  to-do is reminded when it is due tomorrow (once), overdue (at the start
+                  of the working day, then every working day), or when you are waiting on
+                  someone and nothing has changed for a few working days.
+                </p>
+                <CheckRow
+                  checked={form.reminders.enabled}
+                  disabled={busy}
+                  onChange={(enabled) => setReminders({ enabled })}
+                  label="Remind me about to-dos that need attention"
+                />
+                <CheckRow
+                  checked={form.reminders.hideDetails}
+                  disabled={busy}
+                  onChange={(hideDetails) => setReminders({ hideDetails })}
+                  label="Hide task details in notifications"
+                  hint={
+                    'On (recommended): a notification only says "PMO To-Do: N items need attention", so a title never shows on a shared screen or in the notification centre. Off: it shows the task title.'
+                  }
+                />
+                <CheckRow
+                  checked={form.reminders.quietOutsideHours}
+                  disabled={busy}
+                  onChange={(quietOutsideHours) => setReminders({ quietOutsideHours })}
+                  label="Stay quiet outside working hours"
+                  hint="Held reminders appear when the working day starts."
+                />
+                <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-3">
+                  <Field label="Day starts">
+                    <Input
+                      type="time"
+                      value={form.reminders.workStart}
+                      disabled={busy}
+                      aria-invalid={errors["reminders.workStart"] ? true : undefined}
+                      onChange={(event) =>
+                        setReminders({ workStart: event.target.value })
+                      }
+                    />
+                    <FieldError message={errors["reminders.workStart"]} />
+                  </Field>
+                  <Field label="Day ends">
+                    <Input
+                      type="time"
+                      value={form.reminders.workEnd}
+                      disabled={busy}
+                      aria-invalid={errors["reminders.workEnd"] ? true : undefined}
+                      onChange={(event) => setReminders({ workEnd: event.target.value })}
+                    />
+                    <FieldError message={errors["reminders.workEnd"]} />
+                  </Field>
+                  <Field label="Time zone">
+                    <Input
+                      value={form.reminders.timeZone}
+                      disabled={busy}
+                      spellCheck={false}
+                      aria-invalid={errors["reminders.timeZone"] ? true : undefined}
+                      onChange={(event) => setReminders({ timeZone: event.target.value })}
+                    />
+                    <FieldError message={errors["reminders.timeZone"]} />
+                  </Field>
+                </div>
+                <Field label="Working days">
+                  <div
+                    className="flex flex-wrap gap-1.5"
+                    role="group"
+                    aria-label="Working days"
+                  >
+                    {WEEKDAYS.map(({ day, label }) => {
+                      const on = form.reminders.workDays.includes(day);
+                      return (
+                        <FilterPill
+                          key={day}
+                          active={on}
+                          disabled={busy}
+                          onClick={() =>
+                            setReminders({
+                              workDays: on
+                                ? form.reminders.workDays.filter((d) => d !== day)
+                                : [...form.reminders.workDays, day],
+                            })
+                          }
+                        >
+                          {label}
+                        </FilterPill>
+                      );
+                    })}
+                  </div>
+                  <FieldError message={errors["reminders.workDays"]} />
+                </Field>
+                <Field label="Heads-up before a due date (working days)">
+                  <Input
+                    inputMode="numeric"
+                    value={form.reminders.leadWorkingDays}
+                    disabled={busy}
+                    className="w-32"
+                    aria-invalid={errors["reminders.leadWorkingDays"] ? true : undefined}
+                    onChange={(event) =>
+                      setReminders({ leadWorkingDays: event.target.value })
+                    }
+                  />
+                  <span className="text-ink-muted text-[12px] leading-relaxed">
+                    0 to {MAX_LEAD_WORKING_DAYS}. With 1, an item due on a Monday is
+                    reminded on the Friday before. 0 sends no heads-up, only the reminder
+                    on the due day.
+                  </span>
+                  <FieldError message={errors["reminders.leadWorkingDays"]} />
+                </Field>
+                <Field label="Chase after (working days without an update)">
+                  <Input
+                    inputMode="numeric"
+                    value={form.reminders.chaserDays}
+                    disabled={busy}
+                    className="w-32"
+                    aria-invalid={errors["reminders.chaserDays"] ? true : undefined}
+                    onChange={(event) => setReminders({ chaserDays: event.target.value })}
+                  />
+                  <span className="text-ink-muted text-[12px] leading-relaxed">
+                    1 to {MAX_CHASER_DAYS}. Only to-dos with &quot;waiting on&quot; filled
+                    in get a chaser, and again after each further stretch of the same
+                    length.
+                  </span>
+                  <FieldError message={errors["reminders.chaserDays"]} />
+                </Field>
+                <CheckRow
+                  checked={form.reminders.digest}
+                  disabled={busy}
+                  onChange={(digest) => setReminders({ digest })}
+                  label="Morning digest of all open to-dos"
+                  hint="One summary when the working day starts. Off by default."
+                />
+                <CheckRow
+                  checked={form.reminders.keepRunningInTray}
+                  disabled={busy}
+                  onChange={(keepRunningInTray) => setReminders({ keepRunningInTray })}
+                  label="Keep running in the tray so reminders still fire"
+                  hint={
+                    desktop
+                      ? "Desktop app: closing the window hides AI OS to the system tray instead of quitting. Use the tray icon's Quit to exit completely. Off by default."
+                      : "Desktop app only; it has no effect in a browser. When on, closing the window hides AI OS to the tray instead of quitting. Off by default."
+                  }
+                />
+                <NotificationStatus attention={state.attention.count} />
+              </Section>
+            </TabsContent>
+
+            <TabsContent value="teams" className={TAB_PANEL}>
+              <Note tone="neutral">
+                Advanced. Only needed if you bring Microsoft Teams messages in. Teams is
+                blocked until a tenant or chat is listed here.
+              </Note>
+              <Section title="Microsoft Teams">
                 {listBox(
                   "allowedTenantIds",
                   "Allowed Teams tenant IDs",
                   "00000000-0000-0000-0000-000000000000",
                   2,
                   <>
-                    Teams is blocked until a tenant or chat is listed.{" "}
                     <strong className="text-ink-soft">How to find your tenant ID:</strong>{" "}
                     the Teams flow sends it (Recipe B), so the easiest way is{" "}
                     <em>Allow this tenant</em> on a filtered Teams item. It is also in a
@@ -250,242 +526,10 @@ export function SettingsDialog({
                     <em>Allow this chat</em>. Each chat is listed on its own.
                   </>,
                 )}
-              </Disclosure>
-            </Section>
-
-            <Section title="Always blocked">
-              <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
-                {listBox(
-                  "blockedDomains",
-                  "Blocked domains",
-                  "other-company.example",
-                  3,
-                  "A sender or recipient on one of these is filtered, even if the sender is allowed.",
-                )}
-                {listBox(
-                  "blockedTerms",
-                  "Blocked terms",
-                  "a client or project name",
-                  3,
-                  "Filtered if one appears in the subject or text (any case).",
-                )}
-              </div>
-            </Section>
-
-            <Section title="Retention">
-              <Field label="Keep logs and finished items for (days)">
-                <Input
-                  inputMode="numeric"
-                  value={form.retentionDays}
-                  disabled={busy}
-                  className="w-32"
-                  aria-invalid={errors.retentionDays ? true : undefined}
-                  onChange={(event) => set({ retentionDays: event.target.value })}
-                />
-                <span className="text-ink-muted text-[12px] leading-relaxed">
-                  {MIN_RETENTION_DAYS} to {MAX_RETENTION_DAYS} days, default{" "}
-                  {DEFAULT_RETENTION_DAYS}. After this, logs and the saved message text of
-                  a closed to-do or a rejected item are deleted daily. Open to-dos keep
-                  their message. Filtered records and unreadable files are cleared after
-                  30 days.
-                </span>
-                <FieldError message={errors.retentionDays} />
-              </Field>
-            </Section>
-
-            <Section title="Weekly report">
-              <p className="text-ink-muted text-[12px] leading-relaxed">
-                The heading of the Reports tab&apos;s weekly status. The report covers the
-                to-dos in this app only, and nothing in it is sent anywhere.
-              </p>
-              <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
-                <Field label="Report title">
-                  <Input
-                    value={form.reportTitle}
-                    disabled={busy}
-                    maxLength={MAX_REPORT_TITLE_CHARS}
-                    placeholder={DEFAULT_REPORT_TITLE}
-                    aria-invalid={errors["report.title"] ? true : undefined}
-                    onChange={(event) => set({ reportTitle: event.target.value })}
-                  />
-                  <FieldError message={errors["report.title"]} />
-                </Field>
-                <Field label="Project name (optional)">
-                  <Input
-                    value={form.reportProject}
-                    disabled={busy}
-                    maxLength={MAX_REPORT_TITLE_CHARS}
-                    placeholder="Shown before the title"
-                    aria-invalid={errors["report.projectName"] ? true : undefined}
-                    onChange={(event) => set({ reportProject: event.target.value })}
-                  />
-                  <FieldError message={errors["report.projectName"]} />
-                </Field>
-              </div>
-              <span className="text-ink-muted text-[12px] leading-relaxed">
-                Saved reports are kept on this computer until you delete them; they are
-                never purged by the retention setting above.
-              </span>
-            </Section>
-
-            <Section title="Reminders">
-              <p className="text-ink-muted text-[12px] leading-relaxed">
-                Reminders are shown on this computer only; nothing is sent to anyone. A
-                to-do is reminded when it is due tomorrow (once), overdue (at the start of
-                the working day, then every working day), or when you are waiting on
-                someone and nothing has changed for a few working days.
-              </p>
-              <CheckRow
-                checked={form.reminders.enabled}
-                disabled={busy}
-                onChange={(enabled) => setReminders({ enabled })}
-                label="Remind me about to-dos that need attention"
-              />
-              <CheckRow
-                checked={form.reminders.hideDetails}
-                disabled={busy}
-                onChange={(hideDetails) => setReminders({ hideDetails })}
-                label="Hide task details in notifications"
-                hint={
-                  'On (recommended): a notification only says "PMO To-Do: N items need attention", so a title never shows on a shared screen or in the notification centre. Off: it shows the task title.'
-                }
-              />
-              <CheckRow
-                checked={form.reminders.quietOutsideHours}
-                disabled={busy}
-                onChange={(quietOutsideHours) => setReminders({ quietOutsideHours })}
-                label="Stay quiet outside working hours"
-                hint="Held reminders appear when the working day starts."
-              />
-              <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-3">
-                <Field label="Day starts">
-                  <Input
-                    type="time"
-                    value={form.reminders.workStart}
-                    disabled={busy}
-                    aria-invalid={errors["reminders.workStart"] ? true : undefined}
-                    onChange={(event) => setReminders({ workStart: event.target.value })}
-                  />
-                  <FieldError message={errors["reminders.workStart"]} />
-                </Field>
-                <Field label="Day ends">
-                  <Input
-                    type="time"
-                    value={form.reminders.workEnd}
-                    disabled={busy}
-                    aria-invalid={errors["reminders.workEnd"] ? true : undefined}
-                    onChange={(event) => setReminders({ workEnd: event.target.value })}
-                  />
-                  <FieldError message={errors["reminders.workEnd"]} />
-                </Field>
-                <Field label="Time zone">
-                  <Input
-                    value={form.reminders.timeZone}
-                    disabled={busy}
-                    spellCheck={false}
-                    aria-invalid={errors["reminders.timeZone"] ? true : undefined}
-                    onChange={(event) => setReminders({ timeZone: event.target.value })}
-                  />
-                  <FieldError message={errors["reminders.timeZone"]} />
-                </Field>
-              </div>
-              <Field label="Working days">
-                <div
-                  className="flex flex-wrap gap-1.5"
-                  role="group"
-                  aria-label="Working days"
-                >
-                  {WEEKDAYS.map(({ day, label }) => {
-                    const on = form.reminders.workDays.includes(day);
-                    return (
-                      <FilterPill
-                        key={day}
-                        active={on}
-                        disabled={busy}
-                        onClick={() =>
-                          setReminders({
-                            workDays: on
-                              ? form.reminders.workDays.filter((d) => d !== day)
-                              : [...form.reminders.workDays, day],
-                          })
-                        }
-                      >
-                        {label}
-                      </FilterPill>
-                    );
-                  })}
-                </div>
-                <FieldError message={errors["reminders.workDays"]} />
-              </Field>
-              <Field label="Heads-up before a due date (working days)">
-                <Input
-                  inputMode="numeric"
-                  value={form.reminders.leadWorkingDays}
-                  disabled={busy}
-                  className="w-32"
-                  aria-invalid={errors["reminders.leadWorkingDays"] ? true : undefined}
-                  onChange={(event) =>
-                    setReminders({ leadWorkingDays: event.target.value })
-                  }
-                />
-                <span className="text-ink-muted text-[12px] leading-relaxed">
-                  0 to {MAX_LEAD_WORKING_DAYS}. With 1, an item due on a Monday is
-                  reminded on the Friday before. 0 sends no heads-up, only the reminder on
-                  the due day.
-                </span>
-                <FieldError message={errors["reminders.leadWorkingDays"]} />
-              </Field>
-              <Field label="Chase after (working days without an update)">
-                <Input
-                  inputMode="numeric"
-                  value={form.reminders.chaserDays}
-                  disabled={busy}
-                  className="w-32"
-                  aria-invalid={errors["reminders.chaserDays"] ? true : undefined}
-                  onChange={(event) => setReminders({ chaserDays: event.target.value })}
-                />
-                <span className="text-ink-muted text-[12px] leading-relaxed">
-                  1 to {MAX_CHASER_DAYS}. Only to-dos with &quot;waiting on&quot; filled
-                  in get a chaser, and again after each further stretch of the same
-                  length.
-                </span>
-                <FieldError message={errors["reminders.chaserDays"]} />
-              </Field>
-              <CheckRow
-                checked={form.reminders.digest}
-                disabled={busy}
-                onChange={(digest) => setReminders({ digest })}
-                label="Morning digest of all open to-dos"
-                hint="One summary when the working day starts. Off by default."
-              />
-              <CheckRow
-                checked={form.reminders.keepRunningInTray}
-                disabled={busy}
-                onChange={(keepRunningInTray) => setReminders({ keepRunningInTray })}
-                label="Keep running in the tray so reminders still fire"
-                hint={
-                  desktop
-                    ? "Desktop app: closing the window hides AI OS to the system tray instead of quitting. Use the tray icon's Quit to exit completely. Off by default."
-                    : "Desktop app only; it has no effect in a browser. When on, closing the window hides AI OS to the tray instead of quitting. Off by default."
-                }
-              />
-              <NotificationStatus attention={state.attention.count} />
-            </Section>
-
-            <Section title="Where things are (read only)">
-              <PathRow
-                label="Inbox folder"
-                value={state.ingest.inboxDir}
-                note="Where the flows, the Outlook script and Paste drop files. Change inboxDir in config.json (applies on the next scan), unless the environment variable AI_OS_PMO_INBOX_DIR is set."
-              />
-              <PathRow
-                label="Data folder"
-                value={state.dataDir}
-                note="config.json, the queue, to-dos, logs and the audit trail live here, on this computer only."
-              />
-            </Section>
-          </div>
-        </ScrollBody>
+              </Section>
+            </TabsContent>
+          </ScrollBody>
+        </Tabs>
 
         {serverError && <ErrorLine className="mt-3 shrink-0">{serverError}</ErrorLine>}
         {Object.keys(errors).length > 0 && (
@@ -516,6 +560,8 @@ export function SettingsDialog({
     </Dialog>
   );
 }
+
+const TAB_PANEL = "flex flex-col gap-7";
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (

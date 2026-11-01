@@ -2,7 +2,14 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { FIRST_RUN_STEPS, initialFirstRunForm } from "./firstRun.ts";
-import { STEP_INTRO, STEP_SHORT, wizardProgress, wizardSummary } from "./wizardView.ts";
+import {
+  STEP_ICON,
+  STEP_INTRO,
+  STEP_SHORT,
+  nextSteps,
+  wizardProgress,
+  wizardSummary,
+} from "./wizardView.ts";
 
 const form = {
   ...initialFirstRunForm({ suggestedName: "", detectedTimeZone: "Asia/Kolkata" }),
@@ -34,6 +41,36 @@ describe("step wording", () => {
     }
     const intros = FIRST_RUN_STEPS.map(({ id }) => STEP_INTRO[id]);
     assert.equal(new Set(intros).size, intros.length);
+  });
+});
+
+describe("step pictures", () => {
+  it("gives every step an icon", () => {
+    for (const { id } of FIRST_RUN_STEPS) assert.ok(STEP_ICON[id], `icon for ${id}`);
+  });
+});
+
+describe("nextSteps", () => {
+  it("lists what happens next, in order, naming the folder and domains", () => {
+    const steps = nextSteps(form);
+    assert.deepEqual(
+      steps.map((s) => s.icon),
+      ["folder", "robot", "review", "bell"],
+    );
+    assert.match(steps[0].text, /OneDrive\\PMO-Inbox/);
+    assert.match(steps[1].text, /company\.com, partner\.example/);
+    assert.match(steps[2].text, /Nothing becomes a to-do until you approve/);
+  });
+
+  it("stays readable when the folder or domains are not in the form", () => {
+    const steps = nextSteps({ ...form, inboxDir: " ", allowedDomains: "" });
+    assert.doesNotMatch(steps[0].text, /undefined|\s{2,}/);
+    assert.doesNotMatch(steps[1].text, /undefined|from \s/);
+  });
+
+  it("ignores a malformed domain instead of listing it", () => {
+    const steps = nextSteps({ ...form, allowedDomains: "company.com, not a domain" });
+    assert.match(steps[1].text, /^Mail from company\.com is read/);
   });
 });
 
