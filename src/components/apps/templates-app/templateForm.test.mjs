@@ -5,6 +5,7 @@ import {
   blankDraft,
   copyOf,
   draftOf,
+  filterPlaceholders,
   holderOf,
   insertAt,
   isDirty,
@@ -14,6 +15,8 @@ import {
   problems,
   restoreInput,
   toInput,
+  toggleWrap,
+  versionInput,
   withKind,
   withPlace,
 } from "./templateForm.ts";
@@ -176,6 +179,62 @@ describe("inserting a placeholder", () => {
   it("clamps a selection that is out of range", () => {
     assert.deepEqual(insertAt("ab", 5, 9, "!"), { value: "ab!", caret: 3 });
     assert.deepEqual(insertAt("ab", 2, 1, "!"), { value: "ab!", caret: 3 });
+  });
+});
+
+describe("bold toggle", () => {
+  it("wraps the selection and keeps it selected", () => {
+    assert.deepEqual(toggleWrap("Hello world", 6, 11), {
+      value: "Hello **world**",
+      start: 8,
+      end: 13,
+    });
+  });
+  it("puts the marks around the caret when nothing is selected", () => {
+    assert.deepEqual(toggleWrap("ab", 1, 1), { value: "a****b", start: 3, end: 3 });
+  });
+  it("takes the marks off, whether selected or just outside the selection", () => {
+    assert.deepEqual(toggleWrap("a **b** c", 2, 7), { value: "a b c", start: 2, end: 3 });
+    assert.deepEqual(toggleWrap("a **b** c", 4, 5), { value: "a b c", start: 2, end: 3 });
+  });
+  it("clamps an out-of-range selection", () => {
+    assert.equal(toggleWrap("ab", 9, 12).value, "ab****");
+  });
+});
+
+describe("placeholder search", () => {
+  const tokens = [
+    { name: "total", description: "How many incidents" },
+    { name: "date_subject", description: "Today's date for a subject line" },
+  ];
+  it("matches the name or description, ignoring braces and case", () => {
+    assert.deepEqual(filterPlaceholders(tokens, "{{TOT"), [tokens[0]]);
+    assert.deepEqual(filterPlaceholders(tokens, "subject line"), [tokens[1]]);
+    assert.deepEqual(filterPlaceholders(tokens, "nothing"), []);
+  });
+  it("lists all for an empty search", () => {
+    assert.deepEqual(filterPlaceholders(tokens, "  "), tokens);
+  });
+});
+
+describe("restoring a version", () => {
+  it("brings back its wording and keeps places and tags", () => {
+    const template = saved({ tags: ["t"], usedBy: ["task:weekly-aging-report"] });
+    const input = versionInput(template, {
+      at: "2026-01-01T00:00:00Z",
+      name: "Old",
+      description: "od",
+      subject: "OS",
+      to: "a@b.co",
+      cc: "",
+      body: "Old body",
+    });
+    assert.equal(input.name, "Old");
+    assert.equal(input.body, "Old body");
+    assert.equal(input.to, "a@b.co");
+    assert.deepEqual(input.tags, ["t"]);
+    assert.deepEqual(input.usedBy, ["task:weekly-aging-report"]);
+    assert.equal(input.kind, "email");
   });
 });
 

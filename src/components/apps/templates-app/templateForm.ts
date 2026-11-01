@@ -21,6 +21,7 @@ import type {
   Template,
   TemplateInput,
   TemplateKind,
+  TemplateVersion,
 } from "../../../lib/templates/types.ts";
 import { recipientsProblem } from "../../../lib/templates/recipients.ts";
 
@@ -92,6 +93,15 @@ export function restoreInput(template: Template): TemplateInput {
 }
 
 const FIELDS = ["name", "kind", "description", "subject", "to", "cc", "body"] as const;
+
+/** What saving `template` with an earlier version's wording would send; tags, wordings and places stay. */
+export function versionInput(
+  template: Template,
+  version: TemplateVersion,
+): TemplateInput {
+  const { name, description, subject, to, cc, body } = version;
+  return { ...restoreInput(template), name, description, subject, to, cc, body };
+}
 
 /** Has the draft been changed from the saved template (or, for a new one, filled in)? */
 export function isDirty(draft: Draft, saved: Template | null): boolean {
@@ -180,6 +190,57 @@ export function insertAt(
     value: value.slice(0, from) + text + value.slice(to),
     caret: from + text.length,
   };
+}
+
+/** Wraps the selection in `mark` (`**` for bold), or takes the marks off when the selection already
+ *  has them (inside it or just outside it). With nothing selected the marks go around the caret. The
+ *  result says what to select afterwards. */
+export function toggleWrap(
+  value: string,
+  start: number,
+  end: number,
+  mark = "**",
+): { value: string; start: number; end: number } {
+  const from = Math.max(0, Math.min(start, value.length));
+  const to = Math.max(from, Math.min(end, value.length));
+  const m = mark.length;
+  const inner = value.slice(from, to);
+  if (inner.length >= 2 * m && inner.startsWith(mark) && inner.endsWith(mark)) {
+    const bare = inner.slice(m, inner.length - m);
+    return {
+      value: value.slice(0, from) + bare + value.slice(to),
+      start: from,
+      end: from + bare.length,
+    };
+  }
+  if (
+    value.slice(from - m, from) === mark &&
+    value.slice(to, to + m) === mark &&
+    from >= m
+  ) {
+    return {
+      value: value.slice(0, from - m) + inner + value.slice(to + m),
+      start: from - m,
+      end: to - m,
+    };
+  }
+  return {
+    value: value.slice(0, from) + mark + inner + mark + value.slice(to),
+    start: from + m,
+    end: to + m,
+  };
+}
+
+/** The placeholders whose name or description contains every word typed (braces ignored). */
+export function filterPlaceholders<
+  T extends Pick<PlaceholderDef, "name" | "description">,
+>(tokens: readonly T[], query: string): T[] {
+  const words = query.toLowerCase().replace(/[{}]/g, " ").split(/\s+/).filter(Boolean);
+  if (words.length === 0) return [...tokens];
+  return tokens.filter((t) => {
+    const hay = `${t.name} ${t.description}`.toLowerCase();
+    return words.every((w) => hay.includes(w));
+  });
 }
 
 /** The places whose example values the preview uses: the chosen ones, else every place of the kind. */
