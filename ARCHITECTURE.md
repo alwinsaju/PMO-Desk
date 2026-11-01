@@ -860,12 +860,19 @@ from a workbook.
 
 **Sections.** _Directory_ (search, filter by location / OP / offering / level, sort; the list
 shows Employee, Level, OP, Offering, Team, Location and Roll-off, and the right-hand pane shows
-every other field, grouped. Every column and the pane are resizable: drag a column's right edge
+every other field, grouped. A column that is empty for everyone (often Offering) is left out,
+and so is its filter; the columns shrink towards their minimums and the least
+important ones (Roll-off first) drop out when the list is narrow, so there is no sideways
+scrollbar (`visibleColumns` / `fitColumns` in `layout.ts`). The pane stays closed until a row
+is picked, then sits beside the list, or over it as a drawer in a narrow window; a person just
+added is selected and scrolled into view. Every column and the pane are resizable: drag a column's right edge
 or the pane's left edge, use the arrow keys on the focused divider, double-click or press Home
 to reset; sizes are remembered per computer in localStorage, limits and parsing in
 `layout.ts`), _Shift roster_ (see "Shift roster" below) and _Time off_ (approval
-summary, per-type bars, approve / reject / undo, add and delete). All colors come from the
+summary, per-type bars, approve / reject / undo, add and delete; pending requests are listed
+first, a delete shows a toast with **Undo**, and the model chip is labelled "PTO emails"). All colors come from the
 theme tokens, so light, dark and Deloitte mode (and its dark variant) follow automatically.
+The title bar shows the open tab ("Staff Management · Time off").
 
 **Data model** (`types.ts`, columns from the _Staff roster template_ workbook). `Employee` holds
 the template's columns: first / last name (full name is derived), milestone, Deloitte email,
@@ -973,11 +980,15 @@ meant different hours. It is modelled so that stays true without the confusion:
   Shift-3 blue, Shift-4 purple, Shift-5 pink, NS indigo, US-CST teal, US-PST peach), holiday red,
   PTO/sick grey, temp PTO cyan, comp off periwinkle, on-call amber, custom hours beige, a swapped
   day orange (`hueOfShift`, `src/styles/roster-colors.css`, one pair per theme so light, dark and
-  Deloitte mode all keep the coding). The hours still differ per team, so each team section shows
-  its own legend (every shift with its hours and usual days) above its people.
+  Deloitte mode all keep the coding). The hours still differ per team, so each team section can
+  show its own legend (every shift with its hours and usual days) above its people: it is off by
+  default to keep the people in view, and the single **Legend and shift hours** bar under the
+  grid (remembered per computer) turns it on for every team together with the day-type key.
+  The toolbar is one row: range, search, team filter and a **More** menu (show or hide teams,
+  Copy last week, Schedules and teams, Holidays, Import, Match names).
 - **Events** (holidays, swap days, notes such as the winter disconnect) apply to a day or a run
   of days and show above the dates. A **holiday** can list the locations that observe it
-  (`RosterEvent.locations`; empty = everywhere). **Holidays** in the toolbar edits them: pick the
+  (`RosterEvent.locations`; empty = everywhere). **More > Holidays by location** edits them: pick the
   locations with chips (Every location / India only / tick everything and untick the
   exceptions), or add a place. People are placed by their location (`RosterMember.city`, else the
   directory's office; set per person from the row menu); a person at an observing location gets
@@ -1004,7 +1015,7 @@ meant different hours. It is modelled so that stays true without the confusion:
   app's two-month cycle: whole Sunday-Saturday weeks, `cycles.ts`).
 - **Who is on the roster.** A `RosterMember` is one row. It links to a directory profile
   (`employeeId`) or, until the person exists in the directory, stands alone with the name, city
-  and role from the workbook; **Manage > Match names to the directory** (and the import itself)
+  and role from the workbook; **More > Match names to the directory** (and the import itself)
   link members whose name is the same words as exactly one profile. A linked member takes the
   name and photo from the directory and disappears when the profile is excluded from the shift
   roster. Directory people whose profile names no team are listed last under "Not in a team
@@ -1014,7 +1025,7 @@ meant different hours. It is modelled so that stays true without the confusion:
   by PUT, validated for dangling teams / schedules / links); `shifts.json` holds the days
   (`<memberId>|<date>` ids; the list is served with an ETag because a year of a 50-person roster
   is ~11,000 days).
-- **Import** (Manage > Import from Excel) reads the "Resource" sheet of the roster workbook in the
+- **Import** (More > Import from Excel) reads the "Resource" sheet of the roster workbook in the
   browser: the banner row becomes events, the date row the days, a heading row a team, and each
   person row a member with their cells. Cells are read against their team's schedule (so
   `Shift-3` under Device Support becomes that team's Shift-3); a shift the team's schedule lacks
@@ -1023,7 +1034,7 @@ meant different hours. It is modelled so that stays true without the confusion:
   Device Support, `L N S 2.0` -> LNS 2.0, `Governance` -> Integration Hub). Re-importing updates
   the same people instead of adding them again; days left blank in the file are not cleared.
 - **Editing.** Click a day for the team's shifts, "Fill the week with..." (a shift's usual days),
-  day types, custom hours / swap / note, or clear. **Manage > Schedules and teams** edits
+  day types, custom hours / swap / note, or clear. **More > Schedules and teams** edits
   schedules, shifts and teams (a shift that days still use cannot be deleted).
 
 The roster itself starts with one schedule ("Standard") and no teams. The legends of the team's
@@ -1090,7 +1101,7 @@ The whole app in one place (the sections below are the detail, phase by phase).
   or matched; a filtered message's body is dropped.
 - **Identity and time come from the server.** `approvedBy`, every audit line and every
   sign-off stamp use the OS user of the machine running the server and the server's clock; a
-  request that tries to send either is refused. That is who *pressed the button*; who *owns*
+  request that tries to send either is refused. That is who _pressed the button_; who _owns_
   a to-do is a separate field, defaulted from the names given at setup (`config.me`).
 - **Data stays on this computer.** Records are JSON files in the data folder (outside the
   repo), with a retention purge for logs and message text and an `audit.jsonl` of every
@@ -2153,7 +2164,9 @@ title, tone, action, key })` from anywhere; a repeated `key` replaces the earlie
   `Employee.birthday` ("MM-DD") is a new optional field (default ""); anniversaries use the staffing start
   date. The workbook import and export columns are unchanged.
 - **Insights tab** (`InsightsTab`): Capacity, People, Leave balances, Swaps, On call, Skills, Org chart,
-  Checklists, Holidays and Export. `LeaveApprovals` (also on the Dashboard as "Staff to act on") approves or
+  Checklists, Holidays and Export. Capacity lays the team cards (with their "Minimum per day" picker) beside
+  the coverage gaps and uses the app's own `DateField` day picker; Org chart is a client manager > team >
+  people tree (just teams when no client manager is set). `LeaveApprovals` (also on the Dashboard as "Staff to act on") approves or
   rejects through the normal `timeoff` commit, warns when approval would take a team under its minimum
   and offers the reply as an unsent mail. An approved swap writes both days through the `shifts` commit,
   marked as swaps. Onboarding checklists start for people who appear in the directory after the first
@@ -2161,7 +2174,7 @@ title, tone, action, key })` from anywhere; a repeated `key` replaces the earlie
 - **Everywhere.** `PersonName` opens a profile card (the Dashboard's "who's out" rows and the Insights lists);
   the leave dialog accepts several dates at once; Settings > Accessibility has the colour-blind-safe roster
   (`data-roster-colours="safe"` on `<html>`, Okabe-Ito hues with a pattern on every shift,
-  `styles/roster-colors.css`). The roster legend was already outside the scrolling grid, so it stays visible.
+  `styles/roster-colors.css`). The roster legend sits outside the scrolling grid, collapsed to one line.
 - **Not done in 5.5.** Exports are CSV (opens in Excel) and ICS, not .xlsx, to avoid adding a spreadsheet
   writer; a native .xlsx can follow if wanted.
 
