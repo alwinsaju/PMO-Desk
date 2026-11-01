@@ -16,6 +16,7 @@ interface AppCategoryRowProps {
    *  window instead of just toggling install state. See AppStoreApp.tsx's
    *  `handlePrimaryAction`. */
   onToggleInstall: (app: AppListing) => void;
+  onOpenDetails: (app: AppListing) => void;
 }
 
 /**
@@ -32,6 +33,7 @@ export function AppCategoryRow({
   apps,
   installedIds,
   onToggleInstall,
+  onOpenDetails,
 }: AppCategoryRowProps) {
   if (apps.length === 0) return null;
 
@@ -46,6 +48,7 @@ export function AppCategoryRow({
             icon={appIcons[app.icon]}
             isInstalled={Boolean(installedIds[app.id])}
             onToggleInstall={() => onToggleInstall(app)}
+            onOpenDetails={() => onOpenDetails(app)}
             index={index}
           />
         ))}

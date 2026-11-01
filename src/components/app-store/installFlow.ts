@@ -5,6 +5,11 @@ import type { AppListing } from "./types.ts";
 /** How long a card shows "Installing" before the install completes. */
 export const INSTALLING_MS = 900;
 
+/** The Install / Installing… / Open label shared by the card and the detail sheet. */
+export function installLabel(installing: boolean, installed: boolean): string {
+  return installing ? "Installing…" : installed ? "Open" : "Install";
+}
+
 type AppRef = Pick<AppListing, "id" | "name" | "url">;
 
 /** Entries without a url are fictional samples: they have no window to open. */

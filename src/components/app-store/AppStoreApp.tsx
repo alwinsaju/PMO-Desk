@@ -14,11 +14,12 @@ import { useWindowContext } from "@/components/window-manager";
 import { noSpellcheck } from "@/lib/ui/noSpellcheck";
 import { appCatalog, appCategories } from "./appCatalog";
 import { AppCategoryRow } from "./AppCategoryRow";
+import { AppDetailSheet } from "./AppDetailSheet";
+import { AppHero } from "./AppHero";
 import { runAppPrimaryAction } from "./appActions";
 import { useInstalledAppsStore } from "./installedAppsStore";
-import type { AppCategoryId } from "./types";
-
-type CategoryFilter = "all" | AppCategoryId;
+import { categoryCounts, featuredApps, matchApps, type CategoryFilter } from "./storeLogic";
+import type { AppListing } from "./types";
 
 /**
  * Root App Store window — matches the `AppComponent` contract
@@ -30,12 +31,14 @@ type CategoryFilter = "all" | AppCategoryId;
  * attribute so it's still visibly "used" per the contract, e.g. for
  * debugging multiple open App Store windows at once.
  *
- * Just the browse view (search + category tabs + grouped cards) — there is
- * no per-app detail screen.
+ * Browse view: search, category chips with counts, a hero for the featured
+ * apps (on "All") and grouped cards. A card, or the hero's Details, opens
+ * the app's detail sheet (`AppDetailSheet`).
  */
 export function AppStoreApp({ windowId }: { windowId: string }) {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<CategoryFilter>("all");
+  const [detailId, setDetailId] = useState<string | null>(null);
   useWindowContext(
     windowId,
     category === "all"
@@ -50,13 +53,10 @@ export function AppStoreApp({ windowId }: { windowId: string }) {
   const installedIds = useInstalledAppsStore((s) => s.installedIds);
 
   const trimmedQuery = query.trim();
-  const searchResults = trimmedQuery
-    ? appCatalog.filter((app) => {
-        const haystack = `${app.name} ${app.tagline} ${app.developer}`.toLowerCase();
-        return haystack.includes(trimmedQuery.toLowerCase());
-      })
-    : [];
-  const featuredApps = appCatalog.filter((app) => app.featured);
+  const searchResults = matchApps(appCatalog, query);
+  const featured = featuredApps(appCatalog);
+  const detailApp = appCatalog.find((app) => app.id === detailId) ?? null;
+  const openDetails = (app: AppListing) => setDetailId(app.id);
 
   return (
     <div data-window-id={windowId} className="flex h-full w-full flex-col">
@@ -90,10 +90,9 @@ export function AppStoreApp({ windowId }: { windowId: string }) {
 
           {!trimmedQuery && (
             <TabsList>
-              <TabsTrigger value="all">All</TabsTrigger>
-              {appCategories.map((cat) => (
-                <TabsTrigger key={cat.id} value={cat.id}>
-                  {cat.label}
+              {categoryCounts(appCatalog, appCategories).map((chip) => (
+                <TabsTrigger key={chip.id} value={chip.id} count={chip.count}>
+                  {chip.label}
                 </TabsTrigger>
               ))}
             </TabsList>
@@ -111,6 +110,7 @@ export function AppStoreApp({ windowId }: { windowId: string }) {
                   apps={searchResults}
                   installedIds={installedIds}
                   onToggleInstall={runAppPrimaryAction}
+                  onOpenDetails={openDetails}
                 />
                 {searchResults.length === 0 && (
                   <div className="flex flex-col items-center gap-3 px-4 py-14 text-center">
@@ -136,11 +136,11 @@ export function AppStoreApp({ windowId }: { windowId: string }) {
             ) : (
               <>
                 <TabsContent value="all" className="flex flex-col gap-6 outline-none">
-                  <AppCategoryRow
-                    title="Featured"
-                    apps={featuredApps}
+                  <AppHero
+                    apps={featured}
                     installedIds={installedIds}
-                    onToggleInstall={runAppPrimaryAction}
+                    onPrimaryAction={runAppPrimaryAction}
+                    onOpenDetails={openDetails}
                   />
                   {appCategories.map((cat) => (
                     <AppCategoryRow
@@ -149,6 +149,7 @@ export function AppStoreApp({ windowId }: { windowId: string }) {
                       apps={appCatalog.filter((app) => app.category === cat.id)}
                       installedIds={installedIds}
                       onToggleInstall={runAppPrimaryAction}
+                      onOpenDetails={openDetails}
                     />
                   ))}
                 </TabsContent>
@@ -159,6 +160,7 @@ export function AppStoreApp({ windowId }: { windowId: string }) {
                       apps={appCatalog.filter((app) => app.category === cat.id)}
                       installedIds={installedIds}
                       onToggleInstall={runAppPrimaryAction}
+                      onOpenDetails={openDetails}
                     />
                   </TabsContent>
                 ))}
@@ -167,6 +169,12 @@ export function AppStoreApp({ windowId }: { windowId: string }) {
           </div>
         </ScrollArea>
       </Tabs>
+      <AppDetailSheet
+        app={detailApp}
+        isInstalled={Boolean(detailApp && installedIds[detailApp.id])}
+        onPrimaryAction={runAppPrimaryAction}
+        onClose={() => setDetailId(null)}
+      />
     </div>
   );
 }
