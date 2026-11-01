@@ -129,6 +129,20 @@ export function employeeFromEmail(
   );
 }
 
+/** You, the person who set PMO Desk up: added by email like anyone else (the M365 profile
+ *  fills in the rest), but with the name typed in the setup when there is one. */
+export function employeeForSelf(
+  email: string,
+  name = "",
+  now: string = new Date().toISOString(),
+): Employee {
+  const base = employeeFromEmail(email, now);
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  return words.length === 0
+    ? base
+    : { ...base, firstName: words[0], lastName: words.slice(1).join(" ") };
+}
+
 export type EmployeeErrors = Partial<
   Record<
     | "deloitteEmail"

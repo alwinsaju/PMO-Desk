@@ -9,6 +9,7 @@ import {
   type KeyboardEvent,
 } from "react";
 import { motion } from "motion/react";
+import * as AvatarPrimitive from "@radix-ui/react-avatar";
 import { ArrowRightIcon, UserIcon } from "@phosphor-icons/react";
 import { cn } from "@/lib/cn";
 import { trapTarget } from "@/lib/focusKeys";
@@ -308,13 +309,24 @@ export function LoginScreen({ isUnlocking, onUnlock, onExitComplete }: LoginScre
               "shadow-[0_14px_34px_-8px_rgba(20,60,50,0.5),inset_0_1px_0_rgba(255,255,255,0.4)]",
             )}
           >
-            {identity.initials ? (
-              <span className="font-headline text-[32px] leading-none">
-                {identity.initials}
-              </span>
-            ) : (
-              <UserIcon size={40} weight="fill" />
-            )}
+            <AvatarPrimitive.Root className="grid h-full w-full place-items-center overflow-hidden rounded-full">
+              {identity.photoUrl && (
+                <AvatarPrimitive.Image
+                  src={identity.photoUrl}
+                  alt=""
+                  className="h-full w-full object-cover"
+                />
+              )}
+              <AvatarPrimitive.Fallback className="grid h-full w-full place-items-center">
+                {identity.initials ? (
+                  <span className="font-headline text-[32px] leading-none">
+                    {identity.initials}
+                  </span>
+                ) : (
+                  <UserIcon size={40} weight="fill" />
+                )}
+              </AvatarPrimitive.Fallback>
+            </AvatarPrimitive.Root>
           </span>
           <div className="text-center [text-shadow:0_2px_14px_rgba(40,30,80,0.3)]">
             {identity.name && <p className="text-[13px] text-white/85">Welcome back</p>}

@@ -1,11 +1,14 @@
-// Who the lock screen greets: the name configured in PMO To-Do, else the first name of
-// the computer's user. Pure: the store fetches, this decides.
+// Who the lock screen greets: your roster profile (the M365 full name and photo), else the
+// name configured in PMO To-Do, else the first name of the computer's user. Pure: the store
+// fetches, this decides.
 
 export interface Identity {
   /** What to show ("Priya Sharma", "Alex"); empty when nothing usable is known. */
   name: string;
   /** One or two capitals for the avatar; empty when there is no name. */
   initials: string;
+  /** The profile picture from the roster; absent until the M365 profile has brought one. */
+  photoUrl?: string;
 }
 
 // Accounts that say nothing about the person.
@@ -41,12 +44,18 @@ export function initialsOf(name: string): string {
 }
 
 export function resolveIdentity(input: {
+  /** You on the roster: the M365 profile's full name and photo, once it has arrived. */
+  self?: { name?: string | null; photoUrl?: string | null } | null;
   /** `me.names` from the PMO configuration. */
   pmoNames?: readonly string[] | null;
   /** The computer's account name from the platform info. */
   account?: string | null;
 }): Identity {
+  const fromRoster = input.self?.name?.trim();
   const configured = (input.pmoNames ?? []).map((n) => n.trim()).find(Boolean);
-  const name = configured || firstNameFromAccount(input.account);
-  return { name, initials: initialsOf(name) };
+  const name = fromRoster || configured || firstNameFromAccount(input.account);
+  const photoUrl = input.self?.photoUrl?.trim();
+  return photoUrl
+    ? { name, initials: initialsOf(name), photoUrl }
+    : { name, initials: initialsOf(name) };
 }

@@ -17,6 +17,16 @@ Files that arrive while the app is closed are applied soon after it starts, and 
 they are applied about once a minute with no Staff window open (every 20 seconds while one
 is). The app deletes each profile file after applying it.
 
+## You are the first person on the roster
+
+The first-run setup of PMO To-Do asks for your Deloitte email (the name is optional). Finishing
+it adds you to the staff roster as its **first member** and writes your request file, so this
+same flow brings in your full name, title, location and photo. The lock screen then greets you
+with that full name and photo (until the profile arrives it shows the name from your address, and
+looks again every 20 seconds). An install that was set up earlier gets the same treatment the next
+time the lock screen opens: your configured work email is added to the roster if it is not there.
+Nobody is added if that address is on the offboarded list.
+
 ## Before you build the flow
 
 1. OneDrive (work account) is signed in on this computer. The installer creates

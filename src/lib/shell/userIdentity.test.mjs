@@ -53,4 +53,23 @@ describe("resolveIdentity", () => {
       initials: "",
     });
   });
+
+  it("prefers your roster profile: the M365 full name and photo", () => {
+    assert.deepEqual(
+      resolveIdentity({
+        self: { name: " Priya Sharma ", photoUrl: "/api/staff/photos/emp_1?v=3" },
+        pmoNames: ["Pri"],
+        account: "psharma",
+      }),
+      { name: "Priya Sharma", initials: "PS", photoUrl: "/api/staff/photos/emp_1?v=3" },
+    );
+  });
+
+  it("leaves the photo out until there is one, and ignores an empty roster name", () => {
+    assert.deepEqual(
+      resolveIdentity({ self: { name: "", photoUrl: "" }, pmoNames: ["Pat Example"] }),
+      { name: "Pat Example", initials: "PE" },
+    );
+    assert.equal("photoUrl" in resolveIdentity({ self: null, account: "alex" }), false);
+  });
 });

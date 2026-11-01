@@ -1,7 +1,7 @@
 // What the first-run wizard says about its progress and the answers so far.
 // Pure, so the wording and the summary rows are tested (wizardView.test.mjs).
 import { splitList, type FirstRunForm, type FirstRunStepId } from "./firstRun.ts";
-import { parseDomainList } from "./listValidation.ts";
+import { checkEmail, parseDomainList } from "./listValidation.ts";
 
 export interface WizardProgress {
   label: string;
@@ -27,7 +27,7 @@ export const STEP_SHORT: Record<FirstRunStepId, string> = {
 
 /** One line under the heading; each step has its own. */
 export const STEP_INTRO: Record<FirstRunStepId, string> = {
-  who: "Nothing is read from your mail until you finish this. Everything stays on this computer.",
+  who: "Your work email brings in your name and photo from Microsoft 365 and puts you on the staff roster. Nothing is read from your mail until you finish this.",
   timeZone: "Due dates and reminders follow this, so “Friday” means your Friday.",
   domains: "Only mail from these domains can become a to-do.",
   inbox:
@@ -103,7 +103,9 @@ export function wizardSummary(form: FirstRunForm): SummaryRow[] {
         ? others.length > 0
           ? `${name} (also ${others.join(", ")})`
           : name
-        : "Not set",
+        : checkEmail(form.email).ok
+          ? "From your Microsoft 365 profile"
+          : "Not set",
       step: "who",
     },
     { label: "Email", value: orNotSet(form.email), step: "who" },

@@ -99,4 +99,9 @@ describe("wizardSummary", () => {
     assert.equal(rows[1].value, "Not set");
     assert.equal(rows[5].value, "Not set");
   });
+
+  it("says the name comes from Microsoft 365 when only the email is given", () => {
+    const rows = wizardSummary({ ...form, fullName: " ", otherNames: "" });
+    assert.equal(rows[0].value, "From your Microsoft 365 profile");
+  });
 });

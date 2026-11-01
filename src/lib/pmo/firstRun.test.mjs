@@ -12,6 +12,7 @@ import {
   needsFirstRun,
   splitList,
   loginNameHint,
+  nameToGoBy,
   stepProblems,
   suggestedFullName,
   suggestedDomain,
@@ -162,9 +163,9 @@ describe("stepProblems", () => {
     );
   });
 
-  it("who: needs a name and a valid email", () => {
+  it("who: needs a valid email; the name is optional (Microsoft 365 brings it)", () => {
     assert.deepEqual(stepProblems("who", form()), []);
-    assert.match(stepProblems("who", form({ fullName: "  " }))[0], /name/i);
+    assert.deepEqual(stepProblems("who", form({ fullName: "  " })), []);
     assert.match(stepProblems("who", form({ email: "pat" }))[0], /email/i);
     assert.match(stepProblems("who", form({ email: "" }))[0], /email/i);
   });
@@ -251,9 +252,20 @@ describe("firstRunPayload", () => {
   });
 
   it("lists every problem when the form is incomplete", () => {
-    const result = firstRunPayload(form({ fullName: "", email: "x", inboxDir: "" }));
+    const result = firstRunPayload(form({ email: "x", timeZone: "", inboxDir: "" }));
     assert.equal(result.ok, false);
     assert.ok(result.problems.length >= 3);
+  });
+
+  it("calls you by the name in your address when no name is typed", () => {
+    const result = firstRunPayload(
+      form({ fullName: " ", otherNames: "", email: "jane.doe@deloitte.com" }),
+    );
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.payload.names, ["Jane Doe"]);
+    assert.equal(nameToGoBy("alsaju@deloitte.com"), "Alsaju");
+    assert.equal(nameToGoBy("jane_doe3@x.com"), "Jane Doe");
+    assert.equal(nameToGoBy("42@x.com"), "42");
   });
 });
 

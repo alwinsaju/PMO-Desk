@@ -10,7 +10,9 @@ import { mergeChanges } from "./changes.ts";
 import {
   applyProfile,
   EMPLOYEE_ID,
+  employeeForSelf,
   findByEmail,
+  isValidEmail,
   settleProfileSync,
 } from "./employees.ts";
 import {
@@ -566,6 +568,32 @@ export function deletePhoto(
     await patchPerson(id, env, (p) =>
       p.photoVersion === 0 ? p : { ...p, photoVersion: 0, updatedAt: now() },
     );
+  });
+}
+
+// ---------------------------------------------------------------------------
+// You on the roster
+// ---------------------------------------------------------------------------
+
+/** Puts the person who set PMO Desk up on the roster, as its first member, waiting for
+ *  their M365 profile. Does nothing when that email is already on the roster (or was
+ *  offboarded on purpose); returns the person on the roster, or null when it cannot be
+ *  used. Safe to call again and again. */
+export function ensureSelf(
+  input: { email: string; name?: string },
+  env: Env = process.env,
+  now: () => string = () => new Date().toISOString(),
+): Promise<Employee | null> {
+  const email = input.email.trim();
+  if (!isValidEmail(email)) return Promise.resolve(null);
+  return withLock(env, async () => {
+    const people = await readCollection("employees", env);
+    const existing = findByEmail(people, email);
+    if (existing) return existing;
+    if (findByEmail(await readCollection("offboarded", env), email)) return null;
+    const me = employeeForSelf(email, input.name, now());
+    await writeCollection("employees", [me, ...people], env);
+    return me;
   });
 }
 

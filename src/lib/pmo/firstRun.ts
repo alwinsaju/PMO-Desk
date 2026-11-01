@@ -2,6 +2,7 @@
 // config, and the rule that tells an upgraded install it is already set up.
 // No I/O and no React, so the UI, the server routes and the tests share it.
 import { z } from "zod";
+import { nameFromEmail } from "../staff/employees.ts";
 import { checkEmail, parseDomainList, parseEmailList } from "./listValidation.ts";
 import { isValidTimeZone } from "./time.ts";
 import { DomainEntrySchema, EmailEntrySchema } from "./types.ts";
@@ -144,6 +145,12 @@ export function loginNameHint(env: Env): string {
   return loginWords(env).join(" ");
 }
 
+/** What to call someone who gave only their address: "jane.doe@x.com" -> "Jane Doe". */
+export function nameToGoBy(email: string): string {
+  const { firstName, lastName } = nameFromEmail(email);
+  return `${firstName} ${lastName}`.trim() || email.split("@")[0] || "";
+}
+
 export function initialFirstRunForm(options: {
   suggestedName: string;
   detectedTimeZone: string;
@@ -175,7 +182,8 @@ export function stepProblems(step: FirstRunStepId, form: FirstRunForm): string[]
   const problems: string[] = [];
   switch (step) {
     case "who": {
-      if (!form.fullName.trim()) problems.push("Enter your full name.");
+      // The full name is optional: the M365 profile brings it. Until then the name comes
+      // from the address (jane.doe@x.com -> Jane Doe).
       const email = checkEmail(form.email);
       if (form.email.trim() === "") {
         problems.push("Enter your work email address, for example you@company.com.");
@@ -220,15 +228,19 @@ export type FirstRunResult =
 export function firstRunPayload(form: FirstRunForm): FirstRunResult {
   const problems = FIRST_RUN_STEPS.flatMap((step) => stepProblems(step.id, form));
   if (problems.length > 0) return { ok: false, problems };
+  const emails = parseEmailList([form.email]).valid;
   const names = splitList(
-    [form.fullName.trim(), ...splitList(form.otherNames, { commasOnly: true })].join(","),
+    [
+      form.fullName.trim() || nameToGoBy(emails[0] ?? ""),
+      ...splitList(form.otherNames, { commasOnly: true }),
+    ].join(","),
     { commasOnly: true },
   );
   return {
     ok: true,
     payload: {
       names,
-      emails: parseEmailList([form.email]).valid,
+      emails,
       timeZone: form.timeZone.trim(),
       allowedSenderDomains: parseDomainList(form.allowedDomains).valid,
       blockedDomains: parseDomainList(form.blockedDomains).valid,

@@ -7,6 +7,7 @@ import {
   FIRST_RUN_STEPS,
   firstRunPayload,
   initialFirstRunForm,
+  nameToGoBy,
   stepProblems,
   suggestedDomain,
   timeZoneChoices,
@@ -268,13 +269,32 @@ export function FirstRunWizard({
 
               {current.id === "who" && (
                 <div className="flex flex-col gap-3.5">
-                  <Field label="Your full name">
+                  <Field label="Your Deloitte email address">
+                    <Input
+                      type="email"
+                      value={form.email}
+                      autoComplete="email"
+                      placeholder="first.last@deloitte.com"
+                      aria-invalid={emailProblem ? true : undefined}
+                      onChange={(event) => set({ email: event.target.value })}
+                    />
+                    <FieldError message={emailProblem ?? undefined} />
+                  </Field>
+                  <Field label="Your full name (optional)">
                     <Input
                       value={form.fullName}
                       autoComplete="name"
-                      placeholder={suggestions?.nameHint || "Pat Example"}
+                      placeholder={
+                        emailChecked?.ok
+                          ? nameToGoBy(form.email.trim())
+                          : suggestions?.nameHint || "Filled in from Microsoft 365"
+                      }
                       onChange={(event) => set({ fullName: event.target.value })}
                     />
+                    <span className="text-ink-muted text-[12px]">
+                      Leave it empty: your full name and photo come from Microsoft 365 and
+                      show on the lock screen.
+                    </span>
                   </Field>
                   <Field label="Short names and other spellings (optional, comma separated)">
                     <Input
@@ -282,17 +302,6 @@ export function FirstRunWizard({
                       placeholder="Pat, P. Example"
                       onChange={(event) => set({ otherNames: event.target.value })}
                     />
-                  </Field>
-                  <Field label="Your work email address">
-                    <Input
-                      type="email"
-                      value={form.email}
-                      autoComplete="email"
-                      placeholder="you@company.com"
-                      aria-invalid={emailProblem ? true : undefined}
-                      onChange={(event) => set({ email: event.target.value })}
-                    />
-                    <FieldError message={emailProblem ?? undefined} />
                   </Field>
                 </div>
               )}
