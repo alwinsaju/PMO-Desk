@@ -13,6 +13,7 @@ import {
   splitList,
   stepProblems,
   suggestedFullName,
+  suggestedDomain,
   timeZoneChoices,
   withSuggestedDomain,
 } from "./firstRun.ts";
@@ -103,6 +104,18 @@ describe("timeZoneChoices", () => {
   });
 });
 
+describe("suggestedDomain", () => {
+  it("offers the work email's domain without writing it into the form", () => {
+    const typed = form({ email: "Pat@US.Contoso.com", allowedDomains: "" });
+    assert.equal(suggestedDomain(typed), "us.contoso.com");
+    assert.equal(typed.allowedDomains, "");
+  });
+  it("offers nothing for a missing or malformed email", () => {
+    assert.equal(suggestedDomain(form({ email: "nope" })), null);
+    assert.equal(suggestedDomain(form({ email: "pat@deloitte.comdeloitte.com" })), null);
+  });
+});
+
 describe("withSuggestedDomain", () => {
   it("fills the email's domain in when the domain box is empty", () => {
     const filled = withSuggestedDomain(
@@ -156,6 +169,32 @@ describe("stepProblems", () => {
     assert.match(
       stepProblems("domains", form({ blockedDomains: "bad domain!" }))[0],
       /bad/,
+    );
+  });
+
+  it("who: refuses an address list in the single email box, and says why", () => {
+    assert.match(
+      stepProblems("who", form({ email: "Alex,A.Morgan" }))[0],
+      /two addresses joined/,
+    );
+    assert.match(stepProblems("who", form({ email: "a@x.com b@x.com" }))[0], /joined/);
+  });
+
+  it("domains: flags a doubled domain and each bad entry, and accepts commas and newlines", () => {
+    const doubled = stepProblems(
+      "domains",
+      form({ allowedDomains: "deloitte.comdeloitte.com" }),
+    );
+    assert.equal(doubled.length, 1);
+    assert.match(doubled[0], /deloitte\.comdeloitte\.com.*typed twice/);
+    const mixed = stepProblems(
+      "domains",
+      form({ allowedDomains: "a.com\nb.com, nope", blockedDomains: "x@y.com" }),
+    );
+    assert.equal(mixed.length, 2);
+    assert.deepEqual(
+      stepProblems("domains", form({ allowedDomains: "A.com;\n@b.com." })),
+      [],
     );
   });
 

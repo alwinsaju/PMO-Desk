@@ -1,8 +1,9 @@
 // Shared plumbing for the /api/pmo route handlers: the origin check, lazy
 // service start-up and the { ok, reason? } envelope (HTTP 200 for every
-// business outcome, like the other routes in this repo; only a refused origin
-// is a 403).
+// business outcome, like the other routes in this repo; a refused origin is a
+// 403 and a refusal that lists invalid entries in `errors` is a 400).
 import { NextResponse } from "next/server";
+import { replyStatus } from "../fieldErrors.ts";
 import { DEFAULT_BODY_BYTES, readBodyCapped } from "./bodyCap.ts";
 import { checkOrigin, factsFromRequest } from "./originCheck.ts";
 import { ensureIngest, type PmoService } from "./service.ts";
@@ -16,7 +17,8 @@ export async function handle(
     return NextResponse.json({ ok: false, reason: verdict.reason }, { status: 403 });
   }
   try {
-    return NextResponse.json(await run(await ensureIngest()));
+    const result = await run(await ensureIngest());
+    return NextResponse.json(result, { status: replyStatus(result) });
   } catch (error) {
     console.error("[pmo] request failed:", error);
     return NextResponse.json({

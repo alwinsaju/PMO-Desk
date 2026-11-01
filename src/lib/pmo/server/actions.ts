@@ -1,7 +1,8 @@
 // The only code that creates or changes to-dos. Every function takes the
 // parsed-from-unknown request body, validates it, and returns the
 // { ok, reason? } envelope the routes send back (HTTP 200 either way, the
-// repo convention). Approve is the one door into todos/: nothing else ever
+// repo convention; a refusal that lists bad entries in `errors` is a 400).
+// Approve is the one door into todos/: nothing else ever
 // builds a Todo from a proposal.
 import {
   PERIOD_KEY,
@@ -21,6 +22,8 @@ import {
 import { threadKeyOf } from "../thread.ts";
 import { nextOccurrence as nextOccurrenceOf } from "../recurrence.ts";
 import { todoIdForProposal } from "../dedupe.ts";
+import { fieldErrors, summarizeFieldErrors, type FieldError } from "../fieldErrors.ts";
+import { parseDomainList, parseEmailList } from "../listValidation.ts";
 import {
   appendHistory,
   applyTodoPatch,
@@ -81,9 +84,19 @@ export interface Pmo {
 }
 
 export type ActionResult<T extends object = object> =
-  ({ ok: true } & T) | { ok: false; reason: string };
+  ({ ok: true } & T) | { ok: false; reason: string; errors?: FieldError[] };
 
 const fail = (reason: string): { ok: false; reason: string } => ({ ok: false, reason });
+
+/** A refusal that names every bad entry; the route answers it with HTTP 400. */
+function invalid(prefix: string, error: z.ZodError, body: unknown) {
+  const errors = fieldErrors(error, body);
+  return {
+    ok: false as const,
+    reason: `${prefix}: ${summarizeFieldErrors(errors)}`,
+    errors,
+  };
+}
 
 function firstIssue(error: z.ZodError): string {
   const issue = error.issues[0];
@@ -727,7 +740,7 @@ export function updateConfig(
 ): Promise<ActionResult<{ config: PmoConfig }>> {
   const parsed = PmoConfigPatchSchema.safeParse(body);
   if (!parsed.success)
-    return Promise.resolve(fail(`Invalid config: ${firstIssue(parsed.error)}`));
+    return Promise.resolve(invalid("Invalid config", parsed.error, body));
   const patch = parsed.data;
 
   return pmo.store.withLock(async () => {
@@ -741,16 +754,19 @@ export function updateConfig(
         ? cleanList(patch.teamsChatAllowlist, false)
         : current.teamsChatAllowlist,
       allowedSenderDomains: patch.allowedSenderDomains
-        ? cleanList(patch.allowedSenderDomains)
+        ? parseDomainList(patch.allowedSenderDomains).valid
         : current.allowedSenderDomains,
       blockedDomains: patch.blockedDomains
-        ? cleanList(patch.blockedDomains)
+        ? parseDomainList(patch.blockedDomains).valid
         : current.blockedDomains,
       blockedTerms: patch.blockedTerms
         ? cleanList(patch.blockedTerms, false)
         : current.blockedTerms,
       me: patch.me
-        ? { names: cleanList(patch.me.names, false), emails: cleanList(patch.me.emails) }
+        ? {
+            names: cleanList(patch.me.names, false),
+            emails: parseEmailList(patch.me.emails).valid,
+          }
         : current.me,
       retentionDays: patch.retentionDays ?? current.retentionDays,
       reminders: patch.reminders
