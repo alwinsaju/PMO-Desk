@@ -114,16 +114,34 @@ const SYSTEM_USER_NAMES = new Set([
   "default",
 ]);
 
-/** A "your name" suggestion from the Windows user name (`pat.example` -> "Pat
- *  Example"). Only a suggestion: the person edits it. */
-export function suggestedFullName(env: Env): string {
+const LOGIN_WORD = /^\p{L}+$/u;
+
+/** The Windows user name split into capitalised words (`pat.example` ->
+ *  ["Pat", "Example"]); empty for a missing or system name. */
+function loginWords(env: Env): string[] {
   const raw = (env.USERNAME ?? env.USER ?? "").trim();
-  if (!raw || SYSTEM_USER_NAMES.has(raw.toLowerCase())) return "";
+  if (!raw || SYSTEM_USER_NAMES.has(raw.toLowerCase())) return [];
   return raw
     .split(/[._\s-]+/)
     .filter(Boolean)
-    .map((word) => word[0].toUpperCase() + word.slice(1).toLowerCase())
-    .join(" ");
+    .map((word) => word[0].toUpperCase() + word.slice(1).toLowerCase());
+}
+
+/** A "your name" pre-fill from the Windows user name (`pat.example` -> "Pat
+ *  Example"). Only when it looks like a first and last name: a one-word login
+ *  ("Alsaju", "jsmith01") is a username, not a name, and is left to
+ *  `loginNameHint`. */
+export function suggestedFullName(env: Env): string {
+  const words = loginWords(env);
+  return words.length >= 2 && words.every((word) => LOGIN_WORD.test(word))
+    ? words.join(" ")
+    : "";
+}
+
+/** What the login looks like as a name, for the box's placeholder when it is
+ *  not good enough to pre-fill. */
+export function loginNameHint(env: Env): string {
+  return loginWords(env).join(" ");
 }
 
 export function initialFirstRunForm(options: {

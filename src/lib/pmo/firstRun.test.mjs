@@ -11,6 +11,7 @@ import {
   initialFirstRunForm,
   needsFirstRun,
   splitList,
+  loginNameHint,
   stepProblems,
   suggestedFullName,
   suggestedDomain,
@@ -68,15 +69,35 @@ describe("domainOfEmail", () => {
 });
 
 describe("suggestedFullName", () => {
-  it("turns a Windows user name into a capitalised suggestion", () => {
+  it("turns a first.last Windows user name into a capitalised suggestion", () => {
     assert.equal(suggestedFullName({ USERNAME: "pat.example" }), "Pat Example");
     assert.equal(suggestedFullName({ USERNAME: "pat_example" }), "Pat Example");
-    assert.equal(suggestedFullName({ USER: "sam" }), "Sam");
+    assert.equal(suggestedFullName({ USER: "mary-jane.o" }), "Mary Jane O");
+    assert.equal(suggestedFullName({ USERNAME: "zoë.müller" }), "Zoë Müller");
+  });
+  it("does not pre-fill a one-word login or one with digits or symbols (QA-28)", () => {
+    assert.equal(suggestedFullName({ USERNAME: "Alsaju" }), "");
+    assert.equal(suggestedFullName({ USER: "sam" }), "");
+    assert.equal(suggestedFullName({ USERNAME: "jsmith01" }), "");
+    assert.equal(suggestedFullName({ USERNAME: "pat.example2" }), "");
+    assert.equal(suggestedFullName({ USERNAME: "svc$backup" }), "");
   });
   it("suggests nothing for a missing or system name", () => {
     assert.equal(suggestedFullName({}), "");
     assert.equal(suggestedFullName({ USERNAME: "Administrator" }), "");
     assert.equal(suggestedFullName({ USERNAME: "SYSTEM" }), "");
+  });
+});
+
+describe("loginNameHint", () => {
+  it("shows the login as a name for the placeholder, even for one word", () => {
+    assert.equal(loginNameHint({ USERNAME: "Alsaju" }), "Alsaju");
+    assert.equal(loginNameHint({ USERNAME: "pat.example" }), "Pat Example");
+    assert.equal(loginNameHint({ USER: "sam" }), "Sam");
+  });
+  it("is empty for a missing or system name", () => {
+    assert.equal(loginNameHint({}), "");
+    assert.equal(loginNameHint({ USERNAME: "admin" }), "");
   });
 });
 

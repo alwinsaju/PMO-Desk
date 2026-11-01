@@ -333,6 +333,25 @@ describe("existing installs are not asked again", () => {
   });
 });
 
+describe("firstRunSuggestions: the name", () => {
+  it("pre-fills a login that looks like a first and last name", () => {
+    const s = firstRunSuggestions(deps({ env: { USERNAME: "pat.example" } }));
+    assert.equal(s.fullName, "Pat Example");
+    assert.equal(s.nameHint, "Pat Example");
+  });
+
+  it("leaves a one-word login out of the box and offers it as the hint (QA-28)", () => {
+    const s = firstRunSuggestions(deps({ env: { USERNAME: "Alsaju" } }));
+    assert.equal(s.fullName, "");
+    assert.equal(s.nameHint, "Alsaju");
+  });
+
+  it("offers nothing for a system account", () => {
+    const s = firstRunSuggestions(deps({ env: { USERNAME: "Administrator" } }));
+    assert.deepEqual([s.fullName, s.nameHint], ["", ""]);
+  });
+});
+
 describe("createInboxFolder", () => {
   it("creates PMO-Inbox inside the chosen parent, only when asked", async () => {
     const target = path.join(home, "PMO-Inbox");

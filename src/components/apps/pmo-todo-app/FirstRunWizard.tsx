@@ -257,7 +257,7 @@ export function FirstRunWizard({
                 <Input
                   value={form.fullName}
                   autoComplete="name"
-                  placeholder="Pat Example"
+                  placeholder={suggestions?.nameHint || "Pat Example"}
                   onChange={(event) => set({ fullName: event.target.value })}
                 />
               </Field>

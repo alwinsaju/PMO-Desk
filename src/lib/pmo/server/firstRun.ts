@@ -6,7 +6,12 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
-import { FirstRunBodySchema, splitList, suggestedFullName } from "../firstRun.ts";
+import {
+  FirstRunBodySchema,
+  loginNameHint,
+  splitList,
+  suggestedFullName,
+} from "../firstRun.ts";
 import { fieldErrors, summarizeFieldErrors, type FieldError } from "../fieldErrors.ts";
 import { parseDomainList, parseEmailList } from "../listValidation.ts";
 import {
@@ -174,7 +179,10 @@ export async function createInboxFolder(
 
 export interface FirstRunSuggestions {
   /** From the Windows user name; the person edits it. */
+  /** Pre-filled only when the Windows login looks like a first and last name. */
   fullName: string;
+  /** The login as a name ("Alsaju"), for the placeholder when it is not pre-filled. */
+  nameHint: string;
   inbox: {
     /** Set when AI_OS_PMO_INBOX_DIR fixes the inbox: the wizard shows it and asks nothing. */
     fromEnvironment: string | null;
@@ -188,6 +196,7 @@ export function firstRunSuggestions(deps: FirstRunDeps): FirstRunSuggestions {
   const oneDrive = oneDriveFacts(deps.env, deps.isDirectory);
   return {
     fullName: suggestedFullName(deps.env),
+    nameHint: loginNameHint(deps.env),
     inbox: {
       fromEnvironment: envInbox(deps.env) ? path.resolve(envInbox(deps.env)!) : null,
       oneDriveSignedIn: oneDrive.signedIn,
