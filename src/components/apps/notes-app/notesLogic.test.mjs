@@ -9,6 +9,9 @@ import {
   isUndoActive,
   migrateNotesState,
   noteTitle,
+  noteListEntry,
+  noteDateLabel,
+  noteSubtitle,
   notePreview,
   pushRevision,
   removeNote,
@@ -56,9 +59,40 @@ describe("notePreview", () => {
     );
     assert.equal(notePreview("T\n• First"), "First");
   });
-  it("has a fallback and caps length", () => {
-    assert.equal(notePreview("Title only"), "No additional text");
+  it("has no filler for a title-only note and caps length", () => {
+    assert.equal(notePreview("Title only"), "");
     assert.ok(notePreview(`T\n${"z".repeat(5000)}`).length <= 120);
+  });
+  it("continues a cut title in the preview", () => {
+    const content =
+      "Sprint review prep - agenda: velocity, blockers, demo; call the client";
+    assert.equal(noteTitle(content, 30), "Sprint review prep - agenda:…");
+    assert.equal(notePreview(content, 30), "velocity, blockers, demo; call the client");
+    assert.equal(
+      notePreview(`${content}\nSecond line`, 30).endsWith("Second line"),
+      true,
+    );
+  });
+  it("cuts a single long token mid-word", () => {
+    const entry = noteListEntry("x".repeat(80));
+    assert.equal(entry.title.length, 30);
+    assert.ok(entry.preview.length > 0);
+  });
+});
+
+describe("noteListEntry / noteDateLabel / noteSubtitle", () => {
+  it("shows a short one-line note as the title alone", () => {
+    assert.deepEqual(noteListEntry("Buy milk"), { title: "Buy milk", preview: "" });
+  });
+  it("hides the date of sample notes only", () => {
+    assert.equal(noteDateLabel({ sample: true, updatedLabel: "Aug 25, 2026" }), "");
+    assert.equal(noteDateLabel({ updatedLabel: "Just now" }), "Just now");
+  });
+  it("joins date and preview without a dangling separator", () => {
+    assert.equal(noteSubtitle("Just now", "More"), "Just now — More");
+    assert.equal(noteSubtitle("Just now", ""), "Just now");
+    assert.equal(noteSubtitle("", "More"), "More");
+    assert.equal(noteSubtitle("", ""), "");
   });
 });
 

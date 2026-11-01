@@ -11,7 +11,9 @@ import {
   canRestoreRevision,
   hasSamples,
   noteTitle,
-  notePreview,
+  noteListEntry,
+  noteDateLabel,
+  noteSubtitle,
   undoNoticeText,
 } from "./notesLogic";
 import { useNotesStore } from "./notesStore";
@@ -96,16 +98,25 @@ export function NotesApp({ windowId }: { windowId: string }) {
                 Clear samples
               </Button>
             )}
-            <IconButton aria-label="New note" variant="ghost" onClick={handleCreate}>
-              <PlusIcon size={18} />
-            </IconButton>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              aria-label="New note"
+              title="New note"
+              onClick={handleCreate}
+            >
+              <PlusIcon size={14} weight="bold" aria-hidden />
+              New
+            </Button>
           </div>
         </div>
         <ScrollArea className="min-h-0 flex-1">
           <ul className="flex flex-col gap-1 px-2.5 pb-3">
             {notes.map((note) => {
               const isSelected = note.id === selectedNoteId;
-              const title = noteTitle(note.content);
+              const { title, preview } = noteListEntry(note.content);
+              const subtitle = noteSubtitle(noteDateLabel(note), preview);
               return (
                 // The `li` is the visual row (hover fill, accent bar), so the
                 // delete button that floats over its corner keeps the row
@@ -149,12 +160,14 @@ export function NotesApp({ windowId }: { windowId: string }) {
                         </span>
                       )}
                     </span>
-                    <span className="text-ink-muted line-clamp-1 text-[12.5px] [overflow-wrap:anywhere]">
-                      {note.updatedLabel} — {notePreview(note.content)}
-                    </span>
+                    {subtitle && (
+                      <span className="text-ink-muted line-clamp-1 text-[12.5px] [overflow-wrap:anywhere]">
+                        {subtitle}
+                      </span>
+                    )}
                   </button>
                   <IconButton
-                    aria-label={`Delete "${title}"`}
+                    aria-label={`Delete "${noteTitle(note.content)}"`}
                     variant="ghost"
                     size="sm"
                     shape="round"
@@ -205,7 +218,7 @@ export function NotesApp({ windowId }: { windowId: string }) {
             className="flex min-h-0 flex-1 flex-col"
           >
             <div className="text-ink-muted px-gutter flex items-center justify-between gap-3 pt-3 pb-2 text-[12.5px]">
-              <span>{selectedNote.updatedLabel}</span>
+              <span>{noteDateLabel(selectedNote) || "Sample note"}</span>
               {canRestoreRevision(selectedNote) && (
                 <Button
                   type="button"
