@@ -1,56 +1,75 @@
 "use client";
 
 import { useId } from "react";
-import { Input } from "@/components/ui";
+import { FormField, Input } from "@/components/ui";
 import type { FieldDef, FieldValue } from "@/lib/registers/types";
-import { Field, NativeSelect, TextArea } from "../pmo-todo-app/parts";
+import { NativeSelect, TextArea } from "../pmo-todo-app/parts";
 
-/** One field of a record, drawn for its type. People are suggested from the Staff directory. */
+/** One field of a record, drawn for its type. People are suggested from the Staff directory.
+ *  A field's problem shows under it once it has been left, or at once after a Save attempt. */
 export function FieldInput({
   field,
   value,
   onChange,
   people,
+  error,
+  showErrorNow,
 }: {
   field: FieldDef;
   value: FieldValue | undefined;
   onChange: (value: FieldValue) => void;
   people: readonly string[];
+  error?: string;
+  showErrorNow?: boolean;
 }) {
   const listId = useId();
   const text =
     typeof value === "string" ? value : value === undefined ? "" : String(value);
-  const label = field.required ? `${field.label} *` : field.label;
+  const label = (
+    <>
+      {field.label}
+      {field.required && (
+        <span aria-hidden className="text-red">
+          {" *"}
+        </span>
+      )}
+    </>
+  );
+  const frame = { label, error, showErrorNow };
 
   if (field.type === "longtext") {
     return (
-      <Field label={label} className="col-span-2">
-        <TextArea
-          rows={4}
-          value={text}
-          onChange={(e) => onChange(e.target.value)}
-          aria-label={field.label}
-          placeholder={field.placeholder}
-        />
-      </Field>
+      <FormField {...frame} className="col-span-2">
+        {(control) => (
+          <TextArea
+            {...control}
+            rows={4}
+            value={text}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder={field.placeholder}
+          />
+        )}
+      </FormField>
     );
   }
   if (field.type === "select") {
     return (
-      <Field label={label}>
-        <NativeSelect
-          value={text}
-          onChange={(e) => onChange(e.target.value)}
-          aria-label={field.label}
-        >
-          {!field.required && <option value="">—</option>}
-          {field.options?.map((option) => (
-            <option key={option} value={option}>
-              {option}
-            </option>
-          ))}
-        </NativeSelect>
-      </Field>
+      <FormField {...frame}>
+        {(control) => (
+          <NativeSelect
+            {...control}
+            value={text}
+            onChange={(e) => onChange(e.target.value)}
+          >
+            {!field.required && <option value="">—</option>}
+            {field.options?.map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </NativeSelect>
+        )}
+      </FormField>
     );
   }
   if (field.type === "boolean") {
@@ -60,7 +79,6 @@ export function FieldInput({
           type="checkbox"
           checked={value === true}
           onChange={(e) => onChange(e.target.checked)}
-          aria-label={field.label}
         />
         {field.label}
       </label>
@@ -69,41 +87,49 @@ export function FieldInput({
   if (field.type === "tags") {
     const tags = Array.isArray(value) ? value.join(", ") : text;
     return (
-      <Field label={label}>
-        <Input
-          value={tags}
-          onChange={(e) => onChange(e.target.value.split(",").map((t) => t.trimStart()))}
-          aria-label={field.label}
-          placeholder="Separate with commas"
-        />
-      </Field>
+      <FormField {...frame}>
+        {(control) => (
+          <Input
+            {...control}
+            value={tags}
+            onChange={(e) =>
+              onChange(e.target.value.split(",").map((t) => t.trimStart()))
+            }
+            placeholder="Separate with commas"
+          />
+        )}
+      </FormField>
     );
   }
   return (
-    <Field label={label}>
-      <Input
-        type={
-          field.type === "date" ? "date" : field.type === "number" ? "number" : "text"
-        }
-        value={text}
-        onChange={(e) =>
-          onChange(
-            field.type === "number" && e.target.value !== ""
-              ? Number(e.target.value)
-              : e.target.value,
-          )
-        }
-        aria-label={field.label}
-        placeholder={field.placeholder}
-        list={field.type === "person" ? listId : undefined}
-      />
-      {field.type === "person" && (
-        <datalist id={listId}>
-          {people.map((p) => (
-            <option key={p} value={p} />
-          ))}
-        </datalist>
+    <FormField {...frame}>
+      {(control) => (
+        <>
+          <Input
+            {...control}
+            type={
+              field.type === "date" ? "date" : field.type === "number" ? "number" : "text"
+            }
+            value={text}
+            onChange={(e) =>
+              onChange(
+                field.type === "number" && e.target.value !== ""
+                  ? Number(e.target.value)
+                  : e.target.value,
+              )
+            }
+            placeholder={field.placeholder}
+            list={field.type === "person" ? listId : undefined}
+          />
+          {field.type === "person" && (
+            <datalist id={listId}>
+              {people.map((p) => (
+                <option key={p} value={p} />
+              ))}
+            </datalist>
+          )}
+        </>
       )}
-    </Field>
+    </FormField>
   );
 }

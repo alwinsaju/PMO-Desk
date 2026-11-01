@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Button,
   Dialog,
@@ -13,6 +13,7 @@ import { buildMailto } from "@/lib/pmo/chaser";
 import { recordAlert } from "@/lib/registers/alerts";
 import {
   defaultValues,
+  fieldErrors,
   recordTitle,
   sanitizeValues,
   textOf,
@@ -24,6 +25,7 @@ import type { Person } from "@/lib/registers/timesheets";
 import { useMyFirstName } from "@/components/people/useMyFirstName";
 import { CopyDetailsButton } from "@/components/platform/CopyDetailsButton";
 import { FieldInput } from "./FieldInput";
+import { removeWithUndo } from "./removeWithUndo";
 import { createTodoFrom } from "./todoBridge";
 import { emailOf } from "./usePeople";
 import type { RegisterState } from "./useRegister";
@@ -87,8 +89,11 @@ export function RecordDialog({
   }));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<{ reason: string; detail?: string } | null>(null);
-  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [attempted, setAttempted] = useState(false);
+  const bodyRef = useRef<HTMLDivElement>(null);
   const me = useMyFirstName();
+  const problems = useMemo(() => fieldErrors(def, values), [def, values]);
+  const problemCount = Object.keys(problems).length;
 
   const draftRecord: RegisterRecord = {
     id: record?.id ?? "rg_000000000000",
@@ -99,10 +104,19 @@ export function RecordDialog({
   };
   const alert = recordAlert(def, draftRecord, { today, config: state.config });
 
+  // The marked fields are in the scrolling body; bring the first one into view and focus it.
+  const showFirstProblem = () => {
+    const first = bodyRef.current?.querySelector<HTMLElement>("[aria-invalid=true]");
+    first?.scrollIntoView({ block: "center" });
+    first?.focus({ preventScroll: true });
+  };
+
   const saveNow = async (): Promise<RegisterRecord | null> => {
     const check = sanitizeValues(def, values);
     if (!check.ok) {
-      setError({ reason: check.reason });
+      setAttempted(true);
+      setError(null);
+      requestAnimationFrame(showFirstProblem);
       return null;
     }
     setBusy(true);
@@ -129,7 +143,7 @@ export function RecordDialog({
   const remove = async () => {
     if (!record) return;
     setBusy(true);
-    const reply = await state.remove([record.id]);
+    const reply = await removeWithUndo(def, state, record);
     setBusy(false);
     if (!reply.ok) setError({ reason: reply.reason, detail: reply.detail });
     else onClose();
@@ -169,7 +183,7 @@ export function RecordDialog({
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-[720px]">
+      <DialogContent className="flex max-h-[calc(100dvh-2rem)] max-w-[720px] flex-col">
         <DialogTitle>
           {record ? `Edit ${def.noun}` : `Add ${def.noun}`}
           {alert && (
@@ -181,7 +195,11 @@ export function RecordDialog({
         <DialogDescription>
           {def.title}. Everything stays on this computer.
         </DialogDescription>
-        <div className="mt-3 grid max-h-[58vh] grid-cols-2 gap-3 overflow-y-auto pr-1">
+        {/* Only the fields scroll; the buttons below stay in view. */}
+        <div
+          ref={bodyRef}
+          className="scroll-thin -mx-2 mt-3 grid min-h-0 flex-1 grid-cols-2 content-start gap-3 overflow-y-auto px-2 py-1"
+        >
           {def.fields.map((field) => (
             <FieldInput
               key={field.key}
@@ -189,6 +207,8 @@ export function RecordDialog({
               value={values[field.key]}
               onChange={(v) => setValues((cur) => ({ ...cur, [field.key]: v }))}
               people={names}
+              error={problems[field.key]}
+              showErrorNow={attempted}
             />
           ))}
           {renderExtras && (
@@ -209,29 +229,17 @@ export function RecordDialog({
             )}
           </p>
         )}
-        <div className="mt-4 flex flex-wrap items-center gap-2">
-          {record &&
-            (confirmDelete ? (
-              <>
-                <span className="text-ink-muted text-[12.5px]">
-                  Delete this for good?
-                </span>
-                <Button size="sm" disabled={busy} onClick={() => void remove()}>
-                  Yes, delete
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setConfirmDelete(false)}
-                >
-                  Keep
-                </Button>
-              </>
-            ) : (
-              <Button variant="ghost" size="sm" onClick={() => setConfirmDelete(true)}>
-                Delete
-              </Button>
-            ))}
+        <div className="mt-4 flex shrink-0 flex-wrap items-center gap-2">
+          {record && (
+            <Button
+              variant="destructive-quiet"
+              size="sm"
+              disabled={busy}
+              onClick={() => void remove()}
+            >
+              Delete
+            </Button>
+          )}
           {record &&
             !record.todoId &&
             def.extras !== "governance" &&
@@ -256,6 +264,13 @@ export function RecordDialog({
             </Button>
           )}
           <span className="flex-1" />
+          {attempted && problemCount > 0 && (
+            <span className="text-red text-[12.5px]">
+              {problemCount === 1
+                ? "Fix the marked field to save."
+                : `Fix the ${problemCount} marked fields to save.`}
+            </span>
+          )}
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>

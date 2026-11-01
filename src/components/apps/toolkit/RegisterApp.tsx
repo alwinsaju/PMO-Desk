@@ -1,9 +1,12 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
-import { Button, Input } from "@/components/ui";
+import { useId, useMemo, useState, type ReactNode } from "react";
+import { PencilSimpleIcon, TrashIcon } from "@phosphor-icons/react";
+import { Badge, Button, EmptyState, IconButton, Input } from "@/components/ui";
+import { toolApps } from "@/components/taskbar/pinnedApps";
 import { toast } from "@/lib/notifications/toastStore";
 import { recordAlert, summarise } from "@/lib/registers/alerts";
+import { cellText, exportHint, statusTone } from "@/lib/registers/cells";
 import { registerById } from "@/lib/registers/defs";
 import {
   csvRows,
@@ -14,14 +17,10 @@ import {
   statusCounts,
   textOf,
 } from "@/lib/registers/records";
-import type {
-  FieldDef,
-  FieldValue,
-  RegisterDef,
-  RegisterRecord,
-} from "@/lib/registers/types";
-import { formatDayMonth, todayIso } from "@/lib/staff/dates";
+import type { RegisterDef, RegisterRecord } from "@/lib/registers/types";
+import { todayIso } from "@/lib/staff/dates";
 import { toCsv } from "@/lib/staff/exportFiles";
+import { noSpellcheck } from "@/lib/ui/noSpellcheck";
 import { NativeSelect } from "../pmo-todo-app/parts";
 import { AlertChip, RecordDialog, type ExtrasContext } from "./RecordDialog";
 import { ChangesPanel } from "./extras/ChangesPanel";
@@ -30,6 +29,7 @@ import { InvoicePanel } from "./extras/InvoicePanel";
 import { MinutesExtras } from "./extras/MinutesExtras";
 import { SlaPanel } from "./extras/SlaPanel";
 import { StatusReportPanel } from "./extras/StatusReportPanel";
+import { removeWithUndo } from "./removeWithUndo";
 import { usePeople } from "./usePeople";
 import { useRegister, type RegisterState } from "./useRegister";
 
@@ -42,25 +42,6 @@ export interface PanelProps {
 
 export interface TopProps extends PanelProps {
   leave: ReturnType<typeof usePeople>["leave"];
-}
-
-export function cellText(
-  field: FieldDef | undefined,
-  value: FieldValue | undefined,
-): string {
-  if (value === undefined || value === "") return "";
-  if (Array.isArray(value)) return value.join(", ");
-  if (typeof value === "boolean") return value ? "✓" : "";
-  if (field?.type === "date" && typeof value === "string") return formatDayMonth(value);
-  if (field?.type === "url" && typeof value === "string") {
-    try {
-      return new URL(value).hostname;
-    } catch {
-      return value;
-    }
-  }
-  const text = String(value);
-  return text.length > 90 ? `${text.slice(0, 87)}…` : text;
 }
 
 function downloadText(name: string, text: string) {
@@ -113,6 +94,44 @@ export function RegisterApp({
   );
   const counts = useMemo(() => statusCounts(def, state.items), [def, state.items]);
   const fieldOf = (key: string) => def.fields.find((f) => f.key === key);
+  const ToolGlyph = toolApps.find((tool) => tool.id === def.id)?.icon;
+  const noExport = exportHint(state.items.length, shown.length);
+  const exportHintId = useId();
+
+  const removeRecord = async (record: RegisterRecord) => {
+    const reply = await removeWithUndo(def, state, record);
+    if (!reply.ok) toast({ tone: "danger", message: reply.reason });
+  };
+
+  const renderCell = (record: RegisterRecord, key: string) => {
+    const text = cellText(fieldOf(key), record.values[key]);
+    if (!text) {
+      return (
+        <>
+          <span aria-hidden className="text-ink-faint">
+            —
+          </span>
+          <span className="sr-only">Not set</span>
+        </>
+      );
+    }
+    if (key === def.statusKey) {
+      return <Badge variant={statusTone(def, text)}>{text}</Badge>;
+    }
+    if (key === "url") {
+      return (
+        <a
+          href={textOf(record, "url")}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-info underline"
+        >
+          {text}
+        </a>
+      );
+    }
+    return text;
+  };
 
   const stamp = async (record: RegisterRecord) => {
     if (!def.stamp) return;
@@ -174,6 +193,7 @@ export function RegisterApp({
 
       <div className="flex flex-wrap items-center gap-2 px-6 pb-2">
         <Input
+          {...noSpellcheck}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           aria-label={`Search ${def.title}`}
@@ -206,10 +226,16 @@ export function RegisterApp({
           </label>
         )}
         <span className="flex-1" />
+        {noExport && (
+          <span id={exportHintId} className="text-ink-muted text-[12px]">
+            {noExport}
+          </span>
+        )}
         <Button
           variant="outline"
           size="sm"
           disabled={shown.length === 0}
+          aria-describedby={noExport ? exportHintId : undefined}
           onClick={exportCsv}
         >
           Export CSV
@@ -222,14 +248,25 @@ export function RegisterApp({
             {state.error.reason}
           </p>
         )}
-        {state.loaded && shown.length === 0 && (
+        {state.loaded && state.items.length === 0 && (
+          <EmptyState
+            data-testid="register-empty"
+            icon={ToolGlyph && <ToolGlyph size={22} />}
+            headline={`No ${def.title} entries yet`}
+            description={def.blurb}
+            action={
+              <Button size="sm" onClick={() => setEditing("new")}>
+                Add your first {def.firstNoun ?? def.noun}
+              </Button>
+            }
+          />
+        )}
+        {state.loaded && state.items.length > 0 && shown.length === 0 && (
           <p
             className="text-ink-muted py-6 text-center text-[13px]"
             data-testid="register-empty"
           >
-            {state.items.length === 0
-              ? `Nothing here yet. Press “Add ${def.noun}” to start.`
-              : "No record matches. Clear the search or show closed ones."}
+            No record matches. Clear the search or show closed ones.
           </p>
         )}
         {shown.length > 0 && (
@@ -245,7 +282,9 @@ export function RegisterApp({
                   </th>
                 ))}
                 <th className="border-line border-b px-2 py-2">Needs attention</th>
-                <th className="border-line border-b px-2 py-2" />
+                <th className="border-line border-b px-2 py-2">
+                  <span className="sr-only">Actions</span>
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -255,7 +294,7 @@ export function RegisterApp({
                   <tr
                     key={record.id}
                     data-testid="register-row"
-                    className={`border-line hover:bg-chip border-b ${isOpen(def, record) ? "" : "opacity-60"}`}
+                    className={`border-line hover:bg-chip group border-b ${isOpen(def, record) ? "" : "opacity-60"}`}
                   >
                     {def.columns.map((key, index) => (
                       <td key={key} className="px-2 py-2 align-top">
@@ -269,24 +308,15 @@ export function RegisterApp({
                             {cellText(fieldOf(key), record.values[key]) ||
                               recordTitle(def, record)}
                           </button>
-                        ) : key === "url" ? (
-                          <a
-                            href={textOf(record, "url")}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-info underline"
-                          >
-                            {cellText(fieldOf(key), record.values[key])}
-                          </a>
                         ) : (
-                          cellText(fieldOf(key), record.values[key])
+                          renderCell(record, key)
                         )}
                       </td>
                     ))}
                     <td className="px-2 py-2 align-top">
                       {alert && <AlertChip level={alert.level} text={alert.text} />}
                     </td>
-                    <td className="px-2 py-2 text-right align-top whitespace-nowrap">
+                    <td className="px-2 py-1.5 text-right align-top whitespace-nowrap">
                       {def.stamp && isOpen(def, record) && (
                         <Button
                           variant="ghost"
@@ -307,6 +337,23 @@ export function RegisterApp({
                           </a>
                         </Button>
                       )}
+                      <span className="inline-flex opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100">
+                        <IconButton
+                          size="sm"
+                          aria-label={`Edit ${recordTitle(def, record)}`}
+                          onClick={() => setEditing(record)}
+                        >
+                          <PencilSimpleIcon />
+                        </IconButton>
+                        <IconButton
+                          size="sm"
+                          variant="destructive-quiet"
+                          aria-label={`Delete ${recordTitle(def, record)}`}
+                          onClick={() => void removeRecord(record)}
+                        >
+                          <TrashIcon />
+                        </IconButton>
+                      </span>
                     </td>
                   </tr>
                 );

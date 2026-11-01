@@ -10,6 +10,7 @@ export const REGISTERS: readonly RegisterDef[] = [
     id: "raid",
     title: "RAID log",
     noun: "item",
+    firstNoun: "risk",
     blurb:
       "Risks, assumptions, issues and dependencies, each with an owner, a review date and its age.",
     fields: [
