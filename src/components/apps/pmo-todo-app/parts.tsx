@@ -7,6 +7,7 @@ import {
   type ComponentProps,
   type ReactNode,
 } from "react";
+import { CircleNotchIcon } from "@phosphor-icons/react";
 import { Badge, type BadgeProps, type BadgeVariant } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import type { Proposal, StructuringInfo } from "@/lib/pmo/types";
@@ -126,6 +127,19 @@ export const STICKY_BAR =
 
 /** A pane that holds an original message (or any quoted text). */
 export const MESSAGE_PANE = "border-line bg-card rounded-card flex flex-col border p-4";
+
+/** A small spinning ring for a pending state. Decorative: the text beside it says
+ *  what is happening. */
+export function Spinner({ size = 14, className }: { size?: number; className?: string }) {
+  return (
+    <CircleNotchIcon
+      size={size}
+      weight="bold"
+      aria-hidden
+      className={cn("shrink-0 motion-safe:animate-spin", className)}
+    />
+  );
+}
 
 /** A centred "nothing here" / loading message that fills a tab or panel. */
 export function PanelMessage({

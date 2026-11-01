@@ -38,6 +38,7 @@ import {
   ScrollBody,
   SectionLabel,
   SourceBadge,
+  Spinner,
 } from "./parts";
 
 interface ProposalDialogProps {
@@ -73,6 +74,7 @@ export function ProposalDialog({
   const [dirty, setDirty] = useState(false);
   const [manual, setManual] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [approving, setApproving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Adjusting state while rendering (React's documented alternative to an
@@ -85,6 +87,7 @@ export function ProposalDialog({
     setDraft(effectiveDraft(proposal));
     setDirty(false);
     setManual(false);
+    setApproving(false);
     setError(null);
   }
 
@@ -125,10 +128,13 @@ export function ProposalDialog({
 
   const approve = async () => {
     if (!draft) return;
+    setApproving(true);
     const done = await run(() =>
       manual ? createTodo(draft, shown.id) : approveProposal(shown.id, draft),
     );
+    // On success the dialog closes with "Creating to-do…" still showing.
     if (done) onOpenChange(false);
+    else setApproving(false);
   };
   const reject = async () => {
     if (await run(() => rejectProposal(shown.id))) {
@@ -279,11 +285,21 @@ export function ProposalDialog({
         {error && <ErrorLine className="mt-3 shrink-0">{error}</ErrorLine>}
 
         <div className="border-line mt-4 flex shrink-0 flex-wrap items-center justify-between gap-x-3 gap-y-2 border-t pt-4">
-          <p className="text-ink-muted min-w-0 truncate text-[12px]">
-            {shown.ai.model && shown.ai.durationMs !== null
-              ? `${shown.ai.model} · ${(shown.ai.durationMs / 1000).toFixed(1)} s`
-              : ""}
-          </p>
+          {approving ? (
+            <p
+              role="status"
+              className="text-ink-soft flex min-w-0 items-center gap-2 truncate text-[12.5px] font-semibold"
+            >
+              <Spinner />
+              Creating to-do…
+            </p>
+          ) : (
+            <p className="text-ink-muted min-w-0 truncate text-[12px]">
+              {shown.ai.model && shown.ai.durationMs !== null
+                ? `${shown.ai.model} · ${(shown.ai.durationMs / 1000).toFixed(1)} s`
+                : ""}
+            </p>
+          )}
           <div className="ml-auto flex flex-wrap justify-end gap-2.5">
             {isFailed && !manual && shown.ai.attempts < MAX_AI_ATTEMPTS && (
               <Button
@@ -303,8 +319,23 @@ export function ProposalDialog({
               {notATask ? "Dismiss" : "Reject"}
             </Button>
             {showForm && (
-              <Button disabled={busy || !draft?.title.trim()} onClick={approve}>
-                {manual ? "Create to-do" : notATask ? "Approve anyway" : "Approve"}
+              <Button
+                disabled={busy || !draft?.title.trim()}
+                aria-busy={approving}
+                onClick={approve}
+              >
+                {approving ? (
+                  <>
+                    <Spinner />
+                    Creating to-do…
+                  </>
+                ) : manual ? (
+                  "Create to-do"
+                ) : notATask ? (
+                  "Approve anyway"
+                ) : (
+                  "Approve"
+                )}
               </Button>
             )}
           </div>
