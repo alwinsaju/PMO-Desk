@@ -95,7 +95,7 @@ For each email it answers: PTO, comp off, sick leave, a cancellation, or not a l
 plus the first and last day away. The email is treated as data; instructions written inside
 it are ignored.
 
-| The AI reads                                                                     | What PMO Desk does                                                         |
+| The AI reads                                                                     | What PMO Desk does                                                      |
 | -------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
 | PTO, clear dates, a known sender                                                 | Files a **pending PTO** request.                                        |
 | Comp off (the email says "comp off", "compensatory off", "time off in lieu" ...) | Files a **pending Comp off** request.                                   |
