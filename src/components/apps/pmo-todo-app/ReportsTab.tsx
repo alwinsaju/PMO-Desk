@@ -27,6 +27,7 @@ import {
   Chip,
   ErrorLine,
   Field,
+  FilterPill,
   GUTTER_X,
   NativeSelect,
   ROW_CARD,
@@ -54,6 +55,7 @@ import {
   type PeriodChoice,
   type ReportViewState,
 } from "./reportView";
+import { ReportPreviewCard } from "./ReportPreviewCard";
 
 interface ReportsTabProps {
   state: PmoState;
@@ -134,6 +136,8 @@ export function ReportsTab({ state, view, onViewChange }: ReportsTabProps) {
   /** Bumped when a job was just started, so the poll loop restarts. */
   const [pollTick, setPollTick] = useState(0);
   const [copied, setCopied] = useState<"text" | "markdown" | null>(null);
+  // Preview is the first look at a report; Edit is for changing the text.
+  const [reportMode, setReportMode] = useState<"preview" | "edit">("preview");
   /** A destructive step waiting for its second click: "generate" or "open:<id>". */
   const [armed, setArmed] = useState<string | null>(null);
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -212,6 +216,7 @@ export function ReportsTab({ state, view, onViewChange }: ReportsTabProps) {
       const reply = await generateReport(built.request);
       if (!reply.ok) return setError(reply.reason);
       patchView({ draft: draftFromGenerated(reply) });
+      setReportMode("preview");
     } catch {
       setError("Could not reach the app server.");
     } finally {
@@ -282,6 +287,7 @@ export function ReportsTab({ state, view, onViewChange }: ReportsTabProps) {
       const reply = await fetchReport(id);
       if (!reply.ok) return setError(reply.reason);
       patchView({ draft: draftFromSaved(reply) });
+      setReportMode("preview");
     } catch {
       setError("Could not reach the app server.");
     } finally {
@@ -499,19 +505,42 @@ export function ReportsTab({ state, view, onViewChange }: ReportsTabProps) {
                 )}
               </section>
 
-              <Field label="Report text (Markdown; edit freely)">
-                <TextArea
-                  value={draft.text}
-                  rows={18}
-                  spellCheck
-                  aria-label="Report text"
-                  className="min-h-72 font-mono text-[12px] leading-relaxed"
-                  onChange={(event) => {
-                    setNotice(null);
-                    patchView({ draft: { ...draft, text: event.target.value } });
-                  }}
-                />
-              </Field>
+              <div className="flex flex-col gap-2.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <SectionLabel>Report</SectionLabel>
+                  <div role="group" aria-label="Report view" className="flex gap-1">
+                    <FilterPill
+                      active={reportMode === "preview"}
+                      onClick={() => setReportMode("preview")}
+                    >
+                      Preview
+                    </FilterPill>
+                    <FilterPill
+                      active={reportMode === "edit"}
+                      onClick={() => setReportMode("edit")}
+                    >
+                      Edit
+                    </FilterPill>
+                  </div>
+                </div>
+                {reportMode === "preview" ? (
+                  <ReportPreviewCard text={draft.text} />
+                ) : (
+                  <Field label="Report text (Markdown; edit freely)">
+                    <TextArea
+                      value={draft.text}
+                      rows={18}
+                      spellCheck
+                      aria-label="Report text"
+                      className="min-h-72 font-mono text-[12px] leading-relaxed"
+                      onChange={(event) => {
+                        setNotice(null);
+                        patchView({ draft: { ...draft, text: event.target.value } });
+                      }}
+                    />
+                  </Field>
+                )}
+              </div>
               {draft.capped && (
                 <p className="text-ink-muted text-[12px] leading-snug">
                   Long lists show their first items and &quot;+N more&quot;. Saving keeps
