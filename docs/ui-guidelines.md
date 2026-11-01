@@ -133,6 +133,24 @@ Never leave a pane blank, and never end on a dead-end message.
   a week. Date-only strings (`2026-10-30`) are local calendar days. Every
   helper that depends on the clock takes `now`, so tests pass a fixed one.
 
+## Dock, search and shell chrome (Phase 5)
+
+- **Dock tiles** show the shared `Tooltip` with the app name, what the badge means ("3 need attention: 2 PMO
+  items, 1 time-off request") and Open / Minimized. Pass the meaning with
+  `useDockBadgeStore.setBadge(id, count, meaning)`. Open = accent dot and filled icon, minimised = hollow dot.
+  Launchers (App Menu, "+") sit in their own group; apps that do not fit the screen move to the App Menu.
+- **Keyboard hints** use `KeyHint` (`@/components/ui/KeyHint`), one cap per key: the command bar's empty state
+  ("Ctrl" "Space") and Ctrl+K's footer. Do not type hints as plain text.
+- **Answer card** (command bar): question as title, answer, footer with Copy then the primary "Show me in ..."
+  button, dismiss in the corner. Status notices (not answers) keep the small bubble.
+- **Ctrl+K** lists results in groups with headers, highlights the typed words with `<mark>` and shows "Recent"
+  (last five opened) when empty.
+- **Reordering** a list by dragging: a grip `button` with `useDrag` (window listeners), live preview, and the
+  Up/Down arrow keys on the focused grip as the keyboard alternative (see Dashboard > Customise).
+- **Settings screens** are cards: `Section` (title, optional description) holding `Row`s; give each row a
+  `settingId` and add it to `lib/settings/settingsIndex.ts` so Settings search finds it (a test fails
+  otherwise).
+
 ## Terms
 
 Use the constants in `@/lib/ui/terms` instead of retyping labels.
