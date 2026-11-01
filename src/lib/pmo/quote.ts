@@ -49,6 +49,30 @@ export function locateQuote(
   };
 }
 
+export interface QuoteSegment {
+  text: string;
+  /** This part is the model's verified quote. */
+  mark: boolean;
+}
+
+/** `body` cut into the text before, the quote itself and the text after, for
+ *  highlighting it in the original message. Empty parts are left out; a quote
+ *  that is not found gives the whole body unmarked. */
+export function quoteSegments(
+  body: string,
+  quote: string | null | undefined,
+): QuoteSegment[] {
+  const at = locateQuote(body, quote);
+  const parts: QuoteSegment[] = at
+    ? [
+        { text: body.slice(0, at.start), mark: false },
+        { text: body.slice(at.start, at.end), mark: true },
+        { text: body.slice(at.end), mark: false },
+      ]
+    : [{ text: body, mark: false }];
+  return parts.filter((part) => part.text !== "");
+}
+
 export const verifyQuote = (body: string, quote: string | null | undefined): boolean =>
   locateQuote(body, quote) !== null;
 

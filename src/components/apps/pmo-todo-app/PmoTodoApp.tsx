@@ -25,6 +25,8 @@ import { BoardTab } from "./BoardTab";
 import { CalendarTab } from "./CalendarTab";
 import { UndoRejectBar, type RejectedItem } from "./UndoRejectBar";
 import { reviewCount as countReview } from "./queueView";
+import { reviewLayout } from "./reviewPaneView";
+import { useElementWidth } from "../staff-app/useElementWidth";
 import { initialReportView, type ReportViewState } from "./reportView";
 import { usePmoData } from "./usePmoData";
 
@@ -52,6 +54,8 @@ const TAB_TITLE: Record<string, string> = {
  */
 export function PmoTodoApp({ windowId }: { windowId: string }) {
   const { state, connection, refetch } = usePmoData();
+  const [rootRef, width] = useElementWidth();
+  const layout = reviewLayout(width);
   const [tab, setTab] = useState("review");
   const [proposalId, setProposalId] = useState<string | null>(null);
   const [todoId, setTodoId] = useState<string | null>(null);
@@ -150,7 +154,11 @@ export function PmoTodoApp({ windowId }: { windowId: string }) {
   const offline = connection === "offline";
 
   return (
-    <div data-window-id={windowId} className="@container flex h-full w-full flex-col">
+    <div
+      ref={rootRef}
+      data-window-id={windowId}
+      className="@container flex h-full w-full flex-col"
+    >
       <Tabs value={tab} onValueChange={setTab} className="flex min-h-0 flex-1 flex-col">
         <PmoToolbar
           state={state}
@@ -190,9 +198,10 @@ export function PmoTodoApp({ windowId }: { windowId: string }) {
           onSettled={refetch}
         />
 
-        <Panel value="review">
+        <Panel value="review" scroll={layout === "dialog"}>
           <ReviewQueue
             state={state}
+            layout={layout}
             notTaskOpen={notTaskOpen}
             onNotTaskOpenChange={setNotTaskOpen}
             onOpen={setProposalId}
@@ -236,7 +245,7 @@ export function PmoTodoApp({ windowId }: { windowId: string }) {
       </Tabs>
 
       <ProposalDialog
-        proposal={proposal}
+        proposal={layout === "dialog" ? proposal : null}
         structuring={state.structuring}
         runtime={state.runtime}
         onSettled={refetch}
@@ -301,11 +310,20 @@ function TabButton({
   );
 }
 
-/** One tab's content: fills the rest of the window and scrolls by itself. */
-function Panel({ value, children }: { value: string; children: ReactNode }) {
+/** One tab's content: fills the rest of the window. It scrolls by itself unless
+ *  the tab manages its own scrolling (`scroll={false}`, the two-pane review). */
+function Panel({
+  value,
+  scroll = true,
+  children,
+}: {
+  value: string;
+  scroll?: boolean;
+  children: ReactNode;
+}) {
   return (
     <TabsContent value={value} className="flex min-h-0 flex-1 flex-col">
-      <ScrollBody memoryKey={`pmo:${value}`}>{children}</ScrollBody>
+      {scroll ? <ScrollBody memoryKey={`pmo:${value}`}>{children}</ScrollBody> : children}
     </TabsContent>
   );
 }
