@@ -68,9 +68,9 @@
   --color-ink-muted: var(
     --color-neutral-600
   ); /* secondary / label text (prototype ink3) */
-  --color-ink-faint: var(
-    --color-neutral-500
-  ); /* tertiary / placeholder / disabled text */
+  /* tertiary / placeholder text. Not a raw neutral step: neutral-500 is only ~3.2:1
+     on the light surface, so this is pinned at >= 4.5:1 (WCAG AA) per theme. */
+  --color-ink-faint: #667080;
   /* Text/icon color to place on top of a SOLID `bg-ink` fill (tooltips) —
      the mirror image of `ink`, so it flips with the theme. A hard-coded
      `text-white` on `bg-ink` is invisible in dark mode, where `ink` is
@@ -303,7 +303,7 @@
   --color-ink: var(--color-neutral-900);
   --color-ink-soft: var(--color-neutral-700);
   --color-ink-muted: var(--color-neutral-600);
-  --color-ink-faint: var(--color-neutral-500);
+  --color-ink-faint: #8d97a8;
   --color-ink-inverse: var(--color-surface-elevated);
   --color-line: rgba(255, 255, 255, 0.09);
   --color-line-strong: rgba(255, 255, 255, 0.14);
@@ -399,6 +399,7 @@
   --color-neutral-900: #282728;
   --color-neutral-950: #1a1a1a;
 
+  --color-ink-faint: #6b6b6b;
   --color-line: #e6e6e6;
   --color-line-strong: #d2d2d2;
   --color-glass: rgba(255, 255, 255, 0.82);
@@ -448,6 +449,7 @@
   --color-neutral-900: #e6e6e6;
   --color-neutral-950: #f5f5f5;
 
+  --color-ink-faint: #9a9a9a;
   --color-line: #444444;
   --color-line-strong: #555555;
   --color-glass: rgba(40, 39, 40, 0.8);
@@ -510,6 +512,42 @@
   /* Blur of the modal scrim. Only applied in the rich effects mode
      (`:root[data-fx="rich"] .scrim`, globals.css); lean has no scrim blur. */
   --scrim-blur: 8px;
+
+  /* Keyboard focus ring: ONE look for every interactive primitive (the
+     `focus-ring` utility, globals.css). Colour is `--color-focus`. */
+  --focus-ring-width: 2px;
+  --focus-ring-offset: 2px;
+
+  /* Disabled controls stay legible (a 40% fade made e.g. the roster's "Today"
+     button look broken rather than inactive). */
+  --opacity-disabled: 0.55;
+
+  /* Spacing on an 8-px grid. Tailwind's own scale is 4 px per step, so
+     `p-2` = 8 px; these names exist for CSS and the `stack-*` / `cluster-*`
+     utilities (globals.css): --space-1 = 8, -2 = 16, -3 = 24, -4 = 32, ... */
+  --space-unit: 8px;
+  --space-half: 4px;
+  --space-1: 8px;
+  --space-2: 16px;
+  --space-3: 24px;
+  --space-4: 32px;
+  --space-5: 40px;
+  --space-6: 48px;
+
+  /* Type scale (sizes in px so it does not depend on the root font size).
+     Use the `type-*` utilities (globals.css) rather than raw `text-[..px]`.
+       page-title     window / dialog title        22 / 1.2   headline weight
+       section-title  card, panel, group heading   16 / 1.3   600
+       body           running text, rows, inputs   14 / 1.5   400
+       caption        hints, meta, table labels    12 / 1.4   500, muted ink */
+  --type-page-title-size: 22px;
+  --type-page-title-line: 1.2;
+  --type-section-title-size: 16px;
+  --type-section-title-line: 1.3;
+  --type-body-size: 14px;
+  --type-body-line: 1.5;
+  --type-caption-size: 12px;
+  --type-caption-line: 1.4;
 }
 
 :root[data-theme="dark"] {
@@ -541,6 +579,14 @@
 }
 [data-window-chrome][data-gesture] > .glass-win {
   contain: layout paint;
+}
+/* No text selection anywhere while a window is dragged or resized. Keyed off the
+   same attribute (not a flag set from JS), so it cannot get stuck if the window
+   is closed mid-drag. */
+:root:has([data-window-chrome][data-gesture]),
+:root:has([data-window-chrome][data-gesture]) * {
+  -webkit-user-select: none !important;
+  user-select: none !important;
 }
 
 /* Lean (default) mode: window bodies are fully opaque so text of windows

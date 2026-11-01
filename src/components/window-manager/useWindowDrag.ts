@@ -6,10 +6,14 @@ import { clampToViewport } from "./windowGeometry";
 import { edgeZone } from "./windowSnap";
 
 /** `data-gesture` on the window node while a drag/resize is live: tokens.css
- *  gives only that window `will-change: transform` + contained chrome. */
+ *  gives only that window `will-change: transform` + contained chrome, and
+ *  globals.css switches text selection off page-wide for the duration. */
 export function markGesture(el: HTMLElement, active: boolean): void {
-  if (active) el.setAttribute("data-gesture", "");
-  else el.removeAttribute("data-gesture");
+  if (active) {
+    el.setAttribute("data-gesture", "");
+    // Drop a selection made before the drag started.
+    window.getSelection()?.removeAllRanges();
+  } else el.removeAttribute("data-gesture");
 }
 
 /**

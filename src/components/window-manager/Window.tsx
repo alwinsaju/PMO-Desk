@@ -11,7 +11,7 @@ import { firstUsable, windowShortcut } from "@/lib/focusKeys";
 import { getAppComponent } from "@/components/apps/registry";
 import { useWindowStore } from "./windowStore";
 import { useTitleSuffixes } from "./titleSuffixStore";
-import { titleWithSuffix } from "./windowTitles";
+import { joinSuffixes, titleWithSuffix } from "./windowTitles";
 import { AppErrorBoundary } from "./AppErrorBoundary";
 import { WindowTitleBar } from "./WindowTitleBar";
 import { ResizeHandles } from "./ResizeHandles";
@@ -113,6 +113,7 @@ export function Window({ id }: WindowProps) {
   const titleSuffix = useTitleSuffixes((s) =>
     liveWindow ? s.suffixes[liveWindow.appId] : undefined,
   );
+  const titleContext = useTitleSuffixes((s) => s.contexts[id]);
   const fxMode = useWindowStore((s) =>
     windowFxMode({
       openCount: Object.keys(s.windows).length,
@@ -353,7 +354,8 @@ export function Window({ id }: WindowProps) {
           transform: `translate3d(${data.position.x}px, ${data.position.y}px, 0)`,
         };
 
-  const shownTitle = titleWithSuffix(data.title, titleSuffix);
+  const barSuffix = joinSuffixes(titleContext, titleSuffix);
+  const shownTitle = titleWithSuffix(data.title, barSuffix);
   const exitAnimation =
     exitIntent === "minimizing"
       ? { opacity: 0, scale: 0.08 }
@@ -401,7 +403,8 @@ export function Window({ id }: WindowProps) {
       >
         <WindowTitleBar
           id={id}
-          title={shownTitle}
+          title={data.title}
+          suffix={barSuffix}
           icon={data.icon}
           isFocused={data.isFocused}
           isMaximized={data.isMaximized}

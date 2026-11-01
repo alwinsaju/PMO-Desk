@@ -15,7 +15,7 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
           "placeholder:text-ink-muted",
           "transition-[border-color,box-shadow] duration-[250ms]",
           "focus-visible:border-focus focus-visible:shadow-field-focus focus-visible:outline-none",
-          "disabled:pointer-events-none disabled:opacity-40",
+          "disabled:pointer-events-none disabled:opacity-[var(--opacity-disabled)]",
           className,
         )}
         {...props}

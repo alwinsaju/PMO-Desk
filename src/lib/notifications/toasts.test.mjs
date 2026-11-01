@@ -9,6 +9,7 @@ import {
   LONG_TOAST_MS,
   MAX_HISTORY,
   MAX_MESSAGE_LENGTH,
+  MAX_TITLE_LENGTH,
   MAX_VISIBLE_TOASTS,
   pushToast,
   resolveDuration,
@@ -67,6 +68,26 @@ describe("pushToast", () => {
   it("gives every toast its own id", () => {
     const state = push(push(EMPTY_TOAST_STATE, { message: "a" }), { message: "b" });
     assert.notEqual(state.toasts[0].id, state.toasts[1].id);
+  });
+
+  it("keeps an optional title, tidied and shortened, and leaves it out when empty", () => {
+    const titled = push(EMPTY_TOAST_STATE, { title: "  Saved \n  ", message: "Details" });
+    assert.equal(titled.toasts[0].title, "Saved");
+    assert.ok(!("title" in push(EMPTY_TOAST_STATE, { message: "a" }).toasts[0]));
+    assert.ok(
+      !("title" in push(EMPTY_TOAST_STATE, { title: "  ", message: "a" }).toasts[0]),
+    );
+    const long = push(EMPTY_TOAST_STATE, {
+      title: "t".repeat(MAX_TITLE_LENGTH + 20),
+      message: "a",
+    });
+    assert.equal(long.toasts[0].title.length, MAX_TITLE_LENGTH);
+  });
+
+  it("records the title with the message in the history", () => {
+    const state = push(EMPTY_TOAST_STATE, { title: "Deleted", message: "Weekly report" });
+    assert.equal(state.history[0].message, "Deleted: Weekly report");
+    assert.equal(state.toasts[0].message, "Weekly report");
   });
 });
 

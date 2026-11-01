@@ -45,7 +45,6 @@ import {
   TabsContent,
   TabsList,
   TabsTrigger,
-  Tooltip,
 } from "@/components/ui";
 import { cn } from "@/lib/cn";
 
@@ -142,11 +141,9 @@ export function DesignGallery() {
             <Button size="lg">Large</Button>
           </div>
           <div className="mt-3 flex items-center gap-2">
-            <Tooltip label="Notifications">
-              <IconButton aria-label="Notifications">
-                <BellIcon />
-              </IconButton>
-            </Tooltip>
+            <IconButton aria-label="Notifications">
+              <BellIcon />
+            </IconButton>
             <IconButton aria-label="Settings" variant="secondary">
               <GearSixIcon />
             </IconButton>
@@ -156,6 +153,13 @@ export function DesignGallery() {
             <IconButton aria-label="Delete" variant="outline">
               <TrashIcon />
             </IconButton>
+            <IconButton aria-label="Delete" variant="destructive">
+              <TrashIcon />
+            </IconButton>
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-2.5">
+            <Button variant="destructive-quiet">Delete</Button>
+            <Button variant="destructive">Delete forever</Button>
           </div>
         </Section>
 

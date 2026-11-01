@@ -5,9 +5,24 @@ import { Slot } from "@radix-ui/react-slot";
 import { cn } from "@/lib/cn";
 
 /** `primary` is an alias of `solid` and `line` of `outline` (the redesign's
- *  names for the same looks), so either spelling works. */
+ *  names for the same looks), so either spelling works.
+ *
+ *  Action footers (dialogs, forms, detail panes), left to right:
+ *    [destructive]  ...space...  [secondary / cancel]  [primary]
+ *  The primary action is always last (right), the secondary next to it, and a
+ *  destructive action is pushed apart to the far left: `DialogFooter` does that
+ *  for a `destructive*` button automatically (`mr-auto` elsewhere). Use
+ *  `destructive` (solid red) when deleting IS the dialog's main action
+ *  (a confirm), `destructive-quiet` (red text) when it sits beside Save. */
 export type ButtonVariant =
-  "solid" | "primary" | "secondary" | "ghost" | "outline" | "line";
+  | "solid"
+  | "primary"
+  | "secondary"
+  | "ghost"
+  | "outline"
+  | "line"
+  | "destructive"
+  | "destructive-quiet";
 export type ButtonSize = "sm" | "md" | "lg";
 
 export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
@@ -19,10 +34,9 @@ export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElemen
 }
 
 const base = cn(
-  "sweep transition-ui inline-flex items-center justify-center gap-2 font-semibold whitespace-nowrap",
+  "sweep transition-ui focus-ring inline-flex items-center justify-center gap-2 font-semibold whitespace-nowrap",
   "rounded-chip active:scale-[0.96]",
-  "focus-visible:ring-focus focus-visible:ring-offset-surface focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none",
-  "disabled:pointer-events-none disabled:opacity-40 [&_svg]:shrink-0",
+  "disabled:pointer-events-none disabled:opacity-[var(--opacity-disabled)] [&_svg]:shrink-0",
 );
 
 const solid = cn(
@@ -35,6 +49,11 @@ const outline = cn(
   "text-ink bg-transparent shadow-[inset_0_0_0_1px_var(--color-line-strong)]",
   "hover:bg-chip active:bg-chip-strong",
 );
+const destructive = cn(
+  "bg-red text-ink-inverse shadow-[0_8px_18px_-8px_var(--color-red)]",
+  "hover:bg-[color-mix(in_srgb,var(--color-red)_88%,#000)] active:bg-[color-mix(in_srgb,var(--color-red)_80%,#000)]",
+  "[--sweep-color:rgba(255,255,255,0.3)]",
+);
 
 const variantClassName: Record<ButtonVariant, string> = {
   solid,
@@ -44,6 +63,8 @@ const variantClassName: Record<ButtonVariant, string> = {
     "text-ink-soft hover:bg-chip hover:text-ink active:bg-chip-strong bg-transparent",
   outline,
   line: outline,
+  destructive,
+  "destructive-quiet": "text-red hover:bg-red-soft active:bg-red-soft bg-transparent",
 };
 
 const sizeClassName: Record<ButtonSize, string> = {
@@ -58,6 +79,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     return (
       <Comp
         ref={ref}
+        data-variant={variant}
         className={cn(base, variantClassName[variant], sizeClassName[size], className)}
         {...props}
       />

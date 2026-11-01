@@ -286,6 +286,10 @@ via `cn()` (so consumers can always override), and uses the token system
 never a raw hex or an arbitrary shadow value. Overlay-based primitives
 (Tooltip, Popover, DropdownMenu, ContextMenu, Dialog) all share the same
 open/close treatment via `overlayEnter`/`overlayExit` from `src/lib/motion.ts`.
+A modal `Dialog` announces itself when it opens (`ui/modalEvents.ts`); open `Tooltip`s
+and `Popover`s listen (`useCloseOnModalOpen`) and close, so none stays on top of it.
+`Button` has `destructive` / `destructive-quiet` variants (footer order in
+`docs/ui-guidelines.md`); `IconButton` requires `aria-label` and shows it as a tooltip.
 
 `Avatar` has a `presence?: "none" | "active" | "idle"` prop that draws the
 accent ring reserved for presence indicators — built now, intended for the
@@ -414,9 +418,11 @@ Pseudo-element budget (never stack two users of the same one): `spot` uses
 `brand-bar` uses `::before`. All motion effects switch off under
 `prefers-reduced-motion`; overlays degrade to a plain fade.
 
-Focus: a base-layer `:focus-visible` outline in `--color-focus` covers any
-interactive element that does not bring its own ring; `focus-visible:ring-*`
-and `outline-none` utilities still win.
+Focus: every interactive primitive uses the `focus-ring` utility (2 px outline in
+`--color-focus`, offset 2 px; tokens `--focus-ring-width` / `--focus-ring-offset`). A
+base-layer `:focus-visible` outline in the same colour covers any interactive element that
+does not bring its own. Type scale (`type-*`), 8-px spacing (`stack-N`, `cluster-N`) and the
+contrast rules are in `docs/ui-guidelines.md`.
 
 ### Using it in a component
 
@@ -1962,12 +1968,15 @@ it up.
   instead of landing on the first. Web apps are never remembered. Rectangles are saved 600 ms after the
   last move or resize; a window that opened before the saved rectangles loaded and was not touched is
   moved into place when they arrive (`pristineUpdates`).
-- **Window titles** (`windowTitles.ts`, `titleSuffixStore.ts`). An app can add live status after its
-  title: PMO To-Do shows "(3 need attention)", fed by `PmoReminders`.
+- **Window titles** (`windowTitles.ts`, `titleSuffixStore.ts`). The title bar shows the app icon, the app name and a muted
+  context suffix: an app can add live status after its title ("3 need attention", PMO To-Do, fed by `PmoReminders`)
+  and a window can say where the user is (`useWindowContext`). Dragging a window switches text selection off page-wide.
 - **Toasts and notification history** (`src/lib/notifications/`, `ui/ToastHost.tsx`). `toast({ message,
-tone, action, key })` from anywhere; a repeated `key` replaces the earlier toast, errors and toasts
+title, tone, action, key })` from anywhere; a repeated `key` replaces the earlier toast, errors and toasts
   with an action stay longer, and every toast is kept in a capped history (the notification centre will
-  read it). PMO's own reminder toast is separate and unchanged.
+  read it). The stack is drawn in the bottom-right of the focused window (`toastAnchor.ts`; screen
+  corner as the fallback) with a tone icon, and pauses while hovered. See `docs/ui-guidelines.md`.
+  PMO's own reminder toast is separate and unchanged.
 - **Command bar.** An answer to a question now stays until dismissed (Esc, the close button or the next
   question) and has a Copy button (`AIAnnotationBubble`, `AgentAnnotation.sticky`). Ctrl+Space focuses
   the bar from anywhere (`focusKeys.isFocusBarShortcut`). While the local model is asleep the bar says so,

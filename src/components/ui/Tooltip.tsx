@@ -4,10 +4,34 @@ import * as React from "react";
 import * as TooltipPrimitive from "@radix-ui/react-tooltip";
 import { cn } from "@/lib/cn";
 import { overlayEnter, overlayExit } from "@/lib/motion";
+import { useCloseOnModalOpen } from "./useCloseOnModalOpen";
 
 export const TooltipProvider = TooltipPrimitive.Provider;
-export const TooltipRoot = TooltipPrimitive.Root;
 export const TooltipTrigger = TooltipPrimitive.Trigger;
+
+/** Radix Tooltip root that also closes when a modal dialog opens (QA-15), so a
+ *  tooltip left open by the click that opened the dialog never stays on top of it. */
+export function TooltipRoot({
+  open,
+  defaultOpen = false,
+  onOpenChange,
+  ...props
+}: TooltipPrimitive.TooltipProps) {
+  const [innerOpen, setInnerOpen] = React.useState(defaultOpen);
+  const isControlled = open !== undefined;
+  const change = (next: boolean) => {
+    if (!isControlled) setInnerOpen(next);
+    onOpenChange?.(next);
+  };
+  useCloseOnModalOpen(() => change(false));
+  return (
+    <TooltipPrimitive.Root
+      {...props}
+      open={isControlled ? open : innerOpen}
+      onOpenChange={change}
+    />
+  );
+}
 
 export type TooltipContentProps = React.ComponentPropsWithoutRef<
   typeof TooltipPrimitive.Content
