@@ -34,8 +34,9 @@ describe("models", () => {
 
   it("says how big each known model is, and admits when it does not know", () => {
     assert.equal(downloadSizeText("gemma4:12b"), "about 12 GB");
-    assert.equal(downloadSizeText("qwen3.5:9b"), "about 6.6 GB");
-    assert.equal(downloadSizeText("QWEN3.5:9B:latest"), "about 6.6 GB");
+    assert.equal(downloadSizeText("qwen3.5:4b"), "about 3.3 GB");
+    assert.equal(downloadSizeText("QWEN3.5:4B:latest"), "about 3.3 GB");
+    assert.equal(downloadSizeText("qwen3.5:9b"), "of unknown size");
     assert.equal(downloadSizeText("llama3.3:70b"), "of unknown size");
   });
 
@@ -43,8 +44,8 @@ describe("models", () => {
     const pick = (requested, fallback, active) =>
       modelToPull({ requested, fallback, active });
     assert.equal(pick(undefined, true, "gemma4:12b"), FALLBACK_MODEL);
-    assert.equal(pick("  ", false, "qwen3.5:9b"), "qwen3.5:9b");
-    assert.equal(pick("gemma4:12b", false, "qwen3.5:9b"), "gemma4:12b");
+    assert.equal(pick("  ", false, "qwen3.5:4b"), "qwen3.5:4b");
+    assert.equal(pick("gemma4:12b", false, "qwen3.5:4b"), "gemma4:12b");
   });
 
   it("only offers the configured default and the fallback", () => {
@@ -79,7 +80,7 @@ describe("models", () => {
       freeDiskBytes: 200 * GB,
       totalRamBytes: ram(8),
     });
-    assert.match(smallRam.warnings[0], /8 GB of memory.*qwen3\.5:9b/);
+    assert.match(smallRam.warnings[0], /8 GB of memory.*qwen3\.5:4b/);
     assert.deepEqual(
       preflight({ model: "gemma4:12b", freeDiskBytes: 200 * GB, totalRamBytes: ram(32) }),
       { blocked: null, warnings: [] },

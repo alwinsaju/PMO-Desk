@@ -60,7 +60,7 @@ export const DEFAULT_AI_RUNTIME_CONFIG: AiRuntimeConfig = {
   // Chosen by a local bake-off (PMO structuring): best date/owner accuracy and
   // prompt-injection resistance of the models that fit this CPU. Run it with
   // `think: false`; reasoning makes calls several times slower. Fallback:
-  // qwen3.5:9b (also think off). Both support /api/chat tool calling.
+  // qwen3.5:4b (also think off). Both support /api/chat tool calling.
   defaultModel: "gemma4:12b",
   // Short on purpose: the model is 12 GB and the laptop has 31. Two minutes is
   // enough for a burst of messages to share one load; then the memory is freed.

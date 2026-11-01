@@ -112,19 +112,19 @@ describe("Ollama and the model", () => {
         buildReport(facts({ ollama: { installedModels: [], defaultModel } }), NOW),
         "model",
       ).steps[0];
-    assert.match(stepFor("qwen3.5:9b"), /about 6\.6 GB for qwen3\.5:9b/);
-    assert.doesNotMatch(stepFor("qwen3.5:9b"), /12 GB/);
+    assert.match(stepFor("qwen3.5:4b"), /about 3\.3 GB for qwen3\.5:4b/);
+    assert.doesNotMatch(stepFor("qwen3.5:4b"), /12 GB/);
     assert.match(stepFor("llama3.2"), /of unknown size for llama3\.2/);
   });
 
   it("shows why the model differs from the one asked for", () => {
-    const note = "Using qwen3.5:9b because gemma4:12b is not installed.";
+    const note = "Using qwen3.5:4b because gemma4:12b is not installed.";
     const c = check(
       buildReport(
         facts({
           ollama: {
-            installedModels: ["qwen3.5:9b"],
-            defaultModel: "qwen3.5:9b",
+            installedModels: ["qwen3.5:4b"],
+            defaultModel: "qwen3.5:4b",
             modelNote: note,
           },
         }),
@@ -154,7 +154,7 @@ describe("Ollama and the model", () => {
       "model",
     );
     assert.deepEqual(c.actions, ["pull-model", "pull-fallback-model"]);
-    assert.ok(c.details.some((d) => /8 GB of memory.*qwen3\.5:9b/.test(d)));
+    assert.ok(c.details.some((d) => /8 GB of memory.*qwen3\.5:4b/.test(d)));
   });
 
   it("blocks the big download on a full disk and says how much is free", () => {
@@ -172,13 +172,13 @@ describe("Ollama and the model", () => {
 
   it("notices that only the fallback is installed", () => {
     const c = check(
-      buildReport(facts({ ollama: { installedModels: ["qwen3.5:9b"] } }), NOW),
+      buildReport(facts({ ollama: { installedModels: ["qwen3.5:4b"] } }), NOW),
       "model",
     );
     assert.equal(c.state, "attention");
     assert.match(
       c.summary,
-      /qwen3\.5:9b is installed, but AI OS is set up for gemma4:12b/,
+      /qwen3\.5:4b is installed, but AI OS is set up for gemma4:12b/,
     );
   });
 });

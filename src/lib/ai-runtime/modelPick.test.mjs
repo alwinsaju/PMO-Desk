@@ -22,62 +22,62 @@ const chatModels = (ollama) =>
 
 describe("model per call", () => {
   it("asks for the saved model, not the built-in default", async () => {
-    saveModelChoice("qwen3.5:9b", env);
+    saveModelChoice("qwen3.5:4b", env);
     const rt = makeRuntime(
       {},
-      { installed: ["gemma4:12b", "qwen3.5:9b"] },
+      { installed: ["gemma4:12b", "qwen3.5:4b"] },
       false,
       createModelResolver({ env }),
     );
     await rt.client.generateText({ prompt: "hi" });
-    assert.deepEqual(chatModels(rt.ollama), ["qwen3.5:9b"]);
+    assert.deepEqual(chatModels(rt.ollama), ["qwen3.5:4b"]);
   });
 
   it("uses the only installed allowed model without any saved choice", async () => {
     const rt = makeRuntime(
       {},
-      { installed: ["qwen3.5:9b"] },
+      { installed: ["qwen3.5:4b"] },
       false,
       createModelResolver({ env }),
     );
     await rt.client.generateJson({ prompt: "hi", schema: z.object({ ok: z.boolean() }) });
-    assert.deepEqual(chatModels(rt.ollama), ["qwen3.5:9b"]);
+    assert.deepEqual(chatModels(rt.ollama), ["qwen3.5:4b"]);
   });
 
   it("notices a model saved after the runtime was built", async () => {
     const rt = makeRuntime(
       {},
-      { installed: ["gemma4:12b", "qwen3.5:9b"] },
+      { installed: ["gemma4:12b", "qwen3.5:4b"] },
       false,
       createModelResolver({ env }),
     );
     await rt.client.generateText({ prompt: "one" });
-    saveModelChoice("qwen3.5:9b", env);
+    saveModelChoice("qwen3.5:4b", env);
     await rt.client.generateText({ prompt: "two" });
-    assert.deepEqual(chatModels(rt.ollama), ["gemma4:12b", "qwen3.5:9b"]);
+    assert.deepEqual(chatModels(rt.ollama), ["gemma4:12b", "qwen3.5:4b"]);
   });
 
   it("lets a call name its own model", async () => {
     const rt = makeRuntime(
       {},
-      { installed: ["gemma4:12b", "qwen3.5:9b"] },
+      { installed: ["gemma4:12b", "qwen3.5:4b"] },
       false,
       createModelResolver({ env }),
     );
-    await rt.client.generateText({ prompt: "hi", model: "qwen3.5:9b" });
-    assert.deepEqual(chatModels(rt.ollama), ["qwen3.5:9b"]);
+    await rt.client.generateText({ prompt: "hi", model: "qwen3.5:4b" });
+    assert.deepEqual(chatModels(rt.ollama), ["qwen3.5:4b"]);
   });
 
   it("logs the model that was really used", async () => {
     const rt = makeRuntime(
       {},
-      { installed: ["qwen3.5:9b"] },
+      { installed: ["qwen3.5:4b"] },
       false,
       createModelResolver({ env }),
     );
     await rt.client.generateText({ prompt: "hi" });
     const start = rt.state.ring.since(0).find((e) => e.kind === "call-start");
-    assert.equal(start.model, "qwen3.5:9b");
+    assert.equal(start.model, "qwen3.5:4b");
   });
 });
 
@@ -85,27 +85,27 @@ describe("status", () => {
   it("reports the chosen model, its source and why", async () => {
     const rt = makeRuntime(
       {},
-      { installed: ["qwen3.5:9b"] },
+      { installed: ["qwen3.5:4b"] },
       false,
       createModelResolver({ env }),
     );
     const status = await rt.controls.status();
-    assert.equal(status.defaultModel, "qwen3.5:9b");
+    assert.equal(status.defaultModel, "qwen3.5:4b");
     assert.equal(status.modelSource, "only-installed");
     assert.match(status.modelNote, /not installed/);
     assert.equal(status.modelInstalled, true);
   });
 
   it("reports a saved choice as saved, with no note", async () => {
-    saveModelChoice("qwen3.5:9b", env);
+    saveModelChoice("qwen3.5:4b", env);
     const rt = makeRuntime(
       {},
-      { installed: ["gemma4:12b", "qwen3.5:9b"] },
+      { installed: ["gemma4:12b", "qwen3.5:4b"] },
       false,
       createModelResolver({ env }),
     );
     const status = await rt.controls.status();
-    assert.equal(status.defaultModel, "qwen3.5:9b");
+    assert.equal(status.defaultModel, "qwen3.5:4b");
     assert.equal(status.modelSource, "saved");
     assert.equal(status.modelNote, undefined);
   });

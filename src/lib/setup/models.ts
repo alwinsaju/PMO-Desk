@@ -3,8 +3,10 @@
 // download starts. Pure: no I/O, so `pnpm test` covers it directly.
 import { MODEL_SIZE, formatBytes } from "../format.ts";
 
-/** Used when the default model does not fit this computer (see core.ts). */
-export const FALLBACK_MODEL = "qwen3.5:9b";
+/** Used when the default model does not fit this computer (see core.ts). The same small
+ *  model as LIGHT_MODEL: it matched the default's accuracy on the PMO structuring test
+ *  set (docs/qa/uiux-2026-10-30/ai-eval) at a quarter of the size. */
+export const FALLBACK_MODEL = "qwen3.5:4b";
 
 /** The light model behind the "Fast AI model" switch, and the one that reads PTO emails
  *  in the background: about 4x smaller than the default, so it loads fast and shares
@@ -23,7 +25,6 @@ export interface ModelNeeds {
 /** Estimates, used only for advice. A model not listed gets no size warning. */
 export const MODEL_NEEDS: Readonly<Record<string, ModelNeeds>> = {
   "gemma4:12b": { sizeBytes: 12 * GB, minRamBytes: 16 * 1024 ** 3 },
-  "qwen3.5:9b": { sizeBytes: 6.6 * GB, minRamBytes: 12 * 1024 ** 3 },
   "qwen3.5:4b": { sizeBytes: 3.3 * GB, minRamBytes: 8 * 1024 ** 3 },
 };
 

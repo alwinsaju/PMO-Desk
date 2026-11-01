@@ -14,7 +14,7 @@ import {
 } from "./modelChoice.ts";
 
 const DEFAULT = "gemma4:12b";
-const SMALL = "qwen3.5:9b";
+const SMALL = "qwen3.5:4b";
 
 let dir;
 let file;
@@ -46,7 +46,7 @@ describe("saved model file", () => {
   });
 
   it("normalises case and a :latest-style spelling to the known tag", () => {
-    assert.deepEqual(saveModelChoice("QWEN3.5:9B", envFor()), { ok: true });
+    assert.deepEqual(saveModelChoice("QWEN3.5:4B", envFor()), { ok: true });
     assert.equal(readSavedModel(envFor()), SMALL);
   });
 
@@ -96,15 +96,15 @@ describe("chooseModel", () => {
   });
 
   it("uses the only installed allowed model when the preferred one is missing", () => {
-    const choice = chooseModel({ ...base, installed: ["qwen3.5:9b", "other:1b"] });
+    const choice = chooseModel({ ...base, installed: ["qwen3.5:4b", "other:1b"] });
     assert.equal(choice.model, SMALL);
     assert.equal(choice.source, "only-installed");
     assert.equal(choice.preferred, DEFAULT);
-    assert.match(choice.note, /qwen3\.5:9b.*gemma4:12b.*not installed/);
+    assert.match(choice.note, /qwen3\.5:4b.*gemma4:12b.*not installed/);
   });
 
   it("matches installed names the way Ollama spells them", () => {
-    const choice = chooseModel({ ...base, installed: ["QWEN3.5:9B:latest"] });
+    const choice = chooseModel({ ...base, installed: ["QWEN3.5:4B:latest"] });
     assert.equal(choice.model, SMALL);
   });
 
@@ -119,7 +119,7 @@ describe("chooseModel", () => {
     const choice = chooseModel({
       ...base,
       saved: "qwen3.5:4b",
-      installed: [DEFAULT, SMALL],
+      installed: [DEFAULT],
     });
     assert.equal(choice.model, DEFAULT);
     assert.equal(choice.source, "only-installed");
