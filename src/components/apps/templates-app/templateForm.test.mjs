@@ -12,6 +12,7 @@ import {
   placeGroups,
   previewOf,
   problems,
+  restoreInput,
   toInput,
   withKind,
   withPlace,
@@ -33,6 +34,24 @@ const saved = (over = {}) => ({
 });
 
 describe("the draft", () => {
+  it("a deleted template can be put back with everything a person set", () => {
+    const tpl = saved({
+      tags: ["weekly"],
+      variants: [{ id: "v1", label: "Client", subject: "S", body: "B" }],
+      starterId: "aging",
+    });
+    const back = restoreInput(tpl);
+    assert.deepEqual(back.tags, ["weekly"]);
+    assert.deepEqual(back.variants, tpl.variants);
+    assert.notEqual(back.usedBy, tpl.usedBy);
+    assert.deepEqual(back.usedBy, tpl.usedBy);
+    for (const key of ["id", "createdAt", "updatedAt", "history"]) {
+      assert.equal(key in back, false);
+    }
+    assert.equal(back.name, "Aging");
+    assert.equal(back.starterId, "aging");
+  });
+
   it("a new draft is clean until something is typed or chosen", () => {
     const blank = blankDraft();
     assert.equal(isDirty(blank, null), false);
@@ -181,5 +200,13 @@ describe("preview and problems", () => {
       problems({ ...draftOf(saved()), body: "{{nope}}" }).body,
       /not available/,
     );
+  });
+
+  it("refuses a To or Cc entry that is not an email address, but only for emails", () => {
+    const base = draftOf(saved());
+    assert.deepEqual(problems({ ...base, to: "a@x.com; Last, First <b@x.com>" }), {});
+    assert.match(problems({ ...base, to: "Support team" }).to, /not an email address/);
+    assert.match(problems({ ...base, cc: "a@x.com; oops" }).cc, /“oops”/);
+    assert.equal(problems({ ...base, kind: "report", to: "Support team" }).to, undefined);
   });
 });

@@ -22,6 +22,7 @@ import type {
   TemplateInput,
   TemplateKind,
 } from "../../../lib/templates/types.ts";
+import { recipientsProblem } from "../../../lib/templates/recipients.ts";
 
 /** What the form holds: a template's fields; `id` is null for one not saved yet. */
 export interface Draft extends TemplateInput {
@@ -71,6 +72,23 @@ export function copyOf(template: Template): Draft {
 export function toInput(draft: Draft): TemplateInput {
   const { id: _id, ...input } = draft;
   return input;
+}
+
+/** Everything a person can set on a saved template, to put it back after a delete. */
+export function restoreInput(template: Template): TemplateInput {
+  return {
+    name: template.name,
+    kind: template.kind,
+    description: template.description,
+    subject: template.subject,
+    to: template.to,
+    cc: template.cc,
+    body: template.body,
+    usedBy: [...template.usedBy],
+    tags: template.tags ? [...template.tags] : undefined,
+    variants: template.variants ? template.variants.map((v) => ({ ...v })) : undefined,
+    starterId: template.starterId,
+  };
 }
 
 const FIELDS = ["name", "kind", "description", "subject", "to", "cc", "body"] as const;
@@ -182,5 +200,12 @@ export function previewBodyOf(draft: Draft, snippets?: Snippets): string {
 /** What is wrong with the form now (nothing is shown until a field has been touched). */
 export function problems(draft: Draft): TemplateErrors {
   const checked = checkInput(toInput(draft));
-  return checked.ok ? {} : checked.errors;
+  const errors: TemplateErrors = checked.ok ? {} : { ...checked.errors };
+  if (draft.kind === "email") {
+    for (const field of ["to", "cc"] as const) {
+      const bad = recipientsProblem(draft[field]);
+      if (bad && !errors[field]) errors[field] = bad;
+    }
+  }
+  return errors;
 }
