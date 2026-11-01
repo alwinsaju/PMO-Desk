@@ -1,0 +1,36 @@
+[2026-10-25T05:06:40.996Z] Starting AI OS from C:\Users\alsaju\AppData\Local\Temp\claude\C--Projects-AI-OS\fc03182a-ced8-4b43-846e-457ff3afcce0\scratchpad\host\app\resources\app.
+[2026-10-25T05:06:41.000Z] Packaged build: defaulting to bundled (set AI_OS_MODE or live-config.json to opt into a live mode).
+[2026-10-25T05:06:41.001Z] Launch mode: bundled (bundled).
+[2026-10-25T05:06:41.023Z] Starting Next.js (bundled) in C:\Users\alsaju\AppData\Local\Temp\claude\C--Projects-AI-OS\fc03182a-ced8-4b43-846e-457ff3afcce0\scratchpad\host\app\resources\app: next start --hostname 127.0.0.1 --port 3100
+[2026-10-25T05:06:43.236Z] ▲ Next.js 15.5.24
+[2026-10-25T05:06:43.239Z] - Local:        http://127.0.0.1:3100
+   - Network:      http://127.0.0.1:3100
+
+ ✓ Starting...
+[2026-10-25T05:06:43.675Z] ✓ Ready in 728ms
+[2026-10-25T05:06:43.697Z] [ai-runtime] not available: Ollama is not running and AI_OS_AI_AUTOSTART is off.
+[2026-10-25T05:06:44.183Z] Starting Tasks engine.
+[2026-10-25T05:06:44.295Z] [tasks-engine] launching: C:\Users\alsaju\AppData\Local\Temp\claude\C--Projects-AI-OS\fc03182a-ced8-4b43-846e-457ff3afcce0\scratchpad\host\app\resources\python\pythonw.exe main.py --port 8000
+[2026-10-25T05:06:45.829Z] [tasks-engine] engine is up at http://127.0.0.1:8000
+[2026-10-25T05:06:45.839Z] Tasks engine is ready.
+[2026-10-25T05:10:39.244Z] Tray icon created (keep running in the tray is on).
+[2026-10-25T05:12:21.029Z] Hardware acceleration set to ON (applies after a restart).
+[2026-10-25T05:14:49.315Z] Relaunching AI OS to apply the display setting.
+[2026-10-25T05:14:54.907Z] Starting AI OS from C:\Users\alsaju\AppData\Local\Temp\claude\C--Projects-AI-OS\fc03182a-ced8-4b43-846e-457ff3afcce0\scratchpad\host\app\resources\app.
+[2026-10-25T05:14:54.910Z] Packaged build: defaulting to bundled (set AI_OS_MODE or live-config.json to opt into a live mode).
+[2026-10-25T05:14:54.911Z] Launch mode: bundled (bundled).
+[2026-10-25T05:14:54.937Z] Starting Next.js (bundled) in C:\Users\alsaju\AppData\Local\Temp\claude\C--Projects-AI-OS\fc03182a-ced8-4b43-846e-457ff3afcce0\scratchpad\host\app\resources\app: next start --hostname 127.0.0.1 --port 3100
+[2026-10-25T05:15:07.416Z] ⨯ Failed to start server
+[2026-10-25T05:15:07.419Z] Error: listen EADDRINUSE: address already in use 127.0.0.1:3100
+    at <unknown> (Error: listen EADDRINUSE: address already in use 127.0.0.1:3100) {
+  code: 'EADDRINUSE',
+  errno: -4091,
+  syscall: 'listen',
+  address: '127.0.0.1',
+  port: 3100
+}
+[2026-10-25T05:15:07.650Z] Error: The AI OS server exited with code 1.
+    at waitForServer (C:\Users\alsaju\AppData\Local\Temp\claude\C--Projects-AI-OS\fc03182a-ced8-4b43-846e-457ff3afcce0\scratchpad\host\app\resources\app\desktop\main.cjs:280:13)
+    at async startUiServer (C:\Users\alsaju\AppData\Local\Temp\claude\C--Projects-AI-OS\fc03182a-ced8-4b43-846e-457ff3afcce0\scratchpad\host\app\resources\app\desktop\main.cjs:224:3)
+    at async startUiServerWithFallback (C:\Users\alsaju\AppData\Local\Temp\claude\C--Projects-AI-OS\fc03182a-ced8-4b43-846e-457ff3afcce0\scratchpad\host\app\resources\app\desktop\main.cjs:162:3)
+    at async startDesktopApp (C:\Users\alsaju\AppData\Local\Temp\claude\C--Projects-AI-OS\fc03182a-ced8-4b43-846e-457ff3afcce0\scratchpad\host\app\resources\app\desktop\main.cjs:126:3)

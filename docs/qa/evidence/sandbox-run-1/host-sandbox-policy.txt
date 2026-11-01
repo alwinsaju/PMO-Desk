@@ -1,0 +1,18 @@
+Captured 2026-10-25T09:29:10.3625719+05:30 on host (read-only registry query)
+HKLM\SOFTWARE\Microsoft\PolicyManager\current\device\WindowsSandbox
+
+
+AllowNetworking                           : 0
+AllowMappedFolders                        : 0
+AllowWriteToMappedFolders                 : 0
+AllowClipboardRedirection                 : 0
+AllowPrinterRedirection                   : 0
+AllowWriteToMappedFolders_WinningProvider : BA98CD74-2A2A-460F-A320-A81F3CCB89D6
+AllowMappedFolders_WinningProvider        : BA98CD74-2A2A-460F-A320-A81F3CCB89D6
+AllowPrinterRedirection_WinningProvider   : BA98CD74-2A2A-460F-A320-A81F3CCB89D6
+AllowClipboardRedirection_WinningProvider : BA98CD74-2A2A-460F-A320-A81F3CCB89D6
+AllowNetworking_WinningProvider           : BA98CD74-2A2A-460F-A320-A81F3CCB89D6
+
+
+
+

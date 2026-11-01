@@ -1,0 +1,9 @@
+﻿<Configuration>
+  <VGpu>Disable</VGpu>
+  <Networking>Enable</Networking>
+  <MappedFolders>
+    <MappedFolder><HostFolder>C:\Users\alsaju\AppData\Local\Temp\claude\C--Projects-AI-OS\fc03182a-ced8-4b43-846e-457ff3afcce0\scratchpad\stage\installers</HostFolder><SandboxFolder>C:\Installer</SandboxFolder><ReadOnly>true</ReadOnly></MappedFolder>
+    <MappedFolder><HostFolder>C:\Projects\AI OS\docs\qa\evidence\sandbox-run-1</HostFolder><SandboxFolder>C:\Results</SandboxFolder><ReadOnly>false</ReadOnly></MappedFolder>
+  </MappedFolders>
+  <LogonCommand><Command>powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\Results\sandbox-check.ps1 -Installer &quot;C:\Installer\AI OS Setup 2.0.0.exe&quot; -ResultsDir C:\Results\out -LaunchApp</Command></LogonCommand>
+</Configuration>
