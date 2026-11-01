@@ -360,14 +360,15 @@ export function Dock() {
               {startsTemporary && (
                 <div aria-hidden className="bg-line mx-0.5 h-[18px] w-px" />
               )}
-              // Newly-added tiles pop in rather than snapping into existence // (not on
-              first paint — `settled` is false until after the first // hydrated render),
-              and `layout` lets the rest of this row settle // into its new position
-              smoothly when a tile is added, removed or // moved — no exit animation on
-              removal (see AICursor.tsx's doc // comment: an unmount-driven `exit` isn't
-              reliable in this // project's React 19 + motion setup), so a removed tile
-              just // disappears while its neighbors slide over. The wrapper is also //
-              the per-tile drag-over/drop target for reordering.
+              {/* Newly-added tiles pop in rather than snapping into existence (not on
+                  first paint: `settled` is false until after the first hydrated
+                  render), and `layout` lets the rest of this row settle into its new
+                  position smoothly when a tile is added, removed or moved. There is no
+                  exit animation on removal (see AICursor.tsx's doc comment: an
+                  unmount-driven `exit` isn't reliable in this project's React 19 +
+                  motion setup), so a removed tile just disappears while its neighbors
+                  slide over. The wrapper is also the per-tile drag-over/drop target for
+                  reordering. */}
               <motion.div
                 layout
                 initial={settled.current ? { opacity: 0, scale: 0.5 } : false}

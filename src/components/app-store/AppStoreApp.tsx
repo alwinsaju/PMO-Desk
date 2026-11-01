@@ -18,7 +18,12 @@ import { AppDetailSheet } from "./AppDetailSheet";
 import { AppHero } from "./AppHero";
 import { runAppPrimaryAction } from "./appActions";
 import { useInstalledAppsStore } from "./installedAppsStore";
-import { categoryCounts, featuredApps, matchApps, type CategoryFilter } from "./storeLogic";
+import {
+  categoryCounts,
+  featuredApps,
+  matchApps,
+  type CategoryFilter,
+} from "./storeLogic";
 import type { AppListing } from "./types";
 
 /**

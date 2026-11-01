@@ -14,7 +14,6 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui";
-import { cn } from "@/lib/cn";
 import {
   DEFAULT_REPORT_TITLE,
   DEFAULT_RETENTION_DAYS,

@@ -115,7 +115,6 @@ export function DockTile({
             <button
               type="button"
               aria-label={badgedLabel(label, badge)}
-              aria-description={hover.lines.join(". ") || undefined}
               data-running={running}
               data-dock-app={appId}
               onClick={onClick}
