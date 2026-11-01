@@ -11,6 +11,7 @@ import {
   newArrivals,
   BULK_ARRIVALS,
   progressOf,
+  startedText,
   toggleItem,
   type Checklist,
 } from "@/lib/staff/checklists";
@@ -29,9 +30,13 @@ import {
 } from "@/lib/staff/people";
 import { useStaffPrefs } from "@/lib/staff/staffPrefsStore";
 import { useStaffStore } from "@/lib/staff/staffStore";
+import type { Employee } from "@/lib/staff/types";
 import { PersonName } from "@/components/people/PersonName";
 import { useMyFirstName } from "@/components/people/useMyFirstName";
 import { useTemplateText } from "../templates-app/useTemplateText";
+import { EmployeeAvatar, PersonAvatar } from "./parts";
+import { noSpellcheck } from "@/lib/ui/noSpellcheck";
+import { DateField } from "./DateField";
 
 /** Roll-off and contract ends in the next 30 days, birthdays and anniversaries in the next 14. */
 export function PeoplePanel() {
@@ -140,19 +145,14 @@ export function SkillsPanel() {
     <div className="flex flex-col gap-4" data-testid="skills-panel">
       <div className="flex flex-wrap items-center gap-2">
         <Input
+          {...noSpellcheck}
           aria-label="Skill to cover"
           placeholder="Who can cover… (a skill)"
           className="max-w-64"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
-        <Input
-          aria-label="Day to cover"
-          type="date"
-          className="w-44"
-          value={day}
-          onChange={(e) => e.target.value && setDay(e.target.value)}
-        />
+        <DateField label="Day to cover" value={day} onChange={setDay} />
       </div>
       {query.trim() && (
         <div className="text-[13px]" data-testid="cover-result">
@@ -209,35 +209,99 @@ export function SkillsPanel() {
   );
 }
 
-/** The client managers, their teams and the people in each. */
+/** The client managers, their teams and the people in each, as a tree. */
 export function OrgPanel() {
   const employees = useStaffStore((s) => s.employees);
   const chart = useMemo(() => orgChart(employees), [employees]);
+  if (chart.length === 0) {
+    return <p className="text-ink-muted text-[13px]">The directory is empty.</p>;
+  }
+  // No client managers set at all: just the teams, with no manager level above them.
+  const flat = chart.length === 1 && chart[0].unassigned;
   return (
     <div className="flex flex-col gap-3" data-testid="org-panel">
-      {chart.map((node) => (
-        <section
-          key={node.manager}
-          className="border-line bg-card rounded-card border px-4 py-3"
-        >
-          <h3 className="text-ink text-[14px] font-bold">
-            {node.manager}{" "}
-            <span className="text-ink-muted font-normal">({node.count})</span>
-          </h3>
-          <ul className="mt-1.5 flex flex-col gap-1">
-            {node.teams.map((t) => (
-              <li key={t.team} className="text-[13px]">
-                <span className="text-ink-soft font-semibold">{t.team}: </span>
-                <span className="text-ink">{t.people.map(displayName).join(", ")}</span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ))}
-      {chart.length === 0 && (
-        <p className="text-ink-muted text-[13px]">The directory is empty.</p>
+      {flat ? (
+        <ul className="grid gap-3 @2xl:grid-cols-2">
+          {chart[0].teams.map((t) => (
+            <li key={t.team} className="border-line bg-card rounded-card border p-4">
+              <TeamBranch team={t.team} people={t.people} />
+            </li>
+          ))}
+        </ul>
+      ) : (
+        chart.map((node) => {
+          const manager = node.unassigned
+            ? null
+            : employees.find(
+                (e) => fullName(e).toLowerCase() === node.manager.toLowerCase(),
+              );
+          return (
+            <section
+              key={node.manager}
+              className="border-line bg-card rounded-card border p-4"
+              aria-label={node.unassigned ? "Other teams" : `${node.manager}'s teams`}
+            >
+              <h3 className="flex items-center gap-2.5">
+                {!node.unassigned && (
+                  <PersonAvatar
+                    employee={manager ?? null}
+                    name={node.manager}
+                    size="md"
+                  />
+                )}
+                <span className="text-ink text-[14.5px] font-bold">
+                  {node.unassigned ? "Other teams" : node.manager}
+                </span>
+                <span className="text-ink-muted text-[12.5px] font-normal">
+                  {node.count} {node.count === 1 ? "person" : "people"} ·{" "}
+                  {node.teams.length} {node.teams.length === 1 ? "team" : "teams"}
+                </span>
+              </h3>
+              <ul className="border-line mt-3 ml-4 flex flex-col gap-4 border-l pl-5">
+                {node.teams.map((t) => (
+                  <li key={t.team}>
+                    <TeamBranch team={t.team} people={t.people} />
+                  </li>
+                ))}
+              </ul>
+            </section>
+          );
+        })
       )}
     </div>
+  );
+}
+
+function TeamBranch({ team, people }: { team: string; people: Employee[] }) {
+  return (
+    <>
+      <h4 className="text-ink-soft mb-2 flex items-center gap-2 text-[13px] font-bold">
+        {team}
+        <span className="bg-chip text-ink-soft rounded-chip px-2 py-0.5 text-[11.5px] font-semibold">
+          {people.length}
+        </span>
+      </h4>
+      <ul
+        className="grid gap-x-3 gap-y-2"
+        style={{ gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))" }}
+      >
+        {people.map((p) => (
+          <li key={p.id} className="flex min-w-0 items-center gap-2.5">
+            <EmployeeAvatar employee={p} size="sm" />
+            <span className="min-w-0">
+              <span className="text-ink block truncate text-[13px] font-semibold">
+                {displayName(p)}
+              </span>
+              {p.level && (
+                <span className="text-ink-muted block truncate text-[11.5px]">
+                  {p.level}
+                </span>
+              )}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </>
   );
 }
 
@@ -286,10 +350,7 @@ export function ChecklistsPanel() {
         seenEmployees: seen,
         checklists: [...p.checklists, ...made],
       }));
-      if (made.length > 0)
-        toast({
-          message: `Started ${made.length} checklist${made.length === 1 ? "" : "s"} in Staff > Checklists.`,
-        });
+      if (made.length > 0) toast({ ...startedText(made), tone: "info" });
     }
   }, [status, hydrated, employees, offboarded, update]);
 
