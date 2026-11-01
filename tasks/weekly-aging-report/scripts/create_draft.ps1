@@ -35,7 +35,8 @@ $Subject = if ($data.subject) { $data.subject } else { "Aging Incidents | Last u
 
 $olMailItem = 0
 $olText = 1
-$draftTokenPropertyName = "PMO Desk Draft Token"
+# Kept as "AI OS Draft Token" on purpose: drafts already in Outlook carry this property name, and a new name would make send_draft.ps1 not find them.
+$draftTokenPropertyName = "AI OS Draft Token"
 $draftToken = [guid]::NewGuid().ToString("N")
 $draftTokenPath = Join-Path $PSScriptRoot "..\output\draft-entry-id.txt"
 

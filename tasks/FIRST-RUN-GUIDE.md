@@ -48,7 +48,7 @@ confirm), [`ACCEPTANCE.md`](./ACCEPTANCE.md) (test evidence per criterion),
 ## 1. Where files go
 
 Paths below are relative to the repo's `tasks\` folder when PMO Desk runs from the repo (the tasks run in place). In the
-installed app the tasks run from a working copy under `%APPDATA%\PMO Desk\tasks-engine\tasks\<task>\`: the same
+installed app the tasks run from a working copy under `%APPDATA%\ai-os\tasks-engine\tasks\<task>\`: the same
 `input\`, `output\`, `config\` and `reference\` folders are there, and they are your data (never overwritten; task
 definitions are refreshed from the install at every engine start). Reinstalling keeps them.
 

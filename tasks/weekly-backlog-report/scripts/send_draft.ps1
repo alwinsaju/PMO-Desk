@@ -15,7 +15,8 @@ $ErrorActionPreference = "Stop"
 
 $olFolderDrafts = 16
 $olMail = 43
-$draftTokenPropertyName = "PMO Desk Draft Token"
+# Kept as "AI OS Draft Token" on purpose: drafts already in Outlook carry this property name, and a new name would make send_draft.ps1 not find them.
+$draftTokenPropertyName = "AI OS Draft Token"
 
 $outlook = New-Object -ComObject Outlook.Application
 $namespace = $outlook.GetNamespace("MAPI")

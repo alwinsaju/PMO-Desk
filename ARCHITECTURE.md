@@ -1304,7 +1304,7 @@ src/app/api/pmo/        state, ingest/scan, intake/manual (POST, the Paste
 ```
 
 **Data directory**: env `AI_OS_PMO_DATA_DIR`; `desktop/main.cjs` sets it to
-`<userData>\pmo`; the dev default is `%LOCALAPPDATA%\PMO Desk\pmo` (outside the
+`<userData>\pmo`; the dev default is `%LOCALAPPDATA%\AI OS\pmo` (outside the
 repo). Layout: `config.json`, `raw/<intakeId>.json` (immutable snapshot incl. the
 original text), `quarantine/` (filtered items: metadata and reason, body
 dropped), `rejected-files/` (unparsable producer files + `.reason.txt`),

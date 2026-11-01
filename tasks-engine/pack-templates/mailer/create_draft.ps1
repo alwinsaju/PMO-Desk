@@ -17,7 +17,8 @@ $ErrorActionPreference = "Stop"
 $data = Get-Content -Raw -Path $DataPath | ConvertFrom-Json
 
 $olMailItem = 0
-$draftTokenPropertyName = "PMO Desk Draft Token"
+# Kept as "AI OS Draft Token" on purpose: drafts already in Outlook carry this property name, and a new name would make send_draft.ps1 not find them.
+$draftTokenPropertyName = "AI OS Draft Token"
 $olText = 1
 $draftToken = [guid]::NewGuid().ToString("N")
 $draftTokenPath = Join-Path $PSScriptRoot "..\output\draft-entry-id.txt"
