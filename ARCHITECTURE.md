@@ -859,17 +859,24 @@ The roster app. It owns the list of people; other apps should read people from i
 from a workbook.
 
 **Sections.** _Directory_ (search, filter by location / OP / offering / level, sort; the list
-shows Employee, Level, OP, Offering, Team, Location and Roll-off, and the right-hand pane shows
-every other field, grouped. A column that is empty for everyone (often Offering) is left out,
+shows Employee, Level, OP, Offering, Team, Location and Roll-off, with level and Onshore /
+Offshore as chips and tight rows. Click a column header to sort by it (click again to reverse;
+people with no value in the column stay last, `sortEmployees` / `toggleSort` in `employees.ts`);
+the Sort menu in the toolbar sets the same state and adds "Recently added". The right-hand pane
+is a card (photo or initials, name, role, location and team chips, **Email**, **Teams** chat and
+**Edit**) over grouped fields: Contact, Work, Dates, Skills (as chips), upcoming Time off and
+Identifiers. A column that is empty for everyone (often Offering) is left out,
 and so is its filter; the columns shrink towards their minimums and the least
 important ones (Roll-off first) drop out when the list is narrow, so there is no sideways
 scrollbar (`visibleColumns` / `fitColumns` in `layout.ts`). The pane stays closed until a row
-is picked, then sits beside the list, or over it as a drawer in a narrow window; a person just
+is picked, then slides in beside the list, or over it as a drawer in a narrow window; a person just
 added is selected and scrolled into view. Every column and the pane are resizable: drag a column's right edge
 or the pane's left edge, use the arrow keys on the focused divider, double-click or press Home
 to reset; sizes are remembered per computer in localStorage, limits and parsing in
 `layout.ts`), _Shift roster_ (see "Shift roster" below) and _Time off_ (approval
-summary, per-type bars, approve / reject / undo, add and delete; pending requests are listed
+summary, per-type bars, then one card per request: a left bar in the status colour, the type's
+icon, the date range as a chip, **Approve** / **Reject** on pending ones, and an overlap strip
+naming who else is out on those dates (`overlappingLeave` in `timeoffView.ts`); pending requests are listed
 first, a delete shows a toast with **Undo**, and the model chip is labelled "PTO emails"). All colors come from the
 theme tokens, so light, dark and Deloitte mode (and its dark variant) follow automatically.
 The title bar shows the open tab ("Staff Management · Time off").
@@ -893,9 +900,9 @@ their leave and picture; two people cannot share a Deloitte email.
 **Offboarded.** _Remove from roster_ in the Directory does not delete the profile: it moves
 the person (all fields and the picture, stamped `offboardedAt`) from `employees.json` to
 `offboarded.json`, so other apps and the Tasks engine stop seeing them, and drops their
-time-off requests. The _Offboarded_ tab lists them with search, **Edit** (the same form as the
-Directory), **Restore** (back onto the roster; refused when someone on the roster already has
-that email) and **Delete** (removes the profile for good, after a confirmation, and leaves no
+time-off requests. The _Offboarded_ tab lists them in the Directory's table style (chips, sortable headers; the
+newest first by default) with a primary **Restore** (back onto the roster; refused when someone on the roster already has
+that email), **Edit** (the same form as the Directory) and **Delete** (removes the profile for good, after a confirmation, and leaves no
 trace in the data folder: the picture, their shift roster entry and shifts, any request or
 profile files in the M365 exchange folder, and their checklists and "seen" entries in
 `staff-prefs.json`). The roster entry is found by name among the unlinked entries and is kept
@@ -917,7 +924,11 @@ so an interrupted move can duplicate a person but never lose one.
 | `GET/POST /api/staff/sync`              | The exchange-folder scan (see below); `{ resend: id }` asks for a profile again.  |
 
 **Adding people and the M365 profile.** _Add employee_ takes one or many Deloitte emails
-(pasted, one per line). Each becomes a person flagged **Waiting for M365 profile**, with a
+(typed or pasted into a chip input: a comma, space or new line ends one; a bad or known address
+stays as a red chip and is not added). The Add, Edit and Import dialogs share one layout
+(`FormParts.tsx`): heading, a scrolling two-column body with section headings, and a footer that
+stays in view; the Edit form uses `FormField` (errors show after leaving a field or a failed Save,
+with a tick or warning icon) and a chip input for skills. Each person added becomes one flagged **Waiting for M365 profile**, with a
 provisional name taken from the address. So does everyone added through the full form ("Enter all
 details", `newRosterPerson`) and everyone new in an Excel import (`planImport`; an imported person who
 was entered by hand is also set to waiting, one whose profile already arrived is not). Waiting lasts
@@ -982,10 +993,13 @@ meant different hours. It is modelled so that stays true without the confusion:
   day orange (`hueOfShift`, `src/styles/roster-colors.css`, one pair per theme so light, dark and
   Deloitte mode all keep the coding). The hours still differ per team, so each team section can
   show its own legend (every shift with its hours and usual days) above its people: it is off by
-  default to keep the people in view, and the single **Legend and shift hours** bar under the
-  grid (remembered per computer) turns it on for every team together with the day-type key.
+  default to keep the people in view, and the **Shift hours** toggle in the legend bar under the
+  grid (remembered per computer) turns it on for every team. The bar itself is always one line
+  (it scrolls sideways when narrow): the shift colours S1-S5 and NS, the day types, leave
+  waiting for approval (hatched amber), weekend, a location's day off and today.
   The toolbar is one row: range, search, team filter and a **More** menu (show or hide teams,
-  Copy last week, Schedules and teams, Holidays, Import, Match names).
+  Copy last week, Schedules and teams, Holidays, Import, Match names). The name column and the
+  date header are sticky, weekends are shaded and today's column is tinted.
 - **Events** (holidays, swap days, notes such as the winter disconnect) apply to a day or a run
   of days and show above the dates. A **holiday** can list the locations that observe it
   (`RosterEvent.locations`; empty = everywhere). **More > Holidays by location** edits them: pick the
@@ -998,8 +1012,10 @@ meant different hours. It is modelled so that stays true without the confusion:
   labels ("Holi (Except Gur)", "HYD Only", "KOL HOL").
 - **Time off.** Approved requests of the Time off tab are shown in the roster (`dayCell`): leave
   replaces a planned working shift, while holidays, days off and on-call stay as entered, and a
-  day with nothing entered shows the leave on days the person would work. Pending and rejected
-  requests are not shown. The roster entries underneath are kept.
+  day with nothing entered shows the leave on days the person would work; approved leave is
+  hatched. Requests still **pending** are overlaid on the working days they cover with an amber
+  hatch and a dashed outline (`pendingLeaveOn` in `timeoffView.ts`; the cell menu says which
+  request is waiting); rejected ones are not shown. The roster entries underneath are kept.
 - **Teams come from the directory.** A person's team is the Team on their directory profile;
   a team no stored group matches (by name or alias) appears by itself, on the first schedule
   until you choose its schedule. A schedule is named in **Schedules and teams** and lists the
@@ -2169,9 +2185,18 @@ title, tone, action, key })` from anywhere; a repeated `key` replaces the earlie
   team, the yearly leave allowance, swap requests, checklists and the directory ids already seen.
   `Employee.birthday` ("MM-DD") is a new optional field (default ""); anniversaries use the staffing start
   date. The workbook import and export columns are unchanged.
-- **Insights tab** (`InsightsTab`): Capacity, People, Leave balances, Swaps, On call, Skills, Org chart,
-  Checklists, Holidays and Export. Capacity lays the team cards (with their "Minimum per day" picker) beside
-  the coverage gaps and uses the app's own `DateField` day picker; Org chart is a client manager > team >
+- **Insights tab** (`InsightsTab`): a left-hand list of sections in three groups (Planning: Capacity,
+  Leave balances, Swaps, On call, Holidays; People: People, Skills, Org chart, Checklists; Data: Export)
+  from 760 px wide, a scrolling row of pills below that. Capacity starts with a team x day heatmap of
+  the next 14 days (`capacityHeatmap` in `insightsData.ts`: darker = more people working, red = under
+  the team's minimum, click a day to open its cards), then the team cards (with their "Minimum per
+  day" picker) beside the coverage gaps, using the app's own `DateField` day picker. People opens with
+  distribution charts by location (an SVG donut), level and team (`distribution`, `donutArcs`) above the
+  end alerts and occasions. Leave balances are stacked bars (used, waiting, over the allowance:
+  `balanceBar`). Skills is a tag cloud sized by how many people have each skill (click one for "who can
+  cover") over a people-by-skill matrix with sticky headers. Holidays is a month calendar
+  (`holidayMonth`) showing the holidays already in the roster and those the Add button would add.
+  Org chart is a client manager > team >
   people tree (just teams when no client manager is set). `LeaveApprovals` (also on the Dashboard as "Staff to act on") approves or
   rejects through the normal `timeoff` commit, warns when approval would take a team under its minimum
   and offers the reply as an unsent mail. An approved swap writes both days through the `shifts` commit,
