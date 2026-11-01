@@ -4,6 +4,7 @@ import { memo, useRef, useState, type KeyboardEvent } from "react";
 import {
   BellSlashIcon,
   CalendarCheckIcon,
+  CaretRightIcon,
   CheckIcon,
   FlagIcon,
   HourglassMediumIcon,
@@ -28,8 +29,10 @@ import { describeInstant } from "@/lib/pmo/due";
 import { parseDate } from "@/lib/ui/dates";
 import { MAX_QUICK_ADD_LENGTH, parseQuickAdd } from "@/lib/pmo/quickAdd";
 import { emptyDraft } from "@/lib/pmo/todoLogic";
+import { actionItemsView } from "@/lib/pmo/cardView";
 import type { PmoState, ReminderPrefs, Todo } from "@/lib/pmo/types";
 import { clearCancelled, createTodo, patchTodo, type NextOffer } from "./api";
+import { useExpandedCards } from "./expandedCardsStore";
 import {
   CONTENT_WIDTH,
   Chip,
@@ -37,6 +40,7 @@ import {
   GUTTER_X,
   NativeSelect,
   PanelMessage,
+  PersonTag,
   ROW_CARD,
   STICKY_BAR,
   type ChipTone,
@@ -525,7 +529,9 @@ const TodoCard = memo(function TodoCard({
   const row = todoRowView(todo, today, now);
   const waiting = row.open ? describeWaiting(todo, now, prefs, today) : null;
   const signoff = signoffRowView(todo, now, prefs);
-  const shownItems = todo.actionItems.slice(0, 3);
+  const itemsView = actionItemsView(todo.actionItems);
+  const itemsOpen = useExpandedCards((s) => s.open[todo.id] === true);
+  const toggleItems = useExpandedCards((s) => s.toggle);
   const repeats = repeatsText(todo.recurrence);
   const hasMore =
     !!waiting ||
@@ -533,7 +539,7 @@ const TodoCard = memo(function TodoCard({
     !!repeats ||
     row.snoozed ||
     row.total > 0 ||
-    shownItems.length > 0;
+    itemsView.total > 0;
 
   // The due chip: the view-logic's headline (Overdue / Due soon / Done /
   // Cancelled) when there is one, else the shared due chip for the day itself.
@@ -630,10 +636,12 @@ const TodoCard = memo(function TodoCard({
             </span>
             <span className="text-ink-muted flex min-w-0 items-center gap-x-3 overflow-hidden text-[12.5px] whitespace-nowrap">
               <span className="min-w-0 truncate">
-                <span className="text-ink-muted">Owner </span>
-                <span className="text-ink-soft font-semibold">
-                  {ownerLabel(todo.owner)}
-                </span>
+                <span className="sr-only">Owner </span>
+                <PersonTag
+                  name={todo.owner.name || todo.owner.email}
+                  label={ownerLabel(todo.owner)}
+                  className="text-ink-soft font-semibold"
+                />
               </span>
               <span className={cn("shrink-0", row.overdue && "text-red font-semibold")}>
                 {row.dueText}
@@ -715,9 +723,9 @@ const TodoCard = memo(function TodoCard({
               className="text-ink-muted flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px]"
             >
               <HourglassMediumIcon size={14} className="shrink-0" />
-              <span className="min-w-0">
+              <span className="flex min-w-0 flex-wrap items-center gap-x-1.5">
                 Waiting on{" "}
-                <strong className="text-ink font-semibold">{waiting.who}</strong>
+                <PersonTag name={waiting.who} className="text-ink font-semibold" />
                 <span className="text-ink-muted">
                   {" · "}
                   {waiting.since}
@@ -797,47 +805,67 @@ const TodoCard = memo(function TodoCard({
             </div>
           )}
 
-          {shownItems.length > 0 && (
-            <ul className="flex flex-col gap-1.5">
-              {shownItems.map((item) => (
-                <li key={item.id} className="flex min-w-0 items-center gap-2.5">
-                  <input
-                    type="checkbox"
-                    checked={item.done}
-                    disabled={busyId === item.id || !row.open}
-                    onChange={(event) => void toggle(item.id, event.target.checked)}
-                    aria-label={item.text}
-                    className="accent-accent focus-visible:ring-focus h-4 w-4 shrink-0 focus-visible:ring-2"
-                  />
-                  <span
-                    className={cn(
-                      "min-w-0 flex-1 truncate text-[13px]",
-                      item.done ? "text-ink-muted line-through" : "text-ink-soft",
-                    )}
-                  >
-                    {item.text}
-                  </span>
-                  {(item.owner || item.dueAt) && (
-                    <span className="text-ink-muted hidden shrink-0 text-[12px] @md:inline">
-                      {[item.owner, item.dueAt ? formatDay(item.dueAt, today) : null]
-                        .filter(Boolean)
-                        .join(" · ")}
-                    </span>
+          {itemsView.total > 0 && (
+            <div className="flex flex-col gap-1.5">
+              <button
+                type="button"
+                aria-expanded={itemsOpen}
+                aria-controls={`items-${todo.id}`}
+                onClick={() => toggleItems(todo.id)}
+                className="text-ink-muted hover:text-ink focus-ring rounded-control -ml-1 flex items-center gap-1.5 self-start px-1 text-[12.5px] font-semibold"
+              >
+                <CaretRightIcon
+                  size={12}
+                  weight="bold"
+                  aria-hidden
+                  className={cn("transition-transform", itemsOpen && "rotate-90")}
+                />
+                Action items
+                <span className="tabular-nums">{itemsView.label}</span>
+              </button>
+              {itemsOpen && (
+                <ul id={`items-${todo.id}`} className="flex flex-col gap-1.5">
+                  {itemsView.shown.map((item) => (
+                    <li key={item.id} className="flex min-w-0 items-center gap-2.5">
+                      <input
+                        type="checkbox"
+                        checked={item.done}
+                        disabled={busyId === item.id || !row.open}
+                        onChange={(event) => void toggle(item.id, event.target.checked)}
+                        aria-label={item.text}
+                        className="accent-accent focus-visible:ring-focus h-4 w-4 shrink-0 focus-visible:ring-2"
+                      />
+                      <span
+                        className={cn(
+                          "min-w-0 flex-1 truncate text-[13px]",
+                          item.done ? "text-ink-muted line-through" : "text-ink-soft",
+                        )}
+                      >
+                        {item.text}
+                      </span>
+                      {(item.owner || item.dueAt) && (
+                        <span className="text-ink-muted hidden shrink-0 text-[12px] @md:inline">
+                          {[item.owner, item.dueAt ? formatDay(item.dueAt, today) : null]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </span>
+                      )}
+                    </li>
+                  ))}
+                  {itemsView.hidden > 0 && (
+                    <li>
+                      <button
+                        type="button"
+                        onClick={() => onOpen(todo.id)}
+                        className="text-ink-muted hover:text-ink focus-ring rounded text-[12px] font-semibold"
+                      >
+                        +{itemsView.hidden} more
+                      </button>
+                    </li>
                   )}
-                </li>
-              ))}
-              {todo.actionItems.length > shownItems.length && (
-                <li>
-                  <button
-                    type="button"
-                    onClick={() => onOpen(todo.id)}
-                    className="text-ink-muted hover:text-ink focus-visible:ring-focus rounded text-[12px] font-semibold outline-none focus-visible:ring-2"
-                  >
-                    +{todo.actionItems.length - shownItems.length} more
-                  </button>
-                </li>
+                </ul>
               )}
-            </ul>
+            </div>
           )}
         </div>
       )}
