@@ -14,10 +14,11 @@ import {
   SealCheckIcon,
   TrashIcon,
 } from "@phosphor-icons/react";
-import { Button, Input, Progress } from "@/components/ui";
+import { Button, DueChip, IconButton, Input, PriorityStripe, Progress } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { toast } from "@/lib/notifications/toastStore";
 import { describeInstant } from "@/lib/pmo/due";
+import { parseDate } from "@/lib/ui/dates";
 import { MAX_QUICK_ADD_LENGTH, parseQuickAdd } from "@/lib/pmo/quickAdd";
 import { emptyDraft } from "@/lib/pmo/todoLogic";
 import type { PmoState, ReminderPrefs, Todo } from "@/lib/pmo/types";
@@ -28,7 +29,6 @@ import {
   FilterPill,
   GUTTER_X,
   NativeSelect,
-  PILL_STRIP,
   PanelMessage,
   ROW_CARD,
   STICKY_BAR,
@@ -194,11 +194,18 @@ export function TodoList({
     <div className="flex flex-col">
       {/* Stays at the top while the list scrolls under it. */}
       <div className={STICKY_BAR}>
-        <div className={cn(CONTENT_WIDTH, GUTTER_X, "flex items-center gap-2.5 py-2.5")}>
+        <div
+          className={cn(
+            CONTENT_WIDTH,
+            GUTTER_X,
+            "flex flex-wrap items-center gap-x-2.5 gap-y-2 py-2",
+          )}
+        >
+          {/* Wraps onto a second line rather than hiding the last chips. */}
           <div
             role="group"
             aria-label="To-do filter"
-            className={cn(PILL_STRIP, "min-w-0 flex-1")}
+            className="flex min-w-0 flex-1 flex-wrap gap-1.5"
           >
             {TODO_FILTERS.map(({ id, label }) => (
               <FilterPill
@@ -211,51 +218,49 @@ export function TodoList({
               </FilterPill>
             ))}
           </div>
-          <label className="text-ink-muted flex shrink-0 items-center gap-2 text-[12px] font-semibold">
-            <span className="hidden @xl:inline">Sort</span>
-            <NativeSelect
-              value={sort}
-              aria-label="Sort to-dos"
-              onChange={(event) =>
-                onViewChange({ ...view, sort: event.target.value as TodoSort })
-              }
-              className="max-w-36"
+          <div className="ml-auto flex shrink-0 items-center gap-2">
+            <label className="text-ink-muted flex items-center gap-2 text-[12px] font-semibold">
+              <span className="hidden @2xl:inline">Sort</span>
+              <NativeSelect
+                value={sort}
+                aria-label="Sort to-dos"
+                onChange={(event) =>
+                  onViewChange({ ...view, sort: event.target.value as TodoSort })
+                }
+                className="max-w-36"
+              >
+                {TODO_SORTS.map(({ id, label }) => (
+                  <option key={id} value={id}>
+                    {label}
+                  </option>
+                ))}
+              </NativeSelect>
+            </label>
+            <IconButton
+              variant="ghost"
+              aria-label="Plan my week"
+              tooltip="Plan my week"
+              onClick={() => setPlanOpen(true)}
             >
-              {TODO_SORTS.map(({ id, label }) => (
-                <option key={id} value={id}>
-                  {label}
-                </option>
-              ))}
-            </NativeSelect>
-          </label>
-          <Button
-            variant="ghost"
-            className="shrink-0 px-3"
-            aria-label="Plan my week"
-            title="Plan my week"
-            onClick={() => setPlanOpen(true)}
-          >
-            <CalendarCheckIcon size={15} />
-            <span className="hidden @2xl:inline">Plan week</span>
-          </Button>
-          <Button
-            variant="ghost"
-            className="shrink-0 px-3"
-            aria-label="From meeting notes"
-            title="Add to-dos from meeting notes"
-            onClick={() => setNotesOpen(true)}
-          >
-            <NotePencilIcon size={15} />
-            <span className="hidden @2xl:inline">From notes</span>
-          </Button>
-          <Button
-            className="shrink-0 px-3 @xl:px-[17px]"
-            aria-label="New to-do"
-            onClick={onNew}
-          >
-            <PlusIcon size={15} weight="bold" />
-            <span className="hidden @xl:inline">New to-do</span>
-          </Button>
+              <CalendarCheckIcon size={16} />
+            </IconButton>
+            <IconButton
+              variant="ghost"
+              aria-label="From meeting notes"
+              tooltip="Add to-dos from meeting notes"
+              onClick={() => setNotesOpen(true)}
+            >
+              <NotePencilIcon size={16} />
+            </IconButton>
+            <Button
+              className="px-3 @xl:px-[17px]"
+              aria-label="New to-do"
+              onClick={onNew}
+            >
+              <PlusIcon size={15} weight="bold" />
+              <span className="hidden @xl:inline">New to-do</span>
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -263,8 +268,14 @@ export function TodoList({
         <ClearCancelledBar count={cancelledCount} onSettled={onSettled} />
       )}
 
-      <QuickAddBar today={state.today} todos={state.todos} onSettled={onSettled} />
-      <ListTools state={state} view={view} onViewChange={onViewChange} />
+      <ListTools
+        state={state}
+        view={view}
+        onViewChange={onViewChange}
+        quickAdd={
+          <QuickAddBar today={state.today} todos={state.todos} onSettled={onSettled} />
+        }
+      />
       {selectedTodos.length > 0 && (
         <BulkBar
           selected={selectedTodos}
@@ -285,7 +296,7 @@ export function TodoList({
           className={cn(
             CONTENT_WIDTH,
             GUTTER_X,
-            "focus-visible:ring-focus rounded-control flex flex-col gap-2.5 pt-3.5 pb-6 outline-none focus-visible:ring-2",
+            "focus-visible:ring-focus rounded-control flex flex-col gap-2.5 pt-2.5 pb-6 outline-none focus-visible:ring-2",
           )}
         >
           {visible.map((todo, index) => (
@@ -373,13 +384,13 @@ function QuickAddBar({
   };
 
   return (
-    <div className={cn(CONTENT_WIDTH, GUTTER_X, "pt-3")}>
+    <div className="min-w-56 flex-[2]">
       <Input
         value={text}
         disabled={busy}
         maxLength={MAX_QUICK_ADD_LENGTH}
         aria-label="Quick add a to-do"
-        placeholder="Add a to-do and press Enter, e.g. Send deck to Priya Fri"
+        placeholder="Add a to-do, e.g. Send deck to Priya Fri"
         onChange={(event) => setText(event.target.value)}
         onKeyDown={(event) => {
           if (event.key === "Enter") {
@@ -475,14 +486,6 @@ function ClearCancelledBar({
   );
 }
 
-/** The priority stripe at the start of a row; the word is read out for screen
- *  readers and the high ones also say it in the row's text. */
-const PRIORITY_BAR: Record<Todo["priority"], string> = {
-  high: "bg-[#e0584d]",
-  normal: "bg-[#d29a2c]",
-  low: "bg-[#5a93e0]",
-};
-
 /** One to-do. The first line is the same height on every card (priority stripe,
  *  title, who and when, a fixed-width due chip, snooze); under a hairline come
  *  only the things this to-do actually has: waiting, sign-off, snoozed, progress
@@ -530,19 +533,14 @@ const TodoCard = memo(function TodoCard({
     shownItems.length > 0;
 
   // The due chip: the view-logic's headline (Overdue / Due soon / Done /
-  // Cancelled) when there is one, else the day itself.
-  const dueChip: { label: string; tone: ChipTone } = row.headline
-    ? {
-        label: row.headline.label,
-        tone: !row.open
-          ? todo.status === "done"
-            ? "success"
-            : "neutral"
-          : row.overdue
-            ? "danger"
-            : "warning",
-      }
-    : { label: todo.dueAt ? formatDay(todo.dueAt, today) : "No date", tone: "neutral" };
+  // Cancelled) when there is one, else the shared due chip for the day itself.
+  const headlineTone: ChipTone = !row.open
+    ? todo.status === "done"
+      ? "success"
+      : "neutral"
+    : row.overdue
+      ? "danger"
+      : "warning";
 
   async function change(patch: Parameters<typeof patchTodo>[1], id: string) {
     setBusyId(id);
@@ -589,7 +587,7 @@ const TodoCard = memo(function TodoCard({
         !row.open && "opacity-65",
       )}
     >
-      <div className="flex min-h-16 items-center gap-3.5 py-3 pr-3 pl-4">
+      <div className="flex min-h-14 items-center gap-3.5 py-2.5 pr-3 pl-4">
         <input
           type="checkbox"
           checked={selected}
@@ -597,12 +595,9 @@ const TodoCard = memo(function TodoCard({
           aria-label={`Tick ${todo.title}`}
           className="accent-accent h-4 w-4 shrink-0 cursor-pointer"
         />
-        <span
-          aria-hidden
-          className={cn(
-            "h-[26px] w-1 shrink-0 rounded-[2px]",
-            PRIORITY_BAR[todo.priority],
-          )}
+        <PriorityStripe
+          priority={todo.priority}
+          className="h-[26px] self-center"
         />
         {editing ? (
           <Input
@@ -675,9 +670,18 @@ const TodoCard = memo(function TodoCard({
             <PencilSimpleIcon size={14} />
           </Button>
         )}
-        <Chip tone={dueChip.tone} fixedWidth={92} className="shrink-0">
-          {dueChip.label}
-        </Chip>
+        {row.headline ? (
+          <Chip tone={headlineTone} fixedWidth={92} className="shrink-0">
+            {row.headline.label}
+          </Chip>
+        ) : (
+          <DueChip
+            due={todo.dueAt}
+            now={parseDate(today) ?? undefined}
+            fixedWidth={92}
+            className="shrink-0"
+          />
+        )}
         {row.open && (
           <SnoozeMenu
             todo={todo}
@@ -704,7 +708,7 @@ const TodoCard = memo(function TodoCard({
       </div>
 
       {hasMore && (
-        <div className="border-line flex flex-col gap-2.5 border-t py-3 pr-4 pl-[38px]">
+        <div className="border-line flex flex-col gap-2 border-t py-2.5 pr-4 pl-[38px]">
           {waiting && (
             <div
               data-testid="waiting-chip"
