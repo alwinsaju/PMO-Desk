@@ -9,6 +9,8 @@ export interface Note {
   sample?: boolean;
   /** Earlier bodies replaced by the AI assistant, oldest first. */
   revisions?: string[];
+  /** Kept at the top of the list. */
+  pinned?: boolean;
 }
 
 export type DeletedBy = "user" | "assistant";
@@ -29,13 +31,20 @@ export const UNTITLED_NOTE = "Untitled note";
 export const LIST_TITLE_MAX_CHARS = 30;
 const PREVIEW_MAX_CHARS = 120;
 
+/** Hides the simple formatting markers (`# `, `- [ ] `, `**`) so a title or preview reads as text. */
+function withoutMarkers(content: string): string {
+  return (content ?? "")
+    .replace(/^[ \t]*(?:#{1,3}[ \t]+|-[ \t]\[[ xX]\][ \t]+)/gm, "")
+    .replace(/\*\*/g, "");
+}
+
 /** Splits the first non-empty line at a word boundary within `max` chars: the
  *  part that fits (with "…" when cut) and the spill-over that moves to the preview. */
 function splitFirstLine(
   content: string,
   max: number,
 ): { title: string; spill: string; rest: string } {
-  const text = content ?? "";
+  const text = withoutMarkers(content);
   const match = /[^\r\n]*\S[^\r\n]*/.exec(text);
   const collapsed = (match?.[0] ?? "").replace(/\s+/g, " ").trim();
   const rest = match ? text.slice(match.index + match[0].length) : "";
@@ -82,12 +91,7 @@ export function noteDateLabel(note: Pick<Note, "sample" | "updatedLabel">): stri
   return note.sample ? "" : note.updatedLabel;
 }
 
-/** Date and preview as one subtitle line, skipping whichever part is empty. */
-export function noteSubtitle(date: string, preview: string): string {
-  return [date, preview].filter(Boolean).join(" — ");
-}
-
-/** Appends `previous` to the history, capped to the newest MAX_REVISIONS. */
+/** Pushes `previous` onto the history, capped to the newest MAX_REVISIONS. */
 export function pushRevision(
   revisions: string[] | undefined,
   previous: string,
@@ -131,6 +135,53 @@ export function restorePreviousRevision(note: Note, label: string): Note {
     updatedLabel: label,
     revisions: revisions.slice(0, -1),
   };
+}
+
+export function togglePinned(note: Note): Note {
+  const { pinned, ...rest } = note;
+  return pinned ? rest : { ...note, pinned: true };
+}
+
+/** Pinned notes first; each group keeps the list's own order (newest first). */
+export function orderNotes(notes: readonly Note[]): {
+  pinned: Note[];
+  others: Note[];
+} {
+  return {
+    pinned: notes.filter((n) => n.pinned),
+    others: notes.filter((n) => !n.pinned),
+  };
+}
+
+const TAG = /(?:^|\s)#([\p{L}][\p{L}\p{N}_-]*)/gu;
+
+/** `#tags` written anywhere in a note, lower-case and unique ("# Heading" with a space is not a tag). */
+export function noteTags(content: string): string[] {
+  const found = new Set<string>();
+  for (const match of (content ?? "").matchAll(TAG)) found.add(match[1].toLowerCase());
+  return [...found];
+}
+
+/** Every tag in use with how many notes carry it, most used first. */
+export function tagCounts(notes: readonly Note[]): { tag: string; count: number }[] {
+  const counts = new Map<string, number>();
+  for (const note of notes) {
+    for (const tag of noteTags(note.content)) counts.set(tag, (counts.get(tag) ?? 0) + 1);
+  }
+  return [...counts]
+    .map(([tag, count]) => ({ tag, count }))
+    .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
+}
+
+export function filterByTag(notes: readonly Note[], tag: string | null): Note[] {
+  return tag ? notes.filter((n) => noteTags(n.content).includes(tag)) : [...notes];
+}
+
+export function wordCount(content: string): number {
+  const words = withoutMarkers(content)
+    .replace(/^[ \t]*[-•][ \t]+/gm, "")
+    .match(/\S+/g);
+  return words ? words.length : 0;
 }
 
 export function removeNote(
