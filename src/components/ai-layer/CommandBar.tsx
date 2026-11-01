@@ -2,6 +2,7 @@
 
 import {
   useEffect,
+  useReducer,
   useRef,
   useState,
   type FocusEvent,
@@ -14,6 +15,7 @@ import {
   CircleNotchIcon,
   SparkleIcon,
   StarIcon,
+  StopIcon,
   XIcon,
 } from "@phosphor-icons/react";
 import { cn } from "@/lib/cn";
@@ -59,6 +61,14 @@ import type {
 import { useAgentStore } from "./agentStore";
 import { ACTION_HOLD_MS, EMPTY_STATE_NOTICE_MS, TASK_SETTLE_MS } from "./constants";
 import { placeholderFor } from "./barText";
+import { postCommand } from "./commandClient";
+import {
+  IDLE_THINKING,
+  STOPPED_NOTICE,
+  isThinking,
+  thinkingHint,
+  thinkingReducer,
+} from "./thinkingState";
 
 /** Client-side safety net on top of the route's own internal timeout (see
  *  route.ts's REQUEST_TIMEOUT_MS / WAKE_TIMEOUT_MS: 180 s when the command has
@@ -264,6 +274,11 @@ export function CommandBar() {
   // Set while the first answer has to wake the sleeping local model (see runAgentCommand).
   const [wakingSince, setWakingSince] = useState<number | null>(null);
   const [wakeElapsed, setWakeElapsed] = useState(0);
+  // The clock and Stop state of a free-form model request (see thinkingState.ts).
+  const [thinking, dispatchThinking] = useReducer(thinkingReducer, IDLE_THINKING);
+  const abortRef = useRef<AbortController | null>(null);
+  const askedPromptRef = useRef("");
+  const stopRef = useRef<() => void>(() => {});
   // Position in the history while walking it with the arrow keys (-1 = not walking).
   const [historyIndex, setHistoryIndex] = useState(-1);
   const commandLog = usePreferences((s) => s.commandLog);
@@ -351,6 +366,29 @@ export function CommandBar() {
     return () => clearInterval(id);
   }, [wakingSince]);
 
+  // Keeps the "Thinking…" clock running, and lets Esc stop the wait.
+  const thinkingActive = isThinking(thinking);
+  useEffect(() => {
+    if (!thinkingActive) return;
+    const id = setInterval(
+      () => dispatchThinking({ type: "tick", now: Date.now() }),
+      1000,
+    );
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      stopRef.current();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [thinkingActive]);
+  useEffect(() => {
+    stopRef.current = stopThinking;
+  });
+
   // The next step of a chain starts once the bar is free again.
   useEffect(() => {
     submitPromptRef.current = submitPrompt;
@@ -387,6 +425,29 @@ export function CommandBar() {
   function showNotice(message: string) {
     setNotice(message);
     scheduleTimeout(() => setNotice(null), EMPTY_STATE_NOTICE_MS);
+  }
+
+  /** Stop while a free-form model answer is awaited: cancels the request and
+   *  returns the bar to idle. The bumped token makes any late result ignored. */
+  function stopThinking() {
+    const controller = abortRef.current;
+    if (!controller) return;
+    controller.abort();
+    abortRef.current = null;
+    taskTokenRef.current += 1;
+    chainRef.current = [];
+    dispatchThinking({ type: "stop" });
+    setWakingSince(null);
+    setAnnotation(null);
+    clearCurrentTask();
+    logCommand({
+      at: Date.now(),
+      prompt: askedPromptRef.current,
+      tool: "model",
+      outcome: "cancelled",
+      detail: "Stopped by you",
+    });
+    showNotice(STOPPED_NOTICE);
   }
 
   async function runAgentCommand(
@@ -455,28 +516,31 @@ export function CommandBar() {
           }
         })();
       }
-      try {
-        // A PMO question the bar recognised itself is answered from the data by code
-        // (no model, so it is instant and works with Ollama stopped); anything else
-        // goes to the model.
-        const res = await fetch(pmoIntent ? "/api/ai/pmo" : "/api/ai/command", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(pmoIntent ?? requestBody),
-          signal: AbortSignal.timeout(CLIENT_TIMEOUT_MS),
-        });
-        result = (await res.json()) as AiCommandResult;
-      } catch {
-        result = {
-          type: "error",
-          kind: "unreachable",
-          message: pmoIntent
+      // A PMO question the bar recognised itself is answered from the data by code
+      // (no model, so it is instant and works with Ollama stopped); anything else
+      // goes to the model, and only that wait can be stopped.
+      const controller = new AbortController();
+      abortRef.current = controller;
+      askedPromptRef.current = prompt;
+      if (!pmoIntent) dispatchThinking({ type: "start", at: Date.now() });
+      const outcome = await postCommand(
+        pmoIntent ? "/api/ai/pmo" : "/api/ai/command",
+        pmoIntent ?? requestBody,
+        {
+          signal: controller.signal,
+          timeoutMs: CLIENT_TIMEOUT_MS,
+          unreachableMessage: pmoIntent
             ? "Couldn't reach the AI OS server."
             : "Couldn't reach the local AI model.",
-        };
-      }
+        },
+      );
+      if (abortRef.current === controller) abortRef.current = null;
       answered = true;
       setWakingSince(null);
+      // Stop already reset the bar (see stopThinking), so there is nothing left to do.
+      if (outcome.kind === "stopped") return;
+      if (token === taskTokenRef.current) dispatchThinking({ type: "finish" });
+      result = outcome.result;
     }
 
     // A newer submit already started its own task while this one was in
@@ -685,6 +749,7 @@ export function CommandBar() {
   // there's genuinely nothing to mount (same reasoning as
   // AIAnnotationBubble.tsx's own `display` gate).
   const displayNotice = notice ?? lastNoticeRef.current;
+  const hint = thinkingActive ? thinkingHint(thinking.elapsedSeconds) : null;
 
   return (
     <div
@@ -713,6 +778,15 @@ export function CommandBar() {
         >
           {displayNotice}
         </motion.p>
+      )}
+
+      {hint && (
+        <p
+          role="status"
+          className="glass rounded-chip text-ink-soft px-3.5 py-1.5 text-[12.5px] font-semibold"
+        >
+          {hint}
+        </p>
       )}
 
       {/* Starter chips: out of flow (absolute, above the bar) so showing
@@ -796,6 +870,7 @@ export function CommandBar() {
           placeholder={placeholderFor(currentStatus, {
             waking: wakingSince !== null,
             elapsedSeconds: wakeElapsed,
+            thinkingSeconds: thinkingActive ? thinking.elapsedSeconds : undefined,
           })}
           aria-label="Ask the AI agent"
           className={cn(
@@ -819,25 +894,41 @@ export function CommandBar() {
             />
           </button>
         )}
-        <button
-          type="submit"
-          aria-label="Send"
-          disabled={!canSend}
-          className={cn(
-            "rounded-orb grid h-[42px] w-[42px] shrink-0 place-items-center",
-            "ease-spring transition-[background-color,color,transform] duration-300",
-            "focus-visible:ring-focus focus-visible:ring-2 focus-visible:outline-none",
-            canSend
-              ? "bg-accent text-accent-contrast hover:scale-[1.08] hover:-rotate-6"
-              : "bg-chip-strong text-ink-muted cursor-default",
-          )}
-        >
-          {isBusy ? (
-            <CircleNotchIcon size={18} weight="bold" className="animate-spin" />
-          ) : (
-            <ArrowUpIcon size={18} weight="bold" />
-          )}
-        </button>
+        {thinkingActive ? (
+          <button
+            type="button"
+            aria-label="Stop"
+            title="Stop (Esc)"
+            onClick={stopThinking}
+            className={cn(
+              "rounded-orb bg-chip-strong text-ink grid h-[42px] w-[42px] shrink-0 place-items-center",
+              "hover:bg-red-soft hover:text-red transition-colors duration-200",
+              "focus-visible:ring-focus focus-visible:ring-2 focus-visible:outline-none",
+            )}
+          >
+            <StopIcon size={16} weight="fill" aria-hidden />
+          </button>
+        ) : (
+          <button
+            type="submit"
+            aria-label="Send"
+            disabled={!canSend}
+            className={cn(
+              "rounded-orb grid h-[42px] w-[42px] shrink-0 place-items-center",
+              "ease-spring transition-[background-color,color,transform] duration-300",
+              "focus-visible:ring-focus focus-visible:ring-2 focus-visible:outline-none",
+              canSend
+                ? "bg-accent text-accent-contrast hover:scale-[1.08] hover:-rotate-6"
+                : "bg-chip-strong text-ink-muted cursor-default",
+            )}
+          >
+            {isBusy ? (
+              <CircleNotchIcon size={18} weight="bold" className="animate-spin" />
+            ) : (
+              <ArrowUpIcon size={18} weight="bold" />
+            )}
+          </button>
+        )}
       </form>
     </div>
   );
