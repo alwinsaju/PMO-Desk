@@ -8,7 +8,12 @@ import {
   useState,
   type KeyboardEvent,
 } from "react";
-import { CheckIcon, FileXlsIcon, UploadSimpleIcon } from "@phosphor-icons/react";
+import {
+  CheckCircleIcon,
+  CheckIcon,
+  CircleIcon,
+  UploadSimpleIcon,
+} from "@phosphor-icons/react";
 import {
   Button,
   Dialog,
@@ -20,6 +25,8 @@ import {
 import { cn } from "@/lib/cn";
 import { FILE_SIZE, formatBytes } from "@/lib/format";
 import { getInputs, prepare, saveParams, uploadInput } from "./api";
+import { FileKindIcon } from "./FileKindIcon";
+import { fileKind, inputKind, requirementChecklist } from "./inputChecklist";
 import { SectionLabel, SeverityChip } from "./GateParts";
 import {
   acceptAttr,
@@ -132,6 +139,7 @@ export function StartTaskDialog({
   }, [statuses]);
 
   const missing = missingRequired(task, statuses, selections, choicesByInput);
+  const checklist = requirementChecklist(task.inputs ?? [], missing);
   const afterIds = prepareAfterIds(task);
   const ready = canPrepare(task, statuses);
   const uploading = Object.values(busy).some(Boolean);
@@ -472,14 +480,39 @@ export function StartTaskDialog({
         )}
 
         <div className="mt-6 flex flex-col gap-2">
-          {loadState === "ready" && missing.length > 0 && (
-            <p
-              className="bg-chip text-ink-soft rounded-control px-3 py-2 text-[12.5px]"
+          {loadState === "ready" && checklist.length > 0 && (
+            <div
+              className="bg-chip rounded-control px-3.5 py-2.5"
               aria-live="polite"
-              title={missing.join(", ")}
+              data-testid="run-checklist"
             >
-              {stillNeededText(missing)}
-            </p>
+              <p className="text-ink-soft text-[12.5px] font-semibold">
+                {stillNeededText(missing) || "Everything is ready — you can start."}
+              </p>
+              <ul className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1">
+                {checklist.map((item) => (
+                  <li
+                    key={item.label}
+                    className="flex items-center gap-1.5 text-[12.5px]"
+                  >
+                    {item.done ? (
+                      <CheckCircleIcon
+                        size={14}
+                        weight="fill"
+                        className="text-success"
+                        aria-hidden
+                      />
+                    ) : (
+                      <CircleIcon size={14} className="text-ink-muted" aria-hidden />
+                    )}
+                    <span className={item.done ? "text-ink" : "text-ink-soft"}>
+                      {item.label}
+                    </span>
+                    <span className="sr-only">{item.done ? "(done)" : "(needed)"}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
           <div className="flex items-center justify-end gap-2">
             <Button
@@ -560,14 +593,22 @@ function FileInput({
         <div className="flex items-center gap-3">
           <span
             className={cn(
-              "flex h-8 w-8 shrink-0 items-center justify-center rounded-full",
+              "relative flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px]",
               present ? "bg-success-soft text-success" : "text-ink-muted bg-chip",
             )}
           >
+            <FileKindIcon
+              kind={present ? fileKind(status?.filename) : inputKind(input)}
+              size={20}
+            />
             {present ? (
-              <CheckIcon size={14} weight="bold" aria-hidden />
+              <span className="bg-success-dot absolute -right-1 -bottom-1 flex h-4 w-4 items-center justify-center rounded-full text-white">
+                <CheckIcon size={10} weight="bold" aria-hidden />
+              </span>
             ) : (
-              <UploadSimpleIcon size={14} weight="bold" aria-hidden />
+              <span className="bg-surface-elevated text-ink-muted absolute -right-1 -bottom-1 flex h-4 w-4 items-center justify-center rounded-full">
+                <UploadSimpleIcon size={10} weight="bold" aria-hidden />
+              </span>
             )}
           </span>
           <div className="min-w-0 flex-1">
@@ -586,8 +627,9 @@ function FileInput({
               <p className="text-ink-muted mt-1 text-[12.5px]">Uploading…</p>
             ) : present ? (
               <p className="text-ink-muted mt-1 flex items-center gap-1.5 text-[12.5px]">
-                <FileXlsIcon size={13} weight="bold" aria-hidden className="shrink-0" />
-                <span className="min-w-0 truncate">{status?.filename ?? "Uploaded"}</span>
+                <span className="text-ink min-w-0 truncate font-medium">
+                  {status?.filename ?? "Uploaded"}
+                </span>
                 {status?.size != null && (
                   <span className="text-ink-muted shrink-0">
                     {formatBytes(status.size, FILE_SIZE)}
