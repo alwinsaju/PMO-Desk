@@ -414,9 +414,11 @@ Pseudo-element budget (never stack two users of the same one): `spot` uses
 `brand-bar` uses `::before`. All motion effects switch off under
 `prefers-reduced-motion`; overlays degrade to a plain fade.
 
-Focus: a base-layer `:focus-visible` outline in `--color-focus` covers any
-interactive element that does not bring its own ring; `focus-visible:ring-*`
-and `outline-none` utilities still win.
+Focus: every interactive primitive uses the `focus-ring` utility (2 px outline in
+`--color-focus`, offset 2 px; tokens `--focus-ring-width` / `--focus-ring-offset`). A
+base-layer `:focus-visible` outline in the same colour covers any interactive element that
+does not bring its own. Type scale (`type-*`), 8-px spacing (`stack-N`, `cluster-N`) and the
+contrast rules are in `docs/ui-guidelines.md`.
 
 ### Using it in a component
 

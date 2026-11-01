@@ -12,8 +12,9 @@
 }
 
 /* High contrast: muted text becomes full-strength, borders get clearly visible, and the
- * keyboard focus ring is thick. */
-:root[data-contrast="high"] {
+ * keyboard focus ring is thick. The selector is doubled so it outranks the Deloitte
+ * token blocks (which also set --color-ink-faint). */
+html:root[data-contrast="high"][data-contrast="high"] {
   --color-ink-muted: var(--color-ink);
   --color-ink-faint: var(--color-ink-soft);
   --color-line: color-mix(in srgb, var(--color-ink) 45%, transparent);

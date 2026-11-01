@@ -376,8 +376,8 @@ body {
     select,
     [tabindex]:not([tabindex="-1"])
   ):focus-visible {
-    outline: 2px solid var(--color-focus);
-    outline-offset: 2px;
+    outline: var(--focus-ring-width) solid var(--color-focus);
+    outline-offset: var(--focus-ring-offset);
   }
 }
 
@@ -698,6 +698,57 @@ body {
 @utility scroll-thin {
   scrollbar-width: thin;
   scrollbar-color: var(--color-line-strong) transparent;
+}
+
+/* The ONE keyboard focus ring (2 px, `--color-focus`, offset 2 px) for every
+   interactive primitive. An outline (not a ring shadow) so it never fights a
+   button's own box-shadow and still shows in forced-colors mode. */
+@utility focus-ring {
+  &:focus-visible {
+    outline: var(--focus-ring-width) solid var(--color-focus);
+    outline-offset: var(--focus-ring-offset);
+  }
+}
+
+/* Type scale (tokens.css has the numbers). */
+@utility type-page-title {
+  font-size: var(--type-page-title-size);
+  line-height: var(--type-page-title-line);
+  font-weight: var(--font-weight-headline);
+  letter-spacing: -0.02em;
+  color: var(--color-ink);
+}
+@utility type-section-title {
+  font-size: var(--type-section-title-size);
+  line-height: var(--type-section-title-line);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--color-ink);
+}
+@utility type-body {
+  font-size: var(--type-body-size);
+  line-height: var(--type-body-line);
+  font-weight: 400;
+}
+@utility type-caption {
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+  font-weight: 500;
+  color: var(--color-ink-muted);
+}
+
+/* 8-px-grid layout helpers: `stack-2` = vertical flex, 16 px gap;
+   `cluster-1` = wrapping horizontal flex, 8 px gap. */
+@utility stack-* {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--space-unit) * --value(integer));
+}
+@utility cluster-* {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: calc(var(--space-unit) * --value(integer));
 }
 
 /* Headline accent word — wrap ONE word of a title: `<h2>Your <span
