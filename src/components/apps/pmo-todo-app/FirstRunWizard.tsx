@@ -27,15 +27,9 @@ import {
 import { createInboxFolder, fetchFirstRunSuggestions, finishFirstRun } from "./api";
 import { DOMAIN_NOUN } from "./listFeedbackView";
 import { ListFeedback, SuggestionRow } from "./ListFeedback";
-import {
-  ErrorLine,
-  Field,
-  FieldError,
-  NativeSelect,
-  Note,
-  ScrollBody,
-  SectionLabel,
-} from "./parts";
+import { ErrorLine, Field, FieldError, NativeSelect, Note, ScrollBody } from "./parts";
+import { WizardStepper, WizardSummary } from "./WizardParts";
+import { STEP_INTRO, wizardSummary } from "@/lib/pmo/wizardView";
 
 const detectedTimeZone = () => {
   try {
@@ -233,22 +227,24 @@ export function FirstRunWizard({
 
   return (
     <div data-window-id={windowId} className="flex h-full w-full flex-col">
-      <ScrollBody className="px-6 py-6">
-        <div className="mx-auto flex w-full max-w-xl flex-col gap-5">
-          <header className="flex flex-col gap-1.5">
-            <SectionLabel>
-              Set up PMO To-Do - step {step + 1} of {FIRST_RUN_STEPS.length}
-            </SectionLabel>
-            <h2 className="text-ink text-xl font-semibold">{current.title}</h2>
-            {resumed && step === resumed.step && (
-              <p className="text-ink-muted text-[13px] leading-relaxed">
-                Welcome back: your earlier answers are filled in.
+      {/* m-auto centres the content in the window and still scrolls when it is taller. */}
+      <ScrollBody className="flex px-6 py-8">
+        <div className="m-auto flex w-full max-w-lg flex-col gap-6">
+          <header className="flex flex-col gap-4">
+            <WizardStepper step={step} />
+            <div className="flex flex-col gap-2">
+              <h2 className="text-ink text-[26px] leading-tight font-semibold">
+                {current.title}
+              </h2>
+              <p className="text-ink-muted text-[14px] leading-relaxed">
+                {STEP_INTRO[current.id]}
               </p>
-            )}
-            <p className="text-ink-muted text-[13px] leading-relaxed">
-              Nothing is read from your mail until you finish this. Everything stays on
-              this computer.
-            </p>
+              {resumed && step === resumed.step && (
+                <p className="text-ink-muted text-[13px] leading-relaxed">
+                  Welcome back: your earlier answers are filled in.
+                </p>
+              )}
+            </div>
           </header>
 
           {current.id === "who" && (
@@ -362,10 +358,6 @@ export function FirstRunWizard({
                 </Note>
               ) : (
                 <>
-                  <p className="text-ink-muted text-[13px] leading-relaxed">
-                    The folder your Outlook flow drops messages into. It is only read, and
-                    a new folder is created only when you click the button.
-                  </p>
                   {choices.map((choice) => (
                     <FolderRow
                       key={choice.path}
@@ -413,6 +405,18 @@ export function FirstRunWizard({
                 </>
               )}
             </div>
+          )}
+
+          {last && (
+            <WizardSummary
+              rows={wizardSummary(form)}
+              disabled={busy}
+              onChange={(id) => {
+                setProblems([]);
+                setServerError(null);
+                setStep(FIRST_RUN_STEPS.findIndex((s) => s.id === id));
+              }}
+            />
           )}
 
           {problems.length > 0 && (

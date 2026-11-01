@@ -25,6 +25,7 @@ import { updateConfig } from "./api";
 import { DOMAIN_NOUN, EMAIL_NOUN } from "./listFeedbackView";
 import { ListFeedback } from "./ListFeedback";
 import {
+  Disclosure,
   ErrorLine,
   Field,
   FieldError,
@@ -76,6 +77,8 @@ export function SettingsDialog({
   const [serverError, setServerError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [teamsOpen, setTeamsOpen] = useState(false);
+  const teamsError = Boolean(errors.allowedTenantIds || errors.teamsChatAllowlist);
   const desktop = useRemindersStore((s) => s.desktop);
   const configRef = useRef(state.config);
   configRef.current = state.config;
@@ -87,6 +90,7 @@ export function SettingsDialog({
     setErrors({});
     setServerError(null);
     setSaved(false);
+    setTeamsOpen(false);
   }, [open]);
 
   const set = (patch: Partial<FormText>) => {
@@ -209,38 +213,44 @@ export function SettingsDialog({
                 2,
                 "One domain per line (commas work too). Email from any other domain is filtered and discarded, so check the list carefully. Subdomains match (us.company.com matches company.com).",
               )}
-              {listBox(
-                "allowedTenantIds",
-                "Allowed Teams tenant IDs",
-                "00000000-0000-0000-0000-000000000000",
-                2,
-                <>
-                  Teams is blocked until a tenant or chat is listed.{" "}
-                  <strong className="text-ink-soft">How to find your tenant ID:</strong>{" "}
-                  the Teams flow sends it (Recipe B), so the easiest way is{" "}
-                  <em>Allow this tenant</em> on a filtered Teams item. It is also in a
-                  Teams message link after <code className="font-mono">?tenantId=</code>,
-                  and in the flow&apos;s run history (the trigger card, under{" "}
-                  <code className="font-mono">ChannelData</code>, <em>Tenant</em>,{" "}
-                  <code className="font-mono">Id</code>).
-                </>,
-              )}
-              {listBox(
-                "teamsChatAllowlist",
-                "Allowed Teams chat IDs (optional)",
-                "19:xxxxxxxx@thread.v2",
-                2,
-                <>
-                  Lets one chat in without allowing the whole tenant (useful when the flow
-                  cannot supply a tenant ID). The value is the{" "}
-                  <strong className="text-ink-soft">Conversation ID</strong> the flow
-                  sends, something like{" "}
-                  <code className="font-mono">19:...@thread.v2</code> or{" "}
-                  <code className="font-mono">19:...@unq.gbl.spaces</code>. It is shown on
-                  a filtered Teams item in the Filtered tab, next to{" "}
-                  <em>Allow this chat</em>. Each chat is listed on its own.
-                </>,
-              )}
+              <Disclosure
+                summary="Advanced: Microsoft Teams"
+                open={teamsOpen || teamsError}
+                onOpenChange={setTeamsOpen}
+              >
+                {listBox(
+                  "allowedTenantIds",
+                  "Allowed Teams tenant IDs",
+                  "00000000-0000-0000-0000-000000000000",
+                  2,
+                  <>
+                    Teams is blocked until a tenant or chat is listed.{" "}
+                    <strong className="text-ink-soft">How to find your tenant ID:</strong>{" "}
+                    the Teams flow sends it (Recipe B), so the easiest way is{" "}
+                    <em>Allow this tenant</em> on a filtered Teams item. It is also in a
+                    Teams message link after <code className="font-mono">?tenantId=</code>
+                    , and in the flow&apos;s run history (the trigger card, under{" "}
+                    <code className="font-mono">ChannelData</code>, <em>Tenant</em>,{" "}
+                    <code className="font-mono">Id</code>).
+                  </>,
+                )}
+                {listBox(
+                  "teamsChatAllowlist",
+                  "Allowed Teams chat IDs (optional)",
+                  "19:xxxxxxxx@thread.v2",
+                  2,
+                  <>
+                    Lets one chat in without allowing the whole tenant (useful when the
+                    flow cannot supply a tenant ID). The value is the{" "}
+                    <strong className="text-ink-soft">Conversation ID</strong> the flow
+                    sends, something like{" "}
+                    <code className="font-mono">19:...@thread.v2</code> or{" "}
+                    <code className="font-mono">19:...@unq.gbl.spaces</code>. It is shown
+                    on a filtered Teams item in the Filtered tab, next to{" "}
+                    <em>Allow this chat</em>. Each chat is listed on its own.
+                  </>,
+                )}
+              </Disclosure>
             </Section>
 
             <Section title="Always blocked">

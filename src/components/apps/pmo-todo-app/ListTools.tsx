@@ -1,12 +1,19 @@
 "use client";
 
-import { useState } from "react";
-import { BookmarkSimpleIcon, MagnifyingGlassIcon, XIcon } from "@phosphor-icons/react";
+import { useId, useState, type ReactNode } from "react";
+import {
+  BookmarkSimpleIcon,
+  CaretDownIcon,
+  MagnifyingGlassIcon,
+  TagIcon,
+  XIcon,
+} from "@phosphor-icons/react";
 import { Button, Input } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { toast } from "@/lib/notifications/toastStore";
 import { usePreferences } from "@/lib/preferences/preferencesStore";
 import { snoozeUntil } from "@/lib/pmo/due";
+import { noSpellcheck } from "@/lib/ui/noSpellcheck";
 import {
   bulkPatches,
   bulkSummary,
@@ -29,19 +36,25 @@ export interface ViewState {
 const isFilter = (v: string): v is TodoFilter => TODO_FILTERS.some((f) => f.id === v);
 const isSort = (v: string): v is TodoSort => TODO_SORTS.some((s) => s.id === v);
 
-/** Search, tag rollups and saved views above the list. */
+/** Quick-add, search, tag filter and saved views above the list; the tag
+ *  rollup is behind a toggle so the cards start higher. */
 export function ListTools({
   state,
   view,
   onViewChange,
+  quickAdd,
 }: {
   state: PmoState;
   view: ViewState;
   onViewChange: (view: ViewState) => void;
+  /** The quick-add box, laid out as the first control of the row. */
+  quickAdd?: ReactNode;
 }) {
   const savedViews = usePreferences((s) => s.savedViews);
   const [naming, setNaming] = useState(false);
   const [name, setName] = useState("");
+  const [statsOpen, setStatsOpen] = useState(false);
+  const statsId = useId();
   const tags = tagRollup(state.todos, state.today);
 
   const save = () => {
@@ -61,15 +74,17 @@ export function ListTools({
   };
 
   return (
-    <div className={cn(CONTENT_WIDTH, GUTTER_X, "flex flex-col gap-2 pt-2.5")}>
-      <div className="flex flex-wrap items-center gap-2">
+    <div className={cn(CONTENT_WIDTH, GUTTER_X, "flex flex-col gap-2 pt-2")}>
+      <div className="flex flex-wrap items-start gap-2">
+        {quickAdd}
         <div className="relative min-w-40 flex-1">
           <MagnifyingGlassIcon
             size={14}
-            className="text-ink-muted pointer-events-none absolute top-1/2 left-3 -translate-y-1/2"
+            className="text-ink-muted pointer-events-none absolute top-[18px] left-3 -translate-y-1/2"
             aria-hidden
           />
           <Input
+            {...noSpellcheck}
             value={view.text}
             aria-label="Search to-dos"
             placeholder="Search to-dos"
@@ -114,11 +129,30 @@ export function ListTools({
           <Button
             variant="ghost"
             size="sm"
+            className="h-9"
             onClick={() => setNaming(true)}
             aria-label="Save this view"
           >
             <BookmarkSimpleIcon size={14} />
             Save view
+          </Button>
+        )}
+        {tags.length > 0 && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-9"
+            aria-expanded={statsOpen}
+            aria-controls={statsId}
+            onClick={() => setStatsOpen((open) => !open)}
+          >
+            <TagIcon size={14} />
+            Tag stats
+            <CaretDownIcon
+              size={11}
+              weight="bold"
+              className={cn("transition-transform", statsOpen && "rotate-180")}
+            />
           </Button>
         )}
       </div>
@@ -157,8 +191,13 @@ export function ListTools({
         </div>
       )}
 
-      {tags.length > 0 && (
-        <div className="flex flex-wrap gap-1.5" role="group" aria-label="Tags">
+      {statsOpen && tags.length > 0 && (
+        <div
+          id={statsId}
+          className="flex flex-wrap gap-1.5"
+          role="group"
+          aria-label="Tags"
+        >
           {tags.slice(0, 8).map((t) => (
             <button
               key={t.tag}

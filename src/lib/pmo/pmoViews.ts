@@ -251,6 +251,26 @@ export function monthGrid(
   return weeks;
 }
 
+/** The row of `weeks` that holds `day`, or -1 when the grid does not cover it. */
+export const weekIndexOf = (weeks: readonly CalendarDay[][], day: string): number =>
+  weeks.findIndex((week) => week.some((cell) => cell.day === day));
+
+export const monthOf = (day: string): { year: number; month: number } => ({
+  year: Number(day.slice(0, 4)),
+  month: Number(day.slice(5, 7)),
+});
+
+/** What a calendar cell lists: the first `limit` items (all of them when `expanded`).
+ *  One spare item is shown rather than a "+1 more" line, which takes the same room. */
+export function splitDayTodos<T>(
+  todos: readonly T[],
+  limit: number,
+  expanded: boolean,
+): { shown: T[]; hidden: number } {
+  if (expanded || todos.length <= limit + 1) return { shown: [...todos], hidden: 0 };
+  return { shown: todos.slice(0, limit), hidden: todos.length - limit };
+}
+
 export function shiftMonth(
   year: number,
   month: number,

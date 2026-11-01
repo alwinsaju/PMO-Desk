@@ -5,10 +5,11 @@ import {
   CheckIcon,
   CopyIcon,
   EnvelopeSimpleIcon,
+  FileTextIcon,
   FloppyDiskIcon,
   SparkleIcon,
 } from "@phosphor-icons/react";
-import { Button, Input } from "@/components/ui";
+import { Button, EmptyState, Input } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import type { SavedReportSummary } from "@/lib/pmo/report";
 import type { PmoState, ReportNarrativeJob } from "@/lib/pmo/types";
@@ -62,6 +63,34 @@ interface ReportsTabProps {
 }
 
 const POLL_MS = 2000;
+
+const SAMPLE_REPORT = [
+  { heading: "Summary", lines: ["8 open · 3 done this week · 1 overdue"] },
+  { heading: "Completed this period", lines: ["Send consolidated RAID log to Pat"] },
+  { heading: "Due next 7 days", lines: ["Get sign-off on dependency list (Fri)"] },
+];
+
+/** A greyed-out look at what Generate produces, so the empty tab shows its result. */
+function ReportSample() {
+  return (
+    <section
+      aria-label="Sample report"
+      className="border-line bg-card rounded-card mx-auto flex w-full max-w-sm flex-col gap-2 border border-dashed p-4 opacity-80"
+    >
+      <SectionLabel>Sample</SectionLabel>
+      {SAMPLE_REPORT.map(({ heading, lines }) => (
+        <div key={heading}>
+          <h4 className="text-ink-soft text-[12.5px] font-semibold">{heading}</h4>
+          <ul className="text-ink-muted list-disc pl-4 text-[12.5px] leading-snug">
+            {lines.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </section>
+  );
+}
 
 /** Text to the clipboard; falls back to the older route when the browser refuses. */
 async function copyToClipboard(text: string): Promise<boolean> {
@@ -281,6 +310,16 @@ export function ReportsTab({ state, view, onViewChange }: ReportsTabProps) {
     mailto && !mailto.ok && !notice ? ". Too long for a mail link: use Copy." : ""
   }${wrap && reportTemplate ? ` · Copy and mail use the template “${reportTemplate.name}”` : ""}`;
 
+  const generateButton = (
+    <Button disabled={busy !== null} onClick={() => void generate()} className="shrink-0">
+      {busy === "generate"
+        ? "Generating…"
+        : armed === "generate"
+          ? "Replace my edits"
+          : "Generate"}
+    </Button>
+  );
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <ScrollBody memoryKey="pmo:reports">
@@ -326,17 +365,7 @@ export function ReportsTab({ state, view, onViewChange }: ReportsTabProps) {
                 </Field>
               </>
             )}
-            <Button
-              disabled={busy !== null}
-              onClick={() => void generate()}
-              className="shrink-0"
-            >
-              {busy === "generate"
-                ? "Generating…"
-                : armed === "generate"
-                  ? "Replace my edits"
-                  : "Generate"}
-            </Button>
+            {draft && generateButton}
             {armed === "generate" && (
               <span role="status" className="text-ink-muted basis-full text-[12.5px]">
                 You have edits that are not saved. Generating again replaces them.{" "}
@@ -354,13 +383,20 @@ export function ReportsTab({ state, view, onViewChange }: ReportsTabProps) {
           {error && <ErrorLine>{error}</ErrorLine>}
 
           {!draft ? (
-            <p className="text-ink-muted text-[13.5px] leading-relaxed">
-              Pick a period and press Generate. The report is built from the to-dos in
-              this app (nothing is read from Excel, ServiceNow or SharePoint), appears at
-              once, and stays on this computer: this app never sends it. You can add a
-              short summary written by the local model, edit the text, copy it for Outlook
-              or Teams, and save it.
-            </p>
+            <>
+              <p className="text-ink-muted text-[13.5px] leading-relaxed">
+                A weekly status built from the to-dos in this app. It stays on this
+                computer and is never sent.
+              </p>
+              <EmptyState
+                compact
+                icon={<FileTextIcon size={22} />}
+                headline="No report yet"
+                description="Choose a period and generate it. You can then edit it, add AI highlights, copy it for Outlook or Teams, and save it."
+                action={generateButton}
+              />
+              <ReportSample />
+            </>
           ) : (
             <>
               <div className="flex flex-col gap-1.5">
