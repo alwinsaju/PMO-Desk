@@ -839,6 +839,22 @@ export function autoLinkMembers(
   return changed;
 }
 
+/** `config` with every unambiguous name match linked (see `autoLinkMembers`), or null
+ *  when there is nothing to link. A member has to be linked to a profile before that
+ *  person's approved Time off can show on their row. */
+export function withAutoLinks(
+  config: RosterConfig,
+  employees: readonly Employee[],
+): { config: RosterConfig; linked: number } | null {
+  const changed = autoLinkMembers(config.members, employees);
+  if (changed.length === 0) return null;
+  const byId = new Map(changed.map((m) => [m.id, m]));
+  return {
+    config: { ...config, members: config.members.map((m) => byId.get(m.id) ?? m) },
+    linked: changed.length,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // The Today view: a shift as a stretch of the 24-hour day
 // ---------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CalendarDotsIcon,
   CaretLeftIcon,
@@ -55,6 +55,7 @@ import { useRosterStore, useRosterSync } from "@/lib/staff/rosterStore";
 import {
   assignmentId,
   autoLinkMembers,
+  withAutoLinks,
   buildSections,
   copyPreviousWeek,
   fillWeek,
@@ -94,6 +95,9 @@ import { ScheduleDialog } from "./ScheduleDialog";
 
 const VIEWS: readonly RosterView[] = ["today", "week", "month", "cycle"];
 const LEGEND_KEY = "ai-os:staff:roster-legend";
+
+const linkedNotice = (count: number) =>
+  `Linked ${count} ${count === 1 ? "person" : "people"} to their directory profile, so their approved Time off shows on their shifts.`;
 const VIEW_LABEL: Record<RosterView, string> = {
   today: "Day",
   week: "Week",
@@ -210,6 +214,20 @@ export function ShiftRoster() {
     () => autoLinkMembers(config.members, employees).length,
     [config.members, employees],
   );
+
+  // A roster name that matches one directory profile is linked on its own: until it is,
+  // that person's approved Time off lands on a second row and not on their shifts.
+  const autoLinked = useRef("");
+  useEffect(() => {
+    const result = withAutoLinks(config, employees);
+    if (!result) return;
+    const key = result.config.members.map((m) => `${m.id}>${m.employeeId}`).join(",");
+    if (autoLinked.current === key) return;
+    autoLinked.current = key;
+    void saveConfig(result.config).then((saved) => {
+      if (saved.ok) setNotice(linkedNotice(result.linked));
+    });
+  }, [config, employees, saveConfig]);
 
   // One view per assignment, kept while the assignment object is, so a roster
   // with thousands of days only re-renders the days that changed.
@@ -352,18 +370,14 @@ export function ShiftRoster() {
   }
 
   function matchNames() {
-    const changed = autoLinkMembers(config.members, employees);
-    if (changed.length === 0) {
+    const result = withAutoLinks(config, employees);
+    if (!result) {
       setNotice(
         "No new matches: every unlinked name is either not in the directory or matches more than one profile.",
       );
       return;
     }
-    const byId = new Map(changed.map((m) => [m.id, m]));
-    void saveRoster(
-      { ...config, members: config.members.map((m) => byId.get(m.id) ?? m) },
-      `Linked ${changed.length} ${changed.length === 1 ? "person" : "people"} to their directory profile.`,
-    );
+    void saveRoster(result.config, linkedNotice(result.linked));
   }
 
   const actions: GridActions = {

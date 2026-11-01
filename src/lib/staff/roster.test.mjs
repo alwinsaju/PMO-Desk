@@ -27,6 +27,7 @@ import {
   shortHours,
   shortLabel,
   suggestLinks,
+  withAutoLinks,
 } from "./shifts.ts";
 import { createTimeOff } from "./timeoff.ts";
 
@@ -479,6 +480,41 @@ describe("matching roster entries to the directory", () => {
       changed.map((m) => [m.id, m.employeeId]),
       [["mem_000000000001", employees[0].id]],
     );
+  });
+
+  it("returns the whole configuration with the matches linked, or null when there are none", () => {
+    const config = {
+      schedules: [],
+      groups: [],
+      events: [],
+      members: [member(1, { name: "Doe, Jane" }), member(3, { name: "Someone Else" })],
+    };
+    const result = withAutoLinks(config, employees);
+    assert.equal(result.linked, 1);
+    assert.equal(result.config.members[0].employeeId, employees[0].id);
+    assert.equal(result.config.members[1].employeeId, null);
+    assert.equal(withAutoLinks(result.config, employees), null);
+  });
+
+  it("shows a person's approved leave on their roster row only once the row is linked", () => {
+    const [jane] = employees;
+    const approved = createTimeOff({
+      employeeId: jane.id,
+      type: "pto",
+      startDate: "2026-03-10",
+      endDate: "2026-03-11",
+      status: "approved",
+    });
+    const config = {
+      schedules: [],
+      groups: [],
+      events: [],
+      members: [member(1, { name: "Doe, Jane" })],
+    };
+    const rowLeave = (cfg) =>
+      leaveOn([approved], cfg.members[0].employeeId ?? "", "2026-03-10");
+    assert.equal(rowLeave(config), undefined);
+    assert.ok(rowLeave(withAutoLinks(config, employees).config));
   });
 });
 
