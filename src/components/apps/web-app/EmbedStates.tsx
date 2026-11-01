@@ -82,6 +82,8 @@ interface EmbedBlockedProps {
   onOpenInNewTab: () => void;
   /** Extra line under the button (e.g. "Opened X in a new tab."). */
   footnote?: ReactNode;
+  /** Replaces the default "Can't embed {name} here" headline. */
+  title?: string;
   /** The real refusal reason; replaces the generic frame explanation. */
   reason?: string;
 }
@@ -93,6 +95,7 @@ export function EmbedBlocked({
   icon,
   onOpenInNewTab,
   footnote,
+  title,
   reason,
 }: EmbedBlockedProps) {
   return (
@@ -103,7 +106,7 @@ export function EmbedBlocked({
         </span>
         <div className="flex flex-col gap-1.5">
           <p className="text-ink text-[15px] font-semibold">
-            Can&apos;t embed {name} here
+            {title ?? <>Can&apos;t embed {name} here</>}
           </p>
           <p className="text-ink-muted text-[13px] leading-relaxed">
             {reason ??

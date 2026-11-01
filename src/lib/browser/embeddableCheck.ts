@@ -126,26 +126,33 @@ export function refusalReason(value: string): string | null {
   return isLoopbackAddress(parsed.hostname) ? LOOPBACK_REASON : PRIVATE_REASON;
 }
 
-export type EmbedVerdict = { embeddable: true } | { embeddable: false; reason: string };
+export type EmbedFailureCode = "framing" | "unreachable" | "not-found";
+
+export type EmbedVerdict =
+  { embeddable: true } | { embeddable: false; reason: string; code?: EmbedFailureCode };
+
+const NOT_FOUND_REASON = "That address could not be found. Check the spelling.";
 
 /** Null when every address `url`'s host resolves to is public, else the reason. */
-async function hostRefusal(url: URL, resolve: Resolver): Promise<string | null> {
+async function hostRefusal(
+  url: URL,
+  resolve: Resolver,
+): Promise<{ reason: string; code?: EmbedFailureCode } | null> {
   const host = url.hostname.replace(/^\[|\]$/g, "");
   if (isIP(host) !== 0) {
     if (!isPrivateAddress(host)) return null;
-    return isLoopbackAddress(host) ? LOOPBACK_REASON : PRIVATE_REASON;
+    return { reason: isLoopbackAddress(host) ? LOOPBACK_REASON : PRIVATE_REASON };
   }
   let addresses: string[];
   try {
     addresses = await resolve(host);
   } catch {
-    return "That address could not be found. Check the spelling.";
+    return { reason: NOT_FOUND_REASON, code: "not-found" };
   }
-  if (addresses.length === 0)
-    return "That address could not be found. Check the spelling.";
+  if (addresses.length === 0) return { reason: NOT_FOUND_REASON, code: "not-found" };
   const bad = addresses.find((a) => isPrivateAddress(a));
   if (bad === undefined) return null;
-  return isLoopbackAddress(bad) ? LOOPBACK_REASON : PRIVATE_REASON;
+  return { reason: isLoopbackAddress(bad) ? LOOPBACK_REASON : PRIVATE_REASON };
 }
 /**
  * Mirrors the two real-world signals appCatalog.ts's comments name:
@@ -186,12 +193,16 @@ export async function inspectEmbeddable(
   let current = start;
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
     const refusal = await hostRefusal(current, deps.resolve);
-    if (refusal) return { embeddable: false, reason: refusal };
+    if (refusal) return { embeddable: false, ...refusal };
     let res: Response;
     try {
       res = await deps.fetchHead(current.toString());
     } catch {
-      return { embeddable: false, reason: "The site could not be reached." };
+      return {
+        embeddable: false,
+        reason: "The site could not be reached.",
+        code: "unreachable",
+      };
     }
     if (res.status >= 300 && res.status < 400) {
       const location = res.headers.get("location");
@@ -213,7 +224,7 @@ export async function inspectEmbeddable(
     }
     return allowsFraming(res.headers)
       ? { embeddable: true }
-      : { embeddable: false, reason: FRAMING_REASON };
+      : { embeddable: false, reason: FRAMING_REASON, code: "framing" };
   }
   return { embeddable: false, reason: REDIRECT_REASON };
 }

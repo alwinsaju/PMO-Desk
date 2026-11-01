@@ -318,6 +318,22 @@ describe("inspectEmbeddable", () => {
     );
   });
 
+  it("tags the failures the UI words differently", async () => {
+    const code = async (opts) =>
+      (await inspectEmbeddable(url("http://a.example/"), deps(opts))).code;
+    const dns = { "a.example": ["8.8.8.8"] };
+    assert.equal(await code({}), "not-found");
+    assert.equal(
+      await code({
+        dns,
+        pages: { "http://a.example/": reply(200, { "x-frame-options": "DENY" }) },
+      }),
+      "framing",
+    );
+    assert.equal(await code({ dns, pages: {} }), "unreachable");
+    assert.equal(await code({ dns: { "a.example": ["10.0.0.5"] } }), undefined);
+  });
+
   it("gives up after too many redirects", async () => {
     const d = deps({
       dns: { "loop.example": ["8.8.8.8"] },

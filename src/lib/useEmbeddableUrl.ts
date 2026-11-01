@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import type { EmbedFailureCode } from "./browser/embeddableCheck";
 
 /**
  * Sandbox permissions for embedding a REAL, cross-origin site inside this
@@ -22,7 +23,7 @@ export type EmbeddableCheck =
   /** A live HTTP header check is in flight. Only ever happens when
    *  `knownEmbeddable` is omitted — see the hook's doc comment below. */
   | { status: "checking" }
-  | { status: "checked"; embeddable: boolean; reason?: string };
+  | { status: "checked"; embeddable: boolean; reason?: string; code?: EmbedFailureCode };
 
 /**
  * Resolves whether `url` can be embedded in this OS's sandboxed iframe
@@ -74,18 +75,27 @@ export function useEmbeddableUrl(
     })
       .then((res) => {
         if (!res.ok) throw new Error(`check-embeddable responded ${res.status}`);
-        return res.json() as Promise<{ embeddable: boolean; reason?: string }>;
+        return res.json() as Promise<{
+          embeddable: boolean;
+          reason?: string;
+          code?: EmbedFailureCode;
+        }>;
       })
       .then((data) => {
-        setState({ status: "checked", embeddable: data.embeddable, reason: data.reason });
+        setState({
+          status: "checked",
+          embeddable: data.embeddable,
+          reason: data.reason,
+          code: data.code,
+        });
       })
       .catch((err: unknown) => {
         if (controller.signal.aborted) return;
         // Fails closed: an unreachable/erroring check lands on the same
-        // graceful "open in a new tab" fallback as a genuinely blocked
-        // site, never a permanently blank/broken iframe.
+        // graceful fallback as a genuinely blocked site, never a
+        // permanently blank/broken iframe; the code says it was not a refusal.
         console.error("useEmbeddableUrl: check-embeddable failed", err);
-        setState({ status: "checked", embeddable: false });
+        setState({ status: "checked", embeddable: false, code: "unreachable" });
       });
 
     return () => controller.abort();

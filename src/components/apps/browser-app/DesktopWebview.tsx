@@ -3,20 +3,13 @@
 import { createElement, useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/cn";
 import { EmbedBlocked, EmbedLoading } from "../web-app/EmbedStates";
+import { classifyWebviewError, describeEmbedFailure, hostnameOf } from "./embedFailure";
 
 /** Must match BROWSER_PARTITION in desktop/url-guard.cjs, which refuses any other. */
 const BROWSER_PARTITION = "persist:ai-os-browser";
 
 /** The subset of Electron's <webview> element used here. */
 type WebviewElement = HTMLElement & { src: string };
-
-function hostnameOf(url: string): string {
-  try {
-    return new URL(url).hostname || url;
-  } catch {
-    return url;
-  }
-}
 
 /** Real browsing inside the Electron shell: unlike an iframe, a <webview> is
  *  not subject to X-Frame-Options / frame-ancestors. */
@@ -50,10 +43,17 @@ export function DesktopWebview({ url }: { url: string }) {
   }, []);
 
   if (failure) {
+    const text = describeEmbedFailure({
+      host,
+      code: classifyWebviewError(failure),
+      reason: failure,
+      online: typeof navigator === "undefined" ? undefined : navigator.onLine,
+    });
     return (
       <EmbedBlocked
         name={host}
-        reason={failure}
+        title={text.title}
+        reason={text.message}
         onOpenInNewTab={() => window.open(url, "_blank", "noopener,noreferrer")}
       />
     );
