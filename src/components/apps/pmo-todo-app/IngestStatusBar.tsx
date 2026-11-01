@@ -215,21 +215,18 @@ export function PmoToolbar({
             </Button>
           </Tooltip>
           {remindersOffered && (
-            <Tooltip label="Enable reminders in this browser">
-              <IconButton
-                aria-label="Enable reminders"
-                variant="ghost"
-                onClick={() => void enableReminders()}
-              >
-                <BellRingingIcon size={18} />
-              </IconButton>
-            </Tooltip>
-          )}
-          <Tooltip label="PMO settings">
-            <IconButton aria-label="PMO settings" variant="ghost" onClick={onSettings}>
-              <GearIcon size={18} />
+            <IconButton
+              aria-label="Enable reminders"
+              tooltip="Enable reminders in this browser"
+              variant="ghost"
+              onClick={() => void enableReminders()}
+            >
+              <BellRingingIcon size={18} />
             </IconButton>
-          </Tooltip>
+          )}
+          <IconButton aria-label="PMO settings" variant="ghost" onClick={onSettings}>
+            <GearIcon size={18} />
+          </IconButton>
         </div>
 
         {/* Narrow: the same actions in one menu. */}

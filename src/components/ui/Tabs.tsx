@@ -43,8 +43,8 @@ export const TabsTrigger = React.forwardRef<
       "transition-[color,background-color,box-shadow] duration-[250ms]",
       "hover:text-ink",
       "data-[state=active]:bg-field data-[state=active]:text-ink data-[state=active]:shadow-[0_2px_8px_rgba(30,30,60,0.12)]",
-      "focus-visible:ring-focus focus-visible:ring-2",
-      "disabled:pointer-events-none disabled:opacity-40",
+      "focus-ring",
+      "disabled:pointer-events-none disabled:opacity-[var(--opacity-disabled)]",
       className,
     )}
     {...props}
@@ -70,11 +70,7 @@ export const TabsContent = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <TabsPrimitive.Content
     ref={ref}
-    className={cn(
-      "focus-visible:ring-focus outline-none focus-visible:ring-2",
-      tabContentEnter,
-      className,
-    )}
+    className={cn("focus-ring", tabContentEnter, className)}
     {...props}
   />
 ));

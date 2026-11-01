@@ -4,6 +4,7 @@ import * as React from "react";
 import { Slot } from "@radix-ui/react-slot";
 import { cn } from "@/lib/cn";
 import type { ButtonVariant } from "./Button";
+import { Tooltip } from "./Tooltip";
 
 export type IconButtonSize = "sm" | "md" | "lg";
 /** `square` = the control radius tier (12px, 8px in Deloitte mode) — the
@@ -16,14 +17,18 @@ export interface IconButtonProps extends React.ButtonHTMLAttributes<HTMLButtonEl
   size?: IconButtonSize;
   shape?: IconButtonShape;
   asChild?: boolean;
-  /** Required — an icon-only button must always be labeled for screen readers. */
+  /** Required — an icon-only button must always be labeled for screen readers
+   *  (the compiler rejects an IconButton without it). */
   "aria-label": string;
+  /** The hover/focus tooltip. Defaults to `title`, else the `aria-label`, so every
+   *  icon button names itself on hover; pass `false` when something else already
+   *  does (e.g. it sits inside another tooltip trigger). */
+  tooltip?: React.ReactNode | false;
 }
 
 const base = cn(
-  "transition-ui inline-flex shrink-0 items-center justify-center",
-  "focus-visible:ring-focus focus-visible:ring-offset-surface focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none",
-  "disabled:pointer-events-none disabled:opacity-40",
+  "transition-ui focus-ring inline-flex shrink-0 items-center justify-center",
+  "disabled:pointer-events-none disabled:opacity-[var(--opacity-disabled)]",
   // The glyph springs up a touch on hover; the button itself stays put.
   "[&_svg]:transition-transform [&_svg]:duration-300 [&_svg]:ease-spring hover:[&_svg]:scale-110",
 );
@@ -32,6 +37,7 @@ const solid =
   "bg-accent text-accent-contrast hover:bg-accent-hover hover:shadow-halo active:bg-accent-active";
 const outline =
   "bg-transparent text-ink-muted shadow-[inset_0_0_0_1px_var(--color-line-strong)] hover:bg-chip hover:text-ink";
+const destructive = "bg-transparent text-red hover:bg-red-soft active:bg-red-soft";
 
 const variantClassName: Record<ButtonVariant, string> = {
   solid,
@@ -40,6 +46,8 @@ const variantClassName: Record<ButtonVariant, string> = {
   ghost: "bg-transparent text-ink-soft hover:bg-chip-strong hover:text-ink",
   outline,
   line: outline,
+  destructive,
+  "destructive-quiet": destructive,
 };
 
 const sizeClassName: Record<IconButtonSize, string> = {
@@ -61,14 +69,22 @@ export const IconButton = React.forwardRef<HTMLButtonElement, IconButtonProps>(
       size = "md",
       shape = "square",
       asChild = false,
+      tooltip,
+      title,
       ...props
     },
     ref,
   ) => {
     const Comp = asChild ? Slot : "button";
-    return (
+    const label = tooltip === false ? null : (tooltip ?? title ?? props["aria-label"]);
+    // A disabled button gets no pointer events, so a Radix tooltip could never
+    // open on it: keep the native `title` there (it often says why it is disabled).
+    const showTooltip = !!label && !props.disabled;
+    const button = (
       <Comp
         ref={ref}
+        data-variant={variant}
+        title={showTooltip ? undefined : title}
         className={cn(
           base,
           variantClassName[variant],
@@ -79,6 +95,7 @@ export const IconButton = React.forwardRef<HTMLButtonElement, IconButtonProps>(
         {...props}
       />
     );
+    return showTooltip ? <Tooltip label={label}>{button}</Tooltip> : button;
   },
 );
 IconButton.displayName = "IconButton";

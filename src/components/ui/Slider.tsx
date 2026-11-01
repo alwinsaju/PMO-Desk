@@ -29,8 +29,8 @@ export const Slider = React.forwardRef<
         className={cn(
           "border-accent shadow-float-sm block h-[18px] w-[18px] rounded-full border-2 bg-white",
           "ease-spring transition-transform duration-[350ms]",
-          "focus-visible:ring-focus hover:scale-110 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none",
-          "disabled:pointer-events-none disabled:opacity-40",
+          "focus-ring hover:scale-110",
+          "disabled:pointer-events-none disabled:opacity-[var(--opacity-disabled)]",
         )}
       />
     )}

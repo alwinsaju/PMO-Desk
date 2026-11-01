@@ -288,6 +288,8 @@ never a raw hex or an arbitrary shadow value. Overlay-based primitives
 open/close treatment via `overlayEnter`/`overlayExit` from `src/lib/motion.ts`.
 A modal `Dialog` announces itself when it opens (`ui/modalEvents.ts`); open `Tooltip`s
 and `Popover`s listen (`useCloseOnModalOpen`) and close, so none stays on top of it.
+`Button` has `destructive` / `destructive-quiet` variants (footer order in
+`docs/ui-guidelines.md`); `IconButton` requires `aria-label` and shows it as a tooltip.
 
 `Avatar` has a `presence?: "none" | "active" | "idle"` prop that draws the
 accent ring reserved for presence indicators — built now, intended for the

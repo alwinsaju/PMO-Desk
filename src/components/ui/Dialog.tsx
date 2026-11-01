@@ -116,9 +116,19 @@ export const DialogDescription = React.forwardRef<
 ));
 DialogDescription.displayName = "DialogDescription";
 
+/** Action row: secondary then primary on the right; a `destructive*` Button is pushed
+ *  to the far left, away from them (see ButtonVariant in Button.tsx). */
 export function DialogFooter({
   className,
   ...props
 }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn("mt-6 flex justify-end gap-2", className)} {...props} />;
+  return (
+    <div
+      className={cn(
+        "mt-6 flex justify-end gap-2 [&>[data-variant^=destructive]]:mr-auto",
+        className,
+      )}
+      {...props}
+    />
+  );
 }

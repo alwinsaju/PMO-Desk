@@ -13,11 +13,11 @@ export const Switch = React.forwardRef<
   <SwitchPrimitive.Root
     ref={ref}
     className={cn(
-      "rounded-pill bg-chip-strong relative h-7 w-[46px] shrink-0 outline-none",
+      "rounded-pill bg-chip-strong relative h-7 w-[46px] shrink-0",
       "transition-[background-color] duration-[350ms]",
       "data-[state=checked]:bg-accent",
-      "focus-visible:ring-focus focus-visible:ring-offset-surface focus-visible:ring-2 focus-visible:ring-offset-2",
-      "disabled:pointer-events-none disabled:opacity-40",
+      "focus-ring",
+      "disabled:pointer-events-none disabled:opacity-[var(--opacity-disabled)]",
       className,
     )}
     {...props}

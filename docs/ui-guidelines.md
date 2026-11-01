@@ -30,6 +30,26 @@ toast({
 });
 ```
 
+## Buttons and footers
+
+`Button` variants: `solid`/`primary` (the one main action), `secondary`, `outline`/`line`, `ghost`, `destructive` (solid red) and `destructive-quiet` (red text). Sizes `sm` 32 px, `md` 36 px (default), `lg` 44 px. Disabled buttons fade to 55 %, not lower, and keep their label readable; prefer explaining why (a `title` or hint) over leaving a mystery greyed-out button.
+
+**Footer order, left to right:** `[destructive]` (pushed to the far left, apart from the rest) ... `[secondary / Cancel]` `[primary]`. The primary action is always the right-most button; Cancel/Close sits just left of it; a destructive action is never next to Save. `DialogFooter` does the separation automatically for any `destructive*` button; in other action bars give it `className="mr-auto"`. Use `destructive` (solid) when the destructive action is the whole point of the dialog (a delete confirm, where it is the primary), `destructive-quiet` when it sits beside Save/Hand over.
+
+```tsx
+<DialogFooter>
+  <Button variant="destructive-quiet" onClick={remove}>
+    Delete
+  </Button>
+  <Button variant="ghost" onClick={close}>
+    Cancel
+  </Button>
+  <Button onClick={save}>Save</Button>
+</DialogFooter>
+```
+
+**Icon-only buttons** use `IconButton`. `aria-label` is a required prop (the compiler rejects an `IconButton` without it) and doubles as the tooltip, shown on hover and keyboard focus. A more helpful hint can be passed as `tooltip="Hide this team"` (or `title`); `tooltip={false}` turns it off when the button is already inside another tooltip trigger. Do not wrap an `IconButton` in `Tooltip`. A disabled `IconButton` keeps the native `title` instead, so it can say why it is disabled. Never build an icon-only control from a bare `<button>`.
+
 ## Type scale, spacing, focus, contrast
 
 **Type scale** (tokens `--type-*`, utilities in `globals.css`):
