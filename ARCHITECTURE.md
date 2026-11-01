@@ -1090,7 +1090,7 @@ The whole app in one place (the sections below are the detail, phase by phase).
   or matched; a filtered message's body is dropped.
 - **Identity and time come from the server.** `approvedBy`, every audit line and every
   sign-off stamp use the OS user of the machine running the server and the server's clock; a
-  request that tries to send either is refused. That is who *pressed the button*; who *owns*
+  request that tries to send either is refused. That is who _pressed the button_; who _owns_
   a to-do is a separate field, defaulted from the names given at setup (`config.me`).
 - **Data stays on this computer.** Records are JSON files in the data folder (outside the
   repo), with a retention purge for logs and message text and an `audit.jsonl` of every
@@ -2033,6 +2033,9 @@ title, tone, action, key })` from anywhere; a repeated `key` replaces the earlie
   snoozed), keyboard use of the list (`listKeys.ts`: J/K, E/Enter, D with an Undo toast, S) and a
   first-run wizard that resumes where it was left and remembers your identity for a fresh data folder
   (`pmo/firstRunMemory.ts`; browser storage only). Steps with a sensible default can be skipped.
+  The wizard shows a numbered stepper, one intro per step and, on the last step, a summary whose
+  rows jump back to the step to change (`pmo/wizardView.ts`). Settings keeps the Teams tenant and
+  chat-ID help under a closed "Advanced: Microsoft Teams" disclosure.
 - **Dashboard.** A failed report row has a "View log" button that opens that task's details
   (`tasksNavStore.requestDetail`). The period toggle is remembered.
 - **Templates.** The editor keeps what is typed (browser storage, per template) and offers it back if
@@ -2094,9 +2097,12 @@ title, tone, action, key })` from anywhere; a repeated `key` replaces the earlie
   itself and no recurring reminders are sent.
 - **Dependencies.** `Todo.blockedBy` is a list of to-do ids, edited in the detail dialog (`TodoExtras`).
   A loop is refused by `wouldCycle`; a blocker that is late or due after the dependant shows a warning.
-- **Views.** `ListTools` (search, tag, saved views kept in `preferences.savedViews`, tag rollups) and
-  `BulkBar`; `BoardTab` (HTML5 drag between To do, Waiting, Snoozed and Done; Waiting and Snoozed need
-  details, so the board says where to set them) and `CalendarTab` (drag a to-do to change its due day).
+- **Views.** `ListTools` (quick-add, search, tag filter and saved views kept in
+  `preferences.savedViews` on one row; the tag rollup is behind a "Tag stats" toggle) and `BulkBar`;
+  the filter chips wrap instead of clipping. `BoardTab` (HTML5 drag between To do, Waiting, Snoozed
+  and Done; Waiting and Snoozed need details, so the board says where to set them) and `CalendarTab`
+  (opens on the current week under a sticky month header, `pmoViews.weekIndexOf`; a busy day lists
+  two items and expands from "+N more"; drag a to-do to change its due day).
   Bulk and drag changes are ordinary `PATCH` calls, run one after another by the server's lock.
 - **Planning and intake.** `PlanDialogs`: "Plan week" ranks the open to-dos with reasons;
   "From notes" lists action-looking lines of pasted notes and creates only the ones you tick.

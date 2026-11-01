@@ -14,7 +14,14 @@ import {
   SealCheckIcon,
   TrashIcon,
 } from "@phosphor-icons/react";
-import { Button, DueChip, IconButton, Input, PriorityStripe, Progress } from "@/components/ui";
+import {
+  Button,
+  DueChip,
+  IconButton,
+  Input,
+  PriorityStripe,
+  Progress,
+} from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { toast } from "@/lib/notifications/toastStore";
 import { describeInstant } from "@/lib/pmo/due";
@@ -252,11 +259,7 @@ export function TodoList({
             >
               <NotePencilIcon size={16} />
             </IconButton>
-            <Button
-              className="px-3 @xl:px-[17px]"
-              aria-label="New to-do"
-              onClick={onNew}
-            >
+            <Button className="px-3 @xl:px-[17px]" aria-label="New to-do" onClick={onNew}>
               <PlusIcon size={15} weight="bold" />
               <span className="hidden @xl:inline">New to-do</span>
             </Button>
@@ -595,10 +598,7 @@ const TodoCard = memo(function TodoCard({
           aria-label={`Tick ${todo.title}`}
           className="accent-accent h-4 w-4 shrink-0 cursor-pointer"
         />
-        <PriorityStripe
-          priority={todo.priority}
-          className="h-[26px] self-center"
-        />
+        <PriorityStripe priority={todo.priority} className="h-[26px] self-center" />
         {editing ? (
           <Input
             autoFocus
