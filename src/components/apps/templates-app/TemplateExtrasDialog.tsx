@@ -32,27 +32,10 @@ const inputOf = (t: Template, extra: Partial<TemplateInput> = {}): TemplateInput
   ...extra,
 });
 
-const when = (iso: string) =>
-  new Date(iso).toLocaleString("en-GB", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-
-const changedFields = (
-  a: Template,
-  v: Template["history"] extends (infer V)[] | undefined ? V : never,
-) =>
-  (["name", "description", "subject", "to", "cc", "body"] as const).filter(
-    (f) => a[f] !== v[f],
-  );
-
 /**
- * The parts of a template that sit beside its main wording: tags, other wordings for other readers, earlier
- * saved versions (with restore) and a test draft to yourself. Each saves on its own, straight to the saved
- * template, so the main editor's unsaved text is never touched.
+ * The parts of a template that sit beside its main wording: tags, other wordings for other readers and a
+ * test draft to yourself (earlier versions have their own drawer, see VersionsDrawer). Each saves on its
+ * own, straight to the saved template, so the main editor's unsaved text is never touched.
  */
 export function TemplateExtrasDialog({
   template,
@@ -118,8 +101,7 @@ export function TemplateExtrasDialog({
       <DialogContent className="scroll-thin max-h-[88vh] max-w-2xl overflow-y-auto">
         <DialogTitle>More for “{template.name}”</DialogTitle>
         <DialogDescription>
-          Tags, other wordings, earlier versions and a test draft. Each part saves by
-          itself.
+          Tags, other wordings and a test draft. Each part saves by itself.
         </DialogDescription>
 
         <section className="mt-4 flex flex-col gap-2" aria-label="Tags">
@@ -217,57 +199,6 @@ export function TemplateExtrasDialog({
             </div>
           </section>
         )}
-
-        <section
-          className="mt-5 flex flex-col gap-2"
-          aria-label="Earlier versions"
-          data-testid="history"
-        >
-          <h3 className="text-ink text-[14px] font-bold">Earlier versions</h3>
-          {(template.history ?? []).length === 0 ? (
-            <p className="text-ink-muted text-[12.5px]">
-              No earlier versions yet. One is kept each time the wording changes.
-            </p>
-          ) : (
-            <ul className="flex flex-col gap-1.5">
-              {(template.history ?? []).map((v) => (
-                <li
-                  key={v.at}
-                  className="border-line flex flex-wrap items-center gap-3 rounded-[8px] border px-3 py-2 text-[12.5px]"
-                  data-testid="history-row"
-                >
-                  <span className="text-ink min-w-0 flex-1">
-                    {when(v.at)} · changed since:{" "}
-                    {changedFields(template, v).join(", ") || "nothing"}
-                    <span className="text-ink-muted block truncate">
-                      {v.subject || "(no subject)"}
-                    </span>
-                  </span>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={busy}
-                    onClick={() =>
-                      void persist(
-                        {
-                          name: v.name,
-                          description: v.description,
-                          subject: v.subject,
-                          to: v.to,
-                          cc: v.cc,
-                          body: v.body,
-                        },
-                        "Restored. The current wording was kept as an earlier version.",
-                      )
-                    }
-                  >
-                    Restore
-                  </Button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
 
         {template.kind === "email" && (
           <section className="mt-5 flex flex-col gap-2" aria-label="Test draft">

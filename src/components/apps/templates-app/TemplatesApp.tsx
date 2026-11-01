@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowLeftIcon, FileTextIcon, PlusIcon } from "@phosphor-icons/react";
-import { Button } from "@/components/ui";
+import { Badge, Button } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { toast } from "@/lib/notifications/toastStore";
 import {
@@ -15,9 +15,12 @@ import { targetByKey, targetLabel } from "@/lib/templates/targets";
 import { buildPack, readPack } from "@/lib/templates/pack";
 import { snippetKey } from "@/lib/templates/render";
 import { lastUsedText } from "@/lib/templates/usage";
+import { usedByBadge, usedByCount } from "@/lib/templates/listView";
 import { useTemplateUsage } from "@/lib/templates/usageStore";
 import { TemplateExtrasDialog } from "./TemplateExtrasDialog";
-import { Chip, FilterPill, Note, PanelMessage, ScrollBody } from "../pmo-todo-app/parts";
+import { TemplateKindIcon } from "./TemplateKindIcon";
+import { VersionsDrawer } from "./VersionsDrawer";
+import { FilterPill, Note, PanelMessage, ScrollBody } from "../pmo-todo-app/parts";
 import { ConfirmDialog } from "../staff-app/parts";
 import {
   createTemplate,
@@ -79,7 +82,6 @@ const usedByText = (template: Template): string => {
     .map((key) => targetByKey(key))
     .filter((t) => !!t)
     .map((t) => targetLabel(t));
-  if (labels.length === 0) return "Not used anywhere yet";
   return labels.length > 2
     ? `${labels.slice(0, 2).join(", ")} +${labels.length - 2}`
     : labels.join(", ");
@@ -136,6 +138,7 @@ export function TemplatesApp({ windowId }: { windowId: string }) {
   );
   const usage = useTemplateUsage((s) => s.used);
   const [extrasOpen, setExtrasOpen] = useState(false);
+  const [versionsOpen, setVersionsOpen] = useState(false);
   const [packNote, setPackNote] = useState<string | null>(null);
 
   const exportPack = () => {
@@ -195,6 +198,7 @@ export function TemplatesApp({ windowId }: { windowId: string }) {
   const go = (next: Selection) => {
     setSelection(next);
     setListOpen(false);
+    setVersionsOpen(false);
     setDirty(false);
     setError(null);
     setFields(null);
@@ -246,6 +250,7 @@ export function TemplatesApp({ windowId }: { windowId: string }) {
         return;
       }
       setSelection(null);
+      setVersionsOpen(false);
       setDirty(false);
       await reload();
       setNotice(null);
@@ -283,7 +288,10 @@ export function TemplatesApp({ windowId }: { windowId: string }) {
   };
 
   return (
-    <div data-window-id={windowId} className="@container flex h-full w-full flex-col">
+    <div
+      data-window-id={windowId}
+      className="@container relative flex h-full w-full flex-col overflow-hidden"
+    >
       {library.status === "loading" && <PanelMessage>Loading templates…</PanelMessage>}
       {library.status === "error" && (
         <PanelMessage>
@@ -365,6 +373,10 @@ export function TemplatesApp({ windowId }: { windowId: string }) {
                   const active =
                     selection?.type === "saved" && selection.id === template.id;
                   const note = listNote(template, usage[template.id]);
+                  const badge = usedByBadge(
+                    usedByCount(template, templates, template.id),
+                    template.kind,
+                  );
                   return (
                     <li key={template.id}>
                       <button
@@ -372,30 +384,39 @@ export function TemplatesApp({ windowId }: { windowId: string }) {
                         onClick={() => select({ type: "saved", id: template.id })}
                         aria-current={active ? "true" : undefined}
                         className={cn(
-                          "rounded-control transition-ui flex w-full flex-col gap-1 px-3 py-2.5 text-left",
+                          "rounded-control transition-ui flex w-full items-start gap-2.5 px-3 py-2.5 text-left",
                           "focus-visible:ring-focus focus-visible:ring-2 focus-visible:outline-none",
                           active ? "bg-accent-soft" : "hover:bg-chip",
                         )}
                       >
-                        <span className="flex items-center gap-2">
-                          <span className="text-ink min-w-0 flex-1 truncate text-[13.5px] font-semibold">
-                            {template.name}
+                        <TemplateKindIcon kind={template.kind} />
+                        <span className="flex min-w-0 flex-1 flex-col gap-1">
+                          <span className="flex items-center gap-2">
+                            <span className="text-ink min-w-0 flex-1 truncate text-[13.5px] font-semibold">
+                              {template.name}
+                            </span>
+                            <Badge
+                              variant={badge.tone}
+                              className="h-5 shrink-0 px-2 text-[11px]"
+                              data-testid="template-used-by"
+                            >
+                              {badge.label}
+                            </Badge>
                           </span>
-                          <Chip tone={template.kind === "email" ? "info" : "accent"}>
-                            {KIND_LABEL[template.kind]}
-                          </Chip>
+                          {template.kind !== "snippet" && template.usedBy.length > 0 && (
+                            <span className="text-ink-muted line-clamp-2 text-[12px] leading-snug">
+                              {usedByText(template)}
+                            </span>
+                          )}
+                          {note && (
+                            <span
+                              className="text-ink-faint text-[11.5px]"
+                              data-testid="template-usage"
+                            >
+                              {note}
+                            </span>
+                          )}
                         </span>
-                        <span className="text-ink-muted line-clamp-2 text-[12px] leading-snug">
-                          {usedByText(template)}
-                        </span>
-                        {note && (
-                          <span
-                            className="text-ink-faint text-[11.5px]"
-                            data-testid="template-usage"
-                          >
-                            {note}
-                          </span>
-                        )}
                       </button>
                     </li>
                   );
@@ -487,12 +508,21 @@ export function TemplatesApp({ windowId }: { windowId: string }) {
                 onDuplicate={() => selected && startNew(copyOf(selected))}
                 onDelete={() => void remove()}
                 onOpenExtras={() => setExtrasOpen(true)}
+                onOpenVersions={() => setVersionsOpen(true)}
               />
             )}
           </section>
         </div>
       )}
 
+      {selected && versionsOpen && (
+        <VersionsDrawer
+          key={selected.id}
+          template={selected}
+          onClose={() => setVersionsOpen(false)}
+          onChanged={() => void reload()}
+        />
+      )}
       {selected && (
         <TemplateExtrasDialog
           template={selected}
