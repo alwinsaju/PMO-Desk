@@ -186,7 +186,7 @@ export function planRosterImport(
   let groupsAdded = 0;
   // A team the file names but the roster lacks is only added once someone is saved in it.
   const unregistered = new Map<string, RosterGroup>();
-  const useGroup = (group: RosterGroup) => {
+  const keepGroup = (group: RosterGroup) => {
     if (!unregistered.delete(group.id)) return;
     groups.push(group);
     groupsAdded++;
@@ -263,7 +263,7 @@ export function planRosterImport(
         linkedIds.add(member.employeeId);
         stats.membersLinked++;
       }
-      useGroup(group);
+      keepGroup(group);
       members.push(member);
       at = members.length - 1;
       byKey.set(key, at);
@@ -277,7 +277,7 @@ export function planRosterImport(
       ) {
         stats.membersUnchanged++;
       } else {
-        useGroup(group);
+        keepGroup(group);
         members[at] = {
           ...before,
           groupId: group.id,
