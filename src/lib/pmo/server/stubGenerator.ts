@@ -22,6 +22,7 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { AiNarrativeSchema } from "../reportNarrative.ts";
+import { deriveFallbackTitle, firstMeaningfulSentence } from "../fallbackTitle.ts";
 import {
   AiStructuredSchema,
   AiUpdateSchema,
@@ -136,8 +137,13 @@ export function createStubGenerator(
       const body = bodyOf(prompt);
       await gate(prompt, body);
 
-      const first = body.split(/(?<=[.!?])\s+|\n/).find((line) => line.trim()) ?? body;
-      const sentence = first.trim().slice(0, 250);
+      const subject = /<message [^>]*?\bsubject="([^"]*)"/.exec(prompt)?.[1] ?? "";
+      // Like the real model: the subject (or else the first real sentence after
+      // the greeting) is the title and the description, not the first line.
+      const first = firstMeaningfulSentence(body);
+      const sentence = (first || body.split(/\n/).find((line) => line.trim()) || body)
+        .trim()
+        .slice(0, 250);
       const actionable = !FYI.test(body);
       const cadence = CADENCE.exec(body)?.[1]?.toLowerCase() ?? null;
       const day = cadence ? null : (/\b(\d{4}-\d{2}-\d{2})\b/.exec(body)?.[1] ?? null);
@@ -147,7 +153,9 @@ export function createStubGenerator(
           : "Informational only.",
         isActionable: actionable,
         confidence: actionable ? 0.8 : 0.9,
-        title: actionable ? sentence.slice(0, 80) : "No action needed",
+        title: actionable
+          ? deriveFallbackTitle({ subject, bodyText: body }, 80) || sentence.slice(0, 80)
+          : "No action needed",
         description: sentence,
         owner: { name: "Alwin Saju", email: "alsaju@deloitte.com", isMe: true },
         requester: { name: null, email: null },

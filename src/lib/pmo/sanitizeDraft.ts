@@ -6,10 +6,19 @@
 // say what the app changed. Pure and client-safe: no clock of its own (the caller
 // passes `now`), no I/O, and nothing here is ever logged.
 import { addIsoDays, istDate } from "./time.ts";
+import {
+  deriveFallbackTitle,
+  firstMeaningfulSentence,
+  isPoorTitle,
+  isSalutationOnly,
+} from "./fallbackTitle.ts";
 import type { AiStructured, PmoConfig } from "./types.ts";
 
 export const MAX_ACTION_ITEMS_KEPT = 6;
 export const MAX_TAGS_KEPT = 4;
+/** The stored title is clipped at this length (AiStructuredSchema). */
+const TITLE_MAX = 90;
+const DESCRIPTION_MAX = 600;
 
 export interface SanitizeContext {
   /** The moment the message is being read: "today" comes from this. */
@@ -19,12 +28,21 @@ export interface SanitizeContext {
   /** The words of the message as the model saw them, subject included. */
   text: string;
   me: PmoConfig["me"];
+  /** The message's own subject and the text the model read, for the fallback
+   *  title. Without them `text` is used. */
+  subject?: string;
+  bodyText?: string;
+  /** Who sent it: a title that is only their name is not a title. */
+  sender?: { name?: string | null; address?: string | null };
 }
 
 export interface SanitizeResult {
   draft: AiStructured;
   /** Plain-language notes, one per kind of change; empty when nothing changed. */
   adjustments: string[];
+  /** The model's title or description was unusable and the app's own was put in
+   *  its place: the card says the AI could not structure this message. */
+  fallback: boolean;
 }
 
 /** Wording that makes a message urgent in its own right. "today" is in on
@@ -129,8 +147,35 @@ export function sanitizeDraft(input: AiStructured, ctx: SanitizeContext): Saniti
     tags: [...input.tags],
   };
   const adjustments: string[] = [];
+  let fallback = false;
   const today = istDate(ctx.now, ctx.timeZone);
   const tomorrow = addIsoDays(today, 1);
+
+  // (0) A title that is no title (empty, "Hi,", the sender's name): the subject
+  // line, else the first real sentence, put in its place. A description that is
+  // only a greeting gets the same sentence.
+  const subject = ctx.subject ?? "";
+  const bodyText = ctx.bodyText ?? ctx.text;
+  const knownNames = [
+    ctx.sender?.name,
+    ctx.sender?.address,
+    ...ctx.me.names,
+    ...ctx.me.emails,
+  ].filter((value): value is string => !!value);
+  if (isPoorTitle(draft.title, knownNames)) {
+    fallback = true;
+    const title = deriveFallbackTitle({ subject, bodyText }, TITLE_MAX);
+    if (title) {
+      draft.title = title;
+      adjustments.push(
+        "The AI's title was empty, a greeting or only a name, so the subject line is used instead.",
+      );
+    }
+  }
+  if (draft.description.trim() && isSalutationOnly(draft.description)) {
+    fallback = true;
+    draft.description = firstMeaningfulSentence(bodyText).slice(0, DESCRIPTION_MAX);
+  }
 
   // (a) A deadline that had already passed when the message was read. Relative
   // dates are resolved against the day the message was written, so for an old
@@ -255,5 +300,5 @@ export function sanitizeDraft(input: AiStructured, ctx: SanitizeContext): Saniti
   }
   draft.tags = tags.slice(0, MAX_TAGS_KEPT);
 
-  return { draft, adjustments };
+  return { draft, adjustments, fallback };
 }

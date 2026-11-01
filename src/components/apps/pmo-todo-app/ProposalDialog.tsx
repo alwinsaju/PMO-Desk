@@ -27,7 +27,7 @@ import {
 } from "./api";
 import { DraftForm } from "./DraftForm";
 import { OriginalMessage } from "./OriginalMessage";
-import { partLabel } from "./queueView";
+import { FALLBACK_HINT, partLabel, structuringFellBack } from "./queueView";
 import { proposalWaitNote } from "./toolbarView";
 import {
   Chip,
@@ -179,6 +179,19 @@ export function ProposalDialog({
           <Note className="mt-3.5 shrink-0">
             The model thinks this is <strong className="text-ink">not a task</strong>
             {shown.draft.reason ? <>: {shown.draft.reason}</> : "."}
+          </Note>
+        )}
+        {structuringFellBack(shown) && !notATask && (
+          <Note
+            tone="warning"
+            role="alert"
+            data-testid="structuring-fallback"
+            className="mt-3.5 flex shrink-0 gap-2.5"
+          >
+            <WarningIcon size={16} weight="fill" className="text-amber mt-0.5 shrink-0" />
+            <span>
+              <strong>The AI could not structure this message.</strong> {FALLBACK_HINT}
+            </span>
           </Note>
         )}
         {isReady && shown.quoteVerified === false && (

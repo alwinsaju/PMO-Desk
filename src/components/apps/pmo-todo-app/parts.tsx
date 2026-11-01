@@ -10,7 +10,12 @@ import {
 import { Badge, type BadgeProps, type BadgeVariant } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import type { Proposal, StructuringInfo } from "@/lib/pmo/types";
-import { SOURCE_LABEL, statusLabel } from "./queueView";
+import {
+  FALLBACK_HINT,
+  SOURCE_LABEL,
+  statusLabel,
+  structuringFellBack,
+} from "./queueView";
 
 /** Thin themed scrollbar for native scroll regions (the `scroll-thin` utility,
  *  tinted from the line tokens so it follows the theme and brand). */
@@ -406,17 +411,26 @@ export function ProposalStatusBadge({
   structuring: StructuringInfo;
 }) {
   const label = statusLabel(proposal, structuring);
+  const fellBack = structuringFellBack(proposal) && proposal.isActionable !== false;
   const active = proposal.status === "structuring" && !structuring.paused;
   const variant: BadgeVariant =
     proposal.status === "failed"
       ? "danger"
-      : proposal.status === "ready" && proposal.isActionable !== false
-        ? "accent"
-        : active
+      : fellBack
+        ? "warning"
+        : proposal.status === "ready" && proposal.isActionable !== false
           ? "accent"
-          : "neutral";
+          : active
+            ? "accent"
+            : "neutral";
   return (
-    <Badge variant={variant} dot={active} pulse={active} fixedWidth={96}>
+    <Badge
+      variant={variant}
+      dot={active}
+      pulse={active}
+      fixedWidth={96}
+      title={fellBack ? FALLBACK_HINT : undefined}
+    >
       {label}
     </Badge>
   );

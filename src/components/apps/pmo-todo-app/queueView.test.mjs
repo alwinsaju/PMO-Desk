@@ -21,6 +21,7 @@ import {
   sortTodos,
   rejectedRows,
   statusLabel,
+  structuringFellBack,
   todoRowView,
   undoRejectText,
 } from "./queueView.ts";
@@ -94,6 +95,31 @@ describe("status labels", () => {
       "probably not a task",
     );
     assert.equal(statusLabel(proposal("p5", "failed"), idle), "failed");
+  });
+
+  it("says the AI could not structure a ready item that fell back, not plain 'ready'", () => {
+    const fellBack = proposal("p1", "ready", { structuring: "fallback" });
+    assert.equal(statusLabel(fellBack, idle), "AI could not structure");
+    assert.equal(structuringFellBack(fellBack), true);
+    // An old record has no field: it is fine as it was.
+    assert.equal(statusLabel(proposal("p1", "ready"), idle), "ready");
+    assert.equal(structuringFellBack(proposal("p1", "ready")), false);
+    assert.equal(
+      structuringFellBack(proposal("p1", "ready", { structuring: "ok" })),
+      false,
+    );
+    // "Probably not a task" wins, and only a ready item can have fallen back.
+    assert.equal(
+      statusLabel(
+        proposal("p2", "ready", { isActionable: false, structuring: "fallback" }),
+        idle,
+      ),
+      "probably not a task",
+    );
+    assert.equal(
+      structuringFellBack(proposal("p3", "pending", { structuring: "fallback" })),
+      false,
+    );
   });
 });
 

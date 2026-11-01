@@ -1154,7 +1154,8 @@ src/lib/pmo/            Pure logic, one co-located *.test.mjs per area
                           received day, urgency is judged against today.
   sanitizeDraft.ts        The deterministic clean-up of the model's answer (see
                           "Structuring: prompt v3 and the app's clean-up" below).
-                          Pure, client-safe, unit-tested.
+                          Pure, client-safe, unit-tested. Uses fallbackTitle.ts
+                          (subject / first-sentence fallback titles, greeting detection).
   splitTasks.ts           Prompt v4: one message may hold several tasks. The model
                           answers a list; `asTaskList` normalises a bare answer,
                           `selectTasks` drops near-duplicates and over-split
@@ -1361,13 +1362,25 @@ the worker's clock:
    name for a person's name; never the first word of a group such as "Finance team") and no
    waiting wording (asked, waiting for/on, awaiting, chase, follow up, reminder, pending from,
    get back, revert) appears within about 100 characters of that name in the message.
-5. Tags are trimmed, de-duplicated and capped at 4 (not reported in `adjustments`).
+5. A title that is no title (empty, only a greeting such as "Hi," / "Bonjour,", a bare name
+   such as "Rohan,", or only the sender's or the user's name) is replaced by
+   `deriveFallbackTitle` (`fallbackTitle.ts`): the subject with `RE:`/`FW:`/`Fwd:`/`[External]`
+   prefixes removed, else the first meaningful sentence of the sender's own words (English and
+   French greetings, pleasantries, signature and quoted reply skipped), at most 90 characters
+   (200 by default in the helper). A description that is only a greeting is replaced by that
+   sentence. Either replacement sets `proposal.structuring = "fallback"` (absent or "ok" = the
+   model's answer was usable; old records have no field and read as "ok"). The queue row then
+   shows "AI could not structure" instead of "ready", and the review dialog opens with a warning
+   notice. A failed model call is the separate `failed` status, as before.
+6. Tags are trimmed, de-duplicated and capped at 4 (not reported in `adjustments`).
 
 Nothing from the draft or the adjustments is written to `logs/ai-calls.jsonl` or `audit.jsonl`
-(a source-scan test checks `structure.ts`). Tests: `sanitizeDraft.test.mjs`, the prompt and
+(a source-scan test checks `structure.ts`). Tests: `sanitizeDraft.test.mjs`,
+`fallbackTitle.test.mjs`, `server/proposalTitle.server.test.mjs`, the prompt and
 schema blocks of `pmo.test.mjs`, the "prompt v3" block of `server/pmo.server.test.mjs`.
 `PMO_AI_STUB=1`: the stub reads "every week", "weekly", "every Monday" ... as a recurrence and
-then proposes no one-off date.
+then proposes no one-off date; it titles a proposal with the message subject, not the
+greeting.
 
 ### Phase 3: editing, reminders, badge
 

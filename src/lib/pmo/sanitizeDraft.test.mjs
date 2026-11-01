@@ -483,6 +483,93 @@ describe("(e) tags, and the function in general", () => {
   });
 });
 
+describe("(0) a title that is no title (QA-11)", () => {
+  const ctx = (extra = {}) => ({
+    now: NOW,
+    text: "x",
+    me: ME,
+    subject: "RE: Aging report for week 44 - please review",
+    bodyText: "Hi,\n\nPlease review the aging report and send it to Rahul.",
+    sender: { name: "Rohan Mehta", address: "rohan.mehta@example.com" },
+    ...extra,
+  });
+  const go = (patch, extra) => sanitizeDraft(draftOf(patch), ctx(extra));
+
+  it("replaces a greeting title with the subject line and says so", () => {
+    for (const title of ["Hi,", "Bonjour,", "Rohan,", "Hello Alex,", "", "   "]) {
+      const { draft, adjustments, fallback } = go({ title });
+      assert.equal(draft.title, "Aging report for week 44 - please review", title);
+      assert.equal(fallback, true);
+      assert.equal(adjustments.length, 1);
+      assert.match(adjustments[0], /subject line/);
+    }
+  });
+
+  it("replaces a title that is only the sender's or the user's name", () => {
+    for (const title of [
+      "Rohan Mehta",
+      "Rohan",
+      "rohan.mehta@example.com",
+      "Alwin Saju",
+      "Alwin",
+    ]) {
+      const { draft, fallback } = go({ title });
+      assert.equal(draft.title, "Aging report for week 44 - please review", title);
+      assert.equal(fallback, true);
+    }
+  });
+
+  it("falls back to the first sentence when the subject is empty", () => {
+    const { draft } = go({ title: "Hi," }, { subject: "" });
+    assert.equal(draft.title, "Please review the aging report and send it to Rahul");
+    assert.equal(go({ title: "Hi," }, { subject: "RE:" }).draft.title, draft.title);
+  });
+
+  it("fits the stored 90-character title", () => {
+    const { draft } = go({ title: "Hi," }, { subject: "Quarterly close ".repeat(40) });
+    assert.ok(Array.from(draft.title).length <= 90);
+    assert.ok(draft.title.endsWith("…"));
+  });
+
+  it("uses the text the model read when no separate subject and body are given", () => {
+    const { draft } = sanitizeDraft(draftOf({ title: "Hi," }), {
+      now: NOW,
+      text: "Hi,\n\nPlease pay the vendor invoice.",
+      me: ME,
+    });
+    assert.equal(draft.title, "Please pay the vendor invoice");
+  });
+
+  it("flags the fallback even when the message has nothing better to offer", () => {
+    const { draft, adjustments, fallback } = go(
+      { title: "Hi," },
+      { subject: "", bodyText: "Hi,", text: "" },
+    );
+    assert.equal(draft.title, "Hi,");
+    assert.equal(fallback, true);
+    assert.deepEqual(adjustments, []);
+  });
+
+  it("leaves a good title alone and does not flag it", () => {
+    for (const title of ["Send the plan", "Rohan's invoice", "Fix the 🔥 build"]) {
+      const { draft, adjustments, fallback } = go({ title });
+      assert.equal(draft.title, title);
+      assert.equal(fallback, false);
+      assert.deepEqual(adjustments, []);
+    }
+  });
+
+  it("replaces a description that is only a greeting with the first sentence", () => {
+    const { draft, fallback } = go({ description: "Hi," });
+    assert.equal(
+      draft.description,
+      "Please review the aging report and send it to Rahul.",
+    );
+    assert.equal(fallback, true);
+    assert.equal(go({ description: "Details attached." }).fallback, false);
+  });
+});
+
 describe("privacy", () => {
   it("the module has no logging, file, network or process access", () => {
     const here = path.dirname(fileURLToPath(import.meta.url));
