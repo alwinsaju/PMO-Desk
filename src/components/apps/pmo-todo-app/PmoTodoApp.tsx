@@ -10,6 +10,7 @@ import { NeedsAttentionStrip } from "./NeedsAttentionStrip";
 import { NewTodoDialog } from "./NewTodoDialog";
 import { PasteIntakeDialog } from "./PasteIntakeDialog";
 import { useDockBadgeStore } from "@/components/taskbar/dockBadgeStore";
+import { useWindowContext } from "@/components/window-manager/titleSuffixStore";
 import { needsFirstRun } from "@/lib/pmo/firstRun";
 import type { Proposal } from "@/lib/pmo/types";
 import { PanelMessage, ScrollBody } from "./parts";
@@ -26,6 +27,16 @@ import { UndoRejectBar, type RejectedItem } from "./UndoRejectBar";
 import { reviewCount as countReview } from "./queueView";
 import { initialReportView, type ReportViewState } from "./reportView";
 import { usePmoData } from "./usePmoData";
+
+/** What the title bar says about the open tab. */
+const TAB_TITLE: Record<string, string> = {
+  review: "Review Queue",
+  todos: "To-Do",
+  board: "Board",
+  calendar: "Calendar",
+  filtered: "Filtered",
+  reports: "Reports",
+};
 
 /**
  * Root PMO To-Do window (registered as "pmo-todo", see index.ts). Messages
@@ -104,6 +115,11 @@ export function PmoTodoApp({ windowId }: { windowId: string }) {
     useRemindersStore.getState().setAttention(attention);
     useDockBadgeStore.getState().setBadge("pmo-todo", attention);
   }, [attention]);
+
+  useWindowContext(
+    windowId,
+    state && !needsFirstRun(state.config) ? (TAB_TITLE[tab] ?? null) : null,
+  );
 
   if (!state) {
     return (
@@ -202,9 +218,9 @@ export function PmoTodoApp({ windowId }: { windowId: string }) {
         <Panel value="board">
           <BoardTab state={state} onOpen={setTodoId} onSettled={refetch} />
         </Panel>
-        <Panel value="calendar">
+        <TabsContent value="calendar" className="flex min-h-0 flex-1 flex-col">
           <CalendarTab state={state} onOpen={setTodoId} onSettled={refetch} />
-        </Panel>
+        </TabsContent>
         <Panel value="filtered">
           <FilteredList
             state={state}

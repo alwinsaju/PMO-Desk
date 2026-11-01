@@ -17,9 +17,12 @@ import {
   handoffNote,
   matchReason,
   monthGrid,
+  monthOf,
   shiftMonth,
   similarTodos,
+  splitDayTodos,
   tagRollup,
+  weekIndexOf,
   weeklyPlan,
   wouldCycle,
 } from "./pmoViews.ts";
@@ -193,6 +196,40 @@ describe("calendar", () => {
   it("moves between months across a year end", () => {
     assert.deepEqual(shiftMonth(2026, 12, 1), { year: 2027, month: 1 });
     assert.deepEqual(shiftMonth(2026, 1, -1), { year: 2025, month: 12 });
+  });
+
+  it("finds the week row to bring into view for a day", () => {
+    const grid = monthGrid(2026, 10, []);
+    // 30 Oct 2026 is in the week starting Monday 26 Oct (the fifth row).
+    assert.equal(weekIndexOf(grid, "2026-10-30"), 4);
+    assert.equal(
+      weekIndexOf(grid, "2026-09-28"),
+      0,
+      "a spill-over day of the month before",
+    );
+    assert.equal(weekIndexOf(grid, "2027-03-01"), -1, "a day outside the grid");
+  });
+
+  it("reads the month a day belongs to", () => {
+    assert.deepEqual(monthOf("2026-10-30"), { year: 2026, month: 10 });
+    assert.deepEqual(monthOf("2027-01-01"), { year: 2027, month: 1 });
+  });
+
+  it("shows a busy day's first items and counts the rest", () => {
+    const items = ["a", "b", "c", "d", "e"];
+    assert.deepEqual(splitDayTodos(items, 2, false), {
+      shown: ["a", "b"],
+      hidden: 3,
+    });
+    assert.deepEqual(splitDayTodos(items, 2, true), { shown: items, hidden: 0 });
+  });
+
+  it("never hides just one item behind a line as tall as the item", () => {
+    assert.deepEqual(splitDayTodos(["a", "b", "c"], 2, false), {
+      shown: ["a", "b", "c"],
+      hidden: 0,
+    });
+    assert.deepEqual(splitDayTodos([], 2, false), { shown: [], hidden: 0 });
   });
 });
 
