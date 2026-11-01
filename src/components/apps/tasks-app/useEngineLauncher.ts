@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { setEngineUrl } from "./engineUrl";
+import { abortableSleep, runEngineLaunch } from "./launchRetry";
 
 export type LaunchPhase = "launching" | "ready" | "failed";
 
@@ -9,35 +10,24 @@ export interface EngineLauncherState {
   phase: LaunchPhase;
   /** Set only when phase === "failed" — what to show the user. */
   reason: string | null;
+  /** When the current launch began (ms since epoch), for an elapsed-time readout. */
+  startedAt: number | null;
+  /** While launching: why the last attempt was retried (e.g. "HTTP 404"). */
+  retrying: string | null;
   /** Re-attempts the launch after a failure. */
   retry: () => void;
 }
 
-interface StartResponse {
-  ok: boolean;
-  alreadyRunning?: boolean;
-  /** Where the engine listens (it picks a free port at launch). */
-  url?: string;
-  reason?: string;
-}
-
-/** Generous outer bound on top of the route's own ~20s internal timeout —
- *  this should basically never be what actually fires; it only guards
- *  against the request itself hanging if the route somehow didn't resolve
- *  on its own. */
-const REQUEST_TIMEOUT_MS = 30_000;
-
 /**
- * Fires POST /api/tasks-engine/start once on mount (and again on retry) so
+ * Fires POST /api/tasks-engine/start on mount (and again on retry) so
  * the Tasks app's own Tasks engine gets launched automatically
  * instead of requiring `uvicorn` to already be running by hand — see
  * src/app/api/tasks-engine/start/route.ts for the actual spawn logic. That
  * route blocks server-side until the engine is confirmed reachable,
- * already running, or its own bounded timeout elapses, so this hook only
- * ever needs ONE request per attempt rather than a polling loop of its
- * own — a genuinely different job from useTasksData's poll-forever
- * pattern, which is about staying live once already connected, not a
- * one-shot launch check.
+ * already running, or its own bounded timeout elapses. Transient failures
+ * (route still compiling, network blip) are retried with back-off for about
+ * 12 s by runEngineLaunch (launchRetry.ts); a failure the route reports
+ * itself is shown at once.
  *
  * TasksAppGate only renders the real <TasksApp> once phase === "ready", so
  * useTasksData's own polling never even starts until the engine is
@@ -46,47 +36,44 @@ const REQUEST_TIMEOUT_MS = 30_000;
 export function useEngineLauncher(): EngineLauncherState {
   const [phase, setPhase] = useState<LaunchPhase>("launching");
   const [reason, setReason] = useState<string | null>(null);
+  const [startedAt, setStartedAt] = useState<number | null>(null);
+  const [retrying, setRetrying] = useState<string | null>(null);
 
-  // Guards against two hazards at once: a stale attempt's response landing
-  // after a newer retry has already started (checked via `token`), and any
-  // response landing after this hook has unmounted (checked via `alive`).
-  const tokenRef = useRef(0);
-  const aliveRef = useRef(true);
+  // Aborting the previous controller covers both a stale attempt landing after
+  // a newer retry began and any response arriving after unmount.
+  const controllerRef = useRef<AbortController | null>(null);
 
   const attempt = useCallback(() => {
-    const token = ++tokenRef.current;
+    controllerRef.current?.abort();
+    const controller = new AbortController();
+    controllerRef.current = controller;
     setPhase("launching");
     setReason(null);
+    setRetrying(null);
+    setStartedAt(Date.now());
 
-    fetch("/api/tasks-engine/start", {
-      method: "POST",
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    })
-      .then((res) => res.json() as Promise<StartResponse>)
-      .then((result) => {
-        if (!aliveRef.current || token !== tokenRef.current) return;
-        if (result.ok && result.url) {
-          setEngineUrl(result.url);
-          setPhase("ready");
-        } else {
-          setPhase("failed");
-          setReason(result.reason ?? "The engine failed to start.");
-        }
-      })
-      .catch(() => {
-        if (!aliveRef.current || token !== tokenRef.current) return;
+    void runEngineLaunch({
+      fetchImpl: fetch,
+      sleep: abortableSleep,
+      now: Date.now,
+      signal: controller.signal,
+      onRetry: (info) => setRetrying(info.detail),
+    }).then((outcome) => {
+      if (outcome.status === "aborted") return;
+      if (outcome.status === "ready") {
+        setEngineUrl(outcome.url);
+        setPhase("ready");
+      } else {
         setPhase("failed");
-        setReason("Couldn't reach the Tasks app's own launcher endpoint.");
-      });
+        setReason(outcome.reason);
+      }
+    });
   }, []);
 
   useEffect(() => {
-    aliveRef.current = true;
     attempt();
-    return () => {
-      aliveRef.current = false;
-    };
+    return () => controllerRef.current?.abort();
   }, [attempt]);
 
-  return { phase, reason, retry: attempt };
+  return { phase, reason, startedAt, retrying, retry: attempt };
 }

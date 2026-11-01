@@ -1,17 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { create } from "zustand";
 import { MagnifyingGlassIcon } from "@phosphor-icons/react";
-import { fetchState } from "@/components/apps/pmo-todo-app/api";
 import { useRemindersStore } from "@/components/apps/pmo-todo-app/remindersStore";
 import { useStaffNav } from "@/components/apps/staff-app/staffNavStore";
-import { fetchLibrary } from "@/components/apps/templates-app/api";
 import { getNotes, noteTitle } from "@/components/apps/notes-app/notesStore";
 import { builtInApps, toolApps } from "@/components/taskbar/pinnedApps";
-import { fetchRegister } from "@/components/apps/toolkit/registersApi";
-import { REGISTERS } from "@/lib/registers/defs";
-import { recordTitle, textOf } from "@/lib/registers/records";
 import { openOrFocusBuiltInApp } from "@/components/taskbar/launchBuiltInApp";
 import { cn } from "@/lib/cn";
 import {
@@ -19,14 +14,17 @@ import {
   KIND_LABEL,
   noteItems,
   personItems,
-  recordItems,
   searchItems,
-  templateItems,
   timeOffItems,
-  todoItems,
   type SearchItem,
 } from "@/lib/search/searchIndex";
+import { emptyStateFor, loadedItems, sourceProblems } from "@/lib/search/searchSources";
 import { useStaffStore, useStaffSync } from "@/lib/staff/staffStore";
+import {
+  OPEN_MAX_AGE_MS,
+  PREFETCH_MAX_AGE_MS,
+  searchSources,
+} from "./searchSourcesStore";
 
 interface SearchUi {
   open: boolean;
@@ -60,62 +58,24 @@ function SearchPanel({ onClose }: { onClose: () => void }) {
   const timeOff = useStaffStore((s) => s.timeOff);
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
-  const [loaded, setLoaded] = useState<{
-    todos: SearchItem[];
-    templates: SearchItem[];
-    records: SearchItem[];
-  }>({
-    todos: [],
-    templates: [],
-    records: [],
-  });
+  const sources = useSyncExternalStore(
+    searchSources.subscribe,
+    searchSources.getState,
+    searchSources.getState,
+  );
   const listRef = useRef<HTMLUListElement>(null);
 
-  // Read the to-dos, templates and PMO tool records once when the box opens.
+  // Refresh in the background on open; what is already cached shows straight away.
   useEffect(() => {
-    let cancelled = false;
-    void Promise.all([
-      Promise.allSettled([fetchState(), fetchLibrary()]),
-      Promise.allSettled(REGISTERS.map((def) => fetchRegister(def.id))),
-    ]).then(([[state, library], registers]) => {
-      if (cancelled) return;
-      const records = registers.flatMap((result, index) => {
-        const def = REGISTERS[index]!;
-        if (result.status !== "fulfilled" || !result.value.ok) return [];
-        return recordItems(
-          { id: def.id, title: def.title },
-          result.value.items.map((r) => ({
-            id: r.id,
-            title: recordTitle(def, r),
-            subtitle: def.statusKey ? textOf(r, def.statusKey) : "",
-            keywords: Object.values(r.values)
-              .map((v) => (Array.isArray(v) ? v.join(" ") : String(v)))
-              .join(" "),
-          })),
-        );
-      });
-      setLoaded({
-        todos: state.status === "fulfilled" ? todoItems(state.value.todos) : [],
-        templates:
-          library.status === "fulfilled" && library.value.ok
-            ? templateItems(library.value.templates)
-            : [],
-        records,
-      });
-    });
-    return () => {
-      cancelled = true;
-    };
+    void searchSources.ensure(OPEN_MAX_AGE_MS);
   }, []);
 
   const items = useMemo(
     () => [
       ...appItems([...builtInApps, ...toolApps]),
-      ...loaded.todos,
-      ...loaded.records,
+      ...loadedItems(sources),
       ...personItems(employees),
       ...timeOffItems(timeOff, employees),
-      ...loaded.templates,
       ...noteItems(
         getNotes().map((n) => ({
           id: n.id,
@@ -124,9 +84,11 @@ function SearchPanel({ onClose }: { onClose: () => void }) {
         })),
       ),
     ],
-    [loaded, employees, timeOff],
+    [sources, employees, timeOff],
   );
   const results = useMemo(() => searchItems(items, query), [items, query]);
+  const problems = useMemo(() => sourceProblems(sources), [sources]);
+  const empty = useMemo(() => emptyStateFor(sources, query), [sources, query]);
   const current = Math.min(active, Math.max(0, results.length - 1));
 
   useEffect(() => {
@@ -195,8 +157,11 @@ function SearchPanel({ onClose }: { onClose: () => void }) {
           className="scroll-thin min-h-0 flex-1 overflow-y-auto p-1.5"
         >
           {results.length === 0 ? (
-            <li className="text-ink-muted px-3 py-6 text-center text-[13px]">
-              Nothing matches “{query.trim()}”.
+            <li
+              role="status"
+              className="text-ink-muted px-3 py-6 text-center text-[13px]"
+            >
+              {empty.text}
             </li>
           ) : (
             results.map((item, index) => (
@@ -229,6 +194,21 @@ function SearchPanel({ onClose }: { onClose: () => void }) {
             ))
           )}
         </ul>
+        {problems.length > 0 && (
+          <div
+            role="alert"
+            className="border-line text-amber flex items-start justify-between gap-3 border-t px-4 py-2 text-[12px]"
+          >
+            <span className="min-w-0">{problems.join(". ")}</span>
+            <button
+              type="button"
+              onClick={() => void searchSources.ensure(0)}
+              className="text-accent-ink shrink-0 font-semibold hover:underline"
+            >
+              Try again
+            </button>
+          </div>
+        )}{" "}
         <p className="border-line text-ink-faint border-t px-4 py-2 text-[11.5px]">
           ↑ ↓ to move · Enter to open · Esc to close
         </p>
@@ -241,6 +221,11 @@ function SearchPanel({ onClose }: { onClose: () => void }) {
 export function GlobalSearch() {
   const open = useSearchUi((s) => s.open);
   const hide = useSearchUi((s) => s.hide);
+  // Load the slow sources shortly after start so the first Ctrl+K already has them.
+  useEffect(() => {
+    const timer = setTimeout(() => void searchSources.ensure(PREFETCH_MAX_AGE_MS), 4000);
+    return () => clearTimeout(timer);
+  }, []);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (

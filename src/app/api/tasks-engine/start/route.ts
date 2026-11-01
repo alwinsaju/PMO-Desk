@@ -66,7 +66,8 @@ let inFlight: Promise<StartResult> | null = null;
 
 /** POST /api/tasks-engine/start -> StartResult. Idempotent: safe to call
  *  every time the Tasks app opens, whether or not the engine is already
- *  running. See attemptStart() for the actual logic. */
+ *  running. See attemptStart() for the actual logic. Keep this POST-only:
+ *  desktop/dev-warmup.cjs GETs this path to pre-compile it (answered 405). */
 export async function POST() {
   if (!inFlight) {
     inFlight = attemptStart().finally(() => {

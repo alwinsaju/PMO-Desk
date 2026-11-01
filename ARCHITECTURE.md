@@ -578,7 +578,10 @@ approver stamp). There is no worker pool: a task runs unless it is already runni
 every step is a plain subprocess of the engine's own Python. The engine binds to 127.0.0.1 on a free port (first
 free of 8000-8019); `src/app/api/tasks-engine/start/route.ts` picks it, starts the engine (`python main.py --port N`),
 and the browser learns the address from `GET /api/tasks-engine/config` (`tasks-app/engineUrl.ts`). `GET /health` is
-the identity probe. The
+the identity probe. The first open retries the start request with back-off for about 12 s when the route answers
+404/502/503 or not at all (live-dev compiles routes on first use; `tasks-app/launchRetry.ts`), shows the elapsed
+time, and only then reports the cause (for example "The engine did not answer after 12 s (HTTP 404)"); a reason
+the route reports itself is shown at once. The dev warm-up GETs the start route (405, handler not run) to compile it. The
 shapes the three parts share (manifest keys, endpoints, JSON files) are fixed in
 [`tasks/TASK-PLATFORM-CONTRACT.md`](./tasks/TASK-PLATFORM-CONTRACT.md). Task decisions and assumptions:
 [`tasks/DECISIONS-AND-ASSUMPTIONS.md`](./tasks/DECISIONS-AND-ASSUMPTIONS.md); how to run them the first
@@ -2018,7 +2021,14 @@ title, tone, action, key })` from anywhere; a repeated `key` replaces the earlie
   An answer can carry a "Show me in ..." link (`barLinks.ts`) that opens the app filtered.
   `ModelHealthChip` offers to wake a sleeping model before you ask.
 - **Global search** (`lib/search/searchIndex.ts`, `components/search/GlobalSearch.tsx`): Ctrl+K searches
-  apps, to-dos, people, time off, templates and notes. The index is built when the box opens.
+  apps, to-dos, people, time off, templates and notes. Apps, people, time off and notes are instant.
+  To-dos, templates and PMO tool records are slow sources (`lib/search/searchSources.ts`: per-source
+  idle/loading/ready/failed state): `searchSourceCache.ts` keeps them for the session, starts loading
+  about 4 s after the desktop appears (`searchSourcesStore.ts` wires the loaders), and refreshes in the
+  background each time the box opens (skipped if loaded under 5 s ago). While a source is still loading
+  and nothing matches, the box says "Searching to-dos, templates and records…" instead of "Nothing
+  matches"; a failed source (or one broken PMO tool) is named under the list with "Try again" and never
+  hides the rest.
 - **Windows.** Snap (`windowSnap.ts`: Ctrl+Alt+arrows and 7/9/1/3, or drag to a screen edge), keep on
   top (`WindowState.pinned`, a z-index boost), a Ctrl+Tab switcher (`windowSwitch.ts`,
   `WindowShortcuts.tsx`) and the dock tooltip listing several open windows of an app.
