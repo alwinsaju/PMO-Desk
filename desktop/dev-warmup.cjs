@@ -13,6 +13,9 @@ const WARM_ROUTES = [
   "/api/pmo/config",
   "/api/pmo/reports",
   "/api/tasks-engine/status",
+  // POST-only route that spawns the engine: the warm-up's GET is answered 405 by Next without
+  // running the handler, but the route is still compiled, which is what made the first open fail.
+  "/api/tasks-engine/start",
 ];
 
 const DEFAULT_CONCURRENCY = 2;

@@ -47,6 +47,8 @@ export function TasksAppGate({ windowId }: { windowId: string }) {
         <EngineLaunchScreen
           state={launcher.phase === "failed" ? "failed" : "launching"}
           reason={launcher.reason}
+          startedAt={launcher.startedAt}
+          retrying={launcher.retrying}
           onRetry={launcher.retry}
         />
       </motion.div>

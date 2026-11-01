@@ -52,6 +52,20 @@ describe("warmDevRoutes", () => {
     assert.equal(peak, 2);
   });
 
+  it("warms the Tasks launcher with a GET so the spawning POST handler never runs", async () => {
+    assert.ok(WARM_ROUTES.includes("/api/tasks-engine/start"));
+    const methods = [];
+    await warmDevRoutes({
+      baseUrl: "http://127.0.0.1:3100",
+      routes: ["/api/tasks-engine/start"],
+      fetchImpl: async (_url, init) => {
+        methods.push(init?.method ?? "GET");
+        return okResponse();
+      },
+    });
+    assert.deepEqual(methods, ["GET"]);
+  });
+
   it("only warms read-only routes that do not start background work", () => {
     assert.ok(!WARM_ROUTES.includes("/api/pmo/state"));
     assert.ok(WARM_ROUTES.every((route) => route.startsWith("/api/")));
