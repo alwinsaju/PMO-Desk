@@ -6,8 +6,20 @@ type Listener = () => void;
 
 const listeners = new Set<Listener>();
 
-export function announceModalOpened(): void {
+/** A dialog takes focus as it opens, and focus opens a tooltip on its first focusable
+ *  control. For this long after a modal opens, tooltips refuse to open. */
+export const MODAL_OPEN_GRACE_MS = 400;
+
+let lastOpenedAt = Number.NEGATIVE_INFINITY;
+
+export function announceModalOpened(now: number = Date.now()): void {
+  lastOpenedAt = now;
   for (const listener of [...listeners]) listener();
+}
+
+/** True while a modal opened less than `MODAL_OPEN_GRACE_MS` ago. */
+export function isWithinModalOpenGrace(now: number = Date.now()): boolean {
+  return now - lastOpenedAt < MODAL_OPEN_GRACE_MS;
 }
 
 /** Returns the unsubscribe function. */

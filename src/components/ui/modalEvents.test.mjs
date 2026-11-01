@@ -1,7 +1,20 @@
 // Run with `pnpm test`. The "a modal opened" signal that closes open tooltips and popovers.
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { announceModalOpened, onModalOpened } from "./modalEvents.ts";
+import {
+  announceModalOpened,
+  isWithinModalOpenGrace,
+  MODAL_OPEN_GRACE_MS,
+  onModalOpened,
+} from "./modalEvents.ts";
+
+describe("modal open grace window", () => {
+  it("is active just after a modal opens and over after the grace period", () => {
+    announceModalOpened(10_000);
+    assert.equal(isWithinModalOpenGrace(10_000 + MODAL_OPEN_GRACE_MS - 1), true);
+    assert.equal(isWithinModalOpenGrace(10_000 + MODAL_OPEN_GRACE_MS), false);
+  });
+});
 
 describe("modal opened signal", () => {
   it("tells every subscriber when a modal opens", () => {

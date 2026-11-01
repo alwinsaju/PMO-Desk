@@ -5,6 +5,7 @@ import * as TooltipPrimitive from "@radix-ui/react-tooltip";
 import { cn } from "@/lib/cn";
 import { overlayEnter, overlayExit } from "@/lib/motion";
 import { useCloseOnModalOpen } from "./useCloseOnModalOpen";
+import { isWithinModalOpenGrace } from "./modalEvents";
 
 export const TooltipProvider = TooltipPrimitive.Provider;
 export const TooltipTrigger = TooltipPrimitive.Trigger;
@@ -20,6 +21,8 @@ export function TooltipRoot({
   const [innerOpen, setInnerOpen] = React.useState(defaultOpen);
   const isControlled = open !== undefined;
   const change = (next: boolean) => {
+    // Focus moving into a freshly opened dialog must not pop a tooltip over its content.
+    if (next && isWithinModalOpenGrace()) return;
     if (!isControlled) setInnerOpen(next);
     onOpenChange?.(next);
   };
