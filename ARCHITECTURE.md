@@ -587,6 +587,13 @@ shapes the three parts share (manifest keys, endpoints, JSON files) are fixed in
 [`tasks/DECISIONS-AND-ASSUMPTIONS.md`](./tasks/DECISIONS-AND-ASSUMPTIONS.md); how to run them the first
 time: [`tasks/FIRST-RUN-GUIDE.md`](./tasks/FIRST-RUN-GUIDE.md).
 
+**Tasks app UI logic** (pure, with tests in `tasks-app/*.test.mjs`): `workflowView.ts` (icon guess, relative
+time, last-run line, `stepperItems` for the card's `StepDots` and Details' `StepStepper`; an idle task shows
+its last run's steps), `historyRows.ts` (History table rows; `outputForRun` links a run to the file a
+notification wrote during it, opened with `OpenOutputLink`), `scheduleStrip.ts` (the seven-day `WeekStrip`
+and `toggleWeekday`) and `inputChecklist.ts` (the Run dialog's checklist and file-type icons). The engine
+records only a run's start and end, so Details shows no per-step durations.
+
 **Updates without reinstalling:** the Electron shell (`desktop/main.cjs`, mode logic in `desktop/launch-config.cjs`)
 picks the UI mode: an installed (packaged) build defaults to `bundled`, while an unpackaged run (`pnpm desktop`)
 defaults to `live-dev` (`next dev` from the project folder, falling back to bundled). A packaged build opts into
@@ -2036,6 +2043,12 @@ reaches back to last Sunday. The Tasks engine being down shows a note instead of
   the library where the text is made (Python `apply_email_template`, or `useAssignedTemplate` plus a
   pure render function), and add a starter that reproduces today's wording if it should be on by
   default.
+- **Editor and list (UI).** The list shows a type icon and colour per template (`TemplateKindIcon`,
+  tones in `lib/templates/listView.ts`) and a "used by" badge (`usedByCount`/`usedByBadge`: a snippet
+  counts the templates that include it). The editor's toolbar has Bold (`toggleWrap`, Ctrl+B) and
+  `PlaceholderPalette` (a popover over `filterPlaceholders`). `VersionsDrawer` is a non-modal side panel
+  inside the window (not a Radix dialog); it diffs an earlier version against the current wording with
+  the pure `lineDiff`/`versionChanges` (`lib/templates/diff.ts`) and restores through `versionInput`.
 
 ## Version 5.1: polish and shared building blocks
 

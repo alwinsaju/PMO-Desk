@@ -63,14 +63,19 @@ on the user's computer (loopback only; the AI is a local Ollama model, no cloud 
   Week or Month Calendar (drag a to-do to a day), mark a to-do as blocked by another, rename a row in
   place, plan the week, add to-dos from pasted meeting notes, escalate a quiet chase and hand a
   to-do to a teammate from Staff. All of it stays on this computer; mail is only ever opened unsent.
-- **Tasks app** extras: a History tab (every run, who approved what, a failure in plain words,
-  trends), a Schedule tab (weekly or monthly reminders, optional self-preparing that always stops
-  at the review step, a send-later queue) and, before a run, a "What will happen" preview, a check
+- **Tasks app** extras: workflow cards show an icon, the last run ("Completed 2 h ago · 4 min") and a
+  coloured step timeline; **Details** has a vertical step list with each step's status. A History
+  table (status pill, workflow, when, how long, and **Open output** for the file a run made; a row opens
+  to show who approved what and a failure in plain words, plus trends), a Schedule tab (a seven-day
+  strip where you click a day to switch a weekly schedule on, move it or off, the table for monthly
+  ones, optional self-preparing that always stops at the review step, a send-later queue) and, before a
+  run, a checklist of what is still needed, a "What will happen" preview, a check
   of the uploaded export and a comparison with the last run. Mail recipients are checked before
   you confirm a send. In the desktop app, "Newest in Downloads" picks up a fresh export.
 - **Tasks engine** (`tasks-engine/`, Python/FastAPI) and the **Tasks app**: runs the task
   folders under `tasks/` (Shift Roster, December Disconnect, the weekly and monthly reports,
-  the deployment mailer) through prepare, review, approve and send gates. A **Packs** tab adds
+  the deployment mailer) through prepare, review, approve and send gates. A **Packs** tab (a card per
+  pack with its version and Remove) adds
   tasks without reinstalling: install a checksummed task pack (you confirm its fingerprint first),
   or build a mailer from a table and a template with a wizard. See
   [`docs/task-packs.md`](./docs/task-packs.md).

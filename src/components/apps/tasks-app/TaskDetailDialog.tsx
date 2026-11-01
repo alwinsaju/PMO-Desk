@@ -23,7 +23,7 @@ import { FormGatePanel } from "./FormGatePanel";
 import { GateNote } from "./GateParts";
 import { OpenFileButtons } from "./OpenFileButtons";
 import { ReviewPanel } from "./ReviewPanel";
-import { StepTracker } from "./StepTracker";
+import { StepStepper } from "./StepViews";
 import { TaskActions } from "./TaskActions";
 import { TaskStateBadge } from "./TaskStateBadge";
 import { FailureHelp } from "./FailureHelp";
@@ -37,6 +37,8 @@ import {
   stepLabel,
 } from "./taskPresenter";
 import { useGateData } from "./useGateData";
+import { useTaskRuns } from "./useTaskRuns";
+import { lastRunInfo, latestRun, stepperItems, stepperSummary } from "./workflowView";
 import type { HistoryRun, LogEntry, Task } from "./types";
 
 /** Matches the log tab's live-refresh cadence to the rest of the app's poll
@@ -185,9 +187,7 @@ export const TaskDetailDialog = memo(function TaskDetailDialog({
               </div>
             )}
 
-            <div className="mt-5 mb-1">
-              <StepTracker task={lastTask} />
-            </div>
+            <StepsSection task={lastTask} />
             <FailureHelp task={lastTask} />
 
             {lastTask.notifications.length > 0 && !gateType && (
@@ -303,6 +303,28 @@ export const TaskDetailDialog = memo(function TaskDetailDialog({
     </Dialog>
   );
 });
+
+/** The vertical step list with each step's status, headed by how the last run went (the engine
+ *  records only a whole run's start and end, so there is no per-step duration to show). */
+function StepsSection({ task }: { task: Task }) {
+  const runs = useTaskRuns(task.id, task.state);
+  const items = stepperItems(task, latestRun(runs));
+  if (items.length === 0) return null;
+  return (
+    <section
+      aria-label="Steps"
+      className="border-line rounded-card mt-5 border px-4 py-3.5"
+    >
+      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-3 text-[12px]">
+        <h4 className="text-ink-muted font-bold tracking-[0.08em] uppercase">Steps</h4>
+        <p className="text-ink-muted">
+          {stepperSummary(items)} · {lastRunInfo(runs, new Date()).text}
+        </p>
+      </div>
+      <StepStepper items={items} />
+    </section>
+  );
+}
 
 /** Live log: fetched when the tab is opened, then refreshed on the same
  *  cadence as the rest of the app while it stays open. Mounted only while the

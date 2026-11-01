@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { PackageIcon } from "@phosphor-icons/react";
+import { PackageIcon, PlusIcon } from "@phosphor-icons/react";
 import {
+  Badge,
   Button,
   Dialog,
   DialogContent,
@@ -217,36 +218,76 @@ export function PacksTab({ onChanged }: { onChanged: () => void }) {
         />
       )}
       {packs && packs.length > 0 && (
-        <ul className="divide-line divide-y" aria-label="Installed packs">
+        <ul
+          className="grid grid-cols-[repeat(auto-fill,minmax(250px,1fr))] gap-4"
+          aria-label="Installed packs"
+        >
           {packs.map((pack) => (
-            <li key={pack.id} className="flex items-center gap-3 py-2.5">
-              <span className="min-w-0 flex-1">
-                <span className="text-ink block text-[14px] font-semibold">
-                  {pack.name}
+            <li
+              key={pack.id}
+              data-testid="pack-card"
+              className="border-line bg-card rounded-card flex min-w-0 flex-col gap-3 border p-4"
+            >
+              <div className="flex items-start gap-3">
+                <span
+                  aria-hidden
+                  className="bg-accent-soft text-accent-ink flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px]"
+                >
+                  <PackageIcon size={20} weight="duotone" />
                 </span>
-                <span className="text-ink-muted block truncate text-[12px]">
-                  v{pack.packVersion || "?"} · {pack.fingerprint.slice(0, 16)}…
-                </span>
-              </span>
-              {confirmId === pack.id ? (
-                <span className="flex items-center gap-2">
-                  <span className="text-ink-muted text-[12px]">
-                    Also deletes its inputs and outputs.
+                <span className="min-w-0 flex-1">
+                  <span
+                    className="text-ink block truncate text-[14px] font-semibold"
+                    title={pack.name}
+                  >
+                    {pack.name}
                   </span>
-                  <Button size="sm" onClick={() => void remove(pack)}>
-                    Yes, remove
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={() => setConfirmId(null)}>
-                    Keep
-                  </Button>
+                  <span className="text-ink-muted block truncate text-[12px]">
+                    {pack.fingerprint.slice(0, 16)}…
+                  </span>
                 </span>
+                <Badge variant="neutral">v{pack.packVersion || "?"}</Badge>
+              </div>
+              {confirmId === pack.id ? (
+                <div className="mt-auto flex flex-col gap-2">
+                  <p className="text-ink-muted text-[12px]">
+                    Also deletes its inputs and outputs.
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <Button size="sm" onClick={() => void remove(pack)}>
+                      Yes, remove
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setConfirmId(null)}
+                    >
+                      Keep
+                    </Button>
+                  </div>
+                </div>
               ) : (
-                <Button variant="outline" size="sm" onClick={() => setConfirmId(pack.id)}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-auto self-start"
+                  onClick={() => setConfirmId(pack.id)}
+                >
                   Remove
                 </Button>
               )}
             </li>
           ))}
+          <li className="contents">
+            <button
+              type="button"
+              onClick={() => picker.current?.click()}
+              className="border-line-strong text-ink-soft hover:bg-chip focus-visible:ring-focus rounded-card flex min-h-[112px] flex-col items-center justify-center gap-1.5 border border-dashed p-4 text-[13px] font-semibold outline-none focus-visible:ring-2"
+            >
+              <PlusIcon size={18} weight="bold" aria-hidden />
+              Install a pack…
+            </button>
+          </li>
         </ul>
       )}
       {chosen && (

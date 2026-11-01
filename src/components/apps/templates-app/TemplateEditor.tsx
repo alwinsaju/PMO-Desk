@@ -4,10 +4,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowCounterClockwiseIcon,
   CaretDownIcon,
+  ClockCounterClockwiseIcon,
   CopyIcon,
   DotsThreeIcon,
   FloppyDiskIcon,
   SlidersHorizontalIcon,
+  TextBIcon,
   TrashIcon,
 } from "@phosphor-icons/react";
 import {
@@ -44,13 +46,13 @@ import {
   Field,
   FieldError,
   Note,
-  QuickChip,
   ScrollBody,
   SectionLabel,
   Segmented,
   TextArea,
 } from "../pmo-todo-app/parts";
 import { clearDraft, loadDraft, saveDraft, type DraftStorage } from "./draftAutosave";
+import { PlaceholderPalette } from "./PlaceholderPalette";
 import {
   holderOf,
   insertAt,
@@ -61,6 +63,7 @@ import {
   previewOf,
   problems,
   toInput,
+  toggleWrap,
   withKind,
   withPlace,
   type Draft,
@@ -96,6 +99,7 @@ interface TemplateEditorProps {
   onDuplicate: () => void;
   onDelete: () => void;
   onOpenExtras: () => void;
+  onOpenVersions: () => void;
 }
 
 const KIND_OPTIONS = (["email", "report"] as const).map((value) => ({
@@ -121,6 +125,7 @@ export function TemplateEditor({
   onDuplicate,
   onDelete,
   onOpenExtras,
+  onOpenVersions,
 }: TemplateEditorProps) {
   const [draft, setDraft] = useState<Draft>(() => restoredDraft(template) ?? seed);
   // A draft kept from an earlier, unsaved edit was put back; say so and let it be dropped.
@@ -178,6 +183,19 @@ export function TemplateEditor({
     });
   };
 
+  const makeBold = () => {
+    const area = bodyRef.current;
+    const at = area
+      ? [area.selectionStart, area.selectionEnd]
+      : [draft.body.length, draft.body.length];
+    const out = toggleWrap(draft.body, at[0], at[1]);
+    change({ ...draft, body: out.value });
+    requestAnimationFrame(() => {
+      area?.focus();
+      area?.setSelectionRange(out.start, out.end);
+    });
+  };
+
   const save = () => {
     setAttempted(true);
     if (Object.keys(errors).length === 0) onSave(toInput(draft));
@@ -201,12 +219,25 @@ export function TemplateEditor({
           <Button
             variant="outline"
             size="sm"
+            onClick={onOpenVersions}
+            disabled={busy}
+            data-testid="template-versions"
+          >
+            <ClockCounterClockwiseIcon size={14} />
+            Versions
+            {(template.history?.length ?? 0) > 0 ? ` (${template.history?.length})` : ""}
+          </Button>
+        )}
+        {template && (
+          <Button
+            variant="outline"
+            size="sm"
             onClick={onOpenExtras}
             disabled={busy}
             data-testid="template-extras"
           >
             <SlidersHorizontalIcon size={14} />
-            Tags, wordings, versions, test…
+            Tags, wordings, test…
             <CaretDownIcon size={12} weight="bold" />
           </Button>
         )}
@@ -360,35 +391,54 @@ export function TemplateEditor({
             </Field>
 
             <div className="flex flex-col gap-1.5">
-              <SectionLabel>Insert a value</SectionLabel>
-              <div className="flex flex-wrap gap-1.5" aria-label="Placeholders">
-                {tokens.map((token) => (
-                  <QuickChip
-                    key={token.name}
-                    title={`${token.description}. Example: ${token.sample.split("\n")[0]}`}
-                    onClick={() => insertToken(token.name)}
-                  >
-                    {`{{${token.name}}}`}
-                  </QuickChip>
-                ))}
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <SectionLabel>{isEmail ? "Message" : "Report layout"}</SectionLabel>
+                <div
+                  role="toolbar"
+                  aria-label="Formatting"
+                  className="flex items-center gap-1.5"
+                >
+                  {isEmail && (
+                    <IconButton
+                      aria-label="Bold (Ctrl+B)"
+                      title="Bold (Ctrl+B)"
+                      variant="outline"
+                      size="sm"
+                      onClick={makeBold}
+                      data-testid="format-bold"
+                    >
+                      <TextBIcon weight="bold" />
+                    </IconButton>
+                  )}
+                  <PlaceholderPalette tokens={tokens} onPick={insertToken} />
+                </div>
               </div>
-              <Field label={isEmail ? "Message" : "Report layout"}>
-                <TextArea
-                  ref={bodyRef}
-                  value={draft.body}
-                  rows={12}
-                  maxLength={LIMITS.body}
-                  aria-invalid={!!fieldError("body")}
-                  className="min-h-56 font-mono text-[13px] leading-relaxed"
-                  onChange={(e) => change({ ...draft, body: e.target.value })}
-                  data-testid="template-body"
-                />
-                <FieldError message={fieldError("body")} />
-              </Field>
+              <TextArea
+                ref={bodyRef}
+                value={draft.body}
+                rows={12}
+                maxLength={LIMITS.body}
+                aria-label={isEmail ? "Message" : "Report layout"}
+                aria-invalid={!!fieldError("body")}
+                className="min-h-56 font-mono text-[13px] leading-relaxed"
+                onChange={(e) => change({ ...draft, body: e.target.value })}
+                onKeyDown={(e) => {
+                  if (
+                    isEmail &&
+                    (e.ctrlKey || e.metaKey) &&
+                    e.key.toLowerCase() === "b"
+                  ) {
+                    e.preventDefault();
+                    makeBold();
+                  }
+                }}
+                data-testid="template-body"
+              />
+              <FieldError message={fieldError("body")} />
               <p className="text-ink-muted text-[12px] leading-relaxed">
-                Leave a blank line between paragraphs. Put <code>**two stars**</code>{" "}
-                around words to make them bold in an email. A value that is missing stays
-                as you typed it, so you can spot it in the draft.
+                Leave a blank line between paragraphs. Select words and press Bold to make
+                them bold in an email (<code>**two stars**</code>). A value that is
+                missing stays as you typed it, so you can spot it in the draft.
               </p>
             </div>
 

@@ -15,11 +15,20 @@ Open it from the dock (the page icon), the desktop right-click menu, or the comm
   chip per person, so a long list wraps instead of being cut off: type or paste addresses separated by
   a semicolon (`Name <a@x.com>; Name <b@x.com>`, or just `a@x.com, b@x.com`). A chip that is not an
   email address turns red and stops Save until you remove it. A `{{placeholder}}` also works as an address.
-- **Insert a value.** The chips under the subject (`{{total}}`, `{{date_full}}` ...) put a
-  placeholder at the cursor. Each task or app fills its own placeholders when it makes a draft.
-  A placeholder it cannot fill stays as typed, so you can spot it in the draft.
-- **Make words bold.** In an email, put two stars around words: `**prioritize review**`.
+- **Insert a value.** Above the message, **Insert value** opens a list of the placeholders this
+  template can use (`{{total}}`, `{{date_full}}` ...), with what each means and an example. Type to
+  search, then click one (or press Enter for the first) to put it at the cursor. Each task or app fills
+  its own placeholders when it makes a draft. A placeholder it cannot fill stays as typed, so you can
+  spot it in the draft.
+- **Make words bold.** In an email, select words and press **Bold** (or Ctrl+B); it puts two stars
+  around them: `**prioritize review**`. Pressing it again takes the stars off.
   Leave a blank line between paragraphs.
+- **The list.** Each template has an icon in its type's colour (email blue, report green, snippet
+  amber) and a badge: **Used by 2** for the tasks and apps that use it, **In 3 templates** for a snippet
+  other templates include, or **Not used**.
+- **Versions.** **Versions** opens a drawer beside the editor with the earlier saved states. Pick one to
+  see what changed since, line by line (red was in that version, green was added since), and
+  **Restore this version**; the wording from before is kept as another version.
 - **Choose where it is used.** Under _Used by_, tick the tasks and apps that should use this
   template. Each place uses **one** template: ticking a place another template has moves it to
   this one (the form says which). Delete a template, or untick a place, and that place goes back
@@ -27,7 +36,7 @@ Open it from the dock (the page icon), the desktop right-click menu, or the comm
 - **New template, Duplicate, Delete.** The **⋯** menu next to Save has _Duplicate_ (an unused copy to
   experiment with), _Restore original wording_ and _Delete template_. Delete does not ask first; a
   message at the bottom of the screen offers **Undo** for ten seconds, which puts the template back with
-  its places, tags and wordings. **Tags, wordings, versions, test…** opens the extras.
+  its places, tags and wordings. **Tags, wordings, test…** opens the extras.
 - **Restore original wording.** The starter templates can be set back to what the task or app
   said before templates existed.
 

@@ -1,22 +1,24 @@
 "use client";
 
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef } from "react";
 import { Button } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { diffSummary } from "./diffView";
 import { flagsSummary } from "./flagsView";
 import { formSummary } from "./formGate";
-import { StepTracker } from "./StepTracker";
+import { StepDots } from "./StepViews";
 import { TaskActions } from "./TaskActions";
 import { TaskStateBadge } from "./TaskStateBadge";
 import { latestArtifactNotification, statusSentence } from "./taskPresenter";
 import { OpenFileButtons } from "./OpenFileButtons";
 import { explainFailure, lastLine } from "@/lib/tasks/failureExplainer";
 import { plainStepName, stepPosition, timeLeftText } from "@/lib/tasks/runHistory";
-import { fetchTaskHistory } from "./api";
 
 import { useGateData, type GateData } from "./useGateData";
-import type { HistoryRun, Task } from "./types";
+import { useTaskRuns } from "./useTaskRuns";
+import { WorkflowIcon } from "./WorkflowIcon";
+import { lastRunInfo, stepperItems, latestRun } from "./workflowView";
+import type { Task } from "./types";
 
 interface TaskCardProps {
   task: Task;
@@ -31,8 +33,9 @@ interface TaskCardProps {
 }
 
 /**
- * One task's live card: name + state badge, the segmented step progress bar,
- * a one-line status sentence (or, when `state === "error"`, the failure text
+ * One task's live card: icon, name, last-run line and state badge, a mini
+ * timeline of the steps (coloured by status), a one-line status sentence (or,
+ * when `state === "error"`, the failure text
  * in a red box instead), and exactly the action buttons legal for this state.
  * Every card is the same size: the grid (TasksApp) gives all rows an equal
  * height, so the title and the error text truncate (ellipsis / 2-line clamp)
@@ -58,22 +61,10 @@ export const TaskCard = memo(function TaskCard({
   // incident-review check, the Run form, gate blocks — live in TaskActions.
   const gate = useGateData(task);
   const gateLine = gateSummary(gate);
-  // A rough "time left" for a run on its own steps, from this task's earlier runs.
-  const [runs, setRuns] = useState<HistoryRun[]>([]);
-  const working = task.state === "working";
-  useEffect(() => {
-    if (!working) return;
-    let cancelled = false;
-    void fetchTaskHistory(taskId)
-      .then((r) => {
-        if (!cancelled) setRuns(r);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [working, taskId]);
+  // Earlier runs: the last-run line, the step colours when idle, and a rough "time left".
+  const runs = useTaskRuns(taskId, task.state);
   const timeLeft = timeLeftText(task, runs);
+  const lastRun = lastRunInfo(runs, new Date());
 
   return (
     <article
@@ -86,18 +77,36 @@ export const TaskCard = memo(function TaskCard({
         highlighted && "ring-focus ring-2",
       )}
     >
-      <header className="flex items-center gap-2.5">
-        <h3
-          title={task.displayName}
-          className="text-ink min-w-0 flex-1 truncate text-[16.5px] font-bold tracking-[-0.015em]"
-        >
-          {task.displayName}
-        </h3>
+      <header className="flex items-center gap-3">
+        <WorkflowIcon task={task} />
+        <div className="min-w-0 flex-1">
+          <h3
+            title={task.displayName}
+            className="text-ink truncate text-[16.5px] font-bold tracking-[-0.015em]"
+          >
+            {task.displayName}
+          </h3>
+          <p
+            data-testid="last-run"
+            className="text-ink-muted flex items-center gap-1.5 truncate text-[12px]"
+          >
+            <i
+              aria-hidden
+              className={cn(
+                "h-1.5 w-1.5 shrink-0 rounded-full",
+                lastRun.tone === "success" && "bg-success-dot",
+                lastRun.tone === "danger" && "bg-red",
+                lastRun.tone === "neutral" && "bg-chip-strong",
+              )}
+            />
+            <span className="truncate">{lastRun.text}</span>
+          </p>
+        </div>
         <TaskStateBadge state={task.state} className="shrink-0" />
       </header>
 
       <div className="mt-4 mb-3.5">
-        <StepTracker task={task} />
+        <StepDots items={stepperItems(task, latestRun(runs))} />
       </div>
 
       {task.state === "error" && task.error ? (

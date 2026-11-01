@@ -18,30 +18,16 @@ interface OpenFileButtonsProps {
   className?: string;
 }
 
-/**
- * One Open button per file a notification lists (report-data.json's
- * `workbook_path` plus its `extra_paths`, e.g. the main plan and the
- * Analytics plan). Each click asks the engine to open exactly that listed
- * path with the OS default app; the engine refuses anything the
- * notification doesn't list. A failed open says so and points at the output
- * folder.
- */
-export function OpenFileButtons({
-  taskId,
-  notification,
-  draft = false,
-  icon = false,
-  className,
-}: OpenFileButtonsProps) {
+/** Opening a notification's files through the engine: per-path "opening"/"failed" state and the
+ *  open call. A single unlabelled file keeps the plain call (older engines have no `path`). */
+export function useOpenNotificationFile(taskId: string, notification: TaskNotification) {
   const [state, setState] = useState<Record<string, "opening" | "failed">>({});
   const files = notificationFiles(notification);
-  if (files.length === 0) return null;
 
   const open = async (path: string) => {
     setState((current) => ({ ...current, [path]: "opening" }));
     let ok = false;
     try {
-      // a single unlabelled file keeps the plain call (older engines have no `path`)
       const result = await openTaskNotification(
         taskId,
         notification.id,
@@ -58,6 +44,27 @@ export function OpenFileButtons({
       return next;
     });
   };
+
+  return { files, state, open };
+}
+
+/**
+ * One Open button per file a notification lists (report-data.json's
+ * `workbook_path` plus its `extra_paths`, e.g. the main plan and the
+ * Analytics plan). Each click asks the engine to open exactly that listed
+ * path with the OS default app; the engine refuses anything the
+ * notification doesn't list. A failed open says so and points at the output
+ * folder.
+ */
+export function OpenFileButtons({
+  taskId,
+  notification,
+  draft = false,
+  icon = false,
+  className,
+}: OpenFileButtonsProps) {
+  const { files, state, open } = useOpenNotificationFile(taskId, notification);
+  if (files.length === 0) return null;
 
   const failed = files.some((file) => state[file.path] === "failed");
   return (

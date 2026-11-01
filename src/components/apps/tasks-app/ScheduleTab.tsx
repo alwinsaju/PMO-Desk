@@ -15,6 +15,7 @@ import {
 import { useTasksPrefs } from "@/lib/tasks/tasksPrefsStore";
 import { Note } from "../pmo-todo-app/parts";
 import { sendTask } from "./api";
+import { WeekStrip } from "./WeekStrip";
 import type { Task } from "./types";
 
 const SELECT =
@@ -202,6 +203,7 @@ export function ScheduleTab({
             is sent without your approval.
           </span>
         </Note>
+        <WeekStrip tasks={tasks} schedules={prefs.schedules} onChange={setSchedule} />
         <div className="border-line bg-card rounded-card overflow-x-auto border">
           <table className="w-full border-collapse text-left">
             <thead>
