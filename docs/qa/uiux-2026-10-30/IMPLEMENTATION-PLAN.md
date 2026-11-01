@@ -111,3 +111,8 @@ Asked 1 Nov 2026: can the app use an online model such as Claude with an enterpr
 - **Online AI:** not part of the plan unless approved; see "Online AI option".
 - **Large layout changes** (two-pane review queue, Insights sub-nav) change habits; the new layout will be documented in the README.
 - **Pre-existing change:** `build/installer/sidebar.bmp` shows as modified on `master` and is unrelated; it will be left out of every commit.
+
+## Progress (1 Nov 2026)
+- Phase 0, 1, 2, 3 and 4 are DONE and merged on `feat/uiux-overhaul` (all of QA-01..44 except QA-19 which was reduced to a demo label as decided). Checks on the merged tree: tsc clean, 2665 tests pass, ESLint clean on `src` and `desktop`, Prettier clean on changed files. Verified in the running desktop app; after-screenshots in `docs/qa/uiux-2026-10-30/after/wave1` and `wave2`.
+- Phase 5 (shell UI) and Phase 6 (per-app UI) are next, then Phase 7 (verification) and Phase 8 (real-model AI evaluation, last).
+- How to run ESLint here: set `NODE_PATH` to the `node_modules` folder of the `eslint-config-next@*` entry under `node_modules/.pnpm` and run `node node_modules/eslint/bin/eslint.js src desktop`.
