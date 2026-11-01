@@ -13,6 +13,7 @@ import {
   isSalutationOnly,
 } from "./fallbackTitle.ts";
 import type { AiStructured, PmoConfig } from "./types.ts";
+import { defaultOwnerToMe, isMe } from "./ownerDefault.ts";
 
 export const MAX_ACTION_ITEMS_KEPT = 6;
 export const MAX_TAGS_KEPT = 4;
@@ -77,13 +78,6 @@ const itemKey = (value: string) =>
 
 function sameOwner(a: string | null | undefined, b: string | null | undefined): boolean {
   return !!a && !!b && lower(a) === lower(b);
-}
-
-function isMe(name: string | null | undefined, me: PmoConfig["me"]): boolean {
-  if (!name) return false;
-  const n = lower(name);
-  if (n === "me") return true;
-  return [...me.names, ...me.emails].some((own) => lower(own) === n);
 }
 
 function containsWord(haystack: string, needle: string): boolean {
@@ -291,7 +285,17 @@ export function sanitizeDraft(input: AiStructured, ctx: SanitizeContext): Saniti
     }
   }
 
-  // (e) Tidy tags.
+  // (e) A draft that is mine carries the names given at setup, not whatever name
+  // the model made up (after (d): "waiting on" is judged against the model's owner).
+  const defaulted = defaultOwnerToMe(draft.owner, ctx.me);
+  draft.owner = defaulted.owner;
+  if (defaulted.replaced) {
+    adjustments.push(
+      `Owner set to ${draft.owner.name ?? draft.owner.email}, the name given at setup: the draft is marked as yours.`,
+    );
+  }
+
+  // (f) Tidy tags.
   const tags: string[] = [];
   for (const tag of draft.tags) {
     const clean = squash(tag);

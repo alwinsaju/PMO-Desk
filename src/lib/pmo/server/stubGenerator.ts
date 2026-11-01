@@ -157,7 +157,9 @@ export function createStubGenerator(
           ? deriveFallbackTitle({ subject, bodyText: body }, 80) || sentence.slice(0, 80)
           : "No action needed",
         description: sentence,
-        owner: { name: "Alwin Saju", email: "alsaju@deloitte.com", isMe: true },
+        // "Mine" with no name, as the real model answers: the app fills in the
+        // name given at setup (sanitizeDraft), not a made-up one.
+        owner: { name: null, email: null, isMe: true },
         requester: { name: null, email: null },
         recurrence: cadence,
         dueAt: day,
