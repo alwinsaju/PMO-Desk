@@ -4,9 +4,10 @@ import { useCallback, useEffect, useState } from "react";
 import { ArrowLeftIcon } from "@phosphor-icons/react";
 import { useWindowContext } from "@/components/window-manager";
 import { toolApps } from "@/components/taskbar/pinnedApps";
-import { Button } from "@/components/ui";
+import { Badge, Button } from "@/components/ui";
 import type { RegisterSummary } from "@/lib/registers/alerts";
 import { registerById } from "@/lib/registers/defs";
+import { groupTools } from "@/lib/registers/layout";
 import { fetchSummaries } from "./registersApi";
 import { toolComponent } from "./tools";
 
@@ -75,45 +76,63 @@ export function ToolkitApp({ windowId }: { windowId: string }) {
           {error}
         </p>
       )}
-      <ul className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-3">
-        {toolApps.map((tool) => {
-          const Glyph = tool.icon;
-          const summary = summaries[tool.id];
-          return (
-            <li key={tool.id}>
-              <button
-                type="button"
-                data-testid={`tool-card-${tool.id}`}
-                onClick={() => setOpenId(tool.id)}
-                className="border-line bg-card hover:bg-chip rounded-card flex h-full w-full flex-col gap-2 border px-4 py-3 text-left transition-colors"
-              >
-                <span className="flex items-center gap-2">
-                  <Glyph size={20} className="text-accent shrink-0" />
-                  <span className="text-ink text-[14px] font-semibold">{tool.title}</span>
-                </span>
-                <span className="text-ink-muted text-[12.5px] leading-snug">
-                  {registerById(tool.id)?.blurb}
-                </span>
-                <span
-                  className="text-ink-soft mt-auto text-[12.5px]"
-                  data-testid={`tool-count-${tool.id}`}
-                >
-                  {summary ? `${summary.open} open` : "…"}
-                  {summary && summary.late > 0 && (
-                    <span className="text-red font-semibold"> · {summary.late} late</span>
-                  )}
-                  {summary && summary.soon > 0 && (
-                    <span className="text-amber font-semibold">
-                      {" "}
-                      · {summary.soon} soon
-                    </span>
-                  )}
-                </span>
-              </button>
-            </li>
-          );
-        })}
-      </ul>
+      <div className="flex flex-col gap-6">
+        {groupTools(toolApps).map((group) => (
+          <section key={group.title} aria-labelledby={`toolkit-group-${group.title}`}>
+            <h2
+              id={`toolkit-group-${group.title}`}
+              className="text-ink-muted mb-2 text-[11.5px] font-bold tracking-[0.06em] uppercase"
+            >
+              {group.title}
+            </h2>
+            <ul className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-3">
+              {group.tools.map((tool) => {
+                const Glyph = tool.icon;
+                const summary = summaries[tool.id];
+                return (
+                  <li key={tool.id}>
+                    <button
+                      type="button"
+                      data-testid={`tool-card-${tool.id}`}
+                      onClick={() => setOpenId(tool.id)}
+                      className="border-line bg-card hover:bg-chip focus-ring rounded-card flex h-full w-full items-start gap-3 border px-4 py-3 text-left transition-colors"
+                    >
+                      <span
+                        aria-hidden
+                        className="bg-accent-soft text-accent-ink grid h-9 w-9 shrink-0 place-items-center rounded-lg"
+                      >
+                        <Glyph size={20} weight="duotone" />
+                      </span>
+                      <span className="flex min-w-0 flex-1 flex-col gap-1">
+                        <span className="text-ink text-[14px] font-semibold">
+                          {tool.title}
+                        </span>
+                        <span className="text-ink-muted text-[12.5px] leading-snug">
+                          {registerById(tool.id)?.blurb}
+                        </span>
+                        <span
+                          className="mt-1 flex flex-wrap items-center gap-1.5"
+                          data-testid={`tool-count-${tool.id}`}
+                        >
+                          <Badge variant={summary?.open ? "accent" : "neutral"}>
+                            {summary ? `${summary.open} open` : "…"}
+                          </Badge>
+                          {summary && summary.late > 0 && (
+                            <Badge variant="danger">{summary.late} late</Badge>
+                          )}
+                          {summary && summary.soon > 0 && (
+                            <Badge variant="warning">{summary.soon} soon</Badge>
+                          )}
+                        </span>
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        ))}
+      </div>
     </div>
   );
 }

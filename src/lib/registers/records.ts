@@ -262,6 +262,8 @@ export interface RecordFilter {
   query?: string;
   status?: string;
   includeClosed?: boolean;
+  /** Field values a record must have (the heat-map cell that was clicked). */
+  match?: Record<string, string>;
 }
 
 export function filterRecords(
@@ -270,11 +272,13 @@ export function filterRecords(
   filter: RecordFilter,
 ): RegisterRecord[] {
   const query = (filter.query ?? "").trim().toLowerCase();
+  const match = Object.entries(filter.match ?? {});
   return items.filter((item) => {
     if (!filter.includeClosed && !isOpen(def, item)) return false;
     if (filter.status && def.statusKey && textOf(item, def.statusKey) !== filter.status) {
       return false;
     }
+    if (match.some(([key, value]) => textOf(item, key) !== value)) return false;
     if (!query) return true;
     return Object.values(item.values).some((v) =>
       (Array.isArray(v) ? v.join(" ") : String(v)).toLowerCase().includes(query),

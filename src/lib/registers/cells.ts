@@ -1,6 +1,6 @@
 // How a record's value reads in a register table (see registers.test.mjs). Pure.
 import { formatDayMonth } from "../staff/dates.ts";
-import type { FieldDef, FieldValue, RegisterDef } from "./types.ts";
+import type { FieldDef, FieldValue } from "./types.ts";
 
 /** The text for one cell; "" when the value is blank, so the table can show its dash. */
 export function cellText(
@@ -28,9 +28,4 @@ export function exportHint(totalCount: number, shownCount: number): string | nul
   return totalCount === 0
     ? "Nothing to export yet"
     : "Nothing to export: no record matches the search or filter";
-}
-
-/** An open status stands out; a closed one (Closed, Resolved, Held...) is quiet. */
-export function statusTone(def: RegisterDef, status: string): "accent" | "neutral" {
-  return (def.closed ?? []).includes(status) ? "neutral" : "accent";
 }
