@@ -11,6 +11,8 @@ import {
 import { IconButton, ScrollArea } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { easeStandard } from "@/lib/motion";
+import { useWindowContext } from "@/components/window-manager";
+import { SampleFilesBanner } from "./SampleFilesBanner";
 import { fileSystemRoot } from "./mockFileSystem";
 import type { FileSystemFolder } from "./mockFileSystem";
 import { FILE_ROW_GRID, FileRow } from "./FileRow";
@@ -33,6 +35,7 @@ export function FilesApp({ windowId }: { windowId: string }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const currentFolder = path[path.length - 1];
+  useWindowContext(windowId, path.length > 1 ? currentFolder.name : null);
   const children = [...currentFolder.children].sort((a, b) => {
     if (a.type !== b.type) return a.type === "folder" ? -1 : 1;
     return a.name.localeCompare(b.name);
@@ -110,13 +113,9 @@ export function FilesApp({ windowId }: { windowId: string }) {
             );
           })}
         </nav>
-        <span
-          title="These files are demo content, not files on this computer"
-          className="bg-chip text-ink-muted rounded-chip shrink-0 px-2.5 py-1 text-[11px] font-bold tracking-[0.06em] uppercase"
-        >
-          Sample files
-        </span>
       </div>
+
+      <SampleFilesBanner />
 
       <div className="flex min-h-0 flex-1">
         <nav
@@ -209,7 +208,7 @@ export function FilesApp({ windowId }: { windowId: string }) {
           {children.length} item{children.length === 1 ? "" : "s"}
         </span>
         {selectedNode && (
-          <span className="min-w-0 flex-1 truncate text-right font-mono">
+          <span className="min-w-0 flex-1 truncate text-right">
             {selectedNode.name}
             {selectedNode.type === "file" && ` — ${selectedNode.sizeLabel}`}
           </span>
