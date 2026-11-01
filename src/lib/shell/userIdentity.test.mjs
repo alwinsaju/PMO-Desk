@@ -11,7 +11,16 @@ describe("firstNameFromAccount", () => {
   });
 
   it("gives nothing for generic or empty accounts", () => {
-    for (const bad of ["Administrator", "admin", "root", "", null, undefined, "x", "123"]) {
+    for (const bad of [
+      "Administrator",
+      "admin",
+      "root",
+      "",
+      null,
+      undefined,
+      "x",
+      "123",
+    ]) {
       assert.equal(firstNameFromAccount(bad), "");
     }
   });
