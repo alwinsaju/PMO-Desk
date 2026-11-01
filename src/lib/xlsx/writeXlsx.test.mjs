@@ -5,7 +5,13 @@ import readExcelFile from "read-excel-file/universal";
 import { buildXlsx, crc32, excelSerial, safeSheetName, XLSX_MIME } from "./writeXlsx.ts";
 import { employeeTemplate, rosterTemplate } from "../staff/importTemplates.ts";
 import { parseRosterRows } from "../staff/employees.ts";
-import { findRosterSheet, parseRosterSheet } from "../staff/rosterImport.ts";
+import { createEmployee } from "../staff/employees.ts";
+import { makeAssignment } from "../staff/shifts.ts";
+import {
+  findRosterSheet,
+  parseRosterSheet,
+  planRosterImport,
+} from "../staff/rosterImport.ts";
 import { workbookRosterConfig } from "../staff/rosterCatalog.ts";
 import { reviewTemplate } from "../../components/apps/tasks-app/reviewTemplate.ts";
 import {
@@ -113,14 +119,154 @@ describe("shift roster template", () => {
     assert.ok(sheet, "the grid is found by its Resource heading");
     const parsed = parseRosterSheet(sheet.data);
     assert.ok(parsed);
-    assert.equal(parsed.startDate, "2026-11-02");
-    assert.equal(parsed.endDate, "2026-11-29");
+    assert.equal(parsed.startDate, "2026-01-01");
+    assert.equal(parsed.endDate, "2026-12-31");
     assert.deepEqual(
       parsed.members.map((m) => [m.name, m.city, m.role, m.section, m.cells.length]),
       [["Jane Doe", "Pune", "Support", "L2", 0]],
     );
   });
 
+  it("holds the shifts, holidays and people that are on the roster, and importing it back changes nothing", async () => {
+    const shifts = [
+      makeAssignment("mem_000000000001", "2026-02-10", "main:shift-1"),
+      makeAssignment("mem_000000000001", "2026-02-11", "status:pto"),
+      makeAssignment("mem_000000000001", "2026-12-24", "main:ns", { swap: true }),
+      makeAssignment("mem_000000000001", "2026-06-01", "custom", {
+        text: "IST 6:00PM-3:00AM",
+      }),
+    ];
+    const withEvents = {
+      ...config,
+      events: [
+        {
+          id: "e1",
+          date: "2026-01-26",
+          endDate: "2026-01-26",
+          label: "Republic Day",
+          kind: "holiday",
+        },
+      ],
+    };
+    const sheet = findRosterSheet(
+      await read(rosterTemplate({ config: withEvents, today: "2026-11-04", shifts })),
+    );
+    const parsed = parseRosterSheet(sheet.data);
+    assert.equal(parsed.members[0].cells.length, 4);
+    assert.deepEqual(parsed.banners, [{ date: "2026-01-26", label: "Republic Day" }]);
+
+    const plan = planRosterImport(parsed, withEvents, [], shifts);
+    assert.equal(plan.upsert.length, 0);
+    assert.equal(plan.stats.assignmentsUnchanged, 4);
+    assert.equal(plan.stats.membersUnchanged, 1);
+    assert.equal(plan.stats.membersAdded + plan.stats.membersUpdated, 0);
+    assert.equal(plan.stats.events, 0);
+    assert.equal(plan.warnings.length, 0);
+  });
+
+  it("applies only the additions and changes made to a downloaded copy", async () => {
+    const shifts = [makeAssignment("mem_000000000001", "2026-02-10", "main:shift-1")];
+    const sheet = findRosterSheet(
+      await read(rosterTemplate({ config, today: "2026-11-04", shifts })),
+    );
+    const rows = sheet.data.map((r) => [...r]);
+    const personRow = rows.find((r) => r[1] === "Jane Doe");
+    const col = (iso) =>
+      4 +
+      (Date.UTC(2026, +iso.slice(5, 7) - 1, +iso.slice(8)) - Date.UTC(2026, 0, 1)) /
+        86400000;
+    personRow[col("2026-02-10")] = "Shift-2";
+    personRow[col("2026-02-11")] = "PTO";
+    const l2 = rows.findIndex((r) => r[0] === "L2");
+    rows.splice(l2 + 2, 0, [
+      "",
+      "New Person",
+      "Pune",
+      "Support",
+      ...Array(col("2026-02-12") - 4).fill(null),
+      "Shift-1",
+    ]);
+    const plan = planRosterImport(parseRosterSheet(rows), config, [], shifts);
+    assert.deepEqual(plan.upsert.map((a) => [a.date, a.ref]).sort(), [
+      ["2026-02-10", "main:shift-2"],
+      ["2026-02-11", "status:pto"],
+      ["2026-02-12", "main:shift-1"],
+    ]);
+    assert.equal(plan.stats.membersAdded, 1);
+    assert.equal(plan.stats.assignmentsChanged, 1);
+    assert.equal(plan.stats.assignmentsAdded, 2);
+  });
+
+  it("covers the whole year, a leap year too, and stretches to hold shifts outside it", async () => {
+    const days = async (today, shifts = []) => {
+      const parsed = parseRosterSheet(
+        findRosterSheet(await read(rosterTemplate({ config, today, shifts }))).data,
+      );
+      return [parsed.startDate, parsed.endDate];
+    };
+    assert.deepEqual(await days("2028-05-05"), ["2028-01-01", "2028-12-31"]);
+    assert.deepEqual(
+      await days("2026-11-04", [
+        makeAssignment("mem_000000000001", "2027-01-15", "main:shift-1"),
+      ]),
+      ["2026-01-01", "2027-01-15"],
+    );
+  });
+
+  it("lists directory people under their team, and leaves out those with no team", async () => {
+    const person = (n, team) =>
+      createEmployee(
+        {
+          id: `emp_00000000000${n}`,
+          deloitteEmail: `p${n}@x.com`,
+          firstName: n === 1 ? "Dee" : "Eve",
+          lastName: "Lane",
+          team,
+          homeOffice: "Chennai",
+        },
+        "2026-03-02T10:00:00.000Z",
+      );
+    const sheet = findRosterSheet(
+      await read(
+        rosterTemplate({
+          config,
+          today: "2026-11-04",
+          employees: [person(1, "L2"), person(2, "")],
+        }),
+      ),
+    );
+    const parsed = parseRosterSheet(sheet.data);
+    const names = parsed.members.map((m) => [m.name, m.section, m.city]);
+    assert.ok(names.some((n) => n.join() === "Dee Lane,L2,Chennai"));
+    assert.ok(!names.some(([name]) => name.startsWith("Eve")));
+  });
+
+  it("does not count a team that only the directory names as a change until someone is saved in it", async () => {
+    const dee = createEmployee(
+      {
+        id: "emp_000000000009",
+        deloitteEmail: "dee@x.com",
+        firstName: "Dee",
+        lastName: "Lane",
+        team: "Brand New",
+      },
+      "2026-03-02T10:00:00.000Z",
+    );
+    const sheet = findRosterSheet(
+      await read(rosterTemplate({ config, today: "2026-11-04", employees: [dee] })),
+    );
+    const idle = planRosterImport(parseRosterSheet(sheet.data), config, [dee], []);
+    assert.equal(idle.stats.groupsAdded, 0);
+    assert.equal(idle.config.members.length, 1);
+    assert.equal(idle.upsert.length, 0);
+
+    const rows = sheet.data.map((r) => [...r]);
+    rows.find((r) => r[1] === "Dee Lane")[4] = "Shift-1";
+    const busy = planRosterImport(parseRosterSheet(rows), config, [dee], []);
+    assert.equal(busy.stats.groupsAdded, 1);
+    assert.equal(busy.stats.membersAdded, 1);
+    assert.equal(busy.config.members.at(-1).employeeId, dee.id);
+  });
   it("starts with a team to type into when there is no roster yet", async () => {
     const empty = { schedules: config.schedules, groups: [], members: [] };
     const sheets = await read(

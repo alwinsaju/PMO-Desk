@@ -675,6 +675,12 @@ Setup "Power Automate flows" check counts those. The AI runtime keeps the model 
 last email, then it goes to sleep like for every other AI feature; the Time off tab shows that state (`ModelChip`:
 asleep, a countdown while loaded, the task while working) and opens the model log. If the AI runtime or model is
 down the files stay in the folder.
+Each log entry in `pto-mail.json` keeps the email text the model read (cut to 4000 characters) and the model's
+reading; clicking a request in the Time off list opens `TimeOffDetailDialog`, which fetches it from
+`GET /api/staff/pto-mail/<sourceId>` and shows the email with the quoted evidence marked next to what the AI
+read (entries from before this was kept show the subject and the AI's reason only). An approved request shows
+on the shift roster once the roster row is linked to the person's Directory profile; the roster links a name
+that matches exactly one profile on its own (`withAutoLinks`).
 `AI_OS_PTO_AI_STUB=1` swaps the model for a keyword reader (tests and previews only);
 `AI_OS_PTO_AI_TIMEOUT_MS` bounds one reading.
 
@@ -956,7 +962,10 @@ up in M365 and writes `profiles\<email>.json`, and the next scan applies it (thr
 cannot be applied move to `rejected\` with a `.reason.txt`; a file that does not parse yet is
 left alone for two minutes in case it is still syncing. The folder is
 `AI_OS_STAFF_EXCHANGE_DIR`, else `Staff-Exchange` in the first OneDrive root, else
-`<data dir>\staff\exchange`. The store runs the scan before every load (every ~20 s while a
+`<data dir>\staff\exchange`. A scan paces its requests (`planRequests`: at most 5 new per scan and 10 open at a
+time, a request nobody answered is written again after 4 minutes doubling up to an hour, 8 tries) because the
+flow runs without concurrency control and the M365 connector answers a burst with HTTP 429; `{ resendAll: true }`
+(the Directory's "Ask again") restarts everyone still waiting. The store runs the scan before every load (every ~20 s while a
 Staff window is open), and `src/lib/staff/ptoBackground.ts` (started from `instrumentation.ts`)
 runs the same profile sync and the PTO-Inbox scan about once a minute for as long as the app
 runs (`AI_OS_PTO_SCAN_MS`), so leave emails are read with no window open; the AI widget's
@@ -974,10 +983,14 @@ only the email column is needed, every other cell may stay empty);
 roster's and the Tasks review's _Import Subcategory2 values_) has **Download a blank template**:
 `src/lib/xlsx/writeXlsx.ts` builds a real `.xlsx` in the browser (nothing is sent anywhere),
 laid out the way that importer reads it, with a help sheet. The templates are
-`src/lib/staff/importTemplates.ts` (headings only; the shift roster grid starts from the
-current teams and people, with the days empty) and
+`src/lib/staff/importTemplates.ts` (the staff template is headings only; the shift roster
+template covers the whole calendar year and is pre-filled with the roster's teams, people,
+shifts and holidays, so the PMO adds to it and uploads it back) and
 `src/components/apps/tasks-app/reviewTemplate.ts` (the review queue with Subcategory2 empty,
-and the allowed values). A template that is uploaded unfilled imports nothing and raises no error.
+and the allowed values). The shift roster import is a diff: `planRosterImport` is given the
+shifts already on the roster and plans only new or changed days, people and holidays (days
+that already match are counted, not saved), so an unchanged template imports nothing.
+A template that is uploaded unfilled imports nothing and raises no error.
 The file inputs of Tasks (task exports from other systems) have no template: the columns belong
 to the task, not to the app.
 

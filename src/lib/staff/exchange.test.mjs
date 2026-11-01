@@ -333,7 +333,7 @@ describe("exchange folder", () => {
   it("starts everything over for the people still waiting when asked to", async () => {
     await save([employeeFromEmail("a@x.com", NOW), employeeFromEmail("b@x.com", NOW)]);
     await syncExchange(env, now);
-    assert.equal(await resendAllRequests(env, now), 2);
+    assert.equal(await resendAllRequests(env), 2);
     assert.deepEqual(await readdir(path.join(dir, "ex", "requests")), []);
     assert.equal((await syncExchange(env, now)).requested, 2);
   });

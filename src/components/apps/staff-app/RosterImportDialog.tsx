@@ -47,6 +47,7 @@ function Body({ onClose }: { onClose: () => void }) {
   const config = useRosterStore((s) => s.config);
   const importPlan = useRosterStore((s) => s.importPlan);
   const employees = useStaffStore((s) => s.employees);
+  const shifts = useStaffStore((s) => s.shifts);
   const fileRef = useRef<HTMLInputElement>(null);
   const [fileName, setFileName] = useState("");
   const [parsed, setParsed] = useState<ParsedRoster | null>(null);
@@ -54,9 +55,16 @@ function Body({ onClose }: { onClose: () => void }) {
   const [busy, setBusy] = useState(false);
 
   const plan = useMemo(
-    () => (parsed ? planRosterImport(parsed, config, employees) : null),
-    [parsed, config, employees],
+    () => (parsed ? planRosterImport(parsed, config, employees, shifts) : null),
+    [parsed, config, employees, shifts],
   );
+  const nothingNew =
+    plan !== null &&
+    plan.upsert.length === 0 &&
+    plan.stats.membersAdded === 0 &&
+    plan.stats.membersUpdated === 0 &&
+    plan.stats.groupsAdded === 0 &&
+    plan.stats.events === 0;
 
   async function read(file: File | undefined) {
     if (!file) return;
@@ -96,10 +104,10 @@ function Body({ onClose }: { onClose: () => void }) {
     <>
       <DialogTitle>Import a shift roster</DialogTitle>
       <DialogDescription>
-        Reads the team&apos;s roster workbook (the “Resource” grid); download a blank one
-        below with your teams and people already in it. People are matched by name. Days
-        with an entry in the file replace what is there; days left blank in the file are
-        not cleared.
+        Download the workbook below: it covers the whole year and already holds your
+        teams, people, shifts and holidays. Add to it and import it back; only what is new
+        or different is applied. People are matched by name. Days left blank are never
+        cleared.
       </DialogDescription>
 
       <div className="mt-5 flex flex-col gap-4">
@@ -131,8 +139,9 @@ function Body({ onClose }: { onClose: () => void }) {
           }}
         />
         <TemplateDownloadButton
-          fileName="shift-roster-template.xlsx"
-          sheets={() => rosterTemplate({ config, today: todayIso() })}
+          fileName="shift-roster.xlsx"
+          label="Download the roster workbook"
+          sheets={() => rosterTemplate({ config, today: todayIso(), shifts, employees })}
         />
 
         {plan && parsed && (
@@ -140,17 +149,34 @@ function Body({ onClose }: { onClose: () => void }) {
             <p className="text-ink font-semibold">
               {formatRange(parsed.startDate, parsed.endDate)}
             </p>
-            <p>
-              {plan.stats.membersAdded} people to add, {plan.stats.membersUpdated} to
-              update
-              {plan.stats.membersLinked > 0 &&
-                `, ${plan.stats.membersLinked} matched to a directory profile`}
-            </p>
-            <p>
-              {plan.upsert.length.toLocaleString()} days of shifts, {plan.stats.events}{" "}
-              holidays and notes
-              {plan.stats.groupsAdded > 0 && `, ${plan.stats.groupsAdded} new teams`}
-            </p>
+            {nothingNew ? (
+              <p>
+                Nothing in this file differs from the roster
+                {plan.stats.assignmentsUnchanged > 0 &&
+                  ` (${plan.stats.assignmentsUnchanged.toLocaleString()} days already match)`}
+                .
+              </p>
+            ) : (
+              <>
+                <p>
+                  {plan.stats.membersAdded} new{" "}
+                  {plan.stats.membersAdded === 1 ? "person" : "people"},{" "}
+                  {plan.stats.membersUpdated} changed
+                  {plan.stats.membersLinked > 0 &&
+                    `, ${plan.stats.membersLinked} matched to a directory profile`}
+                </p>
+                <p>
+                  New days: {plan.stats.assignmentsAdded.toLocaleString()}, changed:{" "}
+                  {plan.stats.assignmentsChanged.toLocaleString()}
+                  {plan.stats.assignmentsUnchanged > 0 &&
+                    `, unchanged and left as they are: ${plan.stats.assignmentsUnchanged.toLocaleString()}`}
+                </p>
+                <p>
+                  New holidays and notes: {plan.stats.events}
+                  {plan.stats.groupsAdded > 0 && `, new teams: ${plan.stats.groupsAdded}`}
+                </p>
+              </>
+            )}
             {plan.warnings.length > 0 && (
               <>
                 <p className="text-amber mt-1 font-semibold">
@@ -182,7 +208,7 @@ function Body({ onClose }: { onClose: () => void }) {
         <Button variant="ghost" onClick={onClose}>
           Cancel
         </Button>
-        <Button disabled={!plan || busy} onClick={() => void run()}>
+        <Button disabled={!plan || busy || nothingNew} onClick={() => void run()}>
           Import
         </Button>
       </DialogFooter>

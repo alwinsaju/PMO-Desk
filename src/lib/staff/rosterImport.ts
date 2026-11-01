@@ -129,9 +129,16 @@ export interface RosterImportPlan {
   stats: {
     membersAdded: number;
     membersUpdated: number;
+    /** People in the file who are already on the roster exactly as written. */
+    membersUnchanged: number;
     membersLinked: number;
     groupsAdded: number;
+    /** Days to save: the new ones and the changed ones. */
     assignments: number;
+    assignmentsAdded: number;
+    assignmentsChanged: number;
+    /** Days in the file that are already on the roster as they are; not saved again. */
+    assignmentsUnchanged: number;
     events: number;
   };
   warnings: ImportWarning[];
@@ -152,21 +159,39 @@ function eventKind(label: string): RosterEvent["kind"] {
   return "holiday";
 }
 
+const sameDay = (a: ShiftAssignment, b: ShiftAssignment): boolean =>
+  a.ref === b.ref && (a.text ?? "") === (b.text ?? "") && !!a.swap === !!b.swap;
+
+const eventKey = (date: string, label: string): string =>
+  `${date}|${label.toLowerCase().replace(/\s+/g, " ").trim()}`;
+
 /** Merges a parsed workbook into the existing roster: people are matched by name
  *  (existing ones keep their id and directory link), teams and schedules that are
- *  missing are added from the defaults, and every readable cell becomes an assignment. */
+ *  missing are added from the defaults, and every readable cell becomes an assignment.
+ *  Only what differs from the roster (`shifts` is what is on it now) is planned: a day
+ *  that is already as written is counted, not saved again, so a workbook that was
+ *  downloaded, added to and uploaded changes just the additions. */
 export function planRosterImport(
   parsed: ParsedRoster,
   existing: RosterConfig,
   employees: readonly Employee[],
+  shifts: readonly ShiftAssignment[] = [],
 ): RosterImportPlan {
+  const current = new Map(shifts.map((a) => [a.id, a]));
   const schedules = [...existing.schedules];
   for (const d of workbookSchedules()) {
     if (!schedules.some((s) => s.id === d.id)) schedules.push(d);
   }
   const groups: RosterGroup[] = [...existing.groups];
   let groupsAdded = 0;
-  const ensureGroup = (name: string): RosterGroup => {
+  // A team the file names but the roster lacks is only added once someone is saved in it.
+  const unregistered = new Map<string, RosterGroup>();
+  const useGroup = (group: RosterGroup) => {
+    if (!unregistered.delete(group.id)) return;
+    groups.push(group);
+    groupsAdded++;
+  };
+  const resolveGroup = (name: string): RosterGroup => {
     const lower = name.toLowerCase().trim();
     const aliased = GROUP_ALIASES[lower];
     const found =
@@ -181,8 +206,9 @@ export function planRosterImport(
       name: name.trim(),
       scheduleId: "main",
     };
-    groups.push(group);
-    groupsAdded++;
+    const waiting = unregistered.get(group.id);
+    if (waiting) return waiting;
+    unregistered.set(group.id, group);
     return group;
   };
 
@@ -194,9 +220,13 @@ export function planRosterImport(
   const stats: RosterImportPlan["stats"] = {
     membersAdded: 0,
     membersUpdated: 0,
+    membersUnchanged: 0,
     membersLinked: 0,
     groupsAdded: 0,
     assignments: 0,
+    assignmentsAdded: 0,
+    assignmentsChanged: 0,
+    assignmentsUnchanged: 0,
     events: 0,
   };
   const upsert = new Map<string, ShiftAssignment>();
@@ -209,12 +239,18 @@ export function planRosterImport(
   };
 
   for (const person of parsed.members) {
-    const group = ensureGroup(person.section);
+    const group = resolveGroup(person.section);
     const schedule = schedules.find((s) => s.id === group.scheduleId);
     const key = nameKey(person.name);
     let at = byKey.get(key);
     if (at === undefined) {
       const found = suggestLinks(person.name, employees, linkedIds);
+      // A directory person with nothing entered is on the roster already (through their
+      // profile); a member is only made once there is something to keep.
+      if (found.length === 1 && person.cells.length === 0) {
+        stats.membersUnchanged++;
+        continue;
+      }
       const member: RosterMember = {
         id: newId("mem"),
         name: person.name,
@@ -227,18 +263,29 @@ export function planRosterImport(
         linkedIds.add(member.employeeId);
         stats.membersLinked++;
       }
+      useGroup(group);
       members.push(member);
       at = members.length - 1;
       byKey.set(key, at);
       stats.membersAdded++;
     } else {
-      members[at] = {
-        ...members[at],
-        groupId: group.id,
-        city: person.city,
-        role: person.role,
-      };
-      stats.membersUpdated++;
+      const before = members[at];
+      if (
+        before.groupId === group.id &&
+        before.city === person.city &&
+        before.role === person.role
+      ) {
+        stats.membersUnchanged++;
+      } else {
+        useGroup(group);
+        members[at] = {
+          ...before,
+          groupId: group.id,
+          city: person.city,
+          role: person.role,
+        };
+        stats.membersUpdated++;
+      }
     }
     const memberId = members[at].id;
     for (const cell of person.cells) {
@@ -251,7 +298,13 @@ export function planRosterImport(
       if (read.loose) warn(cell.text, "Not a known shift; kept as typed");
       const extra = { text: read.text, swap: read.swap };
       const a = makeAssignment(memberId, cell.date, read.ref, extra);
-      upsert.set(a.id, a);
+      const before = current.get(a.id);
+      if (before && sameDay(before, a)) stats.assignmentsUnchanged++;
+      else {
+        if (before) stats.assignmentsChanged++;
+        else stats.assignmentsAdded++;
+        upsert.set(a.id, a);
+      }
     }
   }
   stats.groupsAdded = groupsAdded;
@@ -261,12 +314,13 @@ export function planRosterImport(
   // (the winter disconnect spans several days at the end of the year).
   const events = [...existing.events];
   const eventKeys = new Set(events.map((e) => e.id));
+  const eventSeen = new Set(events.map((e) => eventKey(e.date, e.label)));
   parsed.banners.forEach((banner, i) => {
     const label = banner.label.replace(/\s*\n\s*/g, " ").trim();
     const id = `ev_${banner.date}_${slugify(label)}`.slice(0, 80);
-    if (eventKeys.has(id)) return;
-    const last = i === parsed.banners.length - 1;
+    if (eventKeys.has(id) || eventSeen.has(eventKey(banner.date, label))) return;
     const kind = eventKind(label);
+    const last = i === parsed.banners.length - 1 && kind === "note";
     // The banner often says where it applies ("Holi (Except Gur)", "HYD Only", "KOL HOL").
     const hint = kind === "holiday" ? locationHint(label) : undefined;
     events.push({
@@ -278,6 +332,7 @@ export function planRosterImport(
       ...(hint ? { locations: hint } : {}),
     });
     eventKeys.add(id);
+    eventSeen.add(eventKey(banner.date, label));
     stats.events++;
   });
 

@@ -11,6 +11,7 @@ import {
   autoLinkMembers,
   bandOf,
   buildSections,
+  cellText,
   copyPreviousWeek,
   coverageOn,
   compactHours,
@@ -714,7 +715,8 @@ describe("reading the workbook", () => {
     const second = planRosterImport(parseRosterSheet(sheet()), first.config, []);
     assert.equal(second.config.members.length, 7);
     assert.equal(second.stats.membersAdded, 0);
-    assert.equal(second.stats.membersUpdated, 7);
+    assert.equal(second.stats.membersUpdated, 0);
+    assert.equal(second.stats.membersUnchanged, 7);
     assert.equal(second.config.events.length, 3);
     assert.deepEqual(
       second.upsert.map((a) => a.id).sort(),
@@ -732,5 +734,161 @@ describe("reading the workbook", () => {
     const group = plan.config.groups.find((g) => g.name === "New Team");
     assert.equal(group.scheduleId, "main");
     assert.equal(plan.stats.groupsAdded, 1);
+  });
+});
+
+describe("writing a day back into a roster cell", () => {
+  const schedules = workbookSchedules();
+  const roundTrip = (a, ref = a.ref) => {
+    const read = interpretCell(cellText(a, schedules), sched("main"), schedules);
+    assert.equal(read.ref, ref);
+    assert.equal(!!read.swap, !!a.swap);
+    return read;
+  };
+
+  it("reads back as the same day for every shift and every day type", () => {
+    for (const def of sched("main").shifts) {
+      roundTrip(makeAssignment("mem_1", "2026-03-02", `main:${def.id}`));
+    }
+    for (const def of STATUS_DEFS) {
+      roundTrip(makeAssignment("mem_1", "2026-03-02", `status:${def.id}`));
+    }
+  });
+
+  it("keeps a swap, and typed hours as typed", () => {
+    roundTrip(makeAssignment("mem_1", "2026-03-02", "main:ns", { swap: true }));
+    roundTrip(makeAssignment("mem_1", "2026-03-02", "status:pto", { swap: true }));
+    const custom = makeAssignment("mem_1", "2026-03-02", "custom", {
+      text: "IST 6:00PM-3:00AM",
+    });
+    assert.equal(roundTrip(custom).text, "IST 6:00PM-3:00AM");
+    const bare = makeAssignment("mem_1", "2026-03-02", "custom", {
+      text: "Shift swap",
+      swap: true,
+    });
+    assert.equal(roundTrip(bare).text, "Shift swap");
+  });
+
+  it("writes nothing for a shift that no longer exists", () => {
+    assert.equal(
+      cellText(makeAssignment("mem_1", "2026-03-02", "gone:shift-9"), schedules),
+      "",
+    );
+  });
+});
+
+describe("importing only what differs from the roster", () => {
+  const parsedFor = (cells, over = {}) => ({
+    startDate: "2026-03-02",
+    endDate: "2026-03-04",
+    banners: [],
+    members: [
+      {
+        name: "Member 1",
+        city: "Pune",
+        role: "L2 DIS USI",
+        section: "L2",
+        cells,
+        ...over,
+      },
+    ],
+  });
+  const config = { ...workbookRosterConfig(), members: [member(1)] };
+  const onRoster = [
+    makeAssignment("mem_000000000001", "2026-03-02", "main:shift-1"),
+    makeAssignment("mem_000000000001", "2026-03-03", "main:shift-2"),
+  ];
+
+  it("leaves a day alone when it is already as written, saves a changed one and a new one", () => {
+    const plan = planRosterImport(
+      parsedFor([
+        { date: "2026-03-02", text: "Shift-1" },
+        { date: "2026-03-03", text: "Shift-3" },
+        { date: "2026-03-04", text: "PTO" },
+      ]),
+      config,
+      [],
+      onRoster,
+    );
+    assert.deepEqual(
+      plan.upsert.map((a) => [a.date, a.ref]),
+      [
+        ["2026-03-03", "main:shift-3"],
+        ["2026-03-04", "status:pto"],
+      ],
+    );
+    assert.equal(plan.stats.assignmentsUnchanged, 1);
+    assert.equal(plan.stats.assignmentsChanged, 1);
+    assert.equal(plan.stats.assignmentsAdded, 1);
+    assert.equal(plan.stats.assignments, 2);
+  });
+
+  it("saves nothing at all for a file that matches the roster", () => {
+    const plan = planRosterImport(
+      parsedFor([
+        { date: "2026-03-02", text: "Shift-1" },
+        { date: "2026-03-03", text: "Shift-2" },
+      ]),
+      config,
+      [],
+      onRoster,
+    );
+    assert.equal(plan.upsert.length, 0);
+    assert.equal(plan.stats.membersUnchanged, 1);
+    assert.equal(plan.stats.membersUpdated, 0);
+    assert.equal(plan.stats.membersAdded, 0);
+  });
+
+  it("counts a changed city or team as an update to the person", () => {
+    const plan = planRosterImport(
+      parsedFor([], { city: "Mumbai" }),
+      config,
+      [],
+      onRoster,
+    );
+    assert.equal(plan.stats.membersUpdated, 1);
+    assert.equal(plan.config.members[0].city, "Mumbai");
+  });
+
+  it("does not make a member of a directory person with nothing entered", () => {
+    const jane = emp(1, { firstName: "Jane", lastName: "Doe" });
+    const parsed = parsedFor([], { name: "Jane Doe" });
+    const idle = planRosterImport(parsed, config, [jane], []);
+    assert.equal(idle.config.members.length, 1);
+    assert.equal(idle.stats.membersAdded, 0);
+    const busy = planRosterImport(
+      parsedFor([{ date: "2026-03-02", text: "Shift-1" }], { name: "Jane Doe" }),
+      config,
+      [jane],
+      [],
+    );
+    assert.equal(busy.stats.membersAdded, 1);
+    assert.equal(busy.config.members[1].employeeId, jane.id);
+  });
+
+  it("does not add a holiday that is already on the roster under the same words", () => {
+    const withEvent = {
+      ...config,
+      events: [
+        {
+          id: "x1",
+          date: "2026-03-03",
+          endDate: "2026-03-03",
+          label: "Holi",
+          kind: "holiday",
+        },
+      ],
+    };
+    const parsed = {
+      ...parsedFor([]),
+      banners: [
+        { date: "2026-03-03", label: "holi" },
+        { date: "2026-03-04", label: "Maha Shivratri" },
+      ],
+    };
+    const plan = planRosterImport(parsed, withEvent, [], []);
+    assert.equal(plan.stats.events, 1);
+    // Only a note (the winter disconnect) runs on to the end of the sheet.
+    assert.equal(plan.config.events.at(-1).endDate, "2026-03-04");
   });
 });

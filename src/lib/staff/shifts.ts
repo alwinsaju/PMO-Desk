@@ -490,6 +490,30 @@ export function interpretCell(
   return { ref: CUSTOM_REF, text, ...flag, loose: !parseTimeRange(text) };
 }
 
+const SWAP_MARK = "(Shift swap)";
+
+/** The text that puts an assignment back in a roster cell: what `interpretCell` reads
+ *  as the same day. "" for a day whose shift is no longer known. */
+export function cellText(
+  a: ShiftAssignment,
+  schedules: readonly ShiftSchedule[],
+): string {
+  const swapped = (text: string) => (a.swap ? `${text} ${SWAP_MARK}`.trim() : text);
+  if (a.ref === CUSTOM_REF) {
+    const text = a.text ?? "";
+    return a.swap && /^shift[\s-]*swap$/i.test(text) ? "Shift swap" : swapped(text);
+  }
+  const [head, tail = ""] = a.ref.split(":");
+  if (head === STATUS_PREFIX) {
+    const def = statusDef(tail);
+    return def ? swapped(def.short) : "";
+  }
+  const label = schedules
+    .find((s) => s.id === head)
+    ?.shifts.find((s) => s.id === tail)?.label;
+  return label ? swapped(label) : "";
+}
+
 // ---------------------------------------------------------------------------
 // Leave from the Time off tab
 // ---------------------------------------------------------------------------

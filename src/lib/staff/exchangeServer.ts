@@ -282,12 +282,9 @@ export async function purgeExchangeFor(
   return removed;
 }
 
-/** Writes a fresh request for every person still waiting, a few at a time like a normal scan
- *  (the next scans continue). Starts their tries over. Returns how many are waiting. */
-export async function resendAllRequests(
-  env: Env = process.env,
-  now: () => number = Date.now,
-): Promise<number> {
+/** Clears the open requests of everyone still waiting, so their tries start over; the
+ *  scan that follows sends them again a few at a time. Returns how many are waiting. */
+export async function resendAllRequests(env: Env = process.env): Promise<number> {
   const waiting = (await readStaff("employees", env)).filter((e) => isAwaitingProfile(e));
   const { dir } = resolveExchange(env);
   await ensureDirs(dir);
