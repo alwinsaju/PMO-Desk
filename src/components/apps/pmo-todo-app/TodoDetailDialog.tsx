@@ -6,6 +6,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogTitle,
   Input,
   Progress,
@@ -593,59 +594,61 @@ export function TodoDetailDialog({
 
         {error && <ErrorLine className="mt-3 shrink-0">{error}</ErrorLine>}
 
-        <div className="border-line mt-4 flex shrink-0 flex-wrap items-center justify-between gap-x-3 gap-y-2 border-t pt-4">
-          <div className="flex flex-wrap gap-2">
-            {open ? (
-              <>
+        <DialogFooter className="border-line mt-4 shrink-0 flex-wrap items-center border-t pt-4">
+          {open ? (
+            <>
+              <Button
+                variant="destructive-quiet"
+                disabled={busy}
+                onClick={() =>
+                  void applyWithUndo(
+                    { status: "cancelled" },
+                    `Cancelled "${shown.title}".`,
+                    { status: "open" },
+                  )
+                }
+              >
+                Cancel to-do
+              </Button>
+              <Button
+                variant="ghost"
+                disabled={busy}
+                onClick={() => setHandoffOpen(true)}
+              >
+                Hand over
+              </Button>
+              <Button
+                variant="outline"
+                disabled={busy}
+                onClick={() => void apply({ status: "done" })}
+              >
+                Mark done
+              </Button>
+            </>
+          ) : (
+            <>
+              {shown.status === "cancelled" && (
                 <Button
-                  variant="outline"
+                  variant="destructive-quiet"
                   disabled={busy}
-                  onClick={() => void apply({ status: "done" })}
+                  onClick={() => void remove()}
                 >
-                  Mark done
+                  Delete
                 </Button>
-                <Button
-                  variant="ghost"
-                  disabled={busy}
-                  onClick={() =>
-                    void applyWithUndo(
-                      { status: "cancelled" },
-                      `Cancelled "${shown.title}".`,
-                      { status: "open" },
-                    )
-                  }
-                >
-                  Cancel to-do
-                </Button>
-                <Button
-                  variant="ghost"
-                  disabled={busy}
-                  onClick={() => setHandoffOpen(true)}
-                >
-                  Hand over
-                </Button>
-              </>
-            ) : (
-              <>
-                <Button
-                  variant="outline"
-                  disabled={busy}
-                  onClick={() => void apply({ status: "open" })}
-                >
-                  Reopen
-                </Button>
-                {shown.status === "cancelled" && (
-                  <Button variant="ghost" disabled={busy} onClick={() => void remove()}>
-                    Delete
-                  </Button>
-                )}
-              </>
-            )}
-          </div>
+              )}
+              <Button
+                variant="outline"
+                disabled={busy}
+                onClick={() => void apply({ status: "open" })}
+              >
+                Reopen
+              </Button>
+            </>
+          )}
           <Button disabled={busy || !dirty} onClick={() => void save()}>
             Save changes
           </Button>
-        </div>
+        </DialogFooter>
       </DialogContent>
       <SignoffRequestDialog
         todo={shown}
