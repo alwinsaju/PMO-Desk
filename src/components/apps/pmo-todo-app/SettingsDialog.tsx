@@ -20,13 +20,26 @@ import {
   MIN_RETENTION_DAYS,
   type PmoState,
 } from "@/lib/pmo/types";
+import { malformedConfigEntries } from "@/lib/pmo/configHealth";
 import { updateConfig } from "./api";
-import { ErrorLine, Field, FieldError, FilterPill, ScrollBody, TextArea } from "./parts";
+import { DOMAIN_NOUN, EMAIL_NOUN } from "./listFeedbackView";
+import { ListFeedback } from "./ListFeedback";
+import {
+  ErrorLine,
+  Field,
+  FieldError,
+  FilterPill,
+  Note,
+  ScrollBody,
+  TextArea,
+} from "./parts";
 import { NotificationStatus } from "./RemindersNotice";
 import { useRemindersStore } from "./remindersStore";
 import {
   buildPatch,
+  checkedList,
   formFromConfig,
+  type CheckedListField,
   type FormText,
   type ListField,
   type RemindersForm,
@@ -103,28 +116,50 @@ export function SettingsDialog({
     }
   }
 
+  const parsedLists = {
+    emails: checkedList("emails", form.emails),
+    allowedSenderDomains: checkedList("allowedSenderDomains", form.allowedSenderDomains),
+    blockedDomains: checkedList("blockedDomains", form.blockedDomains),
+  };
+  const hasInvalidEntries = Object.values(parsedLists).some(
+    (parsed) => parsed.invalid.length > 0,
+  );
+  const savedProblems = malformedConfigEntries(state.config);
+
   const listBox = (
     field: ListField,
     label: string,
     placeholder: string,
     rows = 3,
     hint?: ReactNode,
-  ) => (
-    <Field label={label}>
-      <TextArea
-        value={form[field]}
-        rows={rows}
-        disabled={busy}
-        spellCheck={false}
-        placeholder={placeholder}
-        aria-invalid={errors[field] ? true : undefined}
-        className="min-h-0 font-mono text-[12px]"
-        onChange={(event) => set({ [field]: event.target.value })}
-      />
-      {hint && <span className="text-ink-muted text-[12px] leading-relaxed">{hint}</span>}
-      <FieldError message={errors[field]} />
-    </Field>
-  );
+  ) => {
+    const parsed = field in parsedLists ? parsedLists[field as CheckedListField] : null;
+    return (
+      <Field label={label}>
+        <TextArea
+          value={form[field]}
+          rows={rows}
+          disabled={busy}
+          spellCheck={false}
+          placeholder={placeholder}
+          aria-invalid={errors[field] || parsed?.invalid.length ? true : undefined}
+          className="min-h-0 font-mono text-[12px]"
+          onChange={(event) => set({ [field]: event.target.value })}
+        />
+        {hint && (
+          <span className="text-ink-muted text-[12px] leading-relaxed">{hint}</span>
+        )}
+        {parsed ? (
+          <ListFeedback
+            parsed={parsed}
+            noun={field === "emails" ? EMAIL_NOUN : DOMAIN_NOUN}
+          />
+        ) : (
+          <FieldError message={errors[field]} />
+        )}
+      </Field>
+    );
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -146,17 +181,33 @@ export function SettingsDialog({
                   4,
                   "How the model recognises a request addressed to you (first name, nickname, ...).",
                 )}
-                {listBox("emails", "Your email addresses", "you@company.com", 4)}
+                {listBox(
+                  "emails",
+                  "Your email addresses",
+                  "you@company.com",
+                  4,
+                  "One address per line (commas work too).",
+                )}
               </div>
             </Section>
 
             <Section title="Who is allowed in">
+              {savedProblems.length > 0 && (
+                <Note tone="warning">
+                  {savedProblems.length === 1
+                    ? "1 saved entry is not valid"
+                    : `${savedProblems.length} saved entries are not valid`}{" "}
+                  ({savedProblems.map((p) => p.value || "(not text)").join(", ")}). They
+                  never match any mail, so mail may be filtered by mistake. Correct or
+                  remove them in the lists below, then save.
+                </Note>
+              )}
               {listBox(
                 "allowedSenderDomains",
                 "Allowed sender domains (Outlook)",
                 "company.com",
                 2,
-                "Email from any other domain is filtered. Subdomains match (us.company.com matches company.com).",
+                "One domain per line (commas work too). Email from any other domain is filtered and discarded, so check the list carefully. Subdomains match (us.company.com matches company.com).",
               )}
               {listBox(
                 "allowedTenantIds",
@@ -432,6 +483,11 @@ export function SettingsDialog({
             Fix the highlighted fields to save.
           </ErrorLine>
         )}
+        {hasInvalidEntries && (
+          <ErrorLine className="mt-3 shrink-0">
+            Some email or domain entries are not valid. Correct or remove them to save.
+          </ErrorLine>
+        )}
         <div className="border-line mt-4 flex shrink-0 items-center justify-end gap-2.5 border-t pt-4">
           {saved && (
             <span className="text-success mr-auto text-[13px] font-semibold">Saved.</span>
@@ -439,7 +495,10 @@ export function SettingsDialog({
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
             {saved ? "Close" : "Cancel"}
           </Button>
-          <Button disabled={busy || !dirty} onClick={() => void save()}>
+          <Button
+            disabled={busy || !dirty || hasInvalidEntries}
+            onClick={() => void save()}
+          >
             Save settings
           </Button>
         </div>

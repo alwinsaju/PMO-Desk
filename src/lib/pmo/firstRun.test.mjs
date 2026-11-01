@@ -11,8 +11,10 @@ import {
   initialFirstRunForm,
   needsFirstRun,
   splitList,
+  loginNameHint,
   stepProblems,
   suggestedFullName,
+  suggestedDomain,
   timeZoneChoices,
   withSuggestedDomain,
 } from "./firstRun.ts";
@@ -67,15 +69,35 @@ describe("domainOfEmail", () => {
 });
 
 describe("suggestedFullName", () => {
-  it("turns a Windows user name into a capitalised suggestion", () => {
+  it("turns a first.last Windows user name into a capitalised suggestion", () => {
     assert.equal(suggestedFullName({ USERNAME: "pat.example" }), "Pat Example");
     assert.equal(suggestedFullName({ USERNAME: "pat_example" }), "Pat Example");
-    assert.equal(suggestedFullName({ USER: "sam" }), "Sam");
+    assert.equal(suggestedFullName({ USER: "mary-jane.o" }), "Mary Jane O");
+    assert.equal(suggestedFullName({ USERNAME: "zoë.müller" }), "Zoë Müller");
+  });
+  it("does not pre-fill a one-word login or one with digits or symbols (QA-28)", () => {
+    assert.equal(suggestedFullName({ USERNAME: "Alsaju" }), "");
+    assert.equal(suggestedFullName({ USER: "sam" }), "");
+    assert.equal(suggestedFullName({ USERNAME: "jsmith01" }), "");
+    assert.equal(suggestedFullName({ USERNAME: "pat.example2" }), "");
+    assert.equal(suggestedFullName({ USERNAME: "svc$backup" }), "");
   });
   it("suggests nothing for a missing or system name", () => {
     assert.equal(suggestedFullName({}), "");
     assert.equal(suggestedFullName({ USERNAME: "Administrator" }), "");
     assert.equal(suggestedFullName({ USERNAME: "SYSTEM" }), "");
+  });
+});
+
+describe("loginNameHint", () => {
+  it("shows the login as a name for the placeholder, even for one word", () => {
+    assert.equal(loginNameHint({ USERNAME: "Alsaju" }), "Alsaju");
+    assert.equal(loginNameHint({ USERNAME: "pat.example" }), "Pat Example");
+    assert.equal(loginNameHint({ USER: "sam" }), "Sam");
+  });
+  it("is empty for a missing or system name", () => {
+    assert.equal(loginNameHint({}), "");
+    assert.equal(loginNameHint({ USERNAME: "admin" }), "");
   });
 });
 
@@ -100,6 +122,18 @@ describe("timeZoneChoices", () => {
       "UTC",
     ]);
     assert.deepEqual(timeZoneChoices(["UTC"], ""), ["UTC"]);
+  });
+});
+
+describe("suggestedDomain", () => {
+  it("offers the work email's domain without writing it into the form", () => {
+    const typed = form({ email: "Pat@US.Contoso.com", allowedDomains: "" });
+    assert.equal(suggestedDomain(typed), "us.contoso.com");
+    assert.equal(typed.allowedDomains, "");
+  });
+  it("offers nothing for a missing or malformed email", () => {
+    assert.equal(suggestedDomain(form({ email: "nope" })), null);
+    assert.equal(suggestedDomain(form({ email: "pat@deloitte.comdeloitte.com" })), null);
   });
 });
 
@@ -156,6 +190,32 @@ describe("stepProblems", () => {
     assert.match(
       stepProblems("domains", form({ blockedDomains: "bad domain!" }))[0],
       /bad/,
+    );
+  });
+
+  it("who: refuses an address list in the single email box, and says why", () => {
+    assert.match(
+      stepProblems("who", form({ email: "Alex,A.Morgan" }))[0],
+      /two addresses joined/,
+    );
+    assert.match(stepProblems("who", form({ email: "a@x.com b@x.com" }))[0], /joined/);
+  });
+
+  it("domains: flags a doubled domain and each bad entry, and accepts commas and newlines", () => {
+    const doubled = stepProblems(
+      "domains",
+      form({ allowedDomains: "deloitte.comdeloitte.com" }),
+    );
+    assert.equal(doubled.length, 1);
+    assert.match(doubled[0], /deloitte\.comdeloitte\.com.*typed twice/);
+    const mixed = stepProblems(
+      "domains",
+      form({ allowedDomains: "a.com\nb.com, nope", blockedDomains: "x@y.com" }),
+    );
+    assert.equal(mixed.length, 2);
+    assert.deepEqual(
+      stepProblems("domains", form({ allowedDomains: "A.com;\n@b.com." })),
+      [],
     );
   });
 

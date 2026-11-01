@@ -1,8 +1,9 @@
 // Shared data shapes for the PMO To-Do app (see ARCHITECTURE.md, "PMO To-Do").
-// Pure: only imports zod, so both the server modules and the client UI can
-// import it, and `pnpm test` can load it under plain Node.
+// Pure: only imports zod and the other pure PMO modules, so both the server
+// modules and the client UI can import it, and `pnpm test` can load it under plain Node.
 import { z } from "zod";
 import type { Attention } from "./due.ts";
+import { checkDomain, checkEmail, type Checked } from "./listValidation.ts";
 import {
   DEFAULT_TIME_ZONE as TIME_ZONE_DEFAULT,
   isRealIsoDay,
@@ -795,12 +796,10 @@ export type PmoConfig = z.output<typeof PmoConfigSchema>;
 // Strict checks for what a person types in Settings. They apply to a PUT only:
 // reading config.json stays lenient (a hand-edited file must never stop ingest).
 const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const DOMAIN = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i;
-const EMAIL = /^[^\s@<>"']+@(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i;
 const MAX_LIST = 200;
 
-export const isDomainName = (value: string) => DOMAIN.test(value.replace(/^@/, ""));
-export const isEmailAddress = (value: string) => EMAIL.test(value);
+export const isDomainName = (value: string) => checkDomain(value).ok;
+export const isEmailAddress = (value: string) => checkEmail(value).ok;
 
 const listOf = (item: z.ZodType<string>) =>
   z.array(item).max(MAX_LIST, "At most 200 entries.");
@@ -808,13 +807,15 @@ const trimmed = (max: number) => z.string().trim().max(max, `At most ${max} char
 const tenantId = trimmed(64).refine((v) => v === "" || GUID.test(v), {
   message: "Not a tenant ID (a GUID such as 00000000-0000-0000-0000-000000000000).",
 });
-const domainEntry = trimmed(253).refine(
-  (v) => v === "" || DOMAIN.test(v.replace(/^@/, "")),
-  { message: "Not a domain name (for example example.com)." },
-);
-const emailEntry = trimmed(254).refine((v) => v === "" || EMAIL.test(v), {
-  message: "Not an email address.",
-});
+const checkedEntry = (max: number, check: (value: string) => Checked) =>
+  trimmed(max).superRefine((value, ctx) => {
+    const result = value === "" ? null : check(value);
+    if (result && !result.ok) ctx.addIssue({ code: "custom", message: result.reason });
+  });
+/** One domain per entry; blank is allowed (the lists drop it), anything else
+ *  must pass `checkDomain`, with its reason as the message. */
+export const DomainEntrySchema = checkedEntry(253, checkDomain);
+export const EmailEntrySchema = checkedEntry(254, checkEmail);
 
 /** The Settings form always sends the whole reminders block, so this one is
  *  strict and complete rather than partial. */
@@ -866,13 +867,13 @@ export const ReportPrefsEditSchema = z.object({
 export const PmoConfigPatchSchema = z.object({
   allowedTenantIds: listOf(tenantId).optional(),
   teamsChatAllowlist: listOf(trimmed(300)).optional(),
-  allowedSenderDomains: listOf(domainEntry).optional(),
-  blockedDomains: listOf(domainEntry).optional(),
+  allowedSenderDomains: listOf(DomainEntrySchema).optional(),
+  blockedDomains: listOf(DomainEntrySchema).optional(),
   blockedTerms: listOf(trimmed(200)).optional(),
   me: z
     .object({
       names: listOf(trimmed(120)).min(1, "Add at least one name."),
-      emails: listOf(emailEntry),
+      emails: listOf(EmailEntrySchema),
     })
     .optional(),
   retentionDays: z

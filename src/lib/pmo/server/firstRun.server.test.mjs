@@ -170,6 +170,68 @@ describe("completeFirstRun", () => {
     assert.ok(!existsSync(file), "and taken out of the inbox");
   });
 
+  it("refuses malformed emails and domains with a reason per entry, saving nothing", async () => {
+    const pmo = await freshPmo();
+    const result = await completeFirstRun(
+      pmo,
+      body({
+        emails: ["Alex", "pat@contoso.com", "A.Morgan"],
+        allowedSenderDomains: ["deloitte.comdeloitte.com", "ok.com", "x@y.com"],
+        blockedDomains: ["*.rival.com"],
+      }),
+      deps(),
+    );
+    assert.equal(result.ok, false);
+    assert.match(result.reason, /^Invalid setup: /);
+    const pick = (field) =>
+      result.errors
+        .filter((e) => e.field === field)
+        .map((e) => [e.index, e.value, e.reason]);
+    assert.deepEqual(pick("emails"), [
+      [0, "Alex", "Not an email address (example: name@company.com)"],
+      [2, "A.Morgan", "Not an email address (example: name@company.com)"],
+    ]);
+    assert.deepEqual(
+      pick("allowedSenderDomains").map(([i, v]) => [i, v]),
+      [
+        [0, "deloitte.comdeloitte.com"],
+        [2, "x@y.com"],
+      ],
+    );
+    assert.match(pick("allowedSenderDomains")[0][2], /typed twice/);
+    assert.match(pick("blockedDomains")[0][2], /wildcard/i);
+    assert.equal((await pmo.store.loadConfig()).setupComplete, false);
+  });
+
+  it("refuses an address list or domain list that is only blanks", async () => {
+    const pmo = await freshPmo();
+    for (const bad of [
+      body({ emails: [" "] }),
+      body({ allowedSenderDomains: ["", " "] }),
+    ]) {
+      const result = await completeFirstRun(pmo, bad, deps());
+      assert.equal(result.ok, false, JSON.stringify(bad));
+      assert.ok(result.errors.length > 0);
+    }
+  });
+
+  it("normalises valid entries: lower-case, no leading @ or trailing dot, no repeats", async () => {
+    const pmo = await freshPmo();
+    const result = await completeFirstRun(
+      pmo,
+      body({
+        emails: [" Pat@Contoso.COM "],
+        allowedSenderDomains: ["@Contoso.com.", "contoso.com", "us.contoso.com", ""],
+        blockedDomains: [],
+      }),
+      deps(),
+    );
+    assert.equal(result.ok, true, JSON.stringify(result));
+    const config = await pmo.store.loadConfig();
+    assert.deepEqual(config.me.emails, ["pat@contoso.com"]);
+    assert.deepEqual(config.allowedSenderDomains, ["contoso.com", "us.contoso.com"]);
+  });
+
   it("refuses a bad body with the first problem, saving nothing", async () => {
     const pmo = await freshPmo();
     for (const bad of [
@@ -268,6 +330,25 @@ describe("existing installs are not asked again", () => {
     );
     const store = new Store(dataDir);
     assert.equal((await store.loadConfig()).setupComplete, false);
+  });
+});
+
+describe("firstRunSuggestions: the name", () => {
+  it("pre-fills a login that looks like a first and last name", () => {
+    const s = firstRunSuggestions(deps({ env: { USERNAME: "pat.example" } }));
+    assert.equal(s.fullName, "Pat Example");
+    assert.equal(s.nameHint, "Pat Example");
+  });
+
+  it("leaves a one-word login out of the box and offers it as the hint (QA-28)", () => {
+    const s = firstRunSuggestions(deps({ env: { USERNAME: "Alsaju" } }));
+    assert.equal(s.fullName, "");
+    assert.equal(s.nameHint, "Alsaju");
+  });
+
+  it("offers nothing for a system account", () => {
+    const s = firstRunSuggestions(deps({ env: { USERNAME: "Administrator" } }));
+    assert.deepEqual([s.fullName, s.nameHint], ["", ""]);
   });
 });
 

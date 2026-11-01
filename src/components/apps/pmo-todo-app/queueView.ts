@@ -3,6 +3,7 @@
 // under plain Node (see queueView.test.mjs).
 import { isDueSoon, isSnoozed, isWaiting, waitingState } from "../../../lib/pmo/due.ts";
 import { domainMatches, domainOf } from "../../../lib/pmo/filter.ts";
+import { checkDomain } from "../../../lib/pmo/listValidation.ts";
 import {
   allCheckpointsComplete,
   checkpointProgress,
@@ -508,16 +509,26 @@ export function resendGuidance(
             "No sender address could be read from this email, so there is nothing to allow. Re-export it; for the Outlook script, check its warnings for the sender.",
         };
       }
+      const checked = checkDomain(domain);
+      if (!checked.ok) {
+        return {
+          allowTenantId: null,
+          allowChatId: null,
+          allowDomain: null,
+          steps: `The sender's domain "${domain}" is not a valid domain name (${checked.reason}), so there is nothing to allow. Re-export the email and check its sender.`,
+        };
+      }
+      const allowable = checked.value;
       const already = config.allowedSenderDomains.some((listed) =>
-        domainMatches(domain, listed),
+        domainMatches(allowable, listed),
       );
       return {
         allowTenantId: null,
         allowChatId: null,
-        allowDomain: already ? null : domain,
+        allowDomain: already ? null : allowable,
         steps: already
-          ? `${domain} is allowed now. Send the email again: flag it again, or run the Outlook export with -IgnoreSeen.`
-          : `Allow ${domain}, then send the email again: flag it again, or run the Outlook export with -IgnoreSeen.`,
+          ? `${allowable} is allowed now. Send the email again: flag it again, or run the Outlook export with -IgnoreSeen.`
+          : `Allow ${allowable}, then send the email again: flag it again, or run the Outlook export with -IgnoreSeen.`,
       };
     }
     case "blocked-domain":

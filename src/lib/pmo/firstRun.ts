@@ -2,8 +2,9 @@
 // config, and the rule that tells an upgraded install it is already set up.
 // No I/O and no React, so the UI, the server routes and the tests share it.
 import { z } from "zod";
+import { checkEmail, parseDomainList, parseEmailList } from "./listValidation.ts";
 import { isValidTimeZone } from "./time.ts";
-import { isDomainName, isEmailAddress } from "./types.ts";
+import { DomainEntrySchema, EmailEntrySchema } from "./types.ts";
 
 export const FIRST_RUN_STEPS = [
   { id: "who", title: "Who are you?" },
@@ -38,11 +39,7 @@ export interface FirstRunPayload {
 
 type Env = Record<string, string | undefined>;
 
-const domainItem = z
-  .string()
-  .trim()
-  .max(253)
-  .refine(isDomainName, { message: "Not a domain name (for example example.com)." });
+const hasEntry = (list: string[]) => list.some((entry) => entry !== "");
 
 /** What POST /api/pmo/setup accepts: a FirstRunPayload, checked again on the
  *  server. `inboxDir` may be left out only when the environment fixes the inbox. */
@@ -52,23 +49,17 @@ export const FirstRunBodySchema = z.object({
     .min(1, "Add at least one name.")
     .max(50),
   emails: z
-    .array(
-      z
-        .string()
-        .trim()
-        .max(254)
-        .refine(isEmailAddress, { message: "Not an email address." }),
-    )
-    .min(1, "Enter your work email address.")
-    .max(10),
+    .array(EmailEntrySchema)
+    .max(10)
+    .refine(hasEntry, { message: "Enter your work email address." }),
   timeZone: z.string().trim().max(64).refine(isValidTimeZone, {
     message: "Not a time zone name (for example Asia/Kolkata).",
   }),
   allowedSenderDomains: z
-    .array(domainItem)
-    .min(1, "Enter at least one sender domain.")
-    .max(200),
-  blockedDomains: z.array(domainItem).max(200),
+    .array(DomainEntrySchema)
+    .max(200)
+    .refine(hasEntry, { message: "Enter at least one sender domain." }),
+  blockedDomains: z.array(DomainEntrySchema).max(200),
   inboxDir: z.string().trim().max(500).optional(),
   confirmNonEmpty: z.boolean().optional(),
 });
@@ -98,12 +89,20 @@ export function domainOfEmail(email: string): string | null {
   return match ? match[1].toLowerCase() : null;
 }
 
-/** The sender-domain step opens with the email's own domain filled in, unless
- *  the person already typed something there. */
+/** The domain of the work email, offered as the sender-domain answer. It is a
+ *  suggestion the person accepts (a button, or "Skip for now"), never put into
+ *  the box on its own: text typed into a pre-filled box gets appended to it. */
+export function suggestedDomain(form: FirstRunForm): string | null {
+  const domain = domainOfEmail(form.email);
+  const checked = domain ? parseDomainList(domain) : null;
+  return checked && checked.valid.length === 1 ? checked.valid[0] : null;
+}
+
+/** The sender-domain answer with the suggestion taken, unless the person already typed something. */
 export function withSuggestedDomain(form: FirstRunForm): FirstRunForm {
   if (form.allowedDomains.trim() !== "") return form;
-  const domain = domainOfEmail(form.email);
-  return domain && isDomainName(domain) ? { ...form, allowedDomains: domain } : form;
+  const domain = suggestedDomain(form);
+  return domain ? { ...form, allowedDomains: domain } : form;
 }
 
 const SYSTEM_USER_NAMES = new Set([
@@ -115,16 +114,34 @@ const SYSTEM_USER_NAMES = new Set([
   "default",
 ]);
 
-/** A "your name" suggestion from the Windows user name (`pat.example` -> "Pat
- *  Example"). Only a suggestion: the person edits it. */
-export function suggestedFullName(env: Env): string {
+const LOGIN_WORD = /^\p{L}+$/u;
+
+/** The Windows user name split into capitalised words (`pat.example` ->
+ *  ["Pat", "Example"]); empty for a missing or system name. */
+function loginWords(env: Env): string[] {
   const raw = (env.USERNAME ?? env.USER ?? "").trim();
-  if (!raw || SYSTEM_USER_NAMES.has(raw.toLowerCase())) return "";
+  if (!raw || SYSTEM_USER_NAMES.has(raw.toLowerCase())) return [];
   return raw
     .split(/[._\s-]+/)
     .filter(Boolean)
-    .map((word) => word[0].toUpperCase() + word.slice(1).toLowerCase())
-    .join(" ");
+    .map((word) => word[0].toUpperCase() + word.slice(1).toLowerCase());
+}
+
+/** A "your name" pre-fill from the Windows user name (`pat.example` -> "Pat
+ *  Example"). Only when it looks like a first and last name: a one-word login
+ *  ("Alsaju", "jsmith01") is a username, not a name, and is left to
+ *  `loginNameHint`. */
+export function suggestedFullName(env: Env): string {
+  const words = loginWords(env);
+  return words.length >= 2 && words.every((word) => LOGIN_WORD.test(word))
+    ? words.join(" ")
+    : "";
+}
+
+/** What the login looks like as a name, for the box's placeholder when it is
+ *  not good enough to pre-fill. */
+export function loginNameHint(env: Env): string {
+  return loginWords(env).join(" ");
 }
 
 export function initialFirstRunForm(options: {
@@ -157,24 +174,29 @@ const ABSOLUTE_PATH = /^(?:[a-zA-Z]:[\\/]|\\\\[^\\/]+[\\/][^\\/]+)/;
 export function stepProblems(step: FirstRunStepId, form: FirstRunForm): string[] {
   const problems: string[] = [];
   switch (step) {
-    case "who":
+    case "who": {
       if (!form.fullName.trim()) problems.push("Enter your full name.");
-      if (!isEmailAddress(form.email.trim())) {
+      const email = checkEmail(form.email);
+      if (form.email.trim() === "") {
         problems.push("Enter your work email address, for example you@company.com.");
+      } else if (!email.ok) {
+        problems.push(`Your work email address: ${email.reason}.`);
       }
       break;
+    }
     case "timeZone":
       if (!isValidTimeZone(form.timeZone.trim())) {
         problems.push("Choose a time zone from the list.");
       }
       break;
     case "domains": {
-      const allowed = splitList(form.allowedDomains);
-      if (allowed.length === 0) {
+      const allowed = parseDomainList(form.allowedDomains);
+      const blocked = parseDomainList(form.blockedDomains);
+      if (allowed.valid.length === 0 && allowed.invalid.length === 0) {
         problems.push("Enter at least one sender domain, for example company.com.");
       }
-      for (const domain of [...allowed, ...splitList(form.blockedDomains)]) {
-        if (!isDomainName(domain)) problems.push(`"${domain}" is not a domain name.`);
+      for (const issue of [...allowed.invalid, ...blocked.invalid]) {
+        problems.push(`"${issue.value}": ${issue.reason}.`);
       }
       break;
     }
@@ -192,9 +214,6 @@ export function stepProblems(step: FirstRunStepId, form: FirstRunForm): string[]
   return problems;
 }
 
-const lowerDomains = (text: string) =>
-  splitList(text).map((domain) => domain.replace(/^@/, "").toLowerCase());
-
 export type FirstRunResult =
   { ok: true; payload: FirstRunPayload } | { ok: false; problems: string[] };
 
@@ -209,10 +228,10 @@ export function firstRunPayload(form: FirstRunForm): FirstRunResult {
     ok: true,
     payload: {
       names,
-      emails: [form.email.trim().toLowerCase()],
+      emails: parseEmailList([form.email]).valid,
       timeZone: form.timeZone.trim(),
-      allowedSenderDomains: lowerDomains(form.allowedDomains),
-      blockedDomains: lowerDomains(form.blockedDomains),
+      allowedSenderDomains: parseDomainList(form.allowedDomains).valid,
+      blockedDomains: parseDomainList(form.blockedDomains).valid,
       inboxDir: form.inboxDir.trim().replace(/^"(.*)"$/, "$1"),
     },
   };

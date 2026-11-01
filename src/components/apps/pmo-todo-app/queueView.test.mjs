@@ -224,6 +224,22 @@ describe("Filtered tab helpers", () => {
     assert.equal(noAddress.allowDomain, null);
     assert.match(noAddress.steps, /No sender address/);
 
+    const odd = resendGuidance(
+      record("sender-domain-not-allowed", {
+        summary: { ...record("x").summary, senderAddress: "pat@bad_domain" },
+      }),
+      config,
+    );
+    assert.equal(odd.allowDomain, null);
+    assert.match(odd.steps, /not a valid domain name/);
+    const upper = resendGuidance(
+      record("sender-domain-not-allowed", {
+        summary: { ...record("x").summary, senderAddress: "pat@Partner.COM." },
+      }),
+      config,
+    );
+    assert.equal(upper.allowDomain, "partner.com");
+
     assert.equal(resendGuidance(record("blocked-domain"), config).allowDomain, null);
     assert.match(resendGuidance(record("blocked-term"), config).steps, /block list/);
     assert.match(

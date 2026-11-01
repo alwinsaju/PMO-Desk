@@ -44,7 +44,7 @@ describe("settings form", () => {
     assert.deepEqual(buildPatch(form).patch.blockedTerms, ["Project Falcon", "Secret"]);
   });
 
-  it("reports errors per field, naming the line of the box", () => {
+  it("reports errors per field, naming the bad entry or the line of the box", () => {
     const form = {
       ...formFromConfig(config),
       allowedTenantIds: "00000000-0000-0000-0000-000000000000\n\nnot-a-guid",
@@ -55,10 +55,35 @@ describe("settings form", () => {
     const { patch, errors } = buildPatch(form);
     assert.equal(patch, null);
     assert.match(errors.allowedTenantIds, /^Line 3: Not a tenant ID/);
-    assert.match(errors.blockedDomains, /^Line 2: Not a domain name/);
-    assert.match(errors.emails, /^Line 2: Not an email address/);
+    assert.match(errors.blockedDomains, /^"not": Not a domain \(example: company\.com\)/);
+    assert.match(errors.blockedDomains, /and 2 more/);
+    assert.match(errors.emails, /^"broken": Not an email address/);
     assert.match(errors.retentionDays, /number of days/);
     assert.equal(errors.names, undefined);
+  });
+
+  it("refuses the QA-02 input: bad addresses and a doubled domain are errors, not saved", () => {
+    const form = {
+      ...formFromConfig(config),
+      emails: "Alex,A.Morgan",
+      allowedSenderDomains: "deloitte.comdeloitte.com",
+    };
+    const { patch, errors } = buildPatch(form);
+    assert.equal(patch, null);
+    assert.match(errors.emails, /^"Alex": Not an email address/);
+    assert.match(errors.allowedSenderDomains, /typed twice/);
+  });
+
+  it("accepts commas, newlines and uppercase in the address and domain boxes, and normalises", () => {
+    const form = {
+      ...formFromConfig(config),
+      emails: "Pat@Company.com, sam@company.com\nPAT@company.com",
+      allowedSenderDomains: "@Company.com;\nus.company.com.",
+    };
+    const { patch, errors } = buildPatch(form);
+    assert.equal(errors, null);
+    assert.deepEqual(patch.me.emails, ["pat@company.com", "sam@company.com"]);
+    assert.deepEqual(patch.allowedSenderDomains, ["company.com", "us.company.com"]);
   });
 
   it("needs at least one name, and a retention within bounds", () => {

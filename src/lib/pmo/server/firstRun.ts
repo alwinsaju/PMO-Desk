@@ -6,7 +6,14 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
-import { FirstRunBodySchema, splitList, suggestedFullName } from "../firstRun.ts";
+import {
+  FirstRunBodySchema,
+  loginNameHint,
+  splitList,
+  suggestedFullName,
+} from "../firstRun.ts";
+import { fieldErrors, summarizeFieldErrors, type FieldError } from "../fieldErrors.ts";
+import { parseDomainList, parseEmailList } from "../listValidation.ts";
 import {
   INBOX_FOLDER_NAME,
   inboxFolderProblem,
@@ -41,8 +48,16 @@ export function realFirstRunDeps(dataRoot: string): FirstRunDeps {
   };
 }
 
-type Refusal = { ok: false; reason: string; needsConfirmation?: true };
-const refuse = (reason: string, extra: { needsConfirmation?: true } = {}): Refusal => ({
+type Refusal = {
+  ok: false;
+  reason: string;
+  needsConfirmation?: true;
+  errors?: FieldError[];
+};
+const refuse = (
+  reason: string,
+  extra: { needsConfirmation?: true; errors?: FieldError[] } = {},
+): Refusal => ({
   ok: false,
   reason,
   ...extra,
@@ -55,21 +70,24 @@ const firstIssue = (error: z.ZodError) => {
   return `${issue.path.length > 0 ? `${issue.path.join(".")}: ` : ""}${issue.message}`;
 };
 
-const unique = (values: string[], lower: boolean) =>
-  splitList(values.map((v) => (lower ? v.trim().toLowerCase() : v.trim())).join(","), {
-    commasOnly: true,
-  });
+const uniqueNames = (values: string[]) =>
+  splitList(values.map((v) => v.trim()).join(","), { commasOnly: true });
 
 /** Finish the wizard. Only while setup is not complete: afterwards, changes go
  *  through Settings. The inbox folder is validated like Setup's (and a
- *  folder holding other JSON needs `confirmNonEmpty`). */
+ *  folder holding other JSON needs `confirmNonEmpty`). Emails and domains are
+ *  checked entry by entry (listValidation.ts): a bad one refuses the whole
+ *  request, naming it in `errors`. */
 export async function completeFirstRun(
   pmo: Pick<Pmo, "store">,
   body: unknown,
   deps: FirstRunDeps,
 ): Promise<ActionResult<{ config: PmoConfig }> | Refusal> {
   const parsed = FirstRunBodySchema.safeParse(body);
-  if (!parsed.success) return refuse(`Invalid setup: ${firstIssue(parsed.error)}`);
+  if (!parsed.success) {
+    const errors = fieldErrors(parsed.error, body);
+    return refuse(`Invalid setup: ${summarizeFieldErrors(errors)}`, { errors });
+  }
   const input = parsed.data;
 
   let inboxDir: string | null = null; // null = keep what is saved (the environment fixes it)
@@ -99,11 +117,9 @@ export async function completeFirstRun(
       setupComplete: true,
       timeZone: input.timeZone,
       reminders: { ...current.reminders, timeZone: input.timeZone },
-      me: { names: unique(input.names, false), emails: unique(input.emails, true) },
-      allowedSenderDomains: unique(input.allowedSenderDomains, true).map((d) =>
-        d.replace(/^@/, ""),
-      ),
-      blockedDomains: unique(input.blockedDomains, true).map((d) => d.replace(/^@/, "")),
+      me: { names: uniqueNames(input.names), emails: parseEmailList(input.emails).valid },
+      allowedSenderDomains: parseDomainList(input.allowedSenderDomains).valid,
+      blockedDomains: parseDomainList(input.blockedDomains).valid,
       inboxDir: inboxDir ?? current.inboxDir,
     };
     await pmo.store.saveConfig(next);
@@ -163,7 +179,10 @@ export async function createInboxFolder(
 
 export interface FirstRunSuggestions {
   /** From the Windows user name; the person edits it. */
+  /** Pre-filled only when the Windows login looks like a first and last name. */
   fullName: string;
+  /** The login as a name ("Alsaju"), for the placeholder when it is not pre-filled. */
+  nameHint: string;
   inbox: {
     /** Set when AI_OS_PMO_INBOX_DIR fixes the inbox: the wizard shows it and asks nothing. */
     fromEnvironment: string | null;
@@ -177,6 +196,7 @@ export function firstRunSuggestions(deps: FirstRunDeps): FirstRunSuggestions {
   const oneDrive = oneDriveFacts(deps.env, deps.isDirectory);
   return {
     fullName: suggestedFullName(deps.env),
+    nameHint: loginNameHint(deps.env),
     inbox: {
       fromEnvironment: envInbox(deps.env) ? path.resolve(envInbox(deps.env)!) : null,
       oneDriveSignedIn: oneDrive.signedIn,

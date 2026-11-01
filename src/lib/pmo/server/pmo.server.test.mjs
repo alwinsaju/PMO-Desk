@@ -33,6 +33,8 @@ import { purgeExpired } from "./retention.ts";
 import { Mutex, writeJsonAtomic } from "./fsx.ts";
 import { createPmo } from "./create.ts";
 import { developerConfig } from "../developerDefaults.ts";
+import { replyStatus } from "../fieldErrors.ts";
+import { malformedConfigEntries } from "../configHealth.ts";
 import { createStubGenerator } from "./stubGenerator.ts";
 import { nextTodoDraft } from "../recurrence.ts";
 import { draftFromAi, effectiveDraft } from "../todoLogic.ts";
@@ -1056,6 +1058,63 @@ describe("config", () => {
       "the inbox path is not editable here",
     );
     assert.equal((await updateConfig(pmo, { blockedDomains: "x" })).ok, false);
+  });
+
+  it("refuses malformed emails and domains with a reason per entry, saving nothing", async () => {
+    const before = await pmo.store.loadConfig();
+    const result = await updateConfig(pmo, {
+      allowedSenderDomains: ["deloitte.comdeloitte.com", "ok.com"],
+      me: {
+        names: ["Pat"],
+        emails: ["alex", "a.morganalex.morgan@deloitte.com", "x@y.com"],
+      },
+    });
+    assert.equal(result.ok, false);
+    assert.match(result.reason, /^Invalid config: /);
+    assert.deepEqual(
+      result.errors.map((e) => [e.field, e.index, e.value]),
+      [
+        ["allowedSenderDomains", 0, "deloitte.comdeloitte.com"],
+        ["me.emails", 0, "alex"],
+      ],
+    );
+    assert.equal(replyStatus(result), 400);
+    assert.deepEqual(await pmo.store.loadConfig(), before);
+  });
+
+  it("normalises accepted entries (case, leading @, trailing dot, repeats)", async () => {
+    const result = await updateConfig(pmo, {
+      allowedSenderDomains: ["@Deloitte.com.", "deloitte.com", "us.deloitte.com", ""],
+      me: { names: ["Pat"], emails: ["Pat@Deloitte.COM"] },
+    });
+    assert.equal(result.ok, true, JSON.stringify(result));
+    assert.deepEqual(result.config.allowedSenderDomains, [
+      "deloitte.com",
+      "us.deloitte.com",
+    ]);
+    assert.deepEqual(result.config.me.emails, ["pat@deloitte.com"]);
+  });
+
+  it("still loads a config saved with malformed values, and flags them", async () => {
+    const saved = {
+      ...(await pmo.store.loadConfig()),
+      allowedSenderDomains: ["deloitte.comdeloitte.com", "deloitte.com"],
+      me: { names: ["Alsaju"], emails: ["alex", "a.morganalex.morgan@deloitte.com"] },
+    };
+    await pmo.store.saveConfig(saved);
+    const loaded = await pmo.store.loadConfig();
+    assert.deepEqual(loaded.allowedSenderDomains, saved.allowedSenderDomains);
+    assert.deepEqual(
+      malformedConfigEntries(loaded).map((entry) => [entry.field, entry.value]),
+      [
+        ["allowedSenderDomains", "deloitte.comdeloitte.com"],
+        ["emails", "alex"],
+      ],
+    );
+    // An unrelated edit is not blocked by, and does not rewrite, the bad lists.
+    const unrelated = await updateConfig(pmo, { retentionDays: 30 });
+    assert.equal(unrelated.ok, true);
+    assert.deepEqual(unrelated.config.allowedSenderDomains, saved.allowedSenderDomains);
   });
 
   it("falls back to the neutral defaults if config.json is damaged (setup not complete, so nothing is ingested)", async () => {
