@@ -3,8 +3,10 @@
 import { useState } from "react";
 import { Button } from "@/components/ui";
 import { cn } from "@/lib/cn";
+import { allowDomainPlan, malformedConfigEntries } from "@/lib/pmo/configHealth";
 import type { PmoState, QuarantineRecord } from "@/lib/pmo/types";
 import { updateConfig } from "./api";
+import { DomainRules } from "./DomainRules";
 import {
   CONTENT_WIDTH,
   Chip,
@@ -50,6 +52,10 @@ export function FilteredList({
   // A reason that no longer occurs (its items were cleared) falls back to All.
   const active = reason !== null && counts.some((c) => c.code === reason) ? reason : null;
   const shown = filterByReason(state.filtered, active);
+  const showRules =
+    active === "sender-domain-not-allowed" ||
+    active === "blocked-domain" ||
+    malformedConfigEntries(state.config).some((entry) => entry.field !== "emails");
 
   if (state.filtered.length === 0) {
     return (
@@ -93,6 +99,9 @@ export function FilteredList({
           {state.ingest.filteredCount === 1 ? "" : "s"} kept out of the review queue.
           <span className="text-ink-muted"> {WHY_NO_BODY}</span>
         </p>
+        {showRules && (
+          <DomainRules config={state.config} onOpenSettings={onOpenSettings} />
+        )}
         {shown.map((record, index) => (
           <FilteredRow
             key={record.id}
@@ -232,17 +241,19 @@ function FilteredRow({
             variant="secondary"
             size="sm"
             disabled={busy}
-            onClick={() =>
+            onClick={() => {
+              const domain = guidance.allowDomain as string;
+              const plan = allowDomainPlan(state.config, domain);
+              if (!plan.ok) return setNote(plan.reason);
               void allow(
-                {
-                  allowedSenderDomains: [
-                    ...state.config.allowedSenderDomains,
-                    guidance.allowDomain as string,
-                  ],
-                },
-                `${guidance.allowDomain} allowed. Send the email again (flag it again, or run the Outlook export with -IgnoreSeen).`,
-              )
-            }
+                plan.patch,
+                `${domain} allowed.${
+                  plan.dropped.length > 0
+                    ? ` Removed ${plan.dropped.length === 1 ? "an entry" : "entries"} that could never match mail (${plan.dropped.join(", ")}).`
+                    : ""
+                } Send the email again (flag it again, or run the Outlook export with -IgnoreSeen).`,
+              );
+            }}
           >
             Allow {guidance.allowDomain}
           </Button>

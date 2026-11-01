@@ -1280,11 +1280,31 @@ counts) but not the Teams default-deny.
 _Settings_ (`SettingsDialog`, form logic in `settingsForm.ts`) edits
 `config.json` through GET/PUT `/api/pmo/config`, validated by the same
 `PmoConfigPatchSchema` (GUID tenant ids, domains, emails, retention bounds) with
-inline per-line errors, and shows the inbox and data paths read-only. The
+inline per-entry errors, and shows the inbox and data paths read-only. The
 Filtered tab filters by reason and, per item, offers the one-click rule change
 (_Allow this tenant_ / _Allow \<domain\>_) and the steps to resend. It cannot
 "move to review": the text of a filtered message is discarded at filter time on
 purpose, and the tab says so.
+
+**Email and domain lists** (`listValidation.ts`, the one place that decides what
+is an address or a domain): the wizard, Settings, the Filtered tab and the
+server all use `parseEmailList` / `parseDomainList` (split on newline, comma,
+semicolon or space; trim, lower-case, strip a leading `@` and trailing dots,
+de-duplicate; everything else is rejected with a reason such as "Not an email
+address", "Not a domain (example: company.com)", "Looks like two addresses joined
+together" or a domain typed twice like `company.comcompany.com`; at most 200
+entries and 20 000 characters). `POST /api/pmo/setup` and `PUT /api/pmo/config`
+refuse a body with a bad entry as HTTP **400**
+`{ ok:false, reason, errors:[{ field, index?, value, reason }] }` and save
+nothing; accepted entries are saved normalised. Reading `config.json` stays
+lenient: already-saved malformed values still load (they could never match mail)
+and `configHealth.ts` flags them, in Settings and in a panel on the Filtered tab
+that lists the allowed and blocked domains with a _Fix in settings_ action. The
+one-click _Allow \<domain\>_ validates the domain and sends the saved list back
+without its malformed entries (the server refuses a list that still has one). The
+wizard never pre-fills a text box (typing would append to it): the work email's
+domain is a placeholder with a _Use suggestion_ button, and _Next_ stays disabled
+while an entry is invalid.
 
 **Retention** (`server/retention.ts`; `retentionDays` in `config.json`, default
 90): logs older than that are dropped line by line; the saved text

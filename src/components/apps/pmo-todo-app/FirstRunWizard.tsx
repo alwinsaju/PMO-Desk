@@ -8,10 +8,12 @@ import {
   firstRunPayload,
   initialFirstRunForm,
   stepProblems,
+  suggestedDomain,
   timeZoneChoices,
   withSuggestedDomain,
   type FirstRunForm,
 } from "@/lib/pmo/firstRun";
+import { checkEmail, parseDomainList } from "@/lib/pmo/listValidation";
 import type { FirstRunSuggestions } from "@/lib/pmo/server/firstRun";
 import {
   clearProgress,
@@ -23,7 +25,17 @@ import {
   type WizardStorage,
 } from "@/lib/pmo/firstRunMemory";
 import { createInboxFolder, fetchFirstRunSuggestions, finishFirstRun } from "./api";
-import { ErrorLine, Field, NativeSelect, Note, ScrollBody, SectionLabel } from "./parts";
+import { DOMAIN_NOUN } from "./listFeedbackView";
+import { ListFeedback, SuggestionRow } from "./ListFeedback";
+import {
+  ErrorLine,
+  Field,
+  FieldError,
+  NativeSelect,
+  Note,
+  ScrollBody,
+  SectionLabel,
+} from "./parts";
 
 const detectedTimeZone = () => {
   try {
@@ -115,6 +127,27 @@ export function FirstRunWizard({
   const current = FIRST_RUN_STEPS[step];
   const last = step === FIRST_RUN_STEPS.length - 1;
 
+  // Live checks: Next stays disabled while an entry the server would refuse is in the box.
+  const allowedParsed = useMemo(
+    () => parseDomainList(form.allowedDomains),
+    [form.allowedDomains],
+  );
+  const blockedParsed = useMemo(
+    () => parseDomainList(form.blockedDomains),
+    [form.blockedDomains],
+  );
+  const emailChecked = form.email.trim() === "" ? null : checkEmail(form.email);
+  const emailProblem = emailChecked && !emailChecked.ok ? emailChecked.reason : null;
+  const domainSuggestion = suggestedDomain(form);
+  const entriesInvalid =
+    current.id === "who"
+      ? emailProblem !== null
+      : current.id === "domains"
+        ? allowedParsed.invalid.length > 0 ||
+          blockedParsed.invalid.length > 0 ||
+          allowedParsed.valid.length === 0
+        : false;
+
   const set = (patch: Partial<FirstRunForm>) => {
     setForm((value) => ({ ...value, ...patch }));
     setProblems([]);
@@ -127,7 +160,6 @@ export function FirstRunWizard({
     if (found.length > 0) return setProblems(found);
     setProblems([]);
     setServerError(null);
-    if (FIRST_RUN_STEPS[step + 1]?.id === "domains") setForm(withSuggestedDomain(form));
     setStep(step + 1);
   }
 
@@ -242,8 +274,10 @@ export function FirstRunWizard({
                   value={form.email}
                   autoComplete="email"
                   placeholder="you@company.com"
+                  aria-invalid={emailProblem ? true : undefined}
                   onChange={(event) => set({ email: event.target.value })}
                 />
+                <FieldError message={emailProblem ?? undefined} />
               </Field>
             </div>
           )}
@@ -272,25 +306,50 @@ export function FirstRunWizard({
 
           {current.id === "domains" && (
             <div className="flex flex-col gap-3.5">
-              <Field label="Sender domains you receive work mail from (comma separated)">
-                <Input
-                  value={form.allowedDomains}
-                  spellCheck={false}
-                  placeholder="company.com"
-                  onChange={(event) => set({ allowedDomains: event.target.value })}
-                />
-                <span className="text-ink-muted text-[12px]">
-                  Mail from any other domain is filtered. Subdomains match.
-                </span>
-              </Field>
-              <Field label="Domains to always block (optional)">
-                <Input
-                  value={form.blockedDomains}
-                  spellCheck={false}
-                  placeholder="other-company.example"
-                  onChange={(event) => set({ blockedDomains: event.target.value })}
-                />
-              </Field>
+              <div className="flex flex-col gap-2">
+                <Field label="Sender domains you receive work mail from (comma separated)">
+                  <Input
+                    value={form.allowedDomains}
+                    spellCheck={false}
+                    placeholder={domainSuggestion ?? "company.com"}
+                    aria-invalid={allowedParsed.invalid.length > 0 ? true : undefined}
+                    onFocus={(event) => {
+                      if (domainSuggestion && form.allowedDomains === domainSuggestion) {
+                        event.currentTarget.select();
+                      }
+                    }}
+                    onChange={(event) => set({ allowedDomains: event.target.value })}
+                  />
+                  <span className="text-ink-muted text-[12px]">
+                    Mail from any other domain is filtered and discarded. Subdomains
+                    match.
+                  </span>
+                </Field>
+                {domainSuggestion && form.allowedDomains.trim() === "" && (
+                  <SuggestionRow
+                    suggestion={domainSuggestion}
+                    onUse={() => set({ allowedDomains: domainSuggestion })}
+                  />
+                )}
+                <ListFeedback parsed={allowedParsed} noun={DOMAIN_NOUN} />
+                {form.allowedDomains.trim() === "" && (
+                  <span className="text-ink-muted text-[12px]">
+                    Enter at least one domain, for example company.com.
+                  </span>
+                )}
+              </div>
+              <div className="flex flex-col gap-2">
+                <Field label="Domains to always block (optional)">
+                  <Input
+                    value={form.blockedDomains}
+                    spellCheck={false}
+                    placeholder="other-company.example"
+                    aria-invalid={blockedParsed.invalid.length > 0 ? true : undefined}
+                    onChange={(event) => set({ blockedDomains: event.target.value })}
+                  />
+                </Field>
+                <ListFeedback parsed={blockedParsed} noun={DOMAIN_NOUN} />
+              </div>
             </div>
           )}
 
@@ -402,7 +461,9 @@ export function FirstRunWizard({
                     Skip for now
                   </Button>
                 )}
-                <Button onClick={next}>Next</Button>
+                <Button onClick={next} disabled={entriesInvalid}>
+                  Next
+                </Button>
               </span>
             )}
           </div>
