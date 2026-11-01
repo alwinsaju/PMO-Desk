@@ -10,6 +10,8 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui";
+import { useWindowContext } from "@/components/window-manager";
+import { noSpellcheck } from "@/lib/ui/noSpellcheck";
 import { appCatalog, appCategories } from "./appCatalog";
 import { AppCategoryRow } from "./AppCategoryRow";
 import { runAppPrimaryAction } from "./appActions";
@@ -34,6 +36,10 @@ type CategoryFilter = "all" | AppCategoryId;
 export function AppStoreApp({ windowId }: { windowId: string }) {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<CategoryFilter>("all");
+  useWindowContext(
+    windowId,
+    category === "all" ? null : (appCategories.find((c) => c.id === category)?.label ?? null),
+  );
 
   // Shared, persisted install state — see installedAppsStore.ts. Every open
   // App Store window instance (see AppComponent's own doc comment on
@@ -71,9 +77,14 @@ export function AppStoreApp({ windowId }: { windowId: string }) {
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search apps"
               aria-label="Search apps"
+              {...noSpellcheck}
               className="text-ink placeholder:text-ink-muted h-full min-w-0 flex-1 bg-transparent text-[15px] outline-none"
             />
           </label>
+          <p className="text-ink-muted text-[12.5px]">
+            Sample catalogue: apps marked <strong className="font-semibold">Demo</strong>{" "}
+            are examples and do nothing yet; the others open the real website.
+          </p>
 
           {!trimmedQuery && (
             <TabsList>

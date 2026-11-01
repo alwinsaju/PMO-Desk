@@ -8,8 +8,11 @@
 // just the ones that happen to already cross a client boundary first.
 
 import { useWindowStore } from "@/components/window-manager";
+import { pinApp } from "@/components/taskbar/pinnedAppsStore";
+import { toast } from "@/lib/notifications/toastStore";
 import { appIcons } from "./appCatalog";
 import { installApp, isAppInstalled, uninstallApp } from "./installedAppsStore";
+import { installedToast, removedToast } from "./installFlow";
 import type { AppListing } from "./types";
 
 /**
@@ -30,8 +33,9 @@ import type { AppListing } from "./types";
  * For a REAL entry (has `url`) that's already installed: opens the real
  * "web-app" window (see appCatalog.ts's "Real web apps" section). In every
  * other case — not installed yet, OR a fictional entry with no `url` at
- * all, installed or not — just flips shared install state: installs if not
- * installed, uninstalls if already installed. That second branch is
+ * all, installed or not — installs if not installed (via `completeInstall`:
+ * dock pin + confirmation toast), uninstalls if already installed (with an
+ * Undo toast). That second branch is
  * unchanged, pre-existing behavior for fictional entries (clicking "Open"
  * on an already-installed fictional app has always uninstalled it right
  * back off, since there's no real window content behind it either way) —
@@ -52,6 +56,18 @@ export function runAppPrimaryAction(app: AppListing): void {
     return;
   }
 
-  if (installed) uninstallApp(app.id);
-  else installApp(app.id);
+  if (installed) {
+    uninstallApp(app.id);
+    toast(removedToast(app, () => completeInstall(app)));
+  } else {
+    completeInstall(app);
+  }
+}
+
+/** Installs, puts the app on the dock and confirms it with a toast. The card's
+ *  "Installing" state (AppCard.tsx) runs before this is called. */
+export function completeInstall(app: AppListing): void {
+  installApp(app.id);
+  pinApp(app.id);
+  toast(installedToast(app, () => runAppPrimaryAction(app)));
 }
