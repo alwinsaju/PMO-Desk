@@ -13,6 +13,7 @@ import {
 } from "@phosphor-icons/react";
 import { SettingsMenu } from "@/components/desktop/SettingsMenu";
 import { Wallpaper } from "@/components/desktop/Wallpaper";
+import { SharedComponentExamples } from "./SharedComponentExamples";
 import {
   Avatar,
   Badge,
@@ -349,6 +350,8 @@ export function DesignGallery() {
             </div>
           </ScrollArea>
         </Section>
+
+        <SharedComponentExamples />
       </div>
     </div>
   );
