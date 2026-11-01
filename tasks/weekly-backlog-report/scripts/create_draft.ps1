@@ -30,7 +30,7 @@ $Subject = if ($data.subject) { $data.subject } else { "Backlog Incidents | $($d
 
 $olMailItem = 0
 $olText = 1
-$draftTokenPropertyName = "AI OS Draft Token"
+$draftTokenPropertyName = "PMO Desk Draft Token"
 $draftToken = [guid]::NewGuid().ToString("N")
 $draftTokenPath = Join-Path $PSScriptRoot "..\output\draft-entry-id.txt"
 

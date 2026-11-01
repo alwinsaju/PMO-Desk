@@ -1,4 +1,4 @@
-// The OneDrive folders AI OS shares with Power Automate, all inside one folder so
+// The OneDrive folders PMO Desk shares with Power Automate, all inside one folder so
 // they are easy to find and to map:
 //
 //   <OneDrive>\AI-OS\PMO-Inbox        flagged emails and Teams messages for the PMO To-Do
@@ -8,12 +8,14 @@
 // The installer creates them on a fresh install; the app also creates whatever is
 // missing. Installs from before this layout used PMO-Inbox and Staff-Exchange
 // directly in the OneDrive folder: those keep working (see the legacy helpers).
-// RULE: every folder AI OS or a flow uses in OneDrive lives inside AI-OS. To add one:
+// RULE: every folder PMO Desk or a flow uses in OneDrive lives inside AI-OS. To add one:
 // name it here, add it to aiOsFolders/describeFolders, to the installer
 // (build/installer.nsh) and to the Setup checks, then give it a flow guide.
 // Pure: the filesystem is passed in. No node: imports, because the setup report that
 // uses these names is also read in the browser.
 
+// Kept as "AI-OS" on purpose: live Power Automate flows write into this OneDrive folder, so renaming it
+// would silently stop intake. It is a folder name, not product text.
 export const AI_OS_FOLDER_NAME = "AI-OS";
 export const PMO_INBOX_FOLDER_NAME = "PMO-Inbox";
 export const STAFF_EXCHANGE_FOLDER_NAME = "Staff-Exchange";

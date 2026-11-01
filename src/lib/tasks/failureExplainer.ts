@@ -60,7 +60,7 @@ const RULES: Rule[] = [
     title: () => "A Python component is missing",
     steps: () => [
       "This is a set-up problem, not a problem with your files.",
-      "Copy the details below and send them to whoever supports AI OS.",
+      "Copy the details below and send them to whoever supports PMO Desk.",
     ],
   },
   {

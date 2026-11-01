@@ -13,6 +13,7 @@ import { ArrowRightIcon, UserIcon } from "@phosphor-icons/react";
 import { cn } from "@/lib/cn";
 import { trapTarget } from "@/lib/focusKeys";
 import { easeEntrance, easeExit, springSnappy, springWindow } from "@/lib/motion";
+import { PmoDeskMark } from "@/components/brand/PmoDeskMark";
 import { Wallpaper } from "@/components/desktop/Wallpaper";
 import { useDockBadgeStore } from "@/components/taskbar/dockBadgeStore";
 import { usePreferences } from "@/lib/preferences/preferencesStore";
@@ -233,7 +234,7 @@ export function LoginScreen({ isUnlocking, onUnlock, onExitComplete }: LoginScre
         isUnlocking && "pointer-events-none",
       )}
     >
-      <Wallpaper />
+      <Wallpaper logo={false} />
       {/* The tint + saturation scrim — this, not Wallpaper itself, is what's
           "dimmed behind the login content". Wallpaper stays untouched so it's
           pixel-identical to the copy Desktop renders underneath. There is no
@@ -280,6 +281,13 @@ export function LoginScreen({ isUnlocking, onUnlock, onExitComplete }: LoginScre
         className="relative flex flex-col items-center gap-10 px-6"
       >
         <div className="flex flex-col items-center gap-3">
+          <div
+            className="flex items-center gap-3 text-white [text-shadow:0_2px_14px_rgba(40,30,80,0.3)]"
+            data-testid="login-brand"
+          >
+            <PmoDeskMark size={44} variant="dark" title="" />
+            <span className="font-headline text-[26px] leading-none">PMO Desk</span>
+          </div>
           <LoginClock />
           <LockSummary />
         </div>
@@ -329,6 +337,10 @@ export function LoginScreen({ isUnlocking, onUnlock, onExitComplete }: LoginScre
           </button>
           <p className="text-[13px] text-white/85">Press Enter or click Continue</p>
         </form>
+        <span
+          aria-hidden
+          className="brand-dl:block hidden h-6 w-32 bg-[url('/brand/deloitte-dark.png')] bg-contain bg-center bg-no-repeat"
+        />
       </motion.div>
     </motion.div>
   );

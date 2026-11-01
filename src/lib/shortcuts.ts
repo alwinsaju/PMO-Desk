@@ -1,4 +1,4 @@
-// The keyboard shortcuts of AI OS, for the shortcut sheet (Settings > Shortcuts, or press ?).
+// The keyboard shortcuts of PMO Desk, for the shortcut sheet (Settings > Shortcuts, or press ?).
 // One list so the sheet cannot drift from what is documented here; the handlers live next to
 // the features (focusKeys.ts, windowSnap.ts, windowSwitch.ts, listKeys.ts, GlobalSearch).
 

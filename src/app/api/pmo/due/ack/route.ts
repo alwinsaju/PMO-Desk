@@ -13,7 +13,7 @@ export async function POST(request: Request) {
       ? {
           ok: false,
           desktopOwns: true,
-          reason: "The AI OS desktop app delivers reminders on this server.",
+          reason: "The PMO Desk desktop app delivers reminders on this server.",
         }
       : { ok: true, ...(await acknowledgeDue(pmo, body)) },
   );

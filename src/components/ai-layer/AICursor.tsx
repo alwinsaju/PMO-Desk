@@ -7,9 +7,8 @@ import { springTrailing } from "@/lib/motion";
 import { useAgentStore } from "./agentStore";
 
 /**
- * The AI's on-screen cursor: an accent-filled pointer with a soft accent glow
- * and a small "AI Agent" name-tag chip, like a multiplayer cursor in
- * Docs/Figma. Portal-rendered straight to `document.body` so its
+ * The AI's on-screen cursor: the dark pointer with a white outline from the approved
+ * mock-up (docs/marketing/pmo-desk-launch.html), with no name tag. Portal-rendered straight to `document.body` so its
  * `position: fixed` coordinates are always relative to the viewport,
  * regardless of where this component happens to be mounted in the tree
  * (or what stacking/overflow context its React parent has).
@@ -68,26 +67,23 @@ export function AICursor() {
       }}
       className="pointer-events-none fixed top-0 left-0 z-[var(--z-overlay)]"
     >
+      {/* The pointer of the approved mock-up (`.cursor` / `#gcur`): near-black with a white
+          1.5px outline and a soft drop shadow. The tip (4,3 of 24) sits on the point. */}
       <svg
         viewBox="0 0 24 24"
-        width={30}
-        height={30}
-        className="-translate-x-[5px] -translate-y-1"
-        style={{
-          filter:
-            "drop-shadow(0 6px 10px color-mix(in srgb, var(--color-accent) 55%, transparent))",
-        }}
+        width={22}
+        height={22}
+        className="-translate-x-[3.7px] -translate-y-[2.75px]"
+        style={{ filter: "drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3))" }}
       >
         <path
-          d="M4 3l6.5 17 2.6-7.1L20 10.3z"
-          className="fill-accent stroke-white"
-          strokeWidth={1.6}
+          d="M4 3l16 7-7 2.5L10 20z"
+          fill="#14171c"
+          stroke="#fff"
+          strokeWidth={1.5}
           strokeLinejoin="round"
         />
-      </svg>
-      <span className="bg-accent text-accent-contrast rounded-pill absolute top-[22px] left-6 flex h-6 items-center px-2.5 text-xs font-bold whitespace-nowrap">
-        AI Agent
-      </span>
+      </svg>{" "}
     </motion.div>,
     document.body,
   );

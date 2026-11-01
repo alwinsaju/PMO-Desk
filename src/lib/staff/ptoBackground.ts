@@ -1,4 +1,4 @@
-// Reads the PTO-Inbox (and applies M365 profile files) on its own while AI OS runs, with no
+// Reads the PTO-Inbox (and applies M365 profile files) on its own while PMO Desk runs, with no
 // Staff window open: the person only has to approve what the AI filed. Started once from
 // instrumentation.ts. Every step is idempotent and shares its in-flight scan with the Staff
 // window's own sync, so the two never double up.

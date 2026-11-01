@@ -155,7 +155,7 @@ export function TaskActions({
           }));
           toast({
             tone: "success",
-            message: `Queued: ${task.displayName} will be sent ${at.toLocaleString("en-GB", { weekday: "short", hour: "2-digit", minute: "2-digit" })} if AI OS is open.`,
+            message: `Queued: ${task.displayName} will be sent ${at.toLocaleString("en-GB", { weekday: "short", hour: "2-digit", minute: "2-digit" })} if PMO Desk is open.`,
           });
         }}
       />

@@ -27,7 +27,7 @@ export interface StepDef {
   brands: BrandId[];
   /** Moves on by itself a moment after it is done. */
   auto: boolean;
-  /** Can be left for later without breaking AI OS. */
+  /** Can be left for later without breaking PMO Desk. */
   optional: boolean;
 }
 
@@ -35,7 +35,7 @@ export const STEPS: readonly StepDef[] = [
   {
     id: "welcome",
     label: "Welcome",
-    title: "Welcome to AI OS",
+    title: "Welcome to PMO Desk",
     blurb:
       "A few quick steps get this computer ready. Everything runs on your computer; nothing about your work leaves it.",
     check: null,
@@ -79,7 +79,7 @@ export const STEPS: readonly StepDef[] = [
     label: "Outlook",
     title: "Classic Outlook",
     blurb:
-      "Only the mail tasks (reports, mailers) need it. AI OS looks; it never opens your mailbox.",
+      "Only the mail tasks (reports, mailers) need it. PMO Desk looks; it never opens your mailbox.",
     check: "outlook",
     brands: ["outlook"],
     auto: true,
@@ -90,7 +90,7 @@ export const STEPS: readonly StepDef[] = [
     label: "OneDrive",
     title: "Your OneDrive folders",
     blurb:
-      "One AI-OS folder in OneDrive is where Power Automate and AI OS pass files to each other.",
+      "One AI-OS folder in OneDrive is where Power Automate and PMO Desk pass files to each other.",
     check: "folders",
     brands: ["onedrive"],
     auto: true,
@@ -110,7 +110,7 @@ export const STEPS: readonly StepDef[] = [
   {
     id: "finish",
     label: "Ready",
-    title: "AI OS is ready",
+    title: "PMO Desk is ready",
     blurb: "Here is how this computer looks.",
     check: "flows",
     brands: ["aios"],

@@ -35,7 +35,7 @@ $Subject = if ($data.subject) { $data.subject } else { "Aging Incidents | Last u
 
 $olMailItem = 0
 $olText = 1
-$draftTokenPropertyName = "AI OS Draft Token"
+$draftTokenPropertyName = "PMO Desk Draft Token"
 $draftToken = [guid]::NewGuid().ToString("N")
 $draftTokenPath = Join-Path $PSScriptRoot "..\output\draft-entry-id.txt"
 

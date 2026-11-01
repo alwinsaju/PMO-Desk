@@ -191,8 +191,8 @@ export function PacksTab({ onChanged }: { onChanged: () => void }) {
     <div className="flex w-full flex-col gap-4 px-6 pt-2 pb-6" data-testid="packs-tab">
       <div className="flex flex-wrap items-center gap-2">
         <p className="text-ink-muted min-w-48 flex-1 text-[13px]">
-          Add a task without reinstalling AI OS. A pack is checked against its checksums
-          before anything is installed.
+          Add a task without reinstalling PMO Desk. A pack is checked against its
+          checksums before anything is installed.
         </p>
         <Button size="sm" onClick={() => setWizard(true)}>
           New mailer…

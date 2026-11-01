@@ -45,9 +45,45 @@ export function getStoredTheme(): Theme {
   }
 }
 
+/**
+ * Runs a look change (dark/light, Deloitte mode) as ONE cross-fade of the whole screen
+ * instead of letting hundreds of colours, shadows and the wallpaper change on their own
+ * timelines. The browser snapshots the old screen, applies `change`, and fades between the
+ * two snapshots on the compositor, so it stays at the display's frame rate however busy
+ * the page is. While it runs, CSS transitions are switched off (`data-look-switching`,
+ * globals.css) so nothing animates twice. Without the View Transitions API, or when the
+ * person asked for less motion, the change is applied at once.
+ */
+export function withLookTransition(change: () => void): void {
+  if (typeof document === "undefined") {
+    change();
+    return;
+  }
+  const doc = document as Document & {
+    startViewTransition?: (update: () => void) => { finished: Promise<unknown> };
+  };
+  const reduced =
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (typeof doc.startViewTransition !== "function" || reduced) {
+    change();
+    return;
+  }
+  const root = document.documentElement;
+  root.setAttribute("data-look-switching", "");
+  const done = () => root.removeAttribute("data-look-switching");
+  try {
+    doc.startViewTransition(change).finished.then(done, done);
+  } catch {
+    done();
+    change();
+  }
+}
+
 /** Applies `theme` to <html> and persists the choice for next time. */
 export function setTheme(theme: Theme): void {
-  writeTheme(theme);
+  persistTheme(theme);
+  withLookTransition(() => writeTheme(theme));
   mirrorPreferences({ theme, brand: getStoredBrand() });
 }
 
@@ -59,6 +95,10 @@ function writeTheme(theme: Theme): void {
       document.documentElement.removeAttribute("data-theme");
     }
   }
+  persistTheme(theme);
+}
+
+function persistTheme(theme: Theme): void {
   try {
     window.localStorage.setItem(THEME_STORAGE_KEY, theme);
   } catch {
@@ -81,7 +121,8 @@ export function getStoredBrand(): Brand {
 
 /** Applies `brand` to <html> and persists the choice for next time. */
 export function setBrand(brand: Brand): void {
-  writeBrand(brand);
+  persistBrand(brand);
+  withLookTransition(() => writeBrand(brand));
   mirrorPreferences({ theme: getStoredTheme(), brand });
 }
 
@@ -93,6 +134,10 @@ function writeBrand(brand: Brand): void {
       document.documentElement.removeAttribute("data-brand");
     }
   }
+  persistBrand(brand);
+}
+
+function persistBrand(brand: Brand): void {
   try {
     window.localStorage.setItem(BRAND_STORAGE_KEY, brand);
   } catch {

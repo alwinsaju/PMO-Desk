@@ -14,8 +14,8 @@ const DESCRIPTIONS: Readonly<Record<string, string>> = {
     "Templates holds the wording of emails and reports. Pick one, edit it, and tick where it is used (a task or a PMO slot). The preview shows example values; nothing is sent from here.",
   notes:
     "Notes is a simple notepad. The AI can create, update or delete notes while this window is focused.",
-  files: "Files browses the files on this computer's AI OS folders.",
-  browser: "Browser opens web pages inside AI OS.",
+  files: "Files browses the files on this computer's PMO Desk folders.",
+  browser: "Browser opens web pages inside PMO Desk.",
   "app-store": "App Store lists extra apps you can add to the dock.",
 };
 

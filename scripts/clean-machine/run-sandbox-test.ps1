@@ -10,10 +10,10 @@ writable).
   .\run-sandbox-test.ps1 -InstallerDir ... -LaunchApp -Lifecycle
   .\run-sandbox-test.ps1 -InstallerDir ... -LaunchApp -KeepOpen
 
--InstallerDir  the folder holding "AI OS Setup <version>.exe" (a build made with
+-InstallerDir  the folder holding "PMO Desk Setup <version>.exe" (a build made with
                --config.directories.output=<folder>, never a folder you care about)
 -LaunchApp     also starts the real app inside the sandbox (fresh profile, empty PMO inbox)
--Lifecycle     also reinstalls over the top and uninstalls (the sandbox ends with AI OS removed)
+-Lifecycle     also reinstalls over the top and uninstalls (the sandbox ends with PMO Desk removed)
 -KeepOpen      leave the sandbox open afterwards so you can click around (not with -Lifecycle)
 -SkipPolicyCheck  skip the up-front check for a device policy that disables Windows Sandbox
 
@@ -36,7 +36,7 @@ $sandboxExe = Get-Command WindowsSandbox.exe -ErrorAction SilentlyContinue
 if (-not $sandboxExe) {
     throw "Windows Sandbox is not installed. Enable it (Optional features > Windows Sandbox, needs a restart), or follow the virtual-machine steps in docs/clean-machine-test.md."
 }
-if ($Lifecycle -and $KeepOpen) { throw "-Lifecycle ends with AI OS uninstalled, so there is nothing to click around in: use one of -Lifecycle or -KeepOpen." }
+if ($Lifecycle -and $KeepOpen) { throw "-Lifecycle ends with PMO Desk uninstalled, so there is nothing to click around in: use one of -Lifecycle or -KeepOpen." }
 
 # Policy preflight: an MDM/GPO that turns the sandbox's folder mapping off makes the .wsb fail (or the guest never
 # write results), and the old script then waited the full timeout. Say so at once (SBX-002).
@@ -61,8 +61,8 @@ if (@(Get-Process -Name $sandboxProcs -ErrorAction SilentlyContinue).Count -gt 0
     throw "A Windows Sandbox is already running (only one can run at a time). Close it first."
 }
 
-$installer = Get-ChildItem -LiteralPath $InstallerDir -Filter "AI OS Setup *.exe" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-if (-not $installer) { throw "No 'AI OS Setup *.exe' in $InstallerDir" }
+$installer = Get-ChildItem -LiteralPath $InstallerDir -Filter "PMO Desk Setup *.exe" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+if (-not $installer) { throw "No 'PMO Desk Setup *.exe' in $InstallerDir" }
 $InstallerDir = (Resolve-Path $InstallerDir).Path
 New-Item -ItemType Directory -Force -Path $ResultsDir | Out-Null
 $ResultsDir = (Resolve-Path $ResultsDir).Path

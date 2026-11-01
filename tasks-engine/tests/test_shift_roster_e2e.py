@@ -14,7 +14,7 @@ Hermetic by construction:
   synthetic test helpers (`shift-roster/tests/synth.py`, fictional "Person NN" names);
 * nothing here can reach Outlook/COM, and opening a file with the OS default app is stubbed.
 
-The tests skip when the AI OS tasks folder is not on this machine
+The tests skip when the PMO Desk tasks folder is not on this machine
 (override its location with AI_OS_TASKS_SRC).
 """
 import hashlib
@@ -40,7 +40,7 @@ SHARED_SRC = TASKS_SRC / "shared"
 
 pytestmark = pytest.mark.skipif(
     not (TASK_SRC / "task.json").exists() or not (SHARED_SRC / "roster_lib").is_dir(),
-    reason="the AI OS shift-roster task is not available here",
+    reason="the PMO Desk shift-roster task is not available here",
 )
 
 TASK_ID = "shift-roster"
@@ -68,7 +68,7 @@ _KIT = {}
 
 
 def kit():
-    """The task's own synthetic-data helpers (imported lazily from the AI OS repo)."""
+    """The task's own synthetic-data helpers (imported lazily from the PMO Desk repo)."""
     if not _KIT:
         for p in (SHARED_SRC / "roster_lib" / "tests", SHARED_SRC, TASK_SRC / "tests", TASK_SRC / "scripts"):
             if str(p) not in sys.path:

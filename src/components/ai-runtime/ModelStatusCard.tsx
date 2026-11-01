@@ -167,9 +167,9 @@ export function ModelStatusCard({
             ? "not running"
             : status.ownedByUs
               ? status.adopted
-                ? "taken over from an earlier AI OS session (stopped on quit)"
-                : "started by AI OS (stopped on quit)"
-              : "shared, already running (never stopped by AI OS)"}
+                ? "taken over from an earlier PMO Desk session (stopped on quit)"
+                : "started by PMO Desk (stopped on quit)"
+              : "shared, already running (never stopped by PMO Desk)"}
           {status.version ? ` · ${status.version}` : ""}
         </Fact>
         <Fact label="Keep-alive">

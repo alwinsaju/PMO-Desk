@@ -43,7 +43,7 @@ export function describeEmbedFailure({
   switch (code) {
     case "framing":
       return {
-        title: `${host} doesn't allow being shown inside AI OS`,
+        title: `${host} doesn't allow being shown inside PMO Desk`,
         message:
           "The site's own security settings stop other apps from displaying it. Nothing is wrong on your side. Open it in your regular browser instead.",
         cause:
@@ -55,9 +55,9 @@ export function describeEmbedFailure({
       return {
         title: `Can't reach ${host}`,
         message:
-          "AI OS could not connect to the site. Check your internet connection and press Reload. On a work network a proxy or security filter can block AI OS even when the site opens in your regular browser.",
+          "PMO Desk could not connect to the site. Check your internet connection and press Reload. On a work network a proxy or security filter can block PMO Desk even when the site opens in your regular browser.",
         cause:
-          "AI OS could not connect. A work-network proxy or security filter can cause this even when the site works in your browser.",
+          "PMO Desk could not connect. A work-network proxy or security filter can cause this even when the site works in your browser.",
         nextStep: "Retry, or open it in your default browser.",
         retryable: true,
       };
@@ -70,7 +70,7 @@ export function describeEmbedFailure({
         retryable: true,
       };
     default: {
-      const message = reason ?? "This page could not be shown inside AI OS.";
+      const message = reason ?? "This page could not be shown inside PMO Desk.";
       return {
         title: `Can't show ${host} here`,
         message,

@@ -54,7 +54,7 @@ function WindowTitleSuffix() {
 
 const stripPrefix = (title: string) => title.replace(/^\(\d+\)\s/, "");
 
-/** "(N) AI OS" in the tab title when this is a plain browser tab without
+/** "(N) PMO Desk" in the tab title when this is a plain browser tab without
  *  notification permission: the title is then the only thing a background tab
  *  can show. The Electron shell pins its own window title, so it is skipped. */
 function TitlePrefix() {

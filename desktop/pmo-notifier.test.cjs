@@ -193,7 +193,7 @@ describe("when not to poll", () => {
   it("reports a refused claim (a browser owns it, or the server said no) once, not every minute", async () => {
     const refusal = {
       ok: false,
-      reason: "The AI OS desktop app delivers reminders on this server.",
+      reason: "The PMO Desk desktop app delivers reminders on this server.",
     };
     const { poller, logs } = harness([
       refusal,

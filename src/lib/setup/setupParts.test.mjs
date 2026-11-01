@@ -310,8 +310,8 @@ describe("saving the inbox choice", () => {
         safety: {
           home: HOME,
           protectedDirs: [
-            "C:\\Program Files\\AI OS",
-            "C:\\Users\\pat\\AppData\\Local\\AI OS",
+            "C:\\Program Files\\PMO Desk",
+            "C:\\Users\\pat\\AppData\\Local\\PMO Desk",
           ],
           libraryRoots: ["C:\\Users\\pat\\OneDrive - Deloitte"],
           sampleJsonFiles: () => [],
@@ -334,11 +334,11 @@ describe("saving the inbox choice", () => {
         "C:\\Users\\pat\\OneDrive - Deloitte\\Documents",
         /Documents/,
       ],
-      ["the install folder", "C:\\Program Files\\AI OS", /AI OS itself/],
+      ["the install folder", "C:\\Program Files\\PMO Desk", /PMO Desk itself/],
       [
         "inside the data folder",
-        "C:\\Users\\pat\\AppData\\Local\\AI OS\\pmo\\inbox",
-        /AI OS itself/,
+        "C:\\Users\\pat\\AppData\\Local\\PMO Desk\\pmo\\inbox",
+        /PMO Desk itself/,
       ],
     ]) {
       it(`refuses ${label} with a plain reason and saves nothing`, async () => {

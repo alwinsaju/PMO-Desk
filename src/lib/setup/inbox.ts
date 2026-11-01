@@ -107,7 +107,7 @@ export type SaveInboxResult =
 export interface InboxSafetyFacts {
   /** The user's home folder. */
   home: string;
-  /** Folders that hold AI OS itself or its data; the folder and everything in it is refused. */
+  /** Folders that hold PMO Desk itself or its data; the folder and everything in it is refused. */
   protectedDirs?: string[];
   /** Other roots (OneDrive) whose Documents, Desktop and Downloads are refused too. */
   libraryRoots?: string[];
@@ -163,7 +163,7 @@ export function inboxFolderProblem(
       (folder === protectedDir || folder.startsWith(`${protectedDir}\\`))
     ) {
       return {
-        reason: `That folder belongs to AI OS itself (its program or data files). ${FIX}`,
+        reason: `That folder belongs to PMO Desk itself (its program or data files). ${FIX}`,
       };
     }
   }
@@ -178,7 +178,7 @@ export function inboxFolderProblem(
     return {
       reason: `That folder already holds ${other.length} JSON file${
         other.length === 1 ? "" : "s"
-      } that ${other.length === 1 ? "is" : "are"} not PMO messages (${names}). AI OS leaves them alone, but they would show up as clutter. ${FIX} Or confirm that you want to use it anyway.`,
+      } that ${other.length === 1 ? "is" : "are"} not PMO messages (${names}). PMO Desk leaves them alone, but they would show up as clutter. ${FIX} Or confirm that you want to use it anyway.`,
       needsConfirmation: true,
     };
   }

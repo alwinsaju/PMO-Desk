@@ -73,7 +73,10 @@ export function readPack(textIn: string, existingNames: readonly string[]): Pack
   if (!pack || pack.format !== PACK_FORMAT || !Array.isArray(pack.templates))
     return { ok: false, reason: "That file is not a template pack." };
   if (pack.version !== PACK_VERSION)
-    return { ok: false, reason: "This pack was made by a different version of AI OS." };
+    return {
+      ok: false,
+      reason: "This pack was made by a different version of PMO Desk.",
+    };
   const taken = new Set(existingNames.map((n) => n.toLowerCase()));
   const templates: TemplateInput[] = [];
   const skipped: string[] = [];

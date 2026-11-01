@@ -22,7 +22,7 @@ export async function POST(request: Request) {
       });
     }
     if (!isNewer(found.manifest.version, appVersion())) {
-      return NextResponse.json({ ok: false, reason: "AI OS is already up to date." });
+      return NextResponse.json({ ok: false, reason: "PMO Desk is already up to date." });
     }
     const dir =
       process.env.AI_OS_DOWNLOADS_DIR?.trim() || path.join(os.homedir(), "Downloads");

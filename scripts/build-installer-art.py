@@ -1,6 +1,6 @@
 """Draws the installer artwork (build/installer/*.bmp) in the look of the app: the dark
-wallpaper's soft indigo / magenta / teal glows with the thin concentric rings, the teal "AI"
-tile, and Figtree for the wordmark.
+wallpaper's soft indigo / magenta / teal glows with the thin concentric rings, the PMO Desk
+mark (public/brand/mark-dark.svg), and Figtree for the wordmark.
 
     python scripts/build-installer-art.py
 
@@ -38,7 +38,6 @@ FONT_WOFF2 = (
 
 SCALE = 4
 BASE = (10, 12, 22)
-TEAL = (14, 119, 107)  # the app icon's tile
 INK = (245, 247, 250)
 MUTED = (170, 178, 196)
 
@@ -82,19 +81,57 @@ def rings(canvas: Image.Image, centre: tuple[float, float], radii, colour, alpha
 
 
 def tile(canvas: Image.Image, left: float, top: float, size: float):
-    """The app icon: a rounded teal tile with a white "AI"."""
-    draw = ImageDraw.Draw(canvas)
+    """The PMO Desk mark (public/brand/mark-dark.svg, the light tile for dark artwork):
+    a "P" of three fading pills and a ring with a tick, redrawn here with the SVG's own
+    coordinates (64-unit grid) because Pillow cannot read SVG."""
     s = SCALE
-    box = (left * s, top * s, (left + size) * s, (top + size) * s)
+    px = int(round(size * s))
+    k = 3  # supersampling of the mark itself
+    big = px * k
+    u = big / 64
+
+    def box(x, y, w, h):
+        return (x * u, y * u, (x + w) * u, (y + h) * u)
+
+    mark = Image.new("RGBA", (big, big), (0, 0, 0, 0))
+    # Tile: a diagonal gradient (#a7ccc3 -> #7daba1) with the top sheen, clipped to the rounded square.
+    grad = Image.new("RGBA", (big, big))
+    gp = grad.load()
+    c0, c1 = (167, 204, 195), (125, 171, 161)
+    for y in range(big):
+        for x in range(big):
+            t = min(1.0, max(0.0, ((x / u - 8) * 48 + (y / u - 4) * 58) / (48 * 48 + 58 * 58)))
+            sheen = max(0.0, 0.35 * (1 - (y / big) / 0.5))
+            col = [c0[i] + (c1[i] - c0[i]) * t for i in range(3)]
+            col = [col[i] + (255 - col[i]) * sheen for i in range(3)]
+            gp[x, y] = (int(col[0]), int(col[1]), int(col[2]), 255)
+    mask = Image.new("L", (big, big), 0)
+    ImageDraw.Draw(mask).rounded_rectangle((0, 0, big - 1, big - 1), radius=18 * u, fill=255)
+    mark.paste(grad, (0, 0), mask)
+
+    ink = (15, 39, 35)
+    ring = Image.new("RGBA", (big, big), (0, 0, 0, 0))
+    d = ImageDraw.Draw(ring)
+    d.ellipse((26 * u, 16.5 * u, 48 * u, 38.5 * u), outline=(*ink, 255), width=int(round(4.5 * u)))
+    tick = [(32.6, 27.8), (36.1, 31.3), (42.3, 24.1)]
+    d.line([(x * u, y * u) for x, y in tick], fill=(*ink, 255), width=int(round(3.6 * u)), joint="curve")
+    for x, y in (tick[0], tick[-1]):
+        r = 1.8 * u
+        d.ellipse((x * u - r, y * u - r, x * u + r, y * u + r), fill=(*ink, 255))
+    mark.alpha_composite(ring)
+    for y, opacity in ((14, 1.0), (27, 0.7), (40, 0.42)):
+        pill = Image.new("RGBA", (big, big), (0, 0, 0, 0))
+        ImageDraw.Draw(pill).rounded_rectangle(box(12.5, y, 9, 11), radius=4.5 * u, fill=(*ink, int(255 * opacity)))
+        mark.alpha_composite(pill)
+    mark = mark.resize((px, px), Image.LANCZOS)
+
     shadow = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
+    x0, y0 = int(left * s), int(top * s)
     ImageDraw.Draw(shadow).rounded_rectangle(
-        (box[0], box[1] + 3 * s, box[2], box[3] + 3 * s), radius=size * 0.3 * s, fill=(0, 0, 0, 120)
+        (x0, y0 + 3 * s, x0 + px, y0 + px + 3 * s), radius=size * 0.28 * s, fill=(0, 0, 0, 120)
     )
     canvas.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(5 * s)))
-    draw.rounded_rectangle(box, radius=size * 0.3 * s, fill=(*TEAL, 255))
-    face = figtree(int(size * 0.46), 800)
-    draw.text(((box[0] + box[2]) / 2, (box[1] + box[3]) / 2 + s), "AI", font=face, fill=(255, 255, 255, 255), anchor="mm")
-
+    canvas.alpha_composite(mark, (x0, y0))
 
 def finish(canvas: Image.Image, width: int, height: int) -> Image.Image:
     return canvas.convert("RGB").resize((width, height), Image.LANCZOS)
@@ -111,7 +148,7 @@ def sidebar() -> Image.Image:
 
     draw = ImageDraw.Draw(canvas)
     s = SCALE
-    draw.text((20 * s, 226 * s), "AI OS", font=figtree(30, 800), fill=(*INK, 255), anchor="ls")
+    draw.text((20 * s, 226 * s), "PMO Desk", font=figtree(24, 800), fill=(*INK, 255), anchor="ls")
     small = figtree(10, 500)
     for i, line in enumerate(("You and a local AI,", "working side by side.")):
         draw.text((20 * s, (246 + i * 14) * s), line, font=small, fill=(*MUTED, 255), anchor="ls")

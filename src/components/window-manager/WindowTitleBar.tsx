@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import { AppWindowIcon } from "@phosphor-icons/react";
 import { cn } from "@/lib/cn";
+import { AiWorkingChip } from "./AiWorkingChip";
 import { useWindowDrag } from "./useWindowDrag";
 import { WindowControls } from "./WindowControls";
 
@@ -16,7 +17,8 @@ interface WindowTitleBarProps {
   icon?: ReactNode;
   isFocused: boolean;
   isMaximized: boolean;
-  /** Pinned: stays above the other windows. */
+  /** The AI is driving this window: shows the "AI is working" chip. */
+  aiControlled?: boolean;
   isPinned?: boolean;
   onPinToggle?: () => void;
   /** True only while Window.tsx's own imperative maximize/restore spring is
@@ -50,6 +52,7 @@ export function WindowTitleBar({
   icon,
   isFocused,
   isMaximized,
+  aiControlled = false,
   isPinned = false,
   onPinToggle,
   dragDisabled = false,
@@ -66,14 +69,7 @@ export function WindowTitleBar({
       {...(dragBlocked ? {} : bindDrag())}
       onDoubleClick={dragDisabled ? undefined : onMaximizeToggle}
       className={cn(
-        "h-titlebar flex shrink-0 touch-none items-center gap-[11px] pl-[18px] select-none",
-        // A maximized window's top-right corner sits under the settings gear
-        // (SettingsMenu.tsx, z-chrome, 56px wide at right-4; from `sm` up — below
-        // that it drops under the dock). Reserve that
-        // width so minimize/maximize/close stay clickable. Keep in sync with
-        // the gear's size/offset; a restored window never reaches the corner
-        // unless the user drags it there on purpose.
-        isMaximized ? "pr-3.5 sm:pr-[4.5rem]" : "pr-2.5",
+        "h-titlebar flex shrink-0 touch-none items-center gap-[11px] pr-2.5 pl-[18px] select-none",
         dragBlocked ? "cursor-default" : "cursor-grab active:cursor-grabbing",
       )}
     >
@@ -99,6 +95,7 @@ export function WindowTitleBar({
           </span>
         ) : null}
       </span>
+      {aiControlled && <AiWorkingChip />}
       <WindowControls
         isMaximized={isMaximized}
         isPinned={isPinned}

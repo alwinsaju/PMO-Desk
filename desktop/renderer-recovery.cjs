@@ -26,18 +26,18 @@ function decideRendererGone({ reason, recentCrashes = 1 } = {}) {
   if (NO_RELOAD_REASONS.has(why)) {
     return {
       action: "offer-quit",
-      message: `The AI OS window could not start (${why}). Reloading will not help; restart the app.`,
+      message: `The PMO Desk window could not start (${why}). Reloading will not help; restart the app.`,
     };
   }
   if (recentCrashes >= CRASH_LOOP_LIMIT) {
     return {
       action: "offer-quit",
-      message: `The AI OS window keeps crashing (${why}). Restart the app.`,
+      message: `The PMO Desk window keeps crashing (${why}). Restart the app.`,
     };
   }
   return {
     action: "offer-reload",
-    message: `The AI OS window stopped working (${why}).`,
+    message: `The PMO Desk window stopped working (${why}).`,
   };
 }
 

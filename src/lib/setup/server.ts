@@ -429,7 +429,7 @@ export async function startPull(
   if (!isPullable(model, config.defaultModel) && !isPullable(model, active)) {
     return {
       ok: false,
-      reason: `AI OS only downloads ${config.defaultModel}, ${FALLBACK_MODEL} or ${LIGHT_MODEL}.`,
+      reason: `PMO Desk only downloads ${config.defaultModel}, ${FALLBACK_MODEL} or ${LIGHT_MODEL}.`,
     };
   }
   const check = preflight({

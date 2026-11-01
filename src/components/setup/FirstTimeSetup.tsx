@@ -42,7 +42,7 @@ import {
 import { pullDetail } from "./setupView";
 
 const BRAND_NAME: Record<BrandId, string> = {
-  aios: "AI OS",
+  aios: "PMO Desk",
   ollama: "Ollama",
   gemma: "Gemma",
   python: "Python",
@@ -576,7 +576,7 @@ function FoldersStep({ step, phase, check, status, run, refresh, notice }: StepP
         </div>
         <p className="text-ink-muted mt-3 text-center text-[13px]">
           {phase === "done"
-            ? "These are in place, and AI OS is already pointed at them. Nothing to map."
+            ? "These are in place, and PMO Desk is already pointed at them. Nothing to map."
             : (check?.summary ?? (
                 <>
                   Looking in OneDrive <Dots />
@@ -637,7 +637,7 @@ function FlowsStep({
           <BrandTile brand="powerautomate" size={64} />
           <StepText
             title="Build the Power Automate flows"
-            blurb="Each flow is a few cards in Power Automate. Pick one and follow the picture, step by step. They are optional: AI OS works without them."
+            blurb="Each flow is a few cards in Power Automate. Pick one and follow the picture, step by step. They are optional: PMO Desk works without them."
           />
         </div>
       )}
@@ -773,7 +773,7 @@ function FinishStep({
         <BrandMark brand="aios" size={64} />
       </StatusRing>
       <StepText
-        title={open === 0 ? "AI OS is ready" : "AI OS is ready to use"}
+        title={open === 0 ? "PMO Desk is ready" : "PMO Desk is ready to use"}
         blurb={
           open === 0
             ? "Everything is in place. You can open the Setup and health check from Settings at any time."
@@ -1183,7 +1183,7 @@ function Page({
             )}
             {step.id === "finish" && (
               <Button size="lg" disabled={finishing} onClick={() => void finish()}>
-                Open AI OS
+                Open PMO Desk
                 <ArrowRightIcon size={16} weight="bold" />
               </Button>
             )}

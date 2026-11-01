@@ -1,7 +1,7 @@
 """
 Template library for the task scripts.
 
-The Templates app (AI OS) stores email and report templates in one file,
+The Templates app (PMO Desk) stores email and report templates in one file,
 `library.json`, in the folder named by AI_OS_TEMPLATES_DIR (else the `templates`
 folder inside AI_OS_PMO_DATA_DIR). A template lists the tasks and apps that use
 it in `usedBy`, as keys like "task:weekly-aging-report". A task script asks

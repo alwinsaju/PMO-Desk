@@ -17,7 +17,7 @@ $ErrorActionPreference = "Stop"
 $data = Get-Content -Raw -Path $DataPath | ConvertFrom-Json
 
 $olMailItem = 0
-$draftTokenPropertyName = "AI OS Draft Token"
+$draftTokenPropertyName = "PMO Desk Draft Token"
 $olText = 1
 $draftToken = [guid]::NewGuid().ToString("N")
 $draftTokenPath = Join-Path $PSScriptRoot "..\output\draft-entry-id.txt"

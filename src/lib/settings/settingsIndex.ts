@@ -48,7 +48,7 @@ export const SETTINGS_INDEX: readonly SettingEntry[] = [
     "profile",
     "general",
     "Profile",
-    "How you use AI OS",
+    "How you use PMO Desk",
     "Which cards and defaults suit your role.",
     "role persona dashboard",
   ),
@@ -169,7 +169,7 @@ export const SETTINGS_INDEX: readonly SettingEntry[] = [
     "data",
     "Where your data lives",
     "Data folder",
-    "Where AI OS keeps your data on this computer.",
+    "Where PMO Desk keeps your data on this computer.",
     "location path files storage open",
   ),
   entry(
@@ -223,9 +223,9 @@ export const SETTINGS_INDEX: readonly SettingEntry[] = [
   entry(
     "activity-log",
     "activity",
-    "Everything AI OS did on your behalf",
+    "Everything PMO Desk did on your behalf",
     "Activity log",
-    "A timeline of what AI OS did for you.",
+    "A timeline of what PMO Desk did for you.",
     "audit history timeline",
   ),
   entry(
@@ -271,7 +271,7 @@ export const SETTINGS_INDEX: readonly SettingEntry[] = [
   entry(
     "version",
     "about",
-    "AI OS",
+    "PMO Desk",
     "Version",
     "Which version is running.",
     "about build",

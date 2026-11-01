@@ -47,7 +47,7 @@ async function chooseModel(
       needsDownload?: boolean;
     };
   } catch {
-    return { ok: false, reason: "Could not reach AI OS. Try again in a moment." };
+    return { ok: false, reason: "Could not reach PMO Desk. Try again in a moment." };
   }
 }
 

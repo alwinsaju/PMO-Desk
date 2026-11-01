@@ -24,18 +24,18 @@ export interface FriendlyError {
 
 const MESSAGES: Record<ErrorKind, string> = {
   offline:
-    "AI OS could not reach its own server. Wait a moment and try again; if it keeps happening, restart AI OS.",
-  timeout: "That took too long. Try again; if it keeps happening, restart AI OS.",
-  refused: "AI OS refused that request for safety. Reload the window and try again.",
+    "PMO Desk could not reach its own server. Wait a moment and try again; if it keeps happening, restart PMO Desk.",
+  timeout: "That took too long. Try again; if it keeps happening, restart PMO Desk.",
+  refused: "PMO Desk refused that request for safety. Reload the window and try again.",
   "not-found":
     "That item is no longer there. It may have been moved or deleted; refresh and try again.",
-  "too-large": "That is larger than AI OS allows. Try a smaller file or fewer items.",
+  "too-large": "That is larger than PMO Desk allows. Try a smaller file or fewer items.",
   server:
     "Something went wrong on this computer. Try again; the details below help support find the cause.",
   "file-locked":
     "A file is open in another program (such as Excel or Outlook). Close it and try again.",
   "file-missing":
-    "A file or folder AI OS needs could not be found. Check that it has not been moved.",
+    "A file or folder PMO Desk needs could not be found. Check that it has not been moved.",
   task: "A task step failed. Open the run in Tasks > History for the reason in plain words.",
   unknown:
     "Something unexpected happened. Try again; the details below help support find the cause.",
@@ -117,7 +117,7 @@ export function detailsText(
   context: { appVersion?: string; where?: string; now?: Date } = {},
 ): string {
   return [
-    `AI OS ${context.appVersion ?? "unknown version"}`,
+    `PMO Desk ${context.appVersion ?? "unknown version"}`,
     `When: ${(context.now ?? new Date()).toISOString()}`,
     context.where ? `Where: ${context.where}` : "",
     `What: ${error.message}`,

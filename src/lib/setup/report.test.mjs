@@ -178,7 +178,7 @@ describe("Ollama and the model", () => {
     assert.equal(c.state, "attention");
     assert.match(
       c.summary,
-      /qwen3\.5:4b is installed, but AI OS is set up for gemma4:12b/,
+      /qwen3\.5:4b is installed, but PMO Desk is set up for gemma4:12b/,
     );
   });
 });
@@ -273,7 +273,7 @@ describe("the engine self-test", () => {
       "engine",
     );
     assert.equal(c.state, "missing");
-    assert.match(c.steps[0], /Reinstall AI OS/);
+    assert.match(c.steps[0], /Reinstall PMO Desk/);
   });
 });
 

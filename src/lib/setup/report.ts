@@ -1,5 +1,5 @@
 // Turns what was found on this computer into the plain-language report the
-// first-run setup screen shows: for each thing AI OS needs, whether it is fine,
+// first-run setup screen shows: for each thing PMO Desk needs, whether it is fine,
 // what is wrong in words a person can act on, and which button fixes it.
 // Pure: `buildReport(facts)` has no I/O, so every sentence is covered by tests.
 import { FALLBACK_MODEL, downloadSizeText, preflight, sameModel } from "./models.ts";
@@ -57,7 +57,7 @@ export interface SetupFacts {
     version: string | null;
     /** Model names installed in Ollama, or null if it could not be asked. */
     installedModels: string[] | null;
-    /** The model AI OS uses (saved choice, or the only one installed). */
+    /** The model PMO Desk uses (saved choice, or the only one installed). */
     defaultModel: string;
     /** Why it is not the one originally asked for, when it is not. */
     modelNote?: string;
@@ -109,8 +109,8 @@ function ollamaCheck(facts: SetupFacts): SetupCheck {
       state: "missing",
       summary: "Ollama, the program that runs the AI on this computer, is not installed.",
       steps: [
-        "Press Install Ollama. AI OS downloads the official installer from ollama.com and runs it for you (no administrator rights needed).",
-        "If the download is blocked on your network, AI OS shows how to install it by hand.",
+        "Press Install Ollama. PMO Desk downloads the official installer from ollama.com and runs it for you (no administrator rights needed).",
+        "If the download is blocked on your network, PMO Desk shows how to install it by hand.",
       ],
       details: [],
       actions: ["install-ollama"],
@@ -125,7 +125,7 @@ function ollamaCheck(facts: SetupFacts): SetupCheck {
       ...base,
       state: "attention",
       summary:
-        "Ollama is installed but is not running right now. AI OS starts it when it is needed.",
+        "Ollama is installed but is not running right now. PMO Desk starts it when it is needed.",
       steps: [],
       details,
       actions: [],
@@ -161,9 +161,9 @@ function modelCheck(facts: SetupFacts): SetupCheck {
       ...base,
       state: "unknown",
       summary:
-        "Ollama is not answering, so AI OS cannot tell which models are installed.",
+        "Ollama is not answering, so PMO Desk cannot tell which models are installed.",
       steps: [
-        "Press Download model: AI OS starts Ollama first, then downloads the model.",
+        "Press Download model: PMO Desk starts Ollama first, then downloads the model.",
       ],
       details: [`Needs ${defaultModel}`],
       actions: ["pull-model"],
@@ -200,7 +200,7 @@ function modelCheck(facts: SetupFacts): SetupCheck {
     return {
       ...base,
       state: "attention",
-      summary: `${FALLBACK_MODEL} is installed, but AI OS is set up for ${defaultModel}, so AI features will not find their model.`,
+      summary: `${FALLBACK_MODEL} is installed, but PMO Desk is set up for ${defaultModel}, so AI features will not find their model.`,
       steps,
       details,
       actions: ["pull-model"],
@@ -274,7 +274,7 @@ function outlookCheck(facts: SetupFacts): SetupCheck {
       newOutlook
         ? "To use the mail tasks, switch Outlook back to the classic version (the 'New Outlook' toggle in Outlook's top right)."
         : "To use the mail tasks, install the desktop version of Outlook (Microsoft 365 apps).",
-      "AI OS only reads this setting; it never opens your mailbox or sends anything while checking.",
+      "PMO Desk only reads this setting; it never opens your mailbox or sends anything while checking.",
     ],
     details: [],
     actions: [],
@@ -290,7 +290,7 @@ function engineCheck(facts: SetupFacts): SetupCheck {
       state: "missing",
       summary: "The Python that runs the tasks was not found.",
       steps: [
-        "Reinstall AI OS; the installer includes it. If you are running from source, set up tasks-engine/.venv (see tasks-engine/README.md).",
+        "Reinstall PMO Desk; the installer includes it. If you are running from source, set up tasks-engine/.venv (see tasks-engine/README.md).",
       ],
       details: [],
       actions: [],
@@ -339,7 +339,7 @@ function engineCheck(facts: SetupFacts): SetupCheck {
     state: "missing",
     summary: `The self-test failed: ${failed.map((c) => c.title).join(", ")}.`,
     steps: [
-      "Run it again; if it keeps failing, reinstall AI OS and send the details below to whoever supports it.",
+      "Run it again; if it keeps failing, reinstall PMO Desk and send the details below to whoever supports it.",
     ],
     details,
     actions: ["run-selftest"],
@@ -358,7 +358,7 @@ const FOLDER_PURPOSE: Record<keyof FolderFacts["found"], string> = {
   ptoInbox: "PTO emails for the shift roster",
 };
 
-/** The AI-OS folder in OneDrive that Power Automate and AI OS share. */
+/** The AI-OS folder in OneDrive that Power Automate and PMO Desk share. */
 function foldersCheck(facts: SetupFacts): SetupCheck | null {
   const folders = facts.folders;
   if (!folders) return null;
@@ -491,7 +491,7 @@ function flowsCheck(facts: SetupFacts): SetupCheck | null {
     state: pto.lastReceivedAt ? "ok" : "unknown",
     summary: pto.lastReceivedAt
       ? "The PTO email flow has delivered mail, and no request is stuck."
-      : "No flow has delivered anything yet. The first-time setup shows how to build each flow; you can use AI OS without them.",
+      : "No flow has delivered anything yet. The first-time setup shows how to build each flow; you can use PMO Desk without them.",
     steps: [],
     details,
     actions: [],

@@ -148,13 +148,13 @@ export function ModelLogDialog({ open, onOpenChange }: ModelLogDialogProps) {
   }
 
   const sessionLine = sessionStartedAt
-    ? `This session began at ${formatClock(sessionStartedAt)}, when AI OS's server started. Kept in memory only: cleared when AI OS restarts, never saved to disk.`
-    : "This session's log is kept in memory only: cleared when AI OS restarts, never saved to disk.";
+    ? `This session began at ${formatClock(sessionStartedAt)}, when PMO Desk's server started. Kept in memory only: cleared when PMO Desk restarts, never saved to disk.`
+    : "This session's log is kept in memory only: cleared when PMO Desk restarts, never saved to disk.";
 
   /** The text of what is on screen (for Copy and Download). */
   const exportText = (): string => {
     const head = [
-      "AI OS local model log",
+      "PMO Desk local model log",
       sessionStartedAt
         ? `Session started ${new Date(sessionStartedAt).toISOString()}`
         : "",
@@ -171,7 +171,7 @@ export function ModelLogDialog({ open, onOpenChange }: ModelLogDialogProps) {
     }
     return [
       ...head,
-      "Source: AI OS runtime events (this session)",
+      "Source: PMO Desk runtime events (this session)",
       "",
       ...rawEvents.map(formatRawLine),
     ].join("\n");
@@ -275,7 +275,7 @@ export function ModelLogDialog({ open, onOpenChange }: ModelLogDialogProps) {
             <div className="flex flex-wrap items-center gap-2">
               <Tabs value={source} onValueChange={(v) => setSource(v as RawSource)}>
                 <TabsList aria-label="Raw source">
-                  <TabsTrigger value="events">AI OS events</TabsTrigger>
+                  <TabsTrigger value="events">PMO Desk events</TabsTrigger>
                   <TabsTrigger value="server">Ollama server log</TabsTrigger>
                 </TabsList>
               </Tabs>
@@ -304,9 +304,9 @@ export function ModelLogDialog({ open, onOpenChange }: ModelLogDialogProps) {
             <p className="text-ink-muted -mt-1 text-[12px] leading-snug break-words">
               {source === "events" ? (
                 <>
-                  <strong className="text-ink-soft">Source:</strong> AI OS runtime events
-                  for this session (what AI OS asked Ollama, and when). No message text is
-                  logged.
+                  <strong className="text-ink-soft">Source:</strong> PMO Desk runtime
+                  events for this session (what PMO Desk asked Ollama, and when). No
+                  message text is logged.
                 </>
               ) : (
                 <>

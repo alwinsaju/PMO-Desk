@@ -267,7 +267,7 @@ function describeMode({ mode, projectDir }) {
 }
 
 function windowTitle(launch) {
-  return isLiveMode(launch.mode) ? `AI OS (${describeMode(launch)})` : "AI OS";
+  return isLiveMode(launch.mode) ? `PMO Desk (${describeMode(launch)})` : "PMO Desk";
 }
 
 module.exports = {

@@ -252,7 +252,7 @@ export async function ensureRuntime(
 }
 
 /**
- * Shutdown: drop queued jobs, and if AI OS owns the server, unload the model
+ * Shutdown: drop queued jobs, and if PMO Desk owns the server, unload the model
  * and kill its process tree. A reused external server is left running.
  */
 export async function stopRuntime(): Promise<{ stopped: boolean }> {

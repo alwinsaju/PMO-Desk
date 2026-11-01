@@ -36,7 +36,7 @@ const LATER = [
 /** Confirmation in front of Confirm & send / Reject / Force reset. Focus
  *  opens on Cancel so Enter or Space can never trigger the action by
  *  accident; Escape cancels. A send also shows the recipients (with warnings) and
- *  can be queued for later: it is approved now and goes out only while AI OS is open. */
+ *  can be queued for later: it is approved now and goes out only while PMO Desk is open. */
 export function ConfirmActionDialog({
   copy,
   taskId,
@@ -111,7 +111,7 @@ export function ConfirmActionDialog({
                 Queue it
               </Button>
               <p className="text-ink-muted w-full text-[11.5px]">
-                You approve it now, with these recipients. It is sent only if AI OS is
+                You approve it now, with these recipients. It is sent only if PMO Desk is
                 still open then and nothing has changed; otherwise it waits for you.
               </p>
             </div>

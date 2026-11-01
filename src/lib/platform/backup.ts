@@ -111,7 +111,7 @@ export interface InspectedBackup {
 export function inspectBackup(zip: Uint8Array): InspectedBackup {
   const all = readZip(zip);
   const manifestEntry = all.find((e) => e.name === BACKUP_MANIFEST);
-  if (!manifestEntry) throw new ZipError("This zip is not an AI OS backup.");
+  if (!manifestEntry) throw new ZipError("This zip is not a PMO Desk backup.");
   let manifest: unknown;
   try {
     manifest = JSON.parse(Buffer.from(manifestEntry.data).toString("utf8"));

@@ -31,7 +31,7 @@ contextBridge.exposeInMainWorld("aiOsDesktop", {
     /** Saves the setting (applies to the GPU after a restart); resolves to the new state. */
     setHardwareAcceleration: (enabled) =>
       ipcRenderer.invoke("display:set-hardware-acceleration", enabled === true),
-    /** Relaunches AI OS (asks first if a task is running); resolves true if it is restarting. */
+    /** Relaunches PMO Desk (asks first if a task is running); resolves true if it is restarting. */
     relaunch: () => ipcRenderer.invoke("display:relaunch"),
   },
 

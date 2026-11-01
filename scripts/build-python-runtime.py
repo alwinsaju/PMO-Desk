@@ -1,4 +1,4 @@
-"""Builds the private Python that ships inside the AI OS installer.
+"""Builds the private Python that ships inside the PMO Desk installer.
 
 The Tasks engine and every task script run on this interpreter: the official
 Windows *embeddable* CPython plus the pinned packages from

@@ -195,7 +195,7 @@ export function DirectoryTab() {
     return (
       <EmptyState
         icon={<UsersThreeIcon size={26} />}
-        title="Can't reach the AI OS server"
+        title="Can't reach the PMO Desk server"
       >
         The roster will load automatically once the server is available.
       </EmptyState>

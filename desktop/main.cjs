@@ -32,9 +32,17 @@ const trayPolicy = require("./tray-policy.cjs");
 const urlGuard = require("./url-guard.cjs");
 
 // Windows toasts and the taskbar group are keyed by this id; it must match
-// build.appId in package.json (the installer registers the same one).
+// build.appId in package.json (the installer registers the same one). Kept as
+// com.aios.desktop on purpose: a different id would make the installer treat PMO Desk as a
+// new app instead of upgrading the existing install.
 const APP_USER_MODEL_ID = "com.aios.desktop";
 app.setAppUserModelId(APP_USER_MODEL_ID);
+
+// The user-data folder keeps its old name (%APPDATA%\ai-os) so existing data is found; see
+// user-data.cjs. This has to run before anything reads userData.
+const { applyUserDataPin } = require("./user-data.cjs");
+applyUserDataPin(app);
+app.setName("PMO Desk");
 
 // Hardware acceleration is a process-start decision in Chromium, so the saved
 // choice (display-settings.cjs; written by the Settings toggle) is read here,
@@ -120,7 +128,7 @@ if (!app.requestSingleInstanceLock()) {
     if (mainWindow.isMinimized()) {
       mainWindow.restore();
     }
-    // Hidden to the tray: launching AI OS again brings it back.
+    // Hidden to the tray: launching PMO Desk again brings it back.
     mainWindow.show();
     mainWindow.focus();
   });
@@ -134,7 +142,7 @@ async function startDesktopApp() {
     desktopDir: __dirname,
     packaged: app.isPackaged,
   });
-  desktopLog(`Starting AI OS from ${app.getAppPath()}.`);
+  desktopLog(`Starting PMO Desk from ${app.getAppPath()}.`);
   for (const note of launch.notes) {
     desktopLog(note);
   }
@@ -275,7 +283,7 @@ async function startUiServer(mode) {
   child.once("error", (error) => {
     child.spawnFailure = error;
     if (!isQuitting && ui.child === child && ui.ready) {
-      void offerUiRestart(`The AI OS server could not run: ${error.message}`);
+      void offerUiRestart(`The PMO Desk server could not run: ${error.message}`);
     }
   });
   child.once("exit", (code) => {
@@ -285,7 +293,7 @@ async function startUiServer(mode) {
       return;
     }
     void offerUiRestart(
-      `The AI OS server exited unexpectedly (code ${describeExitCode(code)}).`,
+      `The PMO Desk server exited unexpectedly (code ${describeExitCode(code)}).`,
     );
   });
 
@@ -366,13 +374,13 @@ async function waitForServer(child, timeoutMs, probeTimeoutMs) {
   while (Date.now() < deadline) {
     if (child.spawnFailure) {
       throw new Error(
-        `The AI OS server could not be started: ${child.spawnFailure.message}`,
+        `The PMO Desk server could not be started: ${child.spawnFailure.message}`,
       );
     }
     if (child.exitCode !== null && child.exitCode !== undefined) {
       throw Object.assign(
         new Error(
-          `The AI OS server exited with code ${describeExitCode(child.exitCode)}.`,
+          `The PMO Desk server exited with code ${describeExitCode(child.exitCode)}.`,
         ),
         {
           exitedBeforeReady: true,
@@ -394,7 +402,7 @@ async function waitForServer(child, timeoutMs, probeTimeoutMs) {
     await delay(250);
   }
 
-  throw new Error(`AI OS did not start within ${timeoutMs / 1000} seconds.`);
+  throw new Error(`PMO Desk did not start within ${timeoutMs / 1000} seconds.`);
 }
 
 /** The UI server died (or could not run) after it was up: tell the user and
@@ -404,10 +412,10 @@ async function offerUiRestart(message) {
   const tail = ui.output.slice(-8).join("\n");
   const options = {
     type: "error",
-    title: "AI OS server stopped",
+    title: "PMO Desk server stopped",
     message,
     detail: tail ? `Last output:\n${tail}` : undefined,
-    buttons: ["Restart UI server", "Quit AI OS"],
+    buttons: ["Restart UI server", "Quit PMO Desk"],
     defaultId: 0,
     cancelId: 1,
     noLink: true,
@@ -451,7 +459,7 @@ async function runUiRestart({ confirmIfBusy }) {
     const { response } = await showMessage({
       type: busy.length ? "warning" : "question",
       title: "Restart UI server",
-      message: "Restart the AI OS UI server?",
+      message: "Restart the PMO Desk UI server?",
       detail:
         (busy.length
           ? `WARNING: ${busy.length} task(s) are not idle (${busy.join(", ")}). ` +
@@ -573,6 +581,7 @@ function createWindow() {
     minWidth: 1024,
     minHeight: 720,
     show: false,
+    icon: path.join(__dirname, "icon.ico"),
     title: launchConfig.windowTitle(launch),
     webPreferences: {
       contextIsolation: true,
@@ -583,7 +592,7 @@ function createWindow() {
     },
   });
 
-  // Keep the mode visible in the title: the page's own <title> ("AI OS")
+  // Keep the mode visible in the title: the page's own <title> ("PMO Desk")
   // would otherwise replace it on every navigation.
   mainWindow.on("page-title-updated", (event) => {
     event.preventDefault();
@@ -692,9 +701,9 @@ async function handleRendererGone(details) {
   const canReload = decision.action === "offer-reload";
   const { response } = await showMessage({
     type: "error",
-    title: "AI OS window stopped",
+    title: "PMO Desk window stopped",
     message: decision.message,
-    buttons: canReload ? ["Reload", "Quit AI OS"] : ["Quit AI OS"],
+    buttons: canReload ? ["Reload", "Quit PMO Desk"] : ["Quit PMO Desk"],
     defaultId: 0,
     cancelId: canReload ? 1 : 0,
     noLink: true,
@@ -708,7 +717,7 @@ async function handleRendererGone(details) {
 
 /** The window stopped answering: it may recover, so waiting is an option. */
 async function handleWindowUnresponsive() {
-  desktopLog("The AI OS window is not responding.", "error");
+  desktopLog("The PMO Desk window is not responding.", "error");
   if (isQuitting || unresponsiveDialogOpen) {
     return;
   }
@@ -716,10 +725,10 @@ async function handleWindowUnresponsive() {
   try {
     const { response } = await showMessage({
       type: "warning",
-      title: "AI OS is not responding",
-      message: "The AI OS window is not responding.",
+      title: "PMO Desk is not responding",
+      message: "The PMO Desk window is not responding.",
       detail: "Wait for it to recover, reload the page, or quit.",
-      buttons: ["Reload", "Keep waiting", "Quit AI OS"],
+      buttons: ["Reload", "Keep waiting", "Quit PMO Desk"],
       defaultId: 1,
       cancelId: 1,
       noLink: true,
@@ -793,7 +802,7 @@ function applyBadge(count) {
       mainWindow.setOverlayIcon(overlay, label);
     }
     if (tray) {
-      tray.setToolTip(label ? `AI OS - ${label}` : "AI OS");
+      tray.setToolTip(label ? `PMO Desk - ${label}` : "PMO Desk");
     }
   } catch (error) {
     desktopLog(`Could not update the badge: ${error && error.message}`, "error");
@@ -805,14 +814,13 @@ function ensureTray() {
     return;
   }
   try {
-    const icon = nativeImage
-      .createFromPath(path.join(__dirname, "icon.png"))
-      .resize({ width: 16, height: 16 });
-    tray = new Tray(icon);
-    tray.setToolTip("AI OS");
+    // icon.ico holds 16-256 px drawings (16 px is the simplified mark), so the tray gets a
+    // crisp one at any display scale.
+    tray = new Tray(nativeImage.createFromPath(path.join(__dirname, "icon.ico")));
+    tray.setToolTip("PMO Desk");
     tray.setContextMenu(
       Menu.buildFromTemplate([
-        { label: "Open AI OS", click: showMainWindow },
+        { label: "Open PMO Desk", click: showMainWindow },
         { type: "separator" },
         // A full quit: before-quit stops the servers, including the Ollama
         // runtime this app started (stopAiRuntime), exactly like File > Quit.
@@ -824,7 +832,7 @@ function ensureTray() {
     desktopLog("Tray icon created (keep running in the tray is on).");
   } catch (error) {
     // Without a tray there is no way back to a hidden window: show it again
-    // rather than leave AI OS running invisibly.
+    // rather than leave PMO Desk running invisibly.
     desktopLog(`Could not create the tray icon: ${error && error.message}`, "error");
     tray = undefined;
     if (mainWindow) mainWindow.show();
@@ -1127,8 +1135,8 @@ ipcMain.handle("display:relaunch", async (event) => {
   if (busy.length) {
     const { response } = await showMessage({
       type: "warning",
-      title: "Restart AI OS",
-      message: "Restart AI OS to apply the display setting?",
+      title: "Restart PMO Desk",
+      message: "Restart PMO Desk to apply the display setting?",
       detail: `WARNING: ${busy.length} task(s) are not idle (${busy.join(", ")}). Restarting STOPS those runs.`,
       buttons: ["Cancel", "Restart and stop runs"],
       defaultId: 0,
@@ -1139,7 +1147,7 @@ ipcMain.handle("display:relaunch", async (event) => {
       return false;
     }
   }
-  desktopLog("Relaunching AI OS to apply the display setting.");
+  desktopLog("Relaunching PMO Desk to apply the display setting.");
   // Without this the new instance can lose the single-instance race against
   // this one while it is still shutting down.
   app.releaseSingleInstanceLock();
@@ -1162,7 +1170,8 @@ function showSplash() {
     frame: false,
     resizable: false,
     alwaysOnTop: true,
-    title: "AI OS",
+    icon: path.join(__dirname, "icon.ico"),
+    title: "PMO Desk",
     webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
   });
   const modeLine = launchConfig
@@ -1172,7 +1181,7 @@ function showSplash() {
   const html =
     '<body style="margin:0;display:flex;flex-direction:column;justify-content:center;align-items:center;' +
     'height:100vh;font-family:Segoe UI,sans-serif;background:#1c1c1e;color:#f2f2f7">' +
-    '<div style="font-size:18px">Starting AI OS...</div>' +
+    '<div style="font-size:18px">Starting PMO Desk...</div>' +
     `<div style="font-size:12px;opacity:.6;margin-top:8px">${modeLine}</div></body>`;
   void splashWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
   splashWindow.on("closed", () => {
@@ -1228,7 +1237,7 @@ function buildMenu() {
     { role: "windowMenu" },
     {
       role: "help",
-      submenu: [{ label: "About AI OS", click: showAbout }],
+      submenu: [{ label: "About PMO Desk", click: showAbout }],
     },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
@@ -1246,8 +1255,8 @@ function showAbout() {
   }
   void showMessage({
     type: "info",
-    title: "About AI OS",
-    message: "AI OS",
+    title: "About PMO Desk",
+    message: "PMO Desk",
     detail: lines.join("\n"),
     buttons: ["OK"],
     noLink: true,
@@ -1374,7 +1383,7 @@ function showStartupFailure(error) {
   const message = error instanceof Error ? error.message : String(error);
   const details = error instanceof Error && error.stack ? error.stack : message;
   desktopLog(details, "error");
-  dialog.showErrorBox("AI OS could not start", message);
+  dialog.showErrorBox("PMO Desk could not start", message);
   isQuitting = true;
   closeSplash();
   void stopServices().finally(() => app.exit(1));

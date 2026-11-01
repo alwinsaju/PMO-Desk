@@ -230,7 +230,7 @@ describe("download failures", () => {
       assert.match(message, new RegExp(`fetch failed, ${code}\\)`));
       assert.match(
         message,
-        /If your company uses a proxy, set HTTPS_PROXY and restart AI OS\./,
+        /If your company uses a proxy, set HTTPS_PROXY and restart PMO Desk\./,
       );
     }
     assert.doesNotMatch(describeDownloadFailure(new Error("boom")), /, [A-Z_]{5,}\)/);

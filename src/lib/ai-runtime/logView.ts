@@ -265,10 +265,10 @@ export function buildPlainTimeline(events: AiLogEvent[]): PlainEntry[] {
           pending: false,
           text:
             e.how === "started"
-              ? `Started Ollama${e.version ? ` ${e.version}` : ""}. AI OS owns it and stops it when you quit.`
+              ? `Started Ollama${e.version ? ` ${e.version}` : ""}. PMO Desk owns it and stops it when you quit.`
               : e.how === "adopted"
-                ? `Took over an Ollama that an earlier AI OS session left running${e.version ? ` (${e.version})` : ""}. AI OS stops it when you quit.`
-                : `Connected to an Ollama that was already running${e.version ? ` (${e.version})` : ""}. AI OS will not stop it.`,
+                ? `Took over an Ollama that an earlier PMO Desk session left running${e.version ? ` (${e.version})` : ""}. PMO Desk stops it when you quit.`
+                : `Connected to an Ollama that was already running${e.version ? ` (${e.version})` : ""}. PMO Desk will not stop it.`,
         });
         break;
       case "server-down":
@@ -291,8 +291,8 @@ export function buildPlainTimeline(events: AiLogEvent[]): PlainEntry[] {
           tone: "muted",
           pending: false,
           text: e.stopped
-            ? "AI OS closed and stopped the Ollama it started."
-            : "AI OS closed; the shared Ollama was left running.",
+            ? "PMO Desk closed and stopped the Ollama it started."
+            : "PMO Desk closed; the shared Ollama was left running.",
         });
         break;
       case "prewarm-skipped":
@@ -316,7 +316,7 @@ export function buildPlainTimeline(events: AiLogEvent[]): PlainEntry[] {
           pending: false,
           text: e.ours
             ? `The model ${e.model} was already in memory (${aboutBytes(e.sizeBytes)}).`
-            : `Another program loaded ${e.model} into Ollama (${aboutBytes(e.sizeBytes)}). AI OS does not manage it.`,
+            : `Another program loaded ${e.model} into Ollama (${aboutBytes(e.sizeBytes)}). PMO Desk does not manage it.`,
         });
         break;
       case "model-unloaded":
@@ -333,7 +333,7 @@ export function buildPlainTimeline(events: AiLogEvent[]): PlainEntry[] {
               : e.reason === "manual"
                 ? `Model unloaded on request, memory freed (${aboutBytes(e.sizeBytes)}).`
                 : e.reason === "shutdown"
-                  ? `Model unloaded because AI OS is closing, memory freed (${aboutBytes(e.sizeBytes)}).`
+                  ? `Model unloaded because PMO Desk is closing, memory freed (${aboutBytes(e.sizeBytes)}).`
                   : `Model is no longer in memory (${aboutBytes(e.sizeBytes)} freed).`,
         });
         break;

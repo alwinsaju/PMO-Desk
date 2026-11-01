@@ -30,7 +30,10 @@ export function inboxSafetyFacts(
       dataRoot,
       process.cwd(),
       path.dirname(process.execPath),
-      ...(localAppData ? [path.join(localAppData, "AI OS")] : []),
+      // "AI OS" is the data folder of existing installs and stays protected as well.
+      ...(localAppData
+        ? [path.join(localAppData, "PMO Desk"), path.join(localAppData, "AI OS")]
+        : []),
     ],
     sampleJsonFiles,
   };

@@ -20,7 +20,7 @@ Hermetic by construction:
 * the shift-roster config the cross-task step edits is a synthetic copy in the temp tasks root;
 * nothing here can reach Outlook/COM, and opening a file with the OS default app is stubbed.
 
-The tests skip when the AI OS tasks folder is not on this machine
+The tests skip when the PMO Desk tasks folder is not on this machine
 (override its location with AI_OS_TASKS_SRC).
 """
 import hashlib
@@ -51,7 +51,7 @@ pytestmark = pytest.mark.skipif(
     not (TASK_SRC / "task.json").exists()
     or not (SHARED_SRC / "roster_lib").is_dir()
     or not (SHARED_SRC / "winter_lib").is_dir(),
-    reason="the AI OS december-disconnect task is not available here",
+    reason="the PMO Desk december-disconnect task is not available here",
 )
 
 TASK_ID = "december-disconnect"

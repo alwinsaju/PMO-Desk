@@ -47,7 +47,7 @@ const offline = (tool: string): LocalOutcome => ({
   result: {
     type: "error",
     kind: "unreachable",
-    message: "Couldn't reach the AI OS server.",
+    message: "Couldn't reach the PMO Desk server.",
   },
   outcome: "failed",
   tool,

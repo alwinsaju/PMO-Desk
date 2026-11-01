@@ -32,7 +32,7 @@ the filter, retention, the Outlook script).
 
 ## 2. Open the app and look at the status bar (2 minutes)
 
-1. Start AI OS the way you normally do, then click the **clipboard icon** in the
+1. Start PMO Desk the way you normally do, then click the **clipboard icon** in the
    dock (PMO To-Do).
 2. The strip at the top shows: the model (**Model asleep** when nothing is using it,
    which is normal and saves about 12 GB of memory; **Loading model…**,
@@ -197,14 +197,14 @@ outlook-20261022T034400Z-57dfad4d.json ... "Subject ..."` and a last line
    its own seen-file, so running it again writes nothing new. Use `-SinceDays 60`
    once to backfill further back.
 6. Optional: run it every 15 minutes with Windows Task Scheduler. The installer
-   ships the scripts, so on an installed AI OS (no repo needed) they are in
-   `%LOCALAPPDATA%\Programs\AI OS\resources\app\pmo-intake\scripts\` (a different
+   ships the scripts, so on an installed PMO Desk (no repo needed) they are in
+   `%LOCALAPPDATA%\Programs\PMO Desk\resources\app\pmo-intake\scripts\` (a different
    install folder, if you chose one, works the same way). Do steps 3 to 5 above
    once by hand first, then open **Command Prompt** (a normal one, **not** "Run as
    administrator"; `%LOCALAPPDATA%` is expanded by `cmd`, not by PowerShell) and
    paste this as one line:
    ```
-   schtasks /Create /TN "PMO Outlook export" /SC MINUTE /MO 15 /TR "powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File \"%LOCALAPPDATA%\Programs\AI OS\resources\app\pmo-intake\scripts\Export-OutlookToInbox.ps1\" -SinceDays 3" /F
+   schtasks /Create /TN "PMO Outlook export" /SC MINUTE /MO 15 /TR "powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File \"%LOCALAPPDATA%\Programs\PMO Desk\resources\app\pmo-intake\scripts\Export-OutlookToInbox.ps1\" -SinceDays 3" /F
    ```
    With no `/RU` the task runs as you and only while you are signed in, which
    Outlook needs. Test it with `schtasks /Run /TN "PMO Outlook export"`, then read
@@ -215,7 +215,7 @@ outlook-20261022T034400Z-57dfad4d.json ... "Subject ..."` and a last line
    the manual run, or see the notes in
    [`PMO-INTAKE-CONTRACT.md`](./PMO-INTAKE-CONTRACT.md) (it also has a
    `Register-ScheduledTask` version for a repo checkout). The task is not
-   removed when you uninstall AI OS: delete it as above.
+   removed when you uninstall PMO Desk: delete it as above.
 7. Alternative with no Outlook automation at all: the Power Automate flag-email
    flow in section 3 ([`PA-FLOW-RECIPES.md`](./PA-FLOW-RECIPES.md), Recipe A). Use
    one of the two for Outlook, not both. Nothing in the app runs the script for
@@ -273,21 +273,21 @@ day from 09:00 on the due day), or when you are **waiting on someone** and
 nothing has changed for 2 working days. They are shown on this computer only;
 nothing is sent to anyone.
 
-1. **Desktop app (the reliable way).** Nothing to switch on: while AI OS is
+1. **Desktop app (the reliable way).** Nothing to switch on: while PMO Desk is
    running it checks every minute and shows a Windows notification, even with
    the PMO window closed. Click it to open the PMO app on that to-do. The dock
    icon for PMO To-Do shows a number badge, and the taskbar icon shows the same
    count.
 2. **Keep it running when you close the window.** PMO window, gear (Settings),
    **Reminders**, tick _Keep running in the tray so reminders still fire_, then
-   **Save settings**. Closing the window now hides AI OS to the system tray
+   **Save settings**. Closing the window now hides PMO Desk to the system tray
    (bottom right, maybe under the ^ arrow). Right-click the tray icon for **Open
-   AI OS** or **Quit**; Quit closes everything. Untick it and closing the window
+   PMO Desk** or **Quit**; Quit closes everything. Untick it and closing the window
    quits again, as before.
 3. **In a browser tab (only while the tab is open).** Open PMO To-Do, click
    **Enable reminders** in the grey strip under the status bar and allow
    notifications. If you refuse, you still get the badge on the dock icon and a
-   count in the tab title, such as `(3) AI OS`. Browser reminders stop when the
+   count in the tab title, such as `(3) PMO Desk`. Browser reminders stop when the
    tab closes, so use the desktop app for anything you must not miss.
 4. **What the notification says.** By default only "PMO To-Do: 3 items need
    attention", never a task name, so nothing shows on a shared screen or in the
@@ -301,7 +301,7 @@ nothing is sent to anyone.
    time).
 
 If no notification appears in the desktop app, check Windows **Focus assist / Do
-not disturb** and Settings, System, Notifications, **AI OS**. The log
+not disturb** and Settings, System, Notifications, **PMO Desk**. The log
 `desktop.log` (Developer menu, Open logs folder) says whether a notification was
 shown or failed.
 

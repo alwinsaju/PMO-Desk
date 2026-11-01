@@ -1,7 +1,7 @@
 # PTO emails -> the shift roster (Power Automate flow)
 
 People tell the team they are taking leave by email. You already have an Outlook rule
-that moves those emails into a folder. This flow copies each one into OneDrive; AI OS
+that moves those emails into a folder. This flow copies each one into OneDrive; PMO Desk
 reads it with the **local AI model**, decides whether it is PTO, a **comp off** or sick
 leave, works out the dates and files it as a **pending Time off request** for the sender.
 You approve or reject it in **Staff Management > Time off**, like any other request; once
@@ -11,14 +11,14 @@ Nothing leaves your computer except the copy OneDrive already syncs for you. The
 sends no email, posts nothing and asks nobody anything.
 
 ```
-Outlook folder "PTO"  -->  flow  -->  OneDrive\AI-OS\PTO-Inbox  -->  AI OS (local AI)
+Outlook folder "PTO"  -->  flow  -->  OneDrive\AI-OS\PTO-Inbox  -->  PMO Desk (local AI)
                                                                        |-- clear or doubtful -> pending Time off (Approve / Reject)
                                                                        '-- no person or dates -> PTO-Inbox\rejected (with the reason)
 ```
 
 ## Before you start
 
-1. Install AI OS (the installer creates `OneDrive - ...\AI-OS\PTO-Inbox` for you) and make
+1. Install PMO Desk (the installer creates `OneDrive - ...\AI-OS\PTO-Inbox` for you) and make
    sure OneDrive is signed in. The first-time setup page shows the same steps with
    pictures.
 2. Your Outlook rule moves the PTO emails into one folder (the examples use `PTO`).
@@ -32,7 +32,7 @@ Go to <https://make.powerautomate.com> and sign in with your Deloitte account.
 ### 1. Create the flow and the trigger
 
 1. **Create** -> **Automated cloud flow**.
-2. **Flow name**: `AI OS - PTO email`.
+2. **Flow name**: `PMO Desk - PTO email`.
 3. Search `new email` and pick **When a new email arrives (V3)** (Office 365 Outlook) ->
    **Create**.
 4. In the trigger card open **Advanced parameters** and tick **Folder**. **Click the folder
@@ -80,10 +80,10 @@ delete that line's expression and insert the field from the dynamic-content pick
 ### 4. Test it
 
 1. While you build, point **Folder Path** at a throwaway folder such as `/AI-OS/PTO-Inbox-test`
-   and switch it to `PTO-Inbox` once the files look right. AI OS only reads `PTO-Inbox`.
+   and switch it to `PTO-Inbox` once the files look right. PMO Desk only reads `PTO-Inbox`.
 2. Send yourself an email that says, for example, "I will be on leave from 2 to 4 November"
    and move it to the PTO folder.
-3. Within a minute a file `pto-....json` appears in `PTO-Inbox`; AI OS opens it, reads it,
+3. Within a minute a file `pto-....json` appears in `PTO-Inbox`; PMO Desk opens it, reads it,
    deletes it and adds the leave to **Time off** as a **Pending** request (an envelope icon
    marks leave that came from an email). Press **Approve** or **Reject**; approved leave
    shows on the roster.
@@ -95,7 +95,7 @@ For each email it answers: PTO, comp off, sick leave, a cancellation, or not a l
 plus the first and last day away. The email is treated as data; instructions written inside
 it are ignored.
 
-| The AI reads                                                                     | What AI OS does                                                         |
+| The AI reads                                                                     | What PMO Desk does                                                         |
 | -------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
 | PTO, clear dates, a known sender                                                 | Files a **pending PTO** request.                                        |
 | Comp off (the email says "comp off", "compensatory off", "time off in lieu" ...) | Files a **pending Comp off** request.                                   |
@@ -123,7 +123,7 @@ loaded, or what it is reading.
 
 ## It runs on its own
 
-AI OS looks in `PTO-Inbox` a minute after it starts and then about once a minute, whether or not
+PMO Desk looks in `PTO-Inbox` a minute after it starts and then about once a minute, whether or not
 a Staff window is open or even visible. The emails are read
 with the **light model** (`qwen3.5:4b`, the same one as the **Fast AI model** switch in the
 gear menu; if it is not downloaded yet, the model chosen in that menu is used). You do not
@@ -140,7 +140,7 @@ turns the background reading off, and the Staff window then reads the folder whi
 - **Nothing appears in `PTO-Inbox`**: open the flow's **Run history**. _Skipped_ runs mean
   Concurrency Control is still on (step 1.6). No runs at all: the trigger folder was typed,
   not picked.
-- **The file is there but nothing happens**: AI OS reads the folder on its own about every
+- **The file is there but nothing happens**: PMO Desk reads the folder on its own about every
   minute while it is running (and every 20 seconds while a Staff window is open); mail that
   arrives while it is closed is read soon after it starts. The local AI (Ollama and its model)
   has to be running; the setup check shows this. A model that has to load first adds about

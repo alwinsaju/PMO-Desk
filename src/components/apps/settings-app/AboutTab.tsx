@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { PmoDeskMark } from "@/components/brand/PmoDeskMark";
 import { Button, Switch } from "@/components/ui";
 import { getDesktopBridge } from "@/lib/pmo/desktopBridge";
 import { usePlatformPrefs } from "@/lib/platform/platformPrefsStore";
@@ -70,7 +71,7 @@ function Updates() {
       <Row
         settingId="updates"
         title="Check for updates"
-        hint="Off by default. When on, AI OS reads one small file from the address below about once a day. It never installs anything by itself."
+        hint="Off by default. When on, PMO Desk reads one small file from the address below about once a day. It never installs anything by itself."
       >
         <Switch
           checked={updates.enabled}
@@ -91,7 +92,7 @@ function Updates() {
           className="border-line bg-chip text-ink rounded-control mt-1 w-full border px-3 py-2 text-[13.5px] outline-none"
         />
         <p className="text-ink-muted mt-1 text-[12.5px]">
-          Your IT team or the AI OS publisher gives you this address. It must be https.
+          Your IT team or the PMO Desk publisher gives you this address. It must be https.
         </p>
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <Button
@@ -115,7 +116,7 @@ function Updates() {
         </Note>
       )}
       {outcome?.ok && !outcome.available && (
-        <Note tone="success">AI OS is up to date.</Note>
+        <Note tone="success">PMO Desk is up to date.</Note>
       )}
       {outcome?.ok && outcome.available && (
         <div className="border-line bg-chip rounded-control mt-1 border p-4">
@@ -200,7 +201,20 @@ export function AboutTab() {
 
   return (
     <>
-      <Section title="AI OS">
+      <div className="mb-4 flex items-center gap-4 px-1" data-testid="about-brand">
+        <PmoDeskMark size={56} />
+        <div className="min-w-0">
+          <p className="font-headline text-ink text-xl leading-tight">PMO Desk</p>
+          <p className="text-ink-muted text-[13px]">
+            Your PMO workspace, with a local AI beside you.
+          </p>
+        </div>
+        <span
+          aria-hidden
+          className="brand-dl:block ml-auto hidden h-6 w-32 shrink-0 bg-[url('/brand/deloitte-light.png')] bg-contain bg-right bg-no-repeat dark:bg-[url('/brand/deloitte-dark.png')]"
+        />
+      </div>
+      <Section title="PMO Desk">
         <Row
           settingId="version"
           title="Version"

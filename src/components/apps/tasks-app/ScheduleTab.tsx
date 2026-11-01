@@ -155,7 +155,7 @@ function ScheduleRow({
   );
 }
 
-/** When each task should be prepared (while AI OS is open) and the sends queued for later. */
+/** When each task should be prepared (while PMO Desk is open) and the sends queued for later. */
 export function ScheduleTab({
   tasks,
   onSettled,
@@ -197,7 +197,7 @@ export function ScheduleTab({
         >
           <InfoIcon size={16} weight="bold" aria-hidden className="mt-0.5 shrink-0" />
           <span>
-            <strong>Schedules only run while AI OS is open.</strong> Anything that came
+            <strong>Schedules only run while PMO Desk is open.</strong> Anything that came
             due while it was closed is reported the next time it starts. A scheduled task
             can be prepared for you, but it always stops at the first review step; nothing
             is sent without your approval.

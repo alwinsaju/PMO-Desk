@@ -7,10 +7,10 @@ import type { ServerLogTail } from "./serverLog.ts";
 export interface AiRuntimeStatus {
   /** Does something answer on the Ollama base URL right now? */
   running: boolean;
-  /** AI OS started this server (or adopted one a crashed run left behind)
+  /** PMO Desk started this server (or adopted one a crashed run left behind)
    *  and will stop it on quit. false = someone else's, never killed. */
   ownedByUs: boolean;
-  /** ownedByUs, but inherited from a previous crashed AI OS run. */
+  /** ownedByUs, but inherited from a previous crashed PMO Desk run. */
   adopted: boolean;
   version?: string;
   baseUrl: string;
@@ -33,7 +33,7 @@ export interface AiRuntimeStatus {
   activeCalls: ActiveCall[];
   /** A "Load now" / warm-up is running in the background. */
   loadInFlight: boolean;
-  /** May AI OS start Ollama on its own if it is down? */
+  /** May PMO Desk start Ollama on its own if it is down? */
   canAutoStart: boolean;
   /** keep_alive sent with every call right now (owned vs reused already applied). */
   keepAlive: string;

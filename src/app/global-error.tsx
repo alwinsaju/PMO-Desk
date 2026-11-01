@@ -17,7 +17,7 @@ export default function GlobalError({ reset }: { reset: () => void }) {
       >
         <div role="alert">
           <h1>Something went wrong</h1>
-          <p>AI OS hit an unexpected problem. Your data is safe.</p>
+          <p>PMO Desk hit an unexpected problem. Your data is safe.</p>
           <button type="button" onClick={reset}>
             Try again
           </button>

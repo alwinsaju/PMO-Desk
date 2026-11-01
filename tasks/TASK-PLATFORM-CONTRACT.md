@@ -2,7 +2,7 @@
 
 Shared contract between three parts of the Shift Roster / December Disconnect work:
 the Tasks engine (`tasks-engine/`), the task scripts (`tasks/<task>/scripts`),
-and the AI OS Tasks app (`src/components/apps/tasks-app`). All three code against
+and the PMO Desk Tasks app (`src/components/apps/tasks-app`). All three code against
 this file. The existing behavior for the four older tasks and the hard-coded
 `review_incidents` gate MUST keep working unchanged.
 

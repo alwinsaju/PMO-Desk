@@ -203,7 +203,7 @@ describe("desktop packaging", () => {
     it("creates the AI-OS OneDrive folders on a first install only, and asks for no e-mail address", () => {
       const nsh = readFileSync(path.join(root, "build", "installer.nsh"), "utf8");
       assert.match(nsh, /!macro customInstall/);
-      // Works out whether AI OS was already installed before copying anything.
+      // Works out whether PMO Desk was already installed before copying anything.
       assert.match(
         nsh,
         /ReadRegStr \$0 HKCU "\$\{INSTALL_REGISTRY_KEY\}" InstallLocation/,

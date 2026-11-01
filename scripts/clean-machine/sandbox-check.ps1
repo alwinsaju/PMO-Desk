@@ -1,9 +1,9 @@
 <#
-Clean-machine check for the AI OS installer. Runs inside Windows Sandbox (see
+Clean-machine check for the PMO Desk installer. Runs inside Windows Sandbox (see
 run-sandbox-test.ps1) or on any Windows machine against an unpacked build.
 
 What it does, in order (nothing here sends mail or opens a mailbox):
-  1. (with -Installer) installs AI OS silently, per user, into %LOCALAPPDATA%\Programs\AI OS,
+  1. (with -Installer) installs PMO Desk silently, per user, into %LOCALAPPDATA%\Programs\PMO Desk,
      then checks it needed no elevation, and the shortcuts and uninstall entry exist
   2. checks the files the app needs (app, bundled python.exe and pythonw.exe, engine, tasks)
   3. runs the engine self-test with the BUNDLED Python (imports, shared task libraries,
@@ -18,15 +18,15 @@ What it does, in order (nothing here sends mail or opens a mailbox):
      checks: the NEW desktop.log shows the Tasks engine came up (and how long it took),
      the window appears, a second launch is refused, a graceful quit leaves no process
      behind, and a relaunch comes up again with the first run's data intact
-  7. (with -Lifecycle, needs -Installer; ends with AI OS UNINSTALLED) installs the same
+  7. (with -Lifecycle, needs -Installer; ends with PMO Desk UNINSTALLED) installs the same
      installer over the top (data kept), then uninstalls (files, shortcuts and registry
-     gone, data kept by design). Refuses to run when AI OS or %APPDATA%\ai-os exist.
+     gone, data kept by design). Refuses to run when PMO Desk or %APPDATA%\ai-os exist.
 
 Writes results.json (and prints a table) to -ResultsDir. Exit code 0 = every
 required check passed. Windows PowerShell 5.1 compatible: native programs are run
 through Invoke-Native so a line on stderr is never mistaken for a failure.
 
-  .\sandbox-check.ps1 -Installer "C:\Installer\AI OS Setup 3.0.0.exe" -ResultsDir C:\Results -LaunchApp -Lifecycle
+  .\sandbox-check.ps1 -Installer "C:\Installer\PMO Desk Setup 3.0.0.exe" -ResultsDir C:\Results -LaunchApp -Lifecycle
   .\sandbox-check.ps1 -AppDir "C:\path\to\win-unpacked" -ResultsDir $env:TEMP\aios-check -LaunchApp
 #>
 param(
@@ -126,14 +126,14 @@ function Get-UninstallEntries {
         if (-not (Test-Path $key)) { continue }
         foreach ($k in (Get-ChildItem $key -ErrorAction SilentlyContinue)) {
             $p = Get-ItemProperty -LiteralPath $k.PSPath -ErrorAction SilentlyContinue
-            if ($p -and $p.DisplayName -like "AI OS*") { $out += [pscustomobject]@{ Name = $p.DisplayName; Version = $p.DisplayVersion } }
+            if ($p -and $p.DisplayName -like "PMO Desk*") { $out += [pscustomobject]@{ Name = $p.DisplayName; Version = $p.DisplayVersion } }
         }
     }
     return $out
 }
 
 function Get-Shortcuts {
-    $paths = @((Join-Path ([Environment]::GetFolderPath("Desktop")) "AI OS.lnk"), (Join-Path ([Environment]::GetFolderPath("Programs")) "AI OS.lnk"))
+    $paths = @((Join-Path ([Environment]::GetFolderPath("Desktop")) "PMO Desk.lnk"), (Join-Path ([Environment]::GetFolderPath("Programs")) "PMO Desk.lnk"))
     $sh = $null
     try { $sh = New-Object -ComObject WScript.Shell } catch { }
     $out = @()
@@ -153,21 +153,21 @@ function Invoke-Setup([string]$Path) {
 }
 
 # 1. install -----------------------------------------------------------------
-$defaultAppDir = Join-Path $env:LOCALAPPDATA "Programs\AI OS"
+$defaultAppDir = Join-Path $env:LOCALAPPDATA "Programs\PMO Desk"
 $realProfile = Join-Path $env:APPDATA "ai-os"
 if ($Lifecycle -and -not $Installer) { Add-Result "lifecycle" $false "-Lifecycle needs -Installer"; Finish }
-if ($Lifecycle -and ((Test-Path -LiteralPath (Join-Path $defaultAppDir "AI OS.exe")) -or (Test-Path -LiteralPath $realProfile))) {
-    Add-Result "clean machine for -Lifecycle" $false "AI OS is installed or $realProfile exists; -Lifecycle reinstalls and UNINSTALLS and would touch that data. Use Windows Sandbox or a fresh VM."
+if ($Lifecycle -and ((Test-Path -LiteralPath (Join-Path $defaultAppDir "PMO Desk.exe")) -or (Test-Path -LiteralPath $realProfile))) {
+    Add-Result "clean machine for -Lifecycle" $false "PMO Desk is installed or $realProfile exists; -Lifecycle reinstalls and UNINSTALLS and would touch that data. Use Windows Sandbox or a fresh VM."
     Finish
 }
 if ($Installer) {
     if (-not (Test-Path -LiteralPath $Installer)) { Add-Result "installer" $false "not found: $Installer"; Finish }
     $setup = Invoke-Setup $Installer
     $AppDir = $defaultAppDir
-    Add-Result "silent install" ($setup.ExitCode -eq 0 -and (Test-Path (Join-Path $AppDir "AI OS.exe"))) ("exit code {0}, {1:N0} s, into {2}" -f $setup.ExitCode, $setup.Secs, $AppDir)
+    Add-Result "silent install" ($setup.ExitCode -eq 0 -and (Test-Path (Join-Path $AppDir "PMO Desk.exe"))) ("exit code {0}, {1:N0} s, into {2}" -f $setup.ExitCode, $setup.Secs, $AppDir)
     $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
     Add-Result "install needed no administrator rights (this session is not elevated)" (-not $isAdmin) $(if ($isAdmin) { "this session IS elevated, so the result proves nothing: run it from a normal window" } else { "per-user install into %LOCALAPPDATA%, no prompt" }) $false
-    foreach ($s in (Get-Shortcuts)) { Add-Result "shortcut: $($s.Path)" ($s.Exists -and $s.Target -like "*\AI OS.exe") $(if ($s.Exists) { "-> $($s.Target)" } else { "missing" }) }
+    foreach ($s in (Get-Shortcuts)) { Add-Result "shortcut: $($s.Path)" ($s.Exists -and $s.Target -like "*\PMO Desk.exe") $(if ($s.Exists) { "-> $($s.Target)" } else { "missing" }) }
     $entries = @(Get-UninstallEntries)
     Add-Result "one uninstall entry (Settings > Apps)" ($entries.Count -eq 1) ("{0} entr(ies): {1}" -f $entries.Count, (($entries | ForEach-Object { "$($_.Name) $($_.Version)" }) -join "; "))
 }
@@ -180,7 +180,7 @@ $pyw = Join-Path $res "python\pythonw.exe"
 $engine = Join-Path $res "app\tasks-engine"
 $tasks = Join-Path $res "app\tasks"
 foreach ($pair in @(
-        @("app executable", (Join-Path $AppDir "AI OS.exe")),
+        @("app executable", (Join-Path $AppDir "PMO Desk.exe")),
         @("bundled Python", $py),
         @("bundled pythonw (the engine runs as this)", $pyw),
         @("Tasks engine", (Join-Path $engine "main.py")),
@@ -269,14 +269,14 @@ function Start-AppProc([string]$Exe, [string]$ProfileDir, [string]$Inbox) {
 
 # Waits until the part of desktop.log written after $Offset says the engine is ready (or a start failure).
 function Wait-AppReady($Proc, [string]$LogPath, [long]$Offset, [int]$MaxSec) {
-    $failPattern = 'AI OS could not start|did not start within|Tasks engine start request failed|could not be started'
+    $failPattern = 'PMO Desk could not start|did not start within|Tasks engine start request failed|could not be started'
     $sw = [Diagnostics.Stopwatch]::StartNew()
     while ($sw.Elapsed.TotalSeconds -lt $MaxSec) {
         Start-Sleep -Milliseconds 500
         $text = Read-FromOffset $LogPath $Offset
         if ($text -match 'Tasks engine is ready') { return [pscustomobject]@{ Ready = $true; Secs = [math]::Round($sw.Elapsed.TotalSeconds, 1); Why = "" } }
         if ($text -match $failPattern) { return [pscustomobject]@{ Ready = $false; Secs = 0; Why = ((($text -split "`r?`n") | Where-Object { $_ -match $failPattern } | Select-Object -First 2) -join " | ") } }
-        if ($Proc.HasExited) { return [pscustomobject]@{ Ready = $false; Secs = 0; Why = "AI OS.exe exited with code $($Proc.ExitCode) before the engine was ready" } }
+        if ($Proc.HasExited) { return [pscustomobject]@{ Ready = $false; Secs = 0; Why = "PMO Desk.exe exited with code $($Proc.ExitCode) before the engine was ready" } }
     }
     return [pscustomobject]@{ Ready = $false; Secs = 0; Why = "not ready after $MaxSec s" }
 }
@@ -294,11 +294,11 @@ function Stop-AppGracefully($Proc, [string]$Dir) {
 }
 
 if ($LaunchApp) {
-    $exe = Join-Path $AppDir "AI OS.exe"
+    $exe = Join-Path $AppDir "PMO Desk.exe"
     $running = @(Get-ProcsUnder $AppDir)
     $foreign = @(8000..8019 | Where-Object { Test-Health "http://127.0.0.1:$_" })
     if ($running.Count -gt 0) {
-        Add-Result "no AI OS already running from $AppDir" $false "quit it first; this check ends every process under that folder"
+        Add-Result "no PMO Desk already running from $AppDir" $false "quit it first; this check ends every process under that folder"
     } elseif ($foreign.Count -gt 0) {
         Add-Result "no other Tasks engine on ports 8000-8019" $false ("an engine answers on port(s) {0}: the app would adopt it instead of starting its own, so the launch would prove nothing. Stop it and run again." -f ($foreign -join ","))
     } else {
@@ -329,7 +329,7 @@ if ($LaunchApp) {
         }
         $quit = Stop-AppGracefully $app $AppDir
         if ($ready.Ready) {
-            Add-Result "graceful quit leaves no AI OS / python / pythonw process" ($quit.Graceful -and $quit.Left.Count -eq 0) ("window closed -> exited: {0}; still running afterwards: {1}" -f $quit.Graceful, (($quit.Left | ForEach-Object { $_.Name }) -join ", "))
+            Add-Result "graceful quit leaves no PMO Desk / python / pythonw process" ($quit.Graceful -and $quit.Left.Count -eq 0) ("window closed -> exited: {0}; still running afterwards: {1}" -f $quit.Graceful, (($quit.Left | ForEach-Object { $_.Name }) -join ", "))
 
             $offset = Get-FileLen $log
             $app2 = Start-AppProc $exe $profileDir $inbox
@@ -343,17 +343,17 @@ if ($LaunchApp) {
     }
 }
 
-# 7. reinstall over the top, then uninstall (-Lifecycle: ends with AI OS removed) ----------
+# 7. reinstall over the top, then uninstall (-Lifecycle: ends with PMO Desk removed) ----------
 if ($Lifecycle) {
     $marker = Join-Path $realProfile "_aios_lifecycle_marker.txt"   # %APPDATA%\ai-os did not exist (checked above)
     New-Item -ItemType Directory -Force -Path $realProfile | Out-Null
     Set-Content -LiteralPath $marker -Value "USER" -Encoding ASCII
     $re = Invoke-Setup $Installer
     $entries = @(Get-UninstallEntries)
-    Add-Result "reinstall over the top: exit code 0, app present, one uninstall entry" ($re.ExitCode -eq 0 -and (Test-Path -LiteralPath (Join-Path $AppDir "AI OS.exe")) -and $entries.Count -eq 1) ("exit code {0}, {1:N0} s, {2} uninstall entr(ies)" -f $re.ExitCode, $re.Secs, $entries.Count)
+    Add-Result "reinstall over the top: exit code 0, app present, one uninstall entry" ($re.ExitCode -eq 0 -and (Test-Path -LiteralPath (Join-Path $AppDir "PMO Desk.exe")) -and $entries.Count -eq 1) ("exit code {0}, {1:N0} s, {2} uninstall entr(ies)" -f $re.ExitCode, $re.Secs, $entries.Count)
     Add-Result "reinstall keeps user data in %APPDATA%\ai-os" (Test-Path -LiteralPath $marker) $marker
 
-    $un = Join-Path $AppDir "Uninstall AI OS.exe"
+    $un = Join-Path $AppDir "Uninstall PMO Desk.exe"
     if (-not (Test-Path -LiteralPath $un)) {
         Add-Result "uninstaller present" $false "not found: $un"
     } else {
@@ -363,10 +363,10 @@ if ($Lifecycle) {
         $deadline = (Get-Date).AddMinutes(4)
         while ((Get-Date) -lt $deadline) {
             $tempCopy = @(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "Un_*" })
-            if (-not (Test-Path -LiteralPath (Join-Path $AppDir "AI OS.exe")) -and $tempCopy.Count -eq 0) { break }
+            if (-not (Test-Path -LiteralPath (Join-Path $AppDir "PMO Desk.exe")) -and $tempCopy.Count -eq 0) { break }
             Start-Sleep -Seconds 2
         }
-        Add-Result "uninstall removes the app" (-not (Test-Path -LiteralPath (Join-Path $AppDir "AI OS.exe"))) $AppDir
+        Add-Result "uninstall removes the app" (-not (Test-Path -LiteralPath (Join-Path $AppDir "PMO Desk.exe"))) $AppDir
         $leftShortcuts = @(Get-Shortcuts | Where-Object { $_.Exists })
         Add-Result "uninstall removes the shortcuts" ($leftShortcuts.Count -eq 0) $(if ($leftShortcuts.Count) { ($leftShortcuts | ForEach-Object { $_.Path }) -join "; " } else { "desktop and Start menu shortcuts gone" })
         $leftEntries = @(Get-UninstallEntries)

@@ -344,7 +344,7 @@ export function DashboardApp({ windowId }: { windowId: string }) {
 
           {connection === "offline" && !state && (
             <Note tone="warning" role="alert">
-              Can’t reach the AI OS server, so to-dos are not shown. Staff and report
+              Can’t reach the PMO Desk server, so to-dos are not shown. Staff and report
               cards may still update.
             </Note>
           )}
@@ -404,7 +404,8 @@ function BriefingSettings() {
         className="rounded-control border-line bg-surface-elevated h-9 border px-2.5 text-[13px]"
       />
       <span className="text-ink-muted text-[12px]">
-        Shown once a day while AI OS is open: what needs you, who is out, tasks waiting.
+        Shown once a day while PMO Desk is open: what needs you, who is out, tasks
+        waiting.
       </span>
     </div>
   );

@@ -34,7 +34,7 @@ export interface ControlsDeps {
   client: OllamaClient;
   queue: FifoQueue;
   state: AiLogState;
-  /** Is the server one AI OS started? (lifecycle.getProcessState) */
+  /** Is the server one PMO Desk started? (lifecycle.getProcessState) */
   processState: () => { owned: boolean; adopted: boolean };
   /** The keep_alive being sent right now. */
   keepAlive: () => string;
@@ -190,7 +190,7 @@ export function createRuntimeControls(deps: ControlsDeps) {
       if (!(config.autoStart && isLocalBaseUrl(config.baseUrl))) {
         return {
           ok: false,
-          reason: "Ollama is not running, and AI OS is not set up to start it.",
+          reason: "Ollama is not running, and PMO Desk is not set up to start it.",
         };
       }
     } else if (isOurModelIn(models)) {
@@ -212,7 +212,7 @@ export function createRuntimeControls(deps: ControlsDeps) {
   }
 
   /**
-   * "Unload now": keep_alive 0 for the AI OS default model only, never another
+   * "Unload now": keep_alive 0 for the PMO Desk default model only, never another
    * model in a shared Ollama, and never while a call is running (it would cut
    * the answer short). Goes through the queue so no call can start mid-unload.
    */

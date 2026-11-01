@@ -416,7 +416,7 @@ describe("createInboxFolder", () => {
       }),
     );
     assert.equal(protectedHit.ok, false);
-    assert.match(protectedHit.reason, /AI OS itself/);
+    assert.match(protectedHit.reason, /PMO Desk itself/);
     assert.equal(existsSync(path.join(home, "PMO-Inbox")), false);
   });
 

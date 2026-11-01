@@ -20,7 +20,7 @@ export type SetupAction = {
     | "cancel-pull"
     | "run-selftest"
     | "create-folders";
-  /** For `pull-model`: which model (the default, or another AI OS may download). */
+  /** For `pull-model`: which model (the default, or another PMO Desk may download). */
   model?: string;
 };
 
@@ -59,6 +59,6 @@ export async function postSetupAction(
     });
     return (await res.json()) as { ok: boolean; reason?: string };
   } catch {
-    return { ok: false, reason: "Could not reach AI OS. Try again in a moment." };
+    return { ok: false, reason: "Could not reach PMO Desk. Try again in a moment." };
   }
 }

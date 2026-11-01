@@ -1,5 +1,5 @@
 // Small rules for the two things the page may ask the shell to open: the data folder
-// and an installer that AI OS itself downloaded. Pure (no Electron imports). The page
+// and an installer that PMO Desk itself downloaded. Pure (no Electron imports). The page
 // never names a path.
 
 const path = require("node:path");

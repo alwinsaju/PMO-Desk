@@ -5,7 +5,7 @@ import { handleAction } from "@/lib/ai-runtime/routeLogic";
 
 export const dynamic = "force-dynamic";
 
-/** POST /api/ai/runtime/load: "Load now". Wakes the AI OS default model in the
+/** POST /api/ai/runtime/load: "Load now". Wakes the PMO Desk default model in the
  *  background (a tiny real chat through the queue) and answers at once; the
  *  model log shows the progress. Origin-checked, not desktop-only: the button is
  *  inside the app window (see routeLogic.ts). */

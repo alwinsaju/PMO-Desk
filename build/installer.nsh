@@ -11,8 +11,8 @@
 
 !macro customWelcomePage
   !insertmacro skipPageIfUpdated
-  !define MUI_WELCOMEPAGE_TITLE "Welcome to AI OS"
-  !define MUI_WELCOMEPAGE_TEXT "AI OS is a desktop workspace where you and a local AI work side by side. The AI runs on this computer.$\r$\n$\r$\nThis wizard installs it. Click Next to choose where it goes."
+  !define MUI_WELCOMEPAGE_TITLE "Welcome to PMO Desk"
+  !define MUI_WELCOMEPAGE_TEXT "PMO Desk is a desktop workspace where you and a local AI work side by side. The AI runs on this computer.$\r$\n$\r$\nThis wizard installs it. Click Next to choose where it goes."
   !define MUI_PAGE_CUSTOMFUNCTION_SHOW aiOsWelcomeShow
   !insertmacro MUI_PAGE_WELCOME
 
@@ -39,7 +39,7 @@
 
 ; The default finish page, plus the dark colors. StartApp is the same function
 ; electron-builder defines for its own finish page (assistedInstaller.nsh), so
-; "Open AI OS" still launches the app as the user (and with --updated on an update).
+; "Open PMO Desk" still launches the app as the user (and with --updated on an update).
 !macro customFinishPage
   Function StartApp
     ${if} ${isUpdated}
@@ -50,10 +50,10 @@
     ${StdUtils.ExecShellAsUser} $0 "$launchLink" "open" "$1"
   FunctionEnd
 
-  !define MUI_FINISHPAGE_TITLE "AI OS is ready"
-  !define MUI_FINISHPAGE_TEXT "AI OS is installed.$\r$\n$\r$\nThe first time it opens, it checks that this computer has the local AI it needs and walks you through the rest."
+  !define MUI_FINISHPAGE_TITLE "PMO Desk is ready"
+  !define MUI_FINISHPAGE_TEXT "PMO Desk is installed.$\r$\n$\r$\nThe first time it opens, it checks that this computer has the local AI it needs and walks you through the rest."
   !define MUI_FINISHPAGE_RUN
-  !define MUI_FINISHPAGE_RUN_TEXT "Open AI OS"
+  !define MUI_FINISHPAGE_RUN_TEXT "Open PMO Desk"
   !define MUI_FINISHPAGE_RUN_FUNCTION "StartApp"
   !define MUI_PAGE_CUSTOMFUNCTION_SHOW aiOsFinishShow
   !insertmacro MUI_PAGE_FINISH
@@ -72,7 +72,7 @@
 
 
 ; The Tasks engine runs from <install dir>\resources\python\pythonw.exe. If the app
-; was killed or crashed, that process can outlive "AI OS.exe" (which electron-builder
+; was killed or crashed, that process can outlive "PMO Desk.exe" (which electron-builder
 ; already stops by name) and keep files in the install folder locked, failing an
 ; upgrade or uninstall. This runs before the install dir is known, so it matches the
 ; path suffix instead; another Python (anywhere else) is never touched. taskkill /T
@@ -84,7 +84,26 @@
   Pop $0 ; restore the caller's $0
 !macroend
 
+; Upgrading from the product's old name ("AI OS"): the old program is a different .exe name in
+; the same install folder (the installer reuses the folder it recorded, because the appId is
+; unchanged), so a running old copy is stopped, and the old program file and the old
+; Desktop / Start menu shortcuts are removed after the new ones are made. Without this an
+; update would leave two programs and two shortcuts. Every failure is ignored.
+!macro aiOsStopOldApp
+  Push $0
+  nsExec::Exec `taskkill.exe /F /T /IM "AI OS.exe"`
+  Pop $0
+  Pop $0
+!macroend
+
+!macro aiOsRemoveOldBranding
+  Delete "$INSTDIR\AI OS.exe"
+  Delete "$DESKTOP\AI OS.lnk"
+  Delete "$SMPROGRAMS\AI OS.lnk"
+!macroend
+
 !macro customInit
+  !insertmacro aiOsStopOldApp
   !insertmacro aiOsKillOrphanedEngine
   !insertmacro aiOsDetectExistingInstall
 !macroend
@@ -96,10 +115,10 @@
 ; ---------------------------------------------------------------------------------
 ; First install only: the OneDrive folders the Power Automate flows use.
 ;
-; AI OS and its flows share one folder in OneDrive, AI-OS, with PMO-Inbox,
+; PMO Desk and its flows share one folder in OneDrive, AI-OS, with PMO-Inbox,
 ; Staff-Exchange (requests / profiles / rejected) and PTO-Inbox inside. On a FIRST
 ; install this creates them, so the app finds them already in place and the first-time
-; setup page only has to show how to build the flows. An update (AI OS is already
+; setup page only has to show how to build the flows. An update (PMO Desk is already
 ; installed) creates nothing and touches nothing.
 ;
 ; The OneDrive folder is read from OneDrive's own account list in the registry, so the
@@ -158,6 +177,7 @@
   Push $0
   Push $1
   Push $2
+  !insertmacro aiOsRemoveOldBranding
   ${If} $aiOsExisting == "0"
     !insertmacro aiOsFindOneDrive
     ${If} $aiOsOneDrive != ""
@@ -167,9 +187,9 @@
       CreateDirectory "$aiOsOneDrive\AI-OS\Staff-Exchange\profiles"
       CreateDirectory "$aiOsOneDrive\AI-OS\Staff-Exchange\rejected"
       CreateDirectory "$aiOsOneDrive\AI-OS\PTO-Inbox"
-      DetailPrint "AI OS: OneDrive folders are in $aiOsOneDrive\AI-OS"
+      DetailPrint "PMO Desk: OneDrive folders are in $aiOsOneDrive\AI-OS"
     ${Else}
-      DetailPrint "AI OS: no work OneDrive found; the app creates the folders once OneDrive is signed in"
+      DetailPrint "PMO Desk: no work OneDrive found; the app creates the folders once OneDrive is signed in"
     ${EndIf}
     ; The first-time setup page runs once, on the first launch after a fresh install.
     ${IfNot} ${FileExists} "$APPDATA\ai-os\pmo\first-time-setup.json"

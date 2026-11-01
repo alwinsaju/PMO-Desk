@@ -20,7 +20,7 @@ export interface AiRuntimeConfig {
   defaultModel: string;
   /** Explicit path to ollama.exe; wins over PATH and the default install. */
   ollamaExe?: string;
-  /** How long the model stays loaded after the LAST call when AI OS owns the
+  /** How long the model stays loaded after the LAST call when PMO Desk owns the
    *  server. Sent as `keep_alive` with every request, so it overrides the
    *  server's own default and any OLLAMA_KEEP_ALIVE. */
   keepAlive: string;
@@ -33,7 +33,7 @@ export interface AiRuntimeConfig {
   numCtx: number;
   /** Hard cap on generated tokens, so a degenerate output can't run forever. */
   maxOutputTokens: number;
-  /** May AI OS spawn `ollama serve` when nothing answers? */
+  /** May PMO Desk spawn `ollama serve` when nothing answers? */
   autoStart: boolean;
   /** Load the default model right after the server is up. OFF by default: the
    *  model (~12 GB for gemma4:12b) loads only when a call needs it, and an
@@ -92,7 +92,7 @@ export function normalizeKeepAlive(raw: string | undefined, fallback: string): s
   return /^(\d+(\.\d+)?(ns|us|µs|ms|s|m|h))+$/.test(value) ? value : fallback;
 }
 
-/** The keep_alive to send: the owned-server value for a server AI OS started,
+/** The keep_alive to send: the owned-server value for a server PMO Desk started,
  *  the external one for somebody else's. */
 export function pickKeepAlive(config: AiRuntimeConfig, owned: boolean): string {
   return owned ? config.keepAlive : config.externalKeepAlive;
@@ -135,7 +135,7 @@ export function loadAiRuntimeConfig(
   };
 }
 
-/** True for loopback hosts — the only ones AI OS will ever spawn a server for. */
+/** True for loopback hosts — the only ones PMO Desk will ever spawn a server for. */
 export function isLocalBaseUrl(baseUrl: string): boolean {
   try {
     const host = new URL(baseUrl).hostname.replace(/^\[|\]$/g, "");

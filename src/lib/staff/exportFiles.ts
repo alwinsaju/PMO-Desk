@@ -108,7 +108,7 @@ export function buildIcs(
   const lines = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
-    "PRODID:-//AI OS//Staff//EN",
+    "PRODID:-//PMO Desk//Staff//EN",
     "CALSCALE:GREGORIAN",
     `X-WR-CALNAME:${icsText(name)}`,
   ];

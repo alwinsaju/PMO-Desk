@@ -33,8 +33,8 @@ function resolve(files, env = {}, extra = {}) {
     env,
     fs: fakeFs(files),
     path,
-    exeDir: "C:\\Apps\\AI OS",
-    desktopDir: "C:\\Apps\\AI OS\\resources\\app\\desktop",
+    exeDir: "C:\\Apps\\PMO Desk",
+    desktopDir: "C:\\Apps\\PMO Desk\\resources\\app\\desktop",
     ...extra,
   });
 }
@@ -63,7 +63,7 @@ describe("resolveLaunchConfig", () => {
   it("AI_OS_MODE overrides the config file mode", () => {
     const files = {
       ...withBuild,
-      "C:\\Apps\\AI OS\\live-config.json": JSON.stringify({ mode: "bundled" }),
+      "C:\\Apps\\PMO Desk\\live-config.json": JSON.stringify({ mode: "bundled" }),
     };
     assert.equal(resolve(files).mode, "bundled");
     assert.equal(resolve(files, { AI_OS_MODE: "live-build" }).mode, "live-build");
@@ -98,8 +98,8 @@ describe("resolveLaunchConfig", () => {
 
   it("prefers the config next to the exe over the one in desktop/", () => {
     const files = {
-      "C:\\Apps\\AI OS\\live-config.json": JSON.stringify({ mode: "bundled" }),
-      "C:\\Apps\\AI OS\\resources\\app\\desktop\\live-config.json": JSON.stringify({
+      "C:\\Apps\\PMO Desk\\live-config.json": JSON.stringify({ mode: "bundled" }),
+      "C:\\Apps\\PMO Desk\\resources\\app\\desktop\\live-config.json": JSON.stringify({
         mode: "live-build",
       }),
     };
@@ -109,7 +109,7 @@ describe("resolveLaunchConfig", () => {
   it("ignores a broken config file and an invalid mode, with notes", () => {
     const broken = resolve({
       ...goodProject,
-      "C:\\Apps\\AI OS\\live-config.json": "{ not json",
+      "C:\\Apps\\PMO Desk\\live-config.json": "{ not json",
     });
     assert.equal(broken.mode, "live-dev");
     assert.ok(broken.notes.some((n) => /could not be read/.test(n)));
@@ -123,7 +123,7 @@ describe("resolveLaunchConfig", () => {
 describe("resolveLaunchConfig: packaged builds", () => {
   const packaged = { packaged: true };
   const cfgFile = (obj) => ({
-    "C:\\Apps\\AI OS\\live-config.json": JSON.stringify(obj),
+    "C:\\Apps\\PMO Desk\\live-config.json": JSON.stringify(obj),
   });
 
   it("defaults to bundled with a note, whether or not the project is usable", () => {
@@ -255,10 +255,10 @@ describe("pickPort", () => {
 
 describe("labels and timeouts", () => {
   it("describes live and bundled modes", () => {
-    assert.equal(cfg.windowTitle({ mode: "bundled", projectDir: PROJECT }), "AI OS");
+    assert.equal(cfg.windowTitle({ mode: "bundled", projectDir: PROJECT }), "PMO Desk");
     assert.equal(
       cfg.windowTitle({ mode: "live-dev", projectDir: PROJECT }),
-      `AI OS (live-dev: ${PROJECT})`,
+      `PMO Desk (live-dev: ${PROJECT})`,
     );
   });
 

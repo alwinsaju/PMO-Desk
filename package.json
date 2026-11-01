@@ -70,7 +70,7 @@
   },
   "build": {
     "appId": "com.aios.desktop",
-    "productName": "AI OS",
+    "productName": "PMO Desk",
     "icon": "desktop/icon.ico",
     "asar": false,
     "electronLanguages": [
@@ -140,11 +140,14 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "include": "build/installer.nsh",
+      "installerIcon": "desktop/icon.ico",
+      "uninstallerIcon": "desktop/icon.ico",
+      "installerHeaderIcon": "desktop/icon.ico",
       "installerSidebar": "build/installer/sidebar.bmp",
       "uninstallerSidebar": "build/installer/sidebar.bmp",
       "installerHeader": "build/installer/header.bmp",
       "oneClick": false,
-      "shortcutName": "AI OS"
+      "shortcutName": "PMO Desk"
     }
   }
 }

@@ -9,7 +9,7 @@
 //     never kill it.
 //   - Nothing answers and the URL is loopback -> spawn `ollama serve`
 //     ourselves, owned = true, and stop its whole process tree on quit.
-//   - A previous AI OS crashed and left an Ollama we started behind (its
+//   - A previous PMO Desk crashed and left an Ollama we started behind (its
 //     pidfile says so, its owner PID is dead) -> adopt it (owned = true) so
 //     this run cleans it up.
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
@@ -142,7 +142,7 @@ async function attemptEnsure(
     clearOwnership(state);
     getAiLogState().ring.emitServer({
       kind: "server-down",
-      message: "Ollama stopped unexpectedly; AI OS is starting it again.",
+      message: "Ollama stopped unexpectedly; PMO Desk is starting it again.",
       willRetry: true,
     });
   }
@@ -153,7 +153,7 @@ async function attemptEnsure(
   if (!isLocalBaseUrl(config.baseUrl)) {
     return unavailable(
       config,
-      `Ollama is not answering at ${config.baseUrl}, and AI OS only starts a server on this machine.`,
+      `Ollama is not answering at ${config.baseUrl}, and PMO Desk only starts a server on this machine.`,
     );
   }
 
@@ -246,7 +246,7 @@ async function attemptEnsure(
 }
 
 /**
- * Stop the server only if AI OS owns it: unload models (keep_alive 0), then
+ * Stop the server only if PMO Desk owns it: unload models (keep_alive 0), then
  * kill the whole process tree (ollama serve spawns runner children).
  * No-op for a reused external server.
  */
@@ -354,7 +354,7 @@ function readPidfile(): Pidfile | undefined {
   return undefined;
 }
 
-/** Take ownership of an Ollama a crashed AI OS started and never stopped.
+/** Take ownership of an Ollama a crashed PMO Desk started and never stopped.
  *  Only when its recorded owner is dead, the PID is alive, and the PID's
  *  image really is Ollama (PID reuse after a reboot must never get a random
  *  process killed). A server started by a still-running dev server is left

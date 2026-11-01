@@ -16,7 +16,7 @@ export interface Release {
 export const RELEASES: readonly Release[] = [
   {
     version: "6.0.1",
-    title: "AI OS 6.0.1",
+    title: "PMO Desk 6.0.1",
     groups: [
       {
         title: "Staff",
@@ -31,7 +31,7 @@ export const RELEASES: readonly Release[] = [
   },
   {
     version: "6.0.0",
-    title: "AI OS 6.0",
+    title: "PMO Desk 6.0",
     groups: [
       {
         title: "Command bar and search",

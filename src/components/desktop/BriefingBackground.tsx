@@ -15,7 +15,7 @@ import { useStaffStore, useStaffSync } from "@/lib/staff/staffStore";
 import { peopleAway, whosOff } from "@/lib/staff/whosOff";
 
 /**
- * Renders nothing. Once a day, after the chosen time and while AI OS is open, shows a short briefing:
+ * Renders nothing. Once a day, after the chosen time and while PMO Desk is open, shows a short briefing:
  * what needs you today, who is out and which tasks are waiting. It reads and tells; it changes nothing.
  */
 export function BriefingBackground() {

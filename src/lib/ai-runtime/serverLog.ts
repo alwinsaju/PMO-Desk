@@ -1,6 +1,6 @@
 // Read-only tail of the Ollama SERVER's own log, for the "Raw" view of the model
 // log dialog. Two fixed locations, nothing derived from a request:
-//   - AI OS started Ollama:   %TEMP%\ai-os-ollama.log (lifecycle.ts writes it)
+//   - PMO Desk started Ollama:   %TEMP%\ai-os-ollama.log (lifecycle.ts writes it)
 //   - someone else's Ollama:  %LOCALAPPDATA%\Ollama\server.log (the tray app's)
 // This file only decides WHICH path and how to cut the tail; the actual file
 // access is injected (index.ts passes read-only fs calls), so tests never touch
@@ -28,7 +28,7 @@ export interface ServerLogTail {
   unavailable: string | null;
 }
 
-/** The log of an Ollama that AI OS spawned. Single definition: lifecycle.ts
+/** The log of an Ollama that PMO Desk spawned. Single definition: lifecycle.ts
  *  writes to it and the reader below reads from it. */
 export function ownedLogPath(
   tmpDir: string,
@@ -51,7 +51,7 @@ export function resolveServerLog(options: ResolveOptions): ServerLogSource {
   if (owned) {
     return {
       kind: "owned",
-      label: "Ollama's output (AI OS started this Ollama)",
+      label: "Ollama's output (PMO Desk started this Ollama)",
       path: ownedLogPath(tmpDir, platform),
     };
   }
@@ -62,14 +62,14 @@ export function resolveServerLog(options: ResolveOptions): ServerLogSource {
     if (local) {
       return {
         kind: "external",
-        label: "Ollama's own server log (a shared Ollama that AI OS did not start)",
+        label: "Ollama's own server log (a shared Ollama that PMO Desk did not start)",
         path: path.win32.join(local, "Ollama", "server.log"),
       };
     }
   } else if (platform === "darwin" && home) {
     return {
       kind: "external",
-      label: "Ollama's own server log (a shared Ollama that AI OS did not start)",
+      label: "Ollama's own server log (a shared Ollama that PMO Desk did not start)",
       path: path.posix.join(home, ".ollama", "logs", "server.log"),
     };
   }
@@ -101,7 +101,7 @@ export function readServerLogTail(
       source,
       lines: [],
       truncated: false,
-      unavailable: "AI OS does not know where this Ollama writes its log.",
+      unavailable: "PMO Desk does not know where this Ollama writes its log.",
     };
   }
   try {

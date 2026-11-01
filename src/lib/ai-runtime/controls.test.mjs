@@ -209,7 +209,7 @@ describe("Load now", () => {
     assert.equal(chats(rt).length, 1, "no second chat");
   });
 
-  it("refuses when Ollama is down and AI OS may not start it", async () => {
+  it("refuses when Ollama is down and PMO Desk may not start it", async () => {
     const rt = makeRuntime({ autoStart: false });
     rt.ollama.st.up = false;
     const reply = await rt.controls.loadNow();

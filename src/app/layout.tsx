@@ -59,15 +59,15 @@ const openSans = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "AI OS",
+  title: "PMO Desk",
   description:
     "A browser-based AI operating system — a virtual desktop where a human and an AI agent can both drive the same windows and apps.",
-  applicationName: "AI OS",
+  applicationName: "PMO Desk",
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "AI OS",
+    title: "PMO Desk",
   },
 };
 

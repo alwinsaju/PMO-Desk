@@ -95,7 +95,7 @@ const defaultSleep = (ms: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 /**
- * Restarts the engine this AI OS instance launched:
+ * Restarts the engine this PMO Desk instance launched:
  *   1. POST /api/tasks-engine/stop  (kills only a engine this app started),
  *   2. wait until the old one stops answering,
  *   3. POST /api/tasks-engine/start (waits until the new one answers).
@@ -124,7 +124,7 @@ export async function restartEngine({
       return {
         ok: false,
         kind: "not-desktop",
-        message: "Restarting the engine only works in the AI OS desktop app.",
+        message: "Restarting the engine only works in the PMO Desk desktop app.",
       };
     }
     const body = (await res.json()) as {
@@ -156,7 +156,7 @@ export async function restartEngine({
         ok: false,
         kind: "not-owned",
         message:
-          "The engine was started outside AI OS (for example from a terminal), so it can't be restarted from here. Close that process and restart again.",
+          "The engine was started outside PMO Desk (for example from a terminal), so it can't be restarted from here. Close that process and restart again.",
       };
     }
   } else {

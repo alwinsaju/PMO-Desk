@@ -1,4 +1,4 @@
-"""Task packs: a task folder that can be added without reinstalling AI OS.
+"""Task packs: a task folder that can be added without reinstalling PMO Desk.
 
 A pack is a zip with a `pack.json` that lists every other file with its SHA-256, and
 the task itself (`task.json`, scripts, optional `config/` seeds). Installing one is

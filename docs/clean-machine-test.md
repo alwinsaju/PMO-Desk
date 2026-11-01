@@ -46,7 +46,7 @@ left by an earlier run is removed first, so it can never be mistaken for this on
 `-KeepOpen` the sandbox shuts itself down when the results are written. Inside,
 `sandbox-check.ps1`:
 
-1. installs silently (`AI OS Setup x.y.z.exe /S`, per user, no administrator rights) and
+1. installs silently (`PMO Desk Setup x.y.z.exe /S`, per user, no administrator rights) and
    checks there was no elevation, both shortcuts and exactly one uninstall entry;
 2. checks the files the app needs (app, `resources\python` with `python.exe` and
    `pythonw.exe`, engine, tasks, shared libraries);
@@ -59,11 +59,11 @@ left by an earlier run is removed first, so it can never be mistaken for this on
    results folder, so a stale `desktop.log` or the real `%APPDATA%\ai-os` can never be read)
    and waits for the new log to say the Tasks engine is ready, then checks: start time,
    window shown, task data in the profile, a second launch is refused (single instance), a
-   graceful quit leaves no `AI OS`, `python` or `pythonw` process, and a relaunch comes up
+   graceful quit leaves no `PMO Desk`, `python` or `pythonw` process, and a relaunch comes up
    again with the first run's data intact;
 7. with `-Lifecycle`, installs over the top (user data in `%APPDATA%\ai-os` kept), then
    uninstalls (files, shortcuts and uninstall entry gone, user data kept by design). It ends
-   with AI OS removed and refuses to run when AI OS or `%APPDATA%\ai-os` already exist.
+   with PMO Desk removed and refuses to run when PMO Desk or `%APPDATA%\ai-os` already exist.
 
 Exit code 0 means every required check passed. Ollama, Outlook and OneDrive are expected to
 be absent in a sandbox; they are reported, not required.
@@ -77,10 +77,10 @@ Use a Windows 11 VM with a fresh snapshot (no Python, no Ollama, no Office, not 
 OneDrive). Copy the installer in, then in a normal (not elevated) PowerShell inside the VM:
 
 ```powershell
-.\sandbox-check.ps1 -Installer "C:\path\AI OS Setup 5.0.0.exe" -ResultsDir C:\aios-check -LaunchApp -Lifecycle
+.\sandbox-check.ps1 -Installer "C:\path\PMO Desk Setup 5.0.0.exe" -ResultsDir C:\aios-check -LaunchApp -Lifecycle
 ```
 
-Do not run this on your everyday PC: it installs, reinstalls and uninstalls AI OS. To check
+Do not run this on your everyday PC: it installs, reinstalls and uninstalls PMO Desk. To check
 an unpacked build instead, without installing anything, use `-AppDir <win-unpacked>` (no
 `-Lifecycle`); `-LaunchApp` still uses a fresh profile and an empty PMO inbox.
 
@@ -91,15 +91,15 @@ same proxy settings (step 3 below).
 
 On the clean machine, after the automatic checks:
 
-0. **Unsigned installer.** `AI OS Setup x.y.z.exe` and `AI OS.exe` are not code-signed, so
+0. **Unsigned installer.** `PMO Desk Setup x.y.z.exe` and `PMO Desk.exe` are not code-signed, so
    Windows SmartScreen shows "Windows protected your PC" on the first run of each. Choose
    _More info_ > _Run anyway_. On a managed machine that blocks it outright (Smart App Control,
    AppLocker, Windows Defender Application Control, an endpoint-security allow-list), ask IT to
-   allow the installer or the install folder (`%LOCALAPPDATA%\Programs\AI OS`) by path or file
+   allow the installer or the install folder (`%LOCALAPPDATA%\Programs\PMO Desk`) by path or file
    hash; a code-signing certificate would remove the need. The same applies to the bundled
    `python.exe` / `pythonw.exe` under `resources\python`, which the Tasks engine launches.
 
-1. Start AI OS from the Start menu. The **Set up AI OS** screen opens by itself, because
+1. Start PMO Desk from the Start menu. The **Set up PMO Desk** screen opens by itself, because
    Ollama and the model are missing.
 2. **Ollama**: press _Install Ollama_. Expect the progress bar (about 1.6 GB), then
    "Installing Ollama...", then the card turns Ready. Check there was no administrator
@@ -119,10 +119,10 @@ On the clean machine, after the automatic checks:
 7. Open **Tasks**, run **Shift Roster** with a copy of a roster workbook through to the review
    gate (do **not** run the four mail tasks here). Confirm the files appear under
    `%APPDATA%\ai-os\tasks-engine\tasks\shift-roster\` and nothing new appears under
-   `%LOCALAPPDATA%\Programs\AI OS\`.
+   `%LOCALAPPDATA%\Programs\PMO Desk\`.
 8. Reinstall the same installer over the top and confirm the shift-roster `input`, `output`
    and `config` folders (and the run history) are still there.
-9. Quit AI OS and confirm no `python`, `pythonw` or `ollama` process owned by it is left
+9. Quit PMO Desk and confirm no `python`, `pythonw` or `ollama` process owned by it is left
    (Task Manager > Details).
 10. Settings (gear) > _Setup and health check_ reopens the screen.
 

@@ -16,7 +16,7 @@ import { AppErrorBoundary } from "./AppErrorBoundary";
 import { WindowTitleBar } from "./WindowTitleBar";
 import { ResizeHandles } from "./ResizeHandles";
 import { AIGlowBorder } from "./AIGlowBorder";
-import { sizes, windowDefaults } from "@/lib/tokens";
+import { sizes } from "@/lib/tokens";
 import { maximizedRect } from "./windowGeometry";
 import type { WindowState } from "./types";
 
@@ -34,11 +34,11 @@ interface Rect {
   height: number;
 }
 
-/** OUTER's inline top/left/right/bottom when `isMaximized` — the same
- *  keep-clear insets new windows use (dock above, command bar and presence
- *  avatars below). The maximize/restore animation springs toward the same
- *  numbers via `maximizedRect`. */
-const MAXIMIZED_INSETS = windowDefaults.insets;
+/** OUTER's inline top/left/right/bottom when `isMaximized`: the whole screen. The dock (it
+ *  hides itself while an app is open) and the command bar float over the window, which keeps
+ *  its own bottom padding clear of the bar. The maximize/restore animation springs toward
+ *  the same numbers via `maximizedRect`. */
+const MAXIMIZED_INSETS = { side: 0, top: 0, bottom: 0 };
 
 /** `--ease-smooth` as a motion tuple (src/lib/motion.ts has no twin yet). */
 const easeSmooth = [0.22, 0.9, 0.28, 1] as const;
@@ -77,8 +77,8 @@ function computeMaximizedRect(): Rect {
  *            focused/unfocused shadow live here)
  *       WindowTitleBar
  *       app content
- *     AIGlowBorder (sibling AFTER INNER, `controlledBy === "ai"` only — the
- *                   rotating conic ring, see that file)
+ *     AIGlowBorder (sibling BEFORE INNER, so behind it; lit while `controlledBy === "ai"`;
+ *                   the rotating conic halo, see that file)
  *     ResizeHandles (siblings of INNER, so they aren't clipped by its
  *                    overflow-hidden and can straddle the visual edge)
  *
@@ -379,6 +379,7 @@ export function Window({ id }: WindowProps) {
       className="pointer-events-auto absolute outline-none"
       onPointerDown={() => focusWindow(id)}
     >
+      <AIGlowBorder active={data.controlledBy === "ai"} inside={data.isMaximized} />
       <motion.div
         initial={{ opacity: 0, scale: 0.9, y: 14 }}
         animate={
@@ -396,9 +397,15 @@ export function Window({ id }: WindowProps) {
         data-focused={data.isFocused}
         data-fx-win={fxMode}
         className={cn(
-          "group/win glass-win brand-bar rounded-surface flex h-full w-full flex-col overflow-hidden",
-          "transition-shadow duration-[400ms]",
-          data.isFocused ? "shadow-window-focus" : "shadow-window",
+          "group/win glass-win brand-bar flex h-full w-full flex-col overflow-hidden",
+          "transition-[box-shadow,border-radius] duration-[400ms]",
+          // A full-screen window has no rounded corners or drop shadow of its own.
+          data.isMaximized
+            ? "rounded-none shadow-none"
+            : cn(
+                "rounded-surface",
+                data.isFocused ? "shadow-window-focus" : "shadow-window",
+              ),
         )}
       >
         <WindowTitleBar
@@ -408,6 +415,7 @@ export function Window({ id }: WindowProps) {
           icon={data.icon}
           isFocused={data.isFocused}
           isMaximized={data.isMaximized}
+          aiControlled={data.controlledBy === "ai"}
           isPinned={data.pinned === true}
           onPinToggle={() => togglePinned(id)}
           dragDisabled={transitionRect !== null}
@@ -416,7 +424,13 @@ export function Window({ id }: WindowProps) {
           onMaximizeToggle={handleMaximizeToggle}
           onClose={requestClose}
         />
-        <div className="relative min-h-0 flex-1 overflow-auto">
+        <div
+          className="relative min-h-0 flex-1 overflow-auto"
+          // The command bar floats over a full-screen window: keep its content clear of it.
+          style={
+            data.isMaximized ? { paddingBottom: sizes.commandBarReserve } : undefined
+          }
+        >
           {AppComponent ? (
             <AppErrorBoundary appId={data.appId}>
               <Suspense fallback={<AppLoading />}>
@@ -428,7 +442,6 @@ export function Window({ id }: WindowProps) {
           )}
         </div>
       </motion.div>
-      {data.controlledBy === "ai" && <AIGlowBorder />}
       {!data.isMaximized && !isExiting && !transitionRect && (
         <ResizeHandles id={id} rootRef={outerRef} />
       )}

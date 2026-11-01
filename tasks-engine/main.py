@@ -100,7 +100,7 @@ def _guard_refusal(method: str, path: str, headers: Headers) -> str | None:
     token = os.environ.get(TOKEN_ENV)
     if token and method != "OPTIONS" and not (method == "GET" and path == "/health"):
         if not hmac.compare_digest(headers.get(TOKEN_HEADER, "").encode("utf-8"), token.encode("utf-8")):
-            return "The engine token is missing or wrong. Restart AI OS."
+            return "The engine token is missing or wrong. Restart PMO Desk."
     return None
 
 
@@ -2475,7 +2475,7 @@ restore_run_state()
 def main(argv: list[str] | None = None) -> None:
     """`python main.py --port N`: serve on 127.0.0.1 only. The launcher picks a
     free port and passes it here (the port is never hardcoded)."""
-    parser = argparse.ArgumentParser(description="AI OS Tasks engine")
+    parser = argparse.ArgumentParser(description="PMO Desk Tasks engine")
     parser.add_argument("--port", type=int, required=True, help="port to listen on (127.0.0.1 only)")
     args = parser.parse_args(argv)
     import uvicorn

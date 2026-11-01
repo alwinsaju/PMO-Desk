@@ -185,139 +185,144 @@
 }
 
 /* =========================================================================
- * LEGACY WINDOW AI GLOW (kept; Deloitte override below)
+ * AI GLOW — the halo drawn round a window while the AI is driving it
+ * (src/components/window-manager/AIGlowBorder.tsx, matching the approved
+ * docs/marketing/pmo-desk-launch.html: `.glowwrap::before`).
+ *
+ * A soft, blurred conic-gradient sitting 6px outside the window edge, its angle turning
+ * once every 8 s. Only the CSS animation moves it (`--glow-angle` is an @property), so React
+ * never re-renders per frame, and it is a still ring under prefers-reduced-motion.
+ *
+ *   .ai-glow           the frame: 34px of room round the window for the blur, and a mask
+ *                      that cuts the window's own rectangle out, so the translucent window
+ *                      body never shows the colours through it. It fades in and out over .4s
+ *                      and costs nothing while hidden (visibility + paused animation).
+ *   .ai-glow::before   the halo itself: inset -6px, radius + 6px, blur(16px) saturate(1.25),
+ *                      opacity .85, stops blue -> violet -> magenta -> pink -> red -> orange
+ *                      -> amber -> pink -> blue (keep any edit in that one direction).
+ *
+ * Deloitte mode uses the brand greens and blues, as the Deloitte version of the mock-up does.
  * ======================================================================= */
-
-/* The AI "Siri glow" halo Window.tsx draws around a window when
-   `controlledBy === "ai"` (see AIGlowBorder.tsx). Lives in plain CSS rather
-   than Tailwind utilities/`motion` for the same reason overlay-in/out do —
-   this needs a real `@keyframes`/`@property`, and it must run entirely on
-   the CSS/compositor timeline rather than re-rendering React on every
-   frame.
-
-   The default (non-brand) glow is a deliberate, scoped use of more than the
-   accent: a multi-color "Siri / Apple Intelligence" signature glow. In
-   Deloitte mode the same two layers are re-colored from the brand gradient
-   (`--ring-colors`) — see the override right after the animation rules.
-
-     .ai-glow-halo  — a tight breathing box-shadow: three layers at fixed,
-                      distinct hues that grow/brighten together, then relax,
-                      for a pulsing edge right at the window's border. The
-                      pulse is intensity-only — alpha/blur/spread animate,
-                      each layer's own hue never changes.
-     .ai-glow-sweep — a larger, heavily blurred conic-gradient sitting
-                      behind the window (see AIGlowBorder.tsx for why a
-                      sibling element, not a child, of the clipped chrome).
-                      Only the sliver that pokes out past the window's own
-                      opaque body is ever visible, so the color spectrum
-                      reads as light continuously traveling around the
-                      border as it rotates. `--ai-glow-angle` (not a plain
-                      `transform: rotate()`) is what animates, so the shape
-                      stays fixed and only the light moves within it.
-
-   The sweep's color stops move around the wheel in ONE direction only:
-   blue -> violet -> magenta -> crimson -> orange -> gold -> back through
-   pink/magenta -> blue, which keeps every adjacent pair a clean blend.
-   Keep any future edit to these stops within that same shape.
-
-   Both `.ai-glow-halo`/`.ai-glow-sweep`'s base rules below are the
-   prefers-reduced-motion fallback (a still glow, no animation) — the
-   `@media` block beneath is what turns motion on for everyone else. */
-@property --ai-glow-angle {
+@property --glow-angle {
   syntax: "<angle>";
   inherits: false;
   initial-value: 0deg;
 }
 
-@keyframes ai-glow-breathe {
-  0%,
-  100% {
-    box-shadow:
-      0 0 0 1px rgba(94, 90, 255, 0.6),
-      0 0 16px 3px rgba(230, 55, 200, 0.36),
-      0 0 34px 8px rgba(255, 150, 40, 0.24);
-  }
-  50% {
-    box-shadow:
-      0 0 0 1.5px rgba(94, 90, 255, 0.92),
-      0 0 26px 5px rgba(230, 55, 200, 0.55),
-      0 0 52px 14px rgba(255, 150, 40, 0.36);
-  }
-}
-
-@keyframes ai-glow-breathe-brand {
-  0%,
-  100% {
-    box-shadow:
-      0 0 0 1px rgba(134, 188, 37, 0.7),
-      0 0 16px 3px rgba(134, 235, 34, 0.32),
-      0 0 34px 8px rgba(0, 163, 224, 0.24);
-  }
-  50% {
-    box-shadow:
-      0 0 0 1.5px rgba(134, 235, 34, 0.95),
-      0 0 26px 5px rgba(134, 235, 34, 0.5),
-      0 0 52px 14px rgba(0, 163, 224, 0.36);
-  }
-}
-
-@keyframes ai-glow-rotate {
+@keyframes ai-glow-rot {
   to {
-    --ai-glow-angle: 360deg;
+    --glow-angle: 360deg;
   }
 }
 
-.ai-glow-halo {
-  box-shadow:
-    0 0 0 1px rgba(94, 90, 255, 0.6),
-    0 0 16px 3px rgba(230, 55, 200, 0.36),
-    0 0 34px 8px rgba(255, 150, 40, 0.24);
+.ai-glow {
+  --glow-room: 34px;
+  position: absolute;
+  inset: calc(var(--glow-room) * -1);
+  padding: var(--glow-room);
+  border-radius: calc(var(--radius-surface) + var(--glow-room));
+  pointer-events: none;
+  z-index: -1;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 0.4s ease,
+    visibility 0s linear 0.4s;
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
 }
 
-.ai-glow-sweep {
+.ai-glow[data-active="true"] {
+  opacity: 1;
+  visibility: visible;
+  transition:
+    opacity 0.4s ease,
+    visibility 0s;
+}
+
+.ai-glow::before {
+  content: "";
+  position: absolute;
+  inset: calc(var(--glow-room) - 6px);
+  border-radius: calc(var(--radius-surface) + 6px);
   background: conic-gradient(
-    from var(--ai-glow-angle),
-    rgb(56, 124, 255) 0%,
-    rgb(130, 84, 255) 13%,
-    rgb(213, 62, 235) 27%,
-    rgb(255, 63, 150) 40%,
-    rgb(255, 55, 78) 52%,
-    rgb(255, 135, 34) 63%,
-    rgb(255, 197, 61) 73%,
-    rgb(255, 93, 172) 86%,
-    rgb(56, 124, 255) 100%
+    from var(--glow-angle),
+    #387cff 0%,
+    #8254ff 13%,
+    #d53eeb 27%,
+    #ff3f96 40%,
+    #ff374e 52%,
+    #ff8722 63%,
+    #ffc53d 73%,
+    #ff5dac 86%,
+    #387cff 100%
   );
-  filter: blur(20px) saturate(1.25);
-  opacity: 0.92;
+  filter: blur(16px) saturate(1.25);
+  opacity: 0.85;
+  animation: ai-glow-rot 8s linear infinite paused;
 }
 
-/* Deloitte mode: the same glow, re-colored from the brand gradient. */
-:root[data-brand="deloitte"] .ai-glow-halo {
-  box-shadow:
-    0 0 0 1px rgba(134, 188, 37, 0.7),
-    0 0 16px 3px rgba(134, 235, 34, 0.32),
-    0 0 34px 8px rgba(0, 163, 224, 0.24);
+.ai-glow[data-active="true"]::before {
+  animation-play-state: running;
 }
 
-:root[data-brand="deloitte"] .ai-glow-sweep {
-  background: conic-gradient(from var(--ai-glow-angle), var(--ring-colors));
-  filter: blur(20px) saturate(1.15);
+/* A full-screen window has no room outside its edge: the halo is drawn as a thin rim just
+   inside it (8px, blurred), over the content but never over the title bar's controls. */
+.ai-glow[data-inside="true"] {
+  inset: 0;
+  padding: 8px;
+  border-radius: 0;
+  z-index: 3;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  .ai-glow-halo {
-    animation: ai-glow-breathe 3.4s ease-in-out infinite;
+.ai-glow[data-inside="true"]::before {
+  inset: -6px;
+  border-radius: 0;
+  filter: blur(12px) saturate(1.25);
+}
+:root[data-brand="deloitte"] .ai-glow::before {
+  background: conic-gradient(
+    from var(--glow-angle),
+    #86bc25,
+    #86eb22,
+    #3fc3ec,
+    #00a3e0,
+    #a0dcff,
+    #b7e320,
+    #86bc25
+  );
+  filter: blur(13px);
+  opacity: 0.8;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-glow::before {
+    animation: none;
   }
-
-  .ai-glow-sweep {
-    animation: ai-glow-rotate 8s linear infinite;
-  }
-
-  :root[data-brand="deloitte"] .ai-glow-halo {
-    animation-name: ai-glow-breathe-brand;
-  }
+}
+/* =========================================================================
+ * LOOK SWITCH (dark/light, Deloitte mode) — see withLookTransition in src/lib/theme.ts.
+ * The browser cross-fades two snapshots of the screen on the compositor; the page's own
+ * CSS transitions are off meanwhile so nothing fades twice.
+ * ======================================================================= */
+:root[data-look-switching] *,
+:root[data-look-switching] *::before,
+:root[data-look-switching] *::after {
+  transition: none !important;
 }
 
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 520ms;
+  animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  mix-blend-mode: normal;
+}
 /* =========================================================================
  * BASE
  * ======================================================================= */
@@ -940,6 +945,26 @@ body {
 
 .wp-blob {
   position: absolute;
+}
+
+/* The Deloitte wordmark in the middle of the Deloitte wallpapers. It belongs to its layer, so
+   it fades in and out with it. */
+.wp-logo {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: clamp(190px, 22vw, 328px);
+  aspect-ratio: 328 / 62;
+  transform: translate(-50%, -50%);
+  background: center / contain no-repeat;
+  opacity: 0.92;
+  pointer-events: none;
+}
+.wp-dll .wp-logo {
+  background-image: url("/brand/deloitte-light.png");
+}
+.wp-dld .wp-logo {
+  background-image: url("/brand/deloitte-dark.png");
 }
 
 /* Slow drift is OPT-IN (set data-wp-drift="on" on <html>) and off by default.

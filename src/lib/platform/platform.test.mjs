@@ -272,7 +272,7 @@ test("backup: keeps only the latest three safety copies", async () => {
 test("backup: refuses a zip that is not a backup, or is built to escape", () => {
   assert.throws(
     () => inspectBackup(writeZip([{ name: "a.txt", data: enc("x") }])),
-    /not an AI OS backup/,
+    /not a PMO Desk backup/,
   );
   const manifest = {
     name: BACKUP_MANIFEST,

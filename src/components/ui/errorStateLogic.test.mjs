@@ -16,7 +16,7 @@ describe("errorStateDetails", () => {
       },
       { appVersion: "6.0.1", now: NOW },
     );
-    assert.match(text, /^AI OS 6\.0\.1$/m);
+    assert.match(text, /^PMO Desk 6\.0\.1$/m);
     assert.match(text, /^When: 2026-10-30T10:00:00\.000Z$/m);
     assert.match(text, /^Where: Tasks$/m);
     assert.match(text, /^What: Couldn't reach the Tasks launcher$/m);

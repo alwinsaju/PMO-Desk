@@ -6,7 +6,7 @@ OneDrive syncs the folder to `C:\Users\alsaju\OneDrive - Deloitte (O365D)\PMO-In
 where the PMO To-Do app picks the files up. For the whole set-up in order, start
 with [`HOW-TO-GET-STARTED.md`](./HOW-TO-GET-STARTED.md).
 
-> **Where `PMO-Inbox` is now.** The AI OS installer creates one OneDrive folder, `AI-OS`, with
+> **Where `PMO-Inbox` is now.** The PMO Desk installer creates one OneDrive folder, `AI-OS`, with
 > `PMO-Inbox`, `Staff-Exchange` and `PTO-Inbox` inside, so everything the flows use is in one
 > place: wherever this guide says `PMO-Inbox`, use **`AI-OS` > `PMO-Inbox`** (and
 > `PMO-Inbox-test` next to it). A `PMO-Inbox` you made earlier directly in OneDrive keeps

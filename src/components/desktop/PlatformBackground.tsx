@@ -33,14 +33,14 @@ export function PlatformBackground() {
       if (seen === "" && !prefs.tourDone) {
         toast({
           key: "welcome",
-          message: `Welcome to AI OS ${reply.version}. Want a one-minute tour?`,
+          message: `Welcome to PMO Desk ${reply.version}. Want a one-minute tour?`,
           durationMs: 25_000,
           action: { label: "Take the tour", run: () => useTour.getState().start() },
         });
       } else if (releasesToShow(seen, reply.version).length > 0) {
         toast({
           key: "whats-new",
-          message: `AI OS is now ${reply.version}. See what's new.`,
+          message: `PMO Desk is now ${reply.version}. See what's new.`,
           durationMs: 25_000,
           action: { label: "What's new", run: () => openSettings("about") },
         });
@@ -54,7 +54,7 @@ export function PlatformBackground() {
       if (stopped || !outcome.ok || !outcome.available) return;
       toast({
         key: "update-available",
-        message: `AI OS ${outcome.version} is available.`,
+        message: `PMO Desk ${outcome.version} is available.`,
         durationMs: 20_000,
         action: { label: "View", run: () => openSettings("about") },
       });

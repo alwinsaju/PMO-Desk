@@ -176,7 +176,7 @@ export function buildNotices(
     out.push({
       id: "offline",
       level: "attention",
-      text: "Can't reach the AI OS server right now. Showing the last known state.",
+      text: "Can't reach the PMO Desk server right now. Showing the last known state.",
     });
   }
   if (paused) {
@@ -269,7 +269,7 @@ export function offersReminderPrompt(
 }
 
 const CAVEAT =
-  "Browser reminders only fire while this tab is open; the AI OS desktop app is the reliable way to get them.";
+  "Browser reminders only fire while this tab is open; the PMO Desk desktop app is the reliable way to get them.";
 
 /** The plain-words status shown in Settings, under Reminders. */
 export function reminderStatus(

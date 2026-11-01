@@ -28,8 +28,8 @@ export default function RouteError({
           Something went wrong
         </h1>
         <p className="text-ink-soft mx-auto mt-3 max-w-sm text-sm leading-6">
-          AI OS hit an unexpected problem. Your data is safe. Try again, and restart the
-          app if it keeps happening.
+          PMO Desk hit an unexpected problem. Your data is safe. Try again, and restart
+          the app if it keeps happening.
         </p>
         <Button className="mt-6" onClick={reset}>
           Try again

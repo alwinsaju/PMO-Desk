@@ -44,10 +44,7 @@ import { useHardwareAcceleration } from "./useHardwareAcceleration";
 import { useFastModel } from "./useFastModel";
 
 /**
- * Top-right settings control: a round glass button (same frosted chrome as the
- * dock) that opens the "Quick settings" popover. Mounted from Desktop.tsx at
- * the `z-chrome` layer, so it stays above every window (maximized or not)
- * exactly like the dock does.
+ * Quick settings: the menu rows below, opened from the App Menu (taskbar/AppMenu.tsx).
  *
  * To add a setting, write a row component (a `DropdownMenuSwitchItem`, or
  * another menu item built with `<RowBody>`) and append it to `settingsRows`
@@ -206,7 +203,7 @@ function HardwareAccelerationRow() {
               )
             }
             title={relaunching ? "Restarting..." : "Restart to apply"}
-            hint="AI OS closes and reopens"
+            hint="PMO Desk closes and reopens"
           />
         </DropdownMenuItem>
       ) : null}
@@ -257,7 +254,7 @@ function restartHint(status: EngineRestartStatus): string {
 }
 
 /** "Restart Tasks engine" - restarts the Tasks engine this app launched,
- *  so engine code and task manifest changes load without quitting AI OS.
+ *  so engine code and task manifest changes load without quitting PMO Desk.
  *  Warns first if a task is mid-run. Only uses the app's own launcher routes
  *  (see src/lib/engineRestart.ts); never an engine action endpoint. */
 function RestartEngineRow() {
@@ -450,50 +447,50 @@ const settingsRows: { id: string; Row: ComponentType }[] = [
   { id: "setup", Row: SetupRow },
 ];
 
+/** Picks the saved look up once on a new origin (e.g. another port: empty localStorage).
+ *  Mounted from Desktop.tsx; it draws nothing, the settings live in the App Menu. */
 export function SettingsMenu() {
-  // A new origin (e.g. another port) has empty localStorage: pick the saved look up once.
   useEffect(() => {
     void restoreAppearanceFromServer();
   }, []);
+  return null;
+}
+
+/**
+ * The "Quick settings" button and menu, shown in the App Menu's header (the old
+ * top-right gear moved there so windows can use the whole screen). A dropdown
+ * opened from inside the App Menu's popover is a child layer of it, so using a
+ * row does not close the App Menu.
+ */
+export function QuickSettings() {
   return (
-    <div
-      className={cn(
-        "absolute z-[var(--z-chrome)]",
-        // Safe-area aware, mirroring the dock's top-4 offset. Below `sm` the
-        // dock spans the whole viewport width, so the gear drops to a row of
-        // its own under it instead of covering the dock's last tile.
-        "top-[calc(max(1rem,env(safe-area-inset-top))+4.5rem)] sm:top-[max(1rem,env(safe-area-inset-top))]",
-        "right-[max(1rem,env(safe-area-inset-right))]",
-      )}
-    >
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <button
-            type="button"
-            aria-label="Settings"
-            className={cn(
-              "glass rounded-bar text-ink-soft flex h-11 w-11 items-center justify-center sm:h-14 sm:w-14",
-              "ease-spring transition-[transform,color] duration-500",
-              "hover:text-ink data-[state=open]:text-ink hover:scale-[1.07] motion-reduce:hover:scale-100",
-              "focus-visible:ring-focus focus-visible:ring-offset-surface focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none",
-              "[&_svg]:ease-spring [&_svg]:transition-transform [&_svg]:duration-500 data-[state=open]:[&_svg]:rotate-90",
-            )}
-          >
-            <GearSixIcon size={22} weight="regular" />
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent
-          align="end"
-          sideOffset={12}
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
           aria-label="Settings"
-          className="w-[min(21rem,calc(100vw-2rem))] p-2.5"
+          className={cn(
+            "text-ink-soft rounded-control flex h-9 items-center gap-2 px-3 text-[13px] font-semibold",
+            "hover:bg-chip hover:text-ink data-[state=open]:bg-chip data-[state=open]:text-ink transition-colors",
+            "focus-visible:ring-focus focus-visible:ring-2 focus-visible:outline-none",
+            "[&_svg]:ease-spring [&_svg]:transition-transform [&_svg]:duration-500 data-[state=open]:[&_svg]:rotate-90",
+          )}
         >
-          <DropdownMenuLabel>Quick settings</DropdownMenuLabel>
-          {settingsRows.map(({ id, Row }) => (
-            <Row key={id} />
-          ))}
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </div>
+          <GearSixIcon size={18} weight="regular" aria-hidden />
+          Settings
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="end"
+        sideOffset={10}
+        aria-label="Settings"
+        className="w-[min(21rem,calc(100vw-2rem))] p-2.5"
+      >
+        <DropdownMenuLabel>Quick settings</DropdownMenuLabel>
+        {settingsRows.map(({ id, Row }) => (
+          <Row key={id} />
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

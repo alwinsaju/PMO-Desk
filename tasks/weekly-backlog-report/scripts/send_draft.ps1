@@ -15,7 +15,7 @@ $ErrorActionPreference = "Stop"
 
 $olFolderDrafts = 16
 $olMail = 43
-$draftTokenPropertyName = "AI OS Draft Token"
+$draftTokenPropertyName = "PMO Desk Draft Token"
 
 $outlook = New-Object -ComObject Outlook.Application
 $namespace = $outlook.GetNamespace("MAPI")
@@ -35,10 +35,10 @@ function Get-DraftByToken($token) {
     }
 
     if ($matches.Count -eq 0) {
-        throw "No Outlook draft has the expected AI OS draft token. It may have been deleted or moved out of Drafts."
+        throw "No Outlook draft has the expected PMO Desk draft token. It may have been deleted or moved out of Drafts."
     }
     if ($matches.Count -gt 1) {
-        throw "More than one Outlook draft has the expected AI OS draft token. No message was sent."
+        throw "More than one Outlook draft has the expected PMO Desk draft token. No message was sent."
     }
     return $matches[0]
 }

@@ -125,7 +125,7 @@ export function describeDownloadFailure(error: unknown): string {
   return (
     `Could not download Ollama (${detail}${code ? `, ${code}` : ""}). ` +
     "A company network or proxy may be blocking ollama.com. " +
-    "If your company uses a proxy, set HTTPS_PROXY and restart AI OS."
+    "If your company uses a proxy, set HTTPS_PROXY and restart PMO Desk."
   );
 }
 

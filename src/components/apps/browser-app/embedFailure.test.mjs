@@ -7,9 +7,9 @@ import {
 } from "./embedFailure.ts";
 
 describe("describeEmbedFailure", () => {
-  it("says the site refuses framing, naming AI OS, not 'could not be reached'", () => {
+  it("says the site refuses framing, naming PMO Desk, not 'could not be reached'", () => {
     const f = describeEmbedFailure({ host: "example.com", code: "framing" });
-    assert.equal(f.title, "example.com doesn't allow being shown inside AI OS");
+    assert.equal(f.title, "example.com doesn't allow being shown inside PMO Desk");
     assert.doesNotMatch(f.message, /could not be reached/i);
     assert.match(f.message, /regular browser/i);
   });

@@ -5,7 +5,7 @@
 // the /api/pmo routes (loopback Host, same-origin / no cross-site Origin or
 // Sec-Fetch-Site), NOT the desktop-only header that /api/ai/runtime/stop needs.
 // Stop kills a process and is only ever called by the Electron shell, which can
-// set a custom header. Load and unload are reversible and only touch AI OS's own
+// set a custom header. Load and unload are reversible and only touch PMO Desk's own
 // default model, and the button that calls them lives inside the app window,
 // whose requests are ordinary same-origin fetches that carry no such header (and
 // the same page works in a plain browser tab in dev). A web page on another

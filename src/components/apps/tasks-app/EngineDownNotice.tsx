@@ -61,8 +61,8 @@ export function EngineDownNotice({ compact = false }: { compact?: boolean }) {
     <div role="status" className="flex max-w-sm flex-col items-center gap-2 text-center">
       <p className="text-ink font-headline text-lg">Can&apos;t reach the Tasks engine</p>
       <p className="text-ink-muted text-[13.5px]">
-        It starts with AI OS, so this is usually a moment&apos;s wait. This will connect
-        automatically once it&apos;s available, or you can restart it now.
+        It starts with PMO Desk, so this is usually a moment&apos;s wait. This will
+        connect automatically once it&apos;s available, or you can restart it now.
       </p>
       {button}
       {failure}

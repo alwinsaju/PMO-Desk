@@ -2,6 +2,7 @@
 
 import { useId } from "react";
 import { cn } from "@/lib/cn";
+import { PmoDeskMark } from "@/components/brand/PmoDeskMark";
 import type { BrandId } from "./firstTimeSteps";
 
 /**
@@ -176,21 +177,7 @@ export function BrandMark({
       );
     case "aios":
     default:
-      return (
-        <svg {...common} aria-label="AI OS">
-          <defs>
-            <linearGradient id={`a${uid}`} x1="4" y1="4" x2="44" y2="44">
-              <stop offset="0" stopColor="var(--color-accent)" />
-              <stop offset="1" stopColor="var(--color-accent-600, var(--color-accent))" />
-            </linearGradient>
-          </defs>
-          <rect x="4" y="4" width="40" height="40" rx="12" fill={`url(#a${uid})`} />
-          <path
-            d="M24 12c.9 7 5 11.100 12 12-7 .9-11.100 5-12 12-.9-7-5-11.100-12-12 7-.9 11.100-5 12-12z"
-            fill="var(--color-accent-contrast)"
-          />
-        </svg>
-      );
+      return <PmoDeskMark size={size} className={cn("shrink-0", className)} />;
   }
 }
 

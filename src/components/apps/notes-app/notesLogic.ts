@@ -218,7 +218,7 @@ export const SAMPLE_NOTES: readonly Note[] = [
     id: "welcome",
     sample: true,
     content:
-      "Welcome to Notes\n\nNotes are saved on this computer, in AI OS's local data folder, and are kept between sessions. These sample notes are demo content — remove them any time with Clear samples. Create your own with the + button.",
+      "Welcome to Notes\n\nNotes are saved on this computer, in PMO Desk's local data folder, and are kept between sessions. These sample notes are demo content — remove them any time with Clear samples. Create your own with the + button.",
     updatedLabel: "Aug 25, 2026",
   },
   {

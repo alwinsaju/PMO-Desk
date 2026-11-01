@@ -228,7 +228,7 @@ export function DataTab() {
               Restore {pending.files} files from this backup?
             </p>
             <p className="text-ink-muted mt-1 text-[12.5px]">
-              Made {when(pending.manifest.createdAt)} with AI OS{" "}
+              Made {when(pending.manifest.createdAt)} with PMO Desk{" "}
               {pending.manifest.appVersion}. Anything you changed since then is replaced
               (a safety copy is kept).
             </p>
@@ -245,7 +245,7 @@ export function DataTab() {
         {restored && (
           <div className="mt-2 flex items-center gap-3">
             <Button size="sm" onClick={() => void restart()}>
-              Restart AI OS
+              Restart PMO Desk
             </Button>
             <span className="text-ink-muted text-[12.5px]">
               Restart so every window shows the restored data.

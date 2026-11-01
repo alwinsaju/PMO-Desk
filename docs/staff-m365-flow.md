@@ -32,7 +32,7 @@ is). The app deletes each profile file after applying it.
 
 ## The flow
 
-Create an **Automated cloud flow** named `AI OS - Staff M365 profile`.
+Create an **Automated cloud flow** named `PMO Desk - Staff M365 profile`.
 
 **Trigger: OneDrive for Business - When a file is created**
 
@@ -116,7 +116,7 @@ Save the flow and turn it on.
 derived from the OP once you give me the OP-to-offering mapping.
 
 > **If you built the flow earlier** with an `"offering"` line holding the `department` expression:
-> it still works. AI OS reads `offering` (and `department`) in a profile file as the offering
+> it still works. PMO Desk reads `offering` (and `department`) in a profile file as the offering
 > portfolio when there is no `"op"` key. Renaming the line to `"op"` is still the tidy way.
 
 **Home office is the city** (Bengaluru, as Teams shows it), not the state (Karnataka). If your flow

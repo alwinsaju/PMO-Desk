@@ -21,13 +21,14 @@ import { HiddenInFocus } from "./HiddenInFocus";
 import { DesktopWidget } from "./DesktopWidget";
 import { ShellEffects } from "./ShellEffects";
 import { SettingsMenu } from "./SettingsMenu";
+import { CommandBarHue } from "./CommandBarHue";
 import { Wallpaper } from "./Wallpaper";
 
 /**
  * The whole screen. A Server Component on purpose — it has no interactivity
  * of its own, it just composes the wallpaper (wrapped in a right-click
- * context menu), the window layer, the dock, the top-right settings menu,
- * and the AI Agent Layer. Each of
+ * context menu), the window layer, the dock, the AI Agent Layer, and the invisible
+ * settings-restore step (the settings themselves live in the App Menu). Each of
  * those is its own Client Component where it needs interactivity; a Server
  * Component can render Client Components as children just fine, so there's
  * no need for "use client" on this file.
@@ -50,6 +51,7 @@ export function Desktop() {
         <Dock />
       </HiddenInFocus>
       <SettingsMenu />
+      <CommandBarHue />
       <PmoReminders />
       <TasksBackground />
       <NeedsYouBadge />

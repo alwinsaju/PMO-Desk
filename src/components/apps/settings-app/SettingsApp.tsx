@@ -77,7 +77,7 @@ function General() {
       <Section title="Profile">
         <Row
           settingId="profile"
-          title="How you use AI OS"
+          title="How you use PMO Desk"
           hint={`${PROFILES[profile].hint} This is a convenience, not a lock: you can switch any time.`}
         >
           <select
@@ -96,7 +96,7 @@ function General() {
       </Section>
       <Section
         title="Lock screen and desktop"
-        description="What you see when AI OS starts."
+        description="What you see when PMO Desk starts."
       >
         <Row
           settingId="desktop-widget"

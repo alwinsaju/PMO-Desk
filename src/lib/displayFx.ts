@@ -140,7 +140,7 @@ export const HARDWARE_ACCELERATION_HINT =
 export const NO_HARDWARE_ACCELERATION_REASON =
   "This computer has no hardware graphics acceleration; the lean mode is used.";
 const WEB_HINT = "Rich blur effects. The browser manages the GPU itself.";
-const RESTART_HINT = "Restart AI OS to apply the GPU change.";
+const RESTART_HINT = "Restart PMO Desk to apply the GPU change.";
 export const GPU_UNAVAILABLE_WARNING =
   "GPU not available on this machine - rich effects may be slow.";
 

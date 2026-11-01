@@ -1,13 +1,13 @@
 # Task packs
 
-A task pack adds a task to AI OS without reinstalling it. Packs live in `%APPDATA%\ai-os\tasks-engine\task-packs`
+A task pack adds a task to PMO Desk without reinstalling it. Packs live in `%APPDATA%\ai-os\tasks-engine\task-packs`
 (`tasks-engine/.data/task-packs` when running from the repo) and show up in the Tasks
 app like the built-in tasks.
 
 ## Installing a pack
 
 1. Tasks > **Packs** > **Install a pack…** and choose the `.zip`.
-2. AI OS checks the pack, then shows its files, its steps and its **fingerprint** (a SHA-256).
+2. PMO Desk checks the pack, then shows its files, its steps and its **fingerprint** (a SHA-256).
 3. Compare the fingerprint with the one the person who made the pack gave you, type it into the box, and
    press **Install**. The button stays off until the text matches.
 

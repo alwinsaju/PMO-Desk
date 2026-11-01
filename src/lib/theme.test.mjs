@@ -11,6 +11,7 @@ import {
   restoreAppearanceFromServer,
   setBrand,
   setTheme,
+  withLookTransition,
 } from "./theme.ts";
 
 function fakeEnv({ stored = {}, throwing = false } = {}) {
@@ -181,5 +182,69 @@ describe("getThemeInitScript", () => {
 
   it("never throws when storage is blocked", () => {
     assert.equal(run({}, true).size, 0);
+  });
+});
+
+describe("look transition", () => {
+  it("applies the change at once when the View Transitions API is missing", () => {
+    const env = fakeEnv();
+    install(env);
+    setBrand("deloitte");
+    assert.equal(env.attrs.get("data-brand"), "deloitte");
+    assert.equal(env.attrs.has("data-look-switching"), false);
+  });
+
+  it("runs the change inside one view transition and clears the switching flag after it", async () => {
+    const env = fakeEnv();
+    install(env);
+    let finish;
+    let updateRan = false;
+    globalThis.document.startViewTransition = (update) => {
+      // The browser calls the update after it has captured the old screen.
+      queueMicrotask(() => {
+        update();
+        updateRan = true;
+      });
+      return { finished: new Promise((resolve) => (finish = resolve)) };
+    };
+    setBrand("deloitte");
+    assert.equal(
+      env.attrs.has("data-look-switching"),
+      true,
+      "transitions are off while it runs",
+    );
+    assert.equal(
+      env.store.get(BRAND_STORAGE_KEY),
+      "deloitte",
+      "the choice is saved at once",
+    );
+    await Promise.resolve();
+    assert.equal(updateRan, true);
+    assert.equal(env.attrs.get("data-brand"), "deloitte");
+    finish();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(env.attrs.has("data-look-switching"), false);
+  });
+
+  it("skips the transition when the person asked for less motion", () => {
+    const env = fakeEnv();
+    install(env);
+    globalThis.window.matchMedia = () => ({ matches: true });
+    globalThis.document.startViewTransition = () => {
+      throw new Error("must not animate");
+    };
+    withLookTransition(() => env.attrs.set("x", "1"));
+    assert.equal(env.attrs.get("x"), "1");
+  });
+
+  it("still applies the change if starting the transition throws", () => {
+    const env = fakeEnv();
+    install(env);
+    globalThis.document.startViewTransition = () => {
+      throw new Error("not now");
+    };
+    setTheme("dark");
+    assert.equal(env.attrs.get("data-theme"), "dark");
+    assert.equal(env.attrs.has("data-look-switching"), false);
   });
 });

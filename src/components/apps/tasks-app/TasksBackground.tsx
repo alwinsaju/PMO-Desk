@@ -35,7 +35,7 @@ const openTasks = (taskId?: string) => {
 };
 
 /**
- * Runs while AI OS is open, with or without the Tasks window: tells you when a task needs you, fails or
+ * Runs while PMO Desk is open, with or without the Tasks window: tells you when a task needs you, fails or
  * finishes, handles the schedules (reminders, and preparing a task that is allowed to prepare itself), and
  * sends the mails you queued, but only if the task is still waiting and the recipients are unchanged.
  * Nothing here approves or sends anything you did not approve yourself.
@@ -96,7 +96,7 @@ export function TasksBackground() {
           toast({
             tone: "warning",
             durationMs: 15_000,
-            message: `The queued send of ${item.taskName} was due while AI OS was closed. It was not sent; it is still waiting for you.`,
+            message: `The queued send of ${item.taskName} was due while PMO Desk was closed. It was not sent; it is still waiting for you.`,
             action: { label: "Open Tasks", run: () => openTasks(item.taskId) },
           });
           continue;
@@ -162,7 +162,7 @@ export function TasksBackground() {
               message: text,
               action: { label: "Open Tasks", run: () => openTasks(n.taskId) },
             });
-            systemNotice("AI OS", text);
+            systemNotice("PMO Desk", text);
           }
         }
         prev = snapshotStates(tasks);

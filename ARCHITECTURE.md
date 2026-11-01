@@ -87,8 +87,9 @@ group, wraps after 8 so a long session doesn't walk new windows off the edge of
 the screen). The numbers live in `src/lib/tokens.ts`'s `windowDefaults`; the
 placement maths is the pure `window-manager/windowGeometry.ts` (unit-tested).
 
-**Keep-clear and clamping**: `windowDefaults.insets` (also the maximised rect)
-leaves room for the dock above and, below, the larger of `sizes.commandBarReserve`
+**Keep-clear and clamping**: `windowDefaults.insets` (new windows only; a maximised window
+fills the whole screen, `MAXIMIZED_INSETS` in `Window.tsx`, with the dock and command bar floating
+over it and the window's own bottom padding clearing the bar) leaves room for the dock above and, below, the larger of `sizes.commandBarReserve`
 and `sizes.presenceReserve` plus `sizes.bottomClearance`. `clampToViewport` keeps
 the title bar reachable (top >= 0, `titleBarReach` px on screen, above the
 command bar); it runs on drag/resize commit and, via the store's
@@ -305,8 +306,9 @@ The design spec is explicit that there is exactly one accent color (a deep
 teal), reserved for AI/interactive moments — not decorative use. In this
 pass it shows up in: focus rings across the whole UI kit, `Button`/`IconButton`'s
 `solid` variant, `Switch`/`Slider`'s checked/filled state, and an animated
-ring (`AIGlowBorder.tsx`; since the redesign the design system's `ai-ring` conic border, the older `.ai-glow-*` globals.css classes are unused) Window.tsx draws around a window when
-`controlledBy === "ai"` (not explicitly listed in the original spec's
+halo (`AIGlowBorder.tsx` and the `.ai-glow` rules in globals.css, copied from the approved
+`docs/marketing/pmo-desk-launch.html`) Window.tsx draws around a window when
+`controlledBy === "ai"`; the window's title bar also shows an "AI is working" chip (`AiWorkingChip.tsx`) (not explicitly listed in the original spec's
 examples, but squarely in the same category — it's arguably the single most
 important "this is AI-driven" signal in the whole product). It started as a
 static single-hue ring, then became a breathing/traveling glow (still
@@ -314,9 +316,11 @@ single-hue), and — by explicit design direction, after feedback that the
 single-hue version read as flat and needed to match Apple's own Siri/Apple
 Intelligence glow — is now a full-spectrum "Siri / Apple Intelligence"-style
 treatment: blue through violet, magenta, crimson, orange, and gold,
-continuously rotating around the window's border plus a separate breathing
-intensity pulse (see globals.css's `.ai-glow-halo`/`.ai-glow-sweep` comment
-for the exact mechanism and color-stop rationale). This is a deliberate,
+continuously rotating (one turn per 8 s, a CSS `@property` animation, no React work per frame)
+in a blurred band 6px outside the window edge (just inside it for a maximised window), fading in
+and out over 0.4 s; a still ring under `prefers-reduced-motion` (see globals.css's `.ai-glow`
+comment for the exact mechanism and color-stop rationale). The AI cursor is the dark pointer with
+a white outline from the same mock-up, and what the AI is doing now is a small rounded card. This is a deliberate,
 one-off exception scoped to that single effect, not a precedent — don't add
 a second accent color anywhere else, and don't reach for `bg-accent` just
 because something needs visual emphasis — that's what the neutral scale's
@@ -336,8 +340,13 @@ The look is a frosted-glass redesign with two independent switches on
 `getThemeInitScript()` (a `beforeInteractive` script in `layout.tsx`) sets
 both attributes before hydration, so there is no flash. The single source of
 truth is the attribute; the hooks are `useSyncExternalStore` over it. The
-toggles live in the Settings popover (`SettingsMenu.tsx`: "Dark mode" and
-"Deloitte mode"). Cascade order in tokens.css (later wins): default light,
+toggles live in Quick settings, opened from the App Menu (`QuickSettings` in
+`SettingsMenu.tsx`: "Dark mode" and "Deloitte mode"). A switch runs as one View Transition
+(`withLookTransition` in `theme.ts`: the browser cross-fades two snapshots of the screen on the
+compositor over 520 ms, and `data-look-switching` turns the page's own CSS transitions off while it
+runs); without the API, or with reduced motion, it applies at once. The Deloitte wordmark
+(`public/brand/deloitte-{light,dark}.png`) sits in the middle of the Deloitte wallpapers (`.wp-logo`)
+and on the lock screen and About page. Cascade order in tokens.css (later wins): default light,
 `[data-theme=dark]`, `[data-brand=deloitte]` (shared: radii, font, ring),
 `[data-brand=deloitte]:not([data-theme=dark])`,
 `[data-brand=deloitte][data-theme=dark]`.
@@ -485,9 +494,11 @@ themselves, not a task list.
    (`dockAutoHide.ts`, tested with fake timers): it slides away after a short
    grace period and returns when the pointer reaches the top edge; keyboard
    focus, an open dock menu or a tile drag keep it up. It also has a right-click context menu on the desktop
-   background (`DesktopContextMenu.tsx`), plus a top-right settings gear
-   (`SettingsMenu.tsx` — the single home of the dark-mode switch; add new
-   settings as rows in its `settingsRows` list), mounted as siblings of
+   background (`DesktopContextMenu.tsx`), plus the Quick settings menu,
+   which lives in the App Menu's header (`QuickSettings` in `SettingsMenu.tsx` — the single home of the
+   dark-mode switch; add new settings as rows in its `settingsRows` list; the `SettingsMenu` component
+   itself only restores the saved look on a new origin), and a soft hue along the bottom edge under the
+   command bar (`CommandBarHue.tsx`), mounted as siblings of
    `<WindowManager />` in `Desktop.tsx` at the `z-chrome` layer. There is no
    desktop icon grid — the dock is the only app launcher; an earlier V1 had
    a `DesktopIcons.tsx` mirroring the dock's 4 pinned apps, since removed.
@@ -623,8 +634,8 @@ stops the engine tree on quit.
 
 ## First-run setup (`src/lib/setup/`, `src/components/setup/`, `/api/setup`)
 
-On a new computer the installer is enough to start AI OS, but the AI features need a few things
-the installer does not carry. The **Set up AI OS** dialog (opened at launch while something required
+On a new computer the installer is enough to start PMO Desk, but the AI features need a few things
+the installer does not carry. The **Set up PMO Desk** dialog (opened at launch while something required
 is missing, unless the person chose "Not now" for exactly that list; reopened any time from Settings >
 "Setup and health check") reports each one in plain language and fixes what it can:
 
@@ -739,7 +750,7 @@ ever read (`GET /api/version`, `/api/tags`, `/api/ps`), which cannot load
 anything. An unloaded ("asleep") model is the normal idle state, not a warning;
 the first call after a sleep takes 1-2 minutes longer while it wakes, and the UI
 says so. After the last call Ollama keeps the model for `keep_alive`, **2
-minutes by default for both a server AI OS started and a reused one** (it is sent
+minutes by default for both a server PMO Desk started and a reused one** (it is sent
 with every request, so it overrides the server's own default and any
 `OLLAMA_KEEP_ALIVE`; `/api/ai/command` sends the same value through
 `getKeepAlive()`). `AI_OS_AI_KEEP_ALIVE` overrides both (a Go duration such as
@@ -769,7 +780,7 @@ owned lifecycle): `src/instrumentation.ts` calls `ensureRuntime()`
 when the Next server starts (`pnpm dev`, `next start`, and the server the
 Electron shell spawns). If something already answers on the base URL it is
 reused and is never killed (`ownedByUs: false`). Otherwise, and only for a
-loopback URL, AI OS spawns `ollama serve` (resolved from `AI_OS_OLLAMA_EXE`,
+loopback URL, PMO Desk spawns `ollama serve` (resolved from `AI_OS_OLLAMA_EXE`,
 then PATH, then `%LOCALAPPDATA%\Programs\Ollama`; fixed args, `shell: false`,
 `windowsHide`, log in the OS temp dir) and owns it. `generateJson` also
 re-runs this check before every call, so an Ollama that died is restarted
@@ -841,7 +852,7 @@ serverLog? }`: only events after `since` (a different `session` returns all and
   log. The dialog polls it every ~2 s **only while open and the tab is visible**.
   `POST /api/ai/runtime/load` ("Load now": starts the tiny warm-up in the
   background and answers at once) and `POST /api/ai/runtime/unload` ("Unload now":
-  `keep_alive: 0` for the AI OS default model only, never another model in a
+  `keep_alive: 0` for the PMO Desk default model only, never another model in a
   shared Ollama, and refused while any call is running).
 - **Guards.** All three use the same origin check as `/api/pmo` (loopback Host, no
   cross-site `Origin` / `Sec-Fetch-Site`), **not** the desktop-only header that
@@ -852,7 +863,7 @@ serverLog? }`: only events after `since` (a different `session` returns all and
   another site, or a DNS-rebinding page, is still refused with 403.
 - **Server log tail.** Read-only, last ~200 lines from at most the last 256 KB, each
   line capped at 2000 characters, fixed paths only: `%TEMP%\ai-os-ollama.log` when
-  AI OS started Ollama; `%LOCALAPPDATA%\Ollama\server.log` for a reused Ollama
+  PMO Desk started Ollama; `%LOCALAPPDATA%\Ollama\server.log` for a reused Ollama
   (macOS `~/.ollama/logs/server.log`; nothing on Linux). Nothing from a request
   chooses the file. The UI says which source it is. Caveat: Ollama itself can write
   prompts into its server log if `OLLAMA_DEBUG` is set, and for a reused Ollama the
@@ -1293,7 +1304,7 @@ src/app/api/pmo/        state, ingest/scan, intake/manual (POST, the Paste
 ```
 
 **Data directory**: env `AI_OS_PMO_DATA_DIR`; `desktop/main.cjs` sets it to
-`<userData>\pmo`; the dev default is `%LOCALAPPDATA%\AI OS\pmo` (outside the
+`<userData>\pmo`; the dev default is `%LOCALAPPDATA%\PMO Desk\pmo` (outside the
 repo). Layout: `config.json`, `raw/<intakeId>.json` (immutable snapshot incl. the
 original text), `quarantine/` (filtered items: metadata and reason, body
 dropped), `rejected-files/` (unparsable producer files + `.reason.txt`),
@@ -2203,7 +2214,7 @@ title, tone, action, key })` from anywhere; a repeated `key` replaces the earlie
   the send-later queue, snapshots, last recipients, last file names) because snapshots can be large;
   `sanitizeTasksPrefs` repairs anything hand-edited.
 - **Background.** `TasksBackground` (mounted by the desktop, so it works with the Tasks window closed)
-  polls the engine every 20 s while AI OS is open: notices when a task needs you, fails or finishes (toast,
+  polls the engine every 20 s while PMO Desk is open: notices when a task needs you, fails or finishes (toast,
   plus a system notice while hidden), reminds for due schedules (an overdue one is reported once as
   "missed"), starts a task that is set to prepare itself only when its files are present (it still stops at
   the first review step), and sends a queued mail only if the task is still at its send step and the draft's

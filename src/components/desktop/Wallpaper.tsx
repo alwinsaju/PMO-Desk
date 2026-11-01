@@ -57,7 +57,12 @@ function BrandRings({
   );
 }
 
-export function Wallpaper() {
+/**
+ * `logo` puts the Deloitte wordmark in the middle of the two Deloitte layers (dark text on
+ * the light one, white on the dark one; see `.wp-logo` in globals.css). The lock screen
+ * turns it off: its clock sits there.
+ */
+export function Wallpaper({ logo = true }: { logo?: boolean } = {}) {
   return (
     <div aria-hidden className="absolute inset-0 z-[var(--z-desktop)] overflow-hidden">
       {/* Default light */}
@@ -92,6 +97,7 @@ export function Wallpaper() {
           disc="#86BC25"
           discOpacity={0.1}
         />
+        {logo && <div className="wp-logo" />}
       </div>
 
       {/* Deloitte dark */}
@@ -108,6 +114,7 @@ export function Wallpaper() {
           disc="#86EB22"
           discOpacity={0.07}
         />
+        {logo && <div className="wp-logo" />}
       </div>
     </div>
   );

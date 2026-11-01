@@ -55,7 +55,7 @@ export type SaveResult = { ok: true } | { ok: false; reason: string };
 
 export function saveModelChoice(model: string, env: Env = process.env): SaveResult {
   const known = canonical(model);
-  if (!known) return { ok: false, reason: `${model} is not a model AI OS can use.` };
+  if (!known) return { ok: false, reason: `${model} is not a model PMO Desk can use.` };
   const file = modelChoicePath(env);
   try {
     mkdirSync(path.dirname(file), { recursive: true });

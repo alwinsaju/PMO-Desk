@@ -31,7 +31,7 @@ export interface DiagnosticsInput {
 }
 
 const README = [
-  "AI OS diagnostics bundle",
+  "PMO Desk diagnostics bundle",
   "",
   "What is inside: versions, counts of records, the size of each data folder, the recent",
   "audit actions (time and kind only) and the end of the desktop and ingest logs.",

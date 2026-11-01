@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="PMO Desk">
+  <!-- Simplified for 16-24 px: a column of three pills and a plain ring, drawn on a 4-unit grid so the shapes land on whole pixels at 16 px. The tick is dropped; it blurs below 32 px. Use mark.svg at 32 px and above. -->
+  <defs>
+    <linearGradient id="pd-g" x1="8" y1="4" x2="56" y2="62" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#2f7367"/><stop offset="1" stop-color="#1e4b44"/></linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="16" fill="url(#pd-g)"/>
+  <g fill="none" stroke="#fff"><circle cx="40" cy="30" r="13" stroke-width="6"/></g>
+  <g fill="#fff"><rect x="12" y="16" width="8" height="8" rx="4"/><rect x="12" y="28" width="8" height="8" rx="4" opacity=".75"/><rect x="12" y="40" width="8" height="8" rx="4" opacity=".5"/></g>
+</svg>

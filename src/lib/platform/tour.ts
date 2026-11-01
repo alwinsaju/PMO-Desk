@@ -11,7 +11,7 @@ export interface TourStep {
 export const TOUR_STEPS: readonly TourStep[] = [
   {
     id: "welcome",
-    title: "Welcome to AI OS",
+    title: "Welcome to PMO Desk",
     text: "Everything here stays on this computer, and nothing is sent without your approval. This takes about a minute.",
   },
   {

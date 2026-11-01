@@ -372,7 +372,7 @@ test("errors: plain sentences for the usual problems, with cleaned details", () 
     where: "Staff",
     now: new Date("2026-03-05T00:00:00Z"),
   });
-  assert.match(text, /AI OS 6\.0\.0/);
+  assert.match(text, /PMO Desk 6\.0\.0/);
   assert.match(text, /Where: Staff/);
   assert.match(text, /2026-03-05T00:00:00.000Z/);
   assert.match(

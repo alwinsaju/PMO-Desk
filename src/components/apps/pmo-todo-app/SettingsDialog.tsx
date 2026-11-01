@@ -480,8 +480,8 @@ export function SettingsDialog({
                   label="Keep running in the tray so reminders still fire"
                   hint={
                     desktop
-                      ? "Desktop app: closing the window hides AI OS to the system tray instead of quitting. Use the tray icon's Quit to exit completely. Off by default."
-                      : "Desktop app only; it has no effect in a browser. When on, closing the window hides AI OS to the tray instead of quitting. Off by default."
+                      ? "Desktop app: closing the window hides PMO Desk to the system tray instead of quitting. Use the tray icon's Quit to exit completely. Off by default."
+                      : "Desktop app only; it has no effect in a browser. When on, closing the window hides PMO Desk to the tray instead of quitting. Off by default."
                   }
                 />
                 <NotificationStatus attention={state.attention.count} />

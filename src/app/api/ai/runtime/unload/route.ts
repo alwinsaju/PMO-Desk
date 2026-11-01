@@ -5,7 +5,7 @@ import { handleAction } from "@/lib/ai-runtime/routeLogic";
 
 export const dynamic = "force-dynamic";
 
-/** POST /api/ai/runtime/unload: "Unload now". keep_alive 0 for the AI OS default
+/** POST /api/ai/runtime/unload: "Unload now". keep_alive 0 for the PMO Desk default
  *  model only, refused while a call is running. Origin-checked, not
  *  desktop-only: the button is inside the app window (see routeLogic.ts). */
 export async function POST(request: Request) {

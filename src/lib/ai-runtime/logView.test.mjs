@@ -217,7 +217,7 @@ describe("plain English timeline", () => {
       "Model went to sleep after 2 min idle, memory freed (about 8 GB).",
       "Model went to sleep after sitting idle, memory freed (about 8 GB).",
       "Model unloaded on request, memory freed (about 8 GB).",
-      "Model unloaded because AI OS is closing, memory freed (about 8 GB).",
+      "Model unloaded because PMO Desk is closing, memory freed (about 8 GB).",
       "Model is no longer in memory (about 8 GB freed).",
       "llama3.2:latest (loaded by another program) left memory.",
     ]);
@@ -240,7 +240,7 @@ describe("plain English timeline", () => {
     loaded({ ours: false, model: "llama3.2:latest" });
     assert.deepEqual(lines(log), [
       "The model gemma4:12b was already in memory (about 8 GB).",
-      "Another program loaded llama3.2:latest into Ollama (about 8 GB). AI OS does not manage it.",
+      "Another program loaded llama3.2:latest into Ollama (about 8 GB). PMO Desk does not manage it.",
     ]);
   });
 
@@ -273,13 +273,13 @@ describe("plain English timeline", () => {
       keepAlive: 0,
     });
     assert.deepEqual(lines(log), [
-      "Started Ollama 0.40.9. AI OS owns it and stops it when you quit.",
-      "Connected to an Ollama that was already running. AI OS will not stop it.",
-      "Took over an Ollama that an earlier AI OS session left running. AI OS stops it when you quit.",
+      "Started Ollama 0.40.9. PMO Desk owns it and stops it when you quit.",
+      "Connected to an Ollama that was already running. PMO Desk will not stop it.",
+      "Took over an Ollama that an earlier PMO Desk session left running. PMO Desk stops it when you quit.",
       "Could not reach Ollama, will retry. Ollama is not answering at http://x.",
       "Ollama is not available. It is off.",
-      "AI OS closed and stopped the Ollama it started.",
-      "AI OS closed; the shared Ollama was left running.",
+      "PMO Desk closed and stopped the Ollama it started.",
+      "PMO Desk closed; the shared Ollama was left running.",
       "The model is not loaded at start-up: it wakes when something needs it, which saves memory.",
       "Asked Ollama to unload the model now.",
       "Unloading the model before Ollama stops.",

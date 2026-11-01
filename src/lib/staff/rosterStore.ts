@@ -10,7 +10,7 @@ import type { RosterConfig, ShiftAssignment } from "./types.ts";
 
 export type RosterResult = { ok: true } | { ok: false; reason: string };
 
-const OFFLINE = "Can't reach the AI OS server. Try again in a moment.";
+const OFFLINE = "Can't reach the PMO Desk server. Try again in a moment.";
 const SYNC_MS = 20_000;
 
 export interface RosterState {

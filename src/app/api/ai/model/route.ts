@@ -45,7 +45,7 @@ export async function POST(request: Request) {
   if (!wanted)
     return NextResponse.json({
       ok: false,
-      reason: `${model} is not a model AI OS can switch to.`,
+      reason: `${model} is not a model PMO Desk can switch to.`,
     });
   if (wanted.installed === false) {
     return NextResponse.json({

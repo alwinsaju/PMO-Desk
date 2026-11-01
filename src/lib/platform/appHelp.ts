@@ -159,7 +159,7 @@ export const APP_HELP: readonly AppHelp[] = [
   {
     appId: "files",
     title: "Files",
-    summary: "Browse the files in the AI OS folders on this computer.",
+    summary: "Browse the files in the PMO Desk folders on this computer.",
     tasks: [
       {
         title: "Open a folder",
@@ -194,7 +194,7 @@ export const APP_HELP: readonly AppHelp[] = [
   {
     appId: "browser",
     title: "Browser",
-    summary: "Opens web pages inside AI OS. Some sites refuse to be shown in a frame.",
+    summary: "Opens web pages inside PMO Desk. Some sites refuse to be shown in a frame.",
     tasks: [
       {
         title: "Open a site",

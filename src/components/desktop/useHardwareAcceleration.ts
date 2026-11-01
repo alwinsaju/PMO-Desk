@@ -79,7 +79,7 @@ async function relaunch() {
     // false = cancelled (a task is running and the user said no).
     if (!restarting) update({ relaunching: false });
   } catch {
-    update({ relaunching: false, error: "Could not restart AI OS." });
+    update({ relaunching: false, error: "Could not restart PMO Desk." });
   }
 }
 

@@ -182,11 +182,13 @@ export function FirstRunSetup() {
         className="max-h-[88vh] max-w-2xl overflow-y-auto"
         aria-describedby="setup-intro"
       >
-        <DialogTitle>{report?.ready ? "AI OS is ready" : "Set up AI OS"}</DialogTitle>
+        <DialogTitle>
+          {report?.ready ? "PMO Desk is ready" : "Set up PMO Desk"}
+        </DialogTitle>
         <DialogDescription id="setup-intro">
-          A quick check that this computer has what AI OS needs. Nothing about your work
-          leaves the computer; the only downloads are Ollama and the AI model, from their
-          own websites.
+          A quick check that this computer has what PMO Desk needs. Nothing about your
+          work leaves the computer; the only downloads are Ollama and the AI model, from
+          their own websites.
         </DialogDescription>
 
         {!report && (

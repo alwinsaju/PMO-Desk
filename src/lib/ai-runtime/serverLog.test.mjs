@@ -13,7 +13,7 @@ import {
 const win = { platform: "win32", tmpDir: "C:\\Users\\me\\AppData\\Local\\Temp" };
 
 describe("which log", () => {
-  it("is AI OS's own file when AI OS started Ollama", () => {
+  it("is PMO Desk's own file when PMO Desk started Ollama", () => {
     const source = resolveServerLog({ ...win, owned: true, env: {} });
     assert.equal(source.kind, "owned");
     assert.equal(source.path, "C:\\Users\\me\\AppData\\Local\\Temp\\ai-os-ollama.log");

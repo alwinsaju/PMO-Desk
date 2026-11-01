@@ -132,7 +132,7 @@ export function PmoTodoApp({ windowId }: { windowId: string }) {
       <div data-window-id={windowId} className="h-full w-full">
         <PanelMessage className="h-full">
           {connection === "offline"
-            ? "Can't reach the AI OS server. This will connect automatically once it's available."
+            ? "Can't reach the PMO Desk server. This will connect automatically once it's available."
             : "Loading PMO To-Do…"}
         </PanelMessage>
       </div>

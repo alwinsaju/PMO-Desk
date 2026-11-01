@@ -531,7 +531,7 @@ export function CommandBar() {
           signal: controller.signal,
           timeoutMs: CLIENT_TIMEOUT_MS,
           unreachableMessage: pmoIntent
-            ? "Couldn't reach the AI OS server."
+            ? "Couldn't reach the PMO Desk server."
             : "Couldn't reach the local AI model.",
         },
       );

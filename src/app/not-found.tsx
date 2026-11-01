@@ -29,8 +29,8 @@ export default function NotFound() {
           This page <span className="accent-word">isn&apos;t here</span>
         </h1>
         <p className="text-ink-soft mx-auto mt-3 max-w-sm text-sm leading-6">
-          The address you followed doesn&apos;t lead anywhere in AI OS. It may have moved,
-          or never existed.
+          The address you followed doesn&apos;t lead anywhere in PMO Desk. It may have
+          moved, or never existed.
         </p>
         <Button asChild className="mt-6">
           <Link href="/">Back to the desktop</Link>

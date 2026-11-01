@@ -1,4 +1,4 @@
-# AI OS
+# PMO Desk
 
 A local, desktop-style "AI Operating System": a virtual desktop in which a person and a
 local AI can drive the same windows and apps, with handoff between them. It runs entirely
@@ -8,8 +8,8 @@ on the user's computer (loopback only; the AI is a local Ollama model, no cloud 
 
 - **Desktop shell**: wallpaper, a dock, a window manager (drag, resize, minimize, maximize,
   per-window human/AI control; each app's window reopens where you left it), light/dark and
-  Deloitte themes, a tray icon, and a Settings
-  menu (gear) with a _Fast AI model_ switch, _Skip the lock screen_, _Setup and health check_ and _Restart Tasks engine_.
+  Deloitte themes, a tray icon, and a Quick
+  settings (in the App Menu, top of the dock) with a _Fast AI model_ switch, _Skip the lock screen_, _Setup and health check_ and _Restart Tasks engine_.
   The dock shows a hover label for every icon (with what a badge means, for example "3 need
   attention: 2 PMO items, 1 time-off request"), an accent dot for open apps, the launchers in their
   own group and, on a narrow screen, the apps that do not fit under the App Menu's "+N". The lock
@@ -96,7 +96,7 @@ on the user's computer (loopback only; the AI is a local Ollama model, no cloud 
   imported from the team's roster workbook), a Time-off tracker and an Offboarded list (people removed from the
   roster, kept on file and editable, restorable or deletable). It is meant to be the one list of people that
   the other apps read instead of an uploaded Excel file. Leave emails and M365 profiles are read in the
-  background while AI OS runs (light local model, no window needed); the AI orb at the bottom right
+  background while PMO Desk runs (light local model, no window needed); the AI orb at the bottom right
   tells you when a leave request waits for approval. An **Insights** tab adds capacity per team with
   minimum-cover rules, leave approval with a warning when cover would fall short and a templated reply
   (unsent), leave balances, shift swaps, a fair weekend and holiday on-call rotation, roll-off and
@@ -172,12 +172,19 @@ queue, audit log, reports, and `backups\` with the safety copies Restore makes),
 `desktop.log`, and the app's settings files. The first-run Setup screen and `docs/clean-machine-test.md`
 describe how to test this on a new computer.
 
+The folder keeps the product's old name (`ai-os`) on purpose, and so do the OneDrive folder `AI-OS`
+(`PMO-Inbox`, `Staff-Exchange`, `PTO-Inbox`, which live flows write into), the installer's `appId`
+(`com.aios.desktop`) and the `AI_OS_*` environment variables: renaming any of them would orphan data
+or flows. `desktop/user-data.cjs` pins the folder in code so the product name cannot move it.
+The logo files are in `public/brand/` (from `docs/marketing/logo/`); `node scripts/build-brand-assets.mjs`
+regenerates the `.ico`/`.png` files from them.
+
 ## Installing (unsigned build)
 
-The installer (`AI OS Setup x.y.z.exe`) and `AI OS.exe` are **not code-signed**. Windows
+The installer (`PMO Desk Setup x.y.z.exe`) and `PMO Desk.exe` are **not code-signed**. Windows
 SmartScreen will warn on the first run: choose **More info > Run anyway**. On a managed
 computer where Smart App Control, AppLocker or Windows Defender Application Control blocks
-it, ask IT to allow the installer / the folder `%LOCALAPPDATA%\Programs\AI OS`.
+it, ask IT to allow the installer / the folder `%LOCALAPPDATA%\Programs\PMO Desk`.
 
 ## Stack
 
@@ -207,11 +214,11 @@ Open [http://localhost:3000](http://localhost:3000). A blank desktop with the
 original CSS wallpaper is the correct result — no windows are opened by
 default in this pass.
 
-## Running AI OS as a desktop app
+## Running PMO Desk as a desktop app
 
-AI OS includes an Electron launcher for a desktop-only installation. It starts
-the local AI OS and Tasks engine services, opens a standalone application
-window, and stops both owned services when the final AI OS window closes.
+PMO Desk includes an Electron launcher for a desktop-only installation. It starts
+the local PMO Desk and Tasks engine services, opens a standalone application
+window, and stops both owned services when the final PMO Desk window closes.
 
 Create the Windows launcher:
 
@@ -222,8 +229,8 @@ pnpm desktop:package
 The command first builds the private Python the installer carries (`pnpm runtime:python`; it needs any
 Python 3.9+ with pip on this machine and network access the first time, and reuses its download cache after).
 See `scripts/build-python-runtime.py` for how it is pinned. The installer is built from the working tree, so the gitignored files the tasks need (`tasks/*/templates`, `tasks/*/config`, `tasks/shared/roster-reference`, `tasks/shared/roster/Names.xlsx`) must be present on the machine that builds it; a fresh clone does not have them. The installer is written to
-`release/AI OS Setup 6.0.1.exe`. Run it
-once to install AI OS under `%LOCALAPPDATA%\Programs\AI OS` (or select a
+`release/PMO Desk Setup 6.0.1.exe`. Run it
+once to install PMO Desk under `%LOCALAPPDATA%\Programs\PMO Desk` (or select a
 different folder in the installer). The installer wizard is branded to match the app (dark welcome and finish pages; the artwork is redrawn from `package.json`'s version by `pnpm installer:art` (part of `pnpm desktop:package`, needs Pillow, fonttools and brotli) into `build/installer/`). It creates Start-menu and
 desktop shortcuts; pin either to the Windows taskbar. The installed app does
 not need HTTPS, a browser tab, or a terminal.
@@ -231,10 +238,10 @@ not need HTTPS, a browser tab, or a terminal.
 ### First run on a new computer
 
 The installer carries the app, the Tasks engine, its task folders and a private Python, so Tasks work
-straight away. The local AI is not in the installer: on first start the **Set up AI OS** screen checks
+straight away. The local AI is not in the installer: on first start the **Set up PMO Desk** screen checks
 Ollama, the AI model (about 12 GB), classic Outlook (the four
 mail tasks need it; report only) and the Tasks engine, and installs or downloads what is missing. It opens by
-itself while something required is open and from the gear menu > _Setup and health check_ at any time. Task
+itself while something required is open and from the App Menu > _Settings_ > _Setup and health check_ at any time. Task
 inputs, outputs, config and run history live in `%APPDATA%\ai-os\tasks-engine`, not in the install folder, so a
 reinstall keeps them. How to test all of this on a clean machine: [`docs/clean-machine-test.md`](./docs/clean-machine-test.md).
 
@@ -254,21 +261,21 @@ instead defaults to `live-dev` when the project folder is usable.
 
 Choose the mode and folder with, in order of priority: the environment
 variables `AI_OS_MODE` (`live-dev`, `live-build`, `bundled`) and
-`AI_OS_PROJECT_DIR`; a `live-config.json` next to `AI OS.exe` or in the app's
+`AI_OS_PROJECT_DIR`; a `live-config.json` next to `PMO Desk.exe` or in the app's
 `desktop` folder (`{ "projectDir": "C:\\Projects\\AI OS", "mode": "live-dev" }`, both keys
 optional; see `desktop/launch-config.cjs`); then the default. The installer
 removes `live-config.json` on every reinstall, so to keep an installed build in
 a live mode set `AI_OS_MODE` (for example as a persistent user environment
 variable); `live-config.json` only lasts until the next reinstall. If a live mode
 cannot be used (folder missing, no `node_modules/next`, no build for
-`live-build`) or the server does not answer within 90 seconds, AI OS logs the
+`live-build`) or the server does not answer within 90 seconds, PMO Desk logs the
 reason in `%APPDATA%\ai-os\desktop.log` and starts the bundled app instead
-(Help > About AI OS shows the reason). The window title shows the active mode,
-for example `AI OS (live-dev: C:\Projects\AI OS)`.
+(Help > About PMO Desk shows the reason). The window title shows the active mode,
+for example `PMO Desk (live-dev: C:\Projects\AI OS)`.
 
 The **Developer** menu has _Restart UI server_ (stops and respawns the server
 and the Tasks engine it owns, then reloads; it warns first if a task is running),
-_Open project folder_ and _Open logs folder_. If the UI server crashes, AI OS
+_Open project folder_ and _Open logs folder_. If the UI server crashes, PMO Desk
 offers to restart it. Do not run `pnpm dev` or `pnpm build` against the same
 folder while a live mode is running (they share `.next`); live mode replaces
 the dev server.
@@ -277,9 +284,9 @@ How updates reach the app now:
 
 - **UI changes** (`src/**`): live-reload in `live-dev`; nothing to do.
 - **Engine and task changes** (tasks-engine `main.py`, `tasks/**`
-  scripts and manifests): gear menu (top right) > **Restart Tasks engine**. It checks
+  scripts and manifests): App Menu > **Settings** > **Restart Tasks engine**. It checks
   for running tasks first and asks for confirmation if any are not idle. It only
-  restarts an engine that this AI OS started; one started from a terminal is
+  restarts an engine that this PMO Desk started; one started from a terminal is
   reported and left alone.
 - **Reinstall** only when `desktop/` (the Electron shell) or the `build`
   config in `package.json` changes, or to refresh the bundled fallback.

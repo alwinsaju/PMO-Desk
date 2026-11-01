@@ -13,7 +13,7 @@ $ErrorActionPreference = "Stop"
 
 $olFolderDrafts = 16
 $olMail = 43
-$draftTokenPropertyName = "AI OS Draft Token"
+$draftTokenPropertyName = "PMO Desk Draft Token"
 
 if ($DraftToken -notmatch "^[0-9a-fA-F]{32}$") {
     throw "The draft token is not valid. No message was sent."
@@ -32,10 +32,10 @@ for ($index = 1; $index -le $drafts.Count; $index++) {
 }
 
 if ($matches.Count -eq 0) {
-    throw "No Outlook draft has the expected AI OS draft token. It may have been deleted or moved out of Drafts."
+    throw "No Outlook draft has the expected PMO Desk draft token. It may have been deleted or moved out of Drafts."
 }
 if ($matches.Count -gt 1) {
-    throw "More than one Outlook draft has the expected AI OS draft token. No message was sent."
+    throw "More than one Outlook draft has the expected PMO Desk draft token. No message was sent."
 }
 
 $mail = $matches[0]

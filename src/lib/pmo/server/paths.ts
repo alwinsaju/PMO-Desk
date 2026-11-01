@@ -13,6 +13,7 @@ export function resolveDataDir(env: Env = process.env): string {
   const explicit = env.AI_OS_PMO_DATA_DIR?.trim();
   if (explicit) return path.resolve(explicit);
   const local = env.LOCALAPPDATA?.trim() || path.join(os.homedir(), "AppData", "Local");
+  // Kept as "AI OS" on purpose: this is where existing installs and dev runs already keep PMO data.
   return path.join(local, "AI OS", "pmo");
 }
 

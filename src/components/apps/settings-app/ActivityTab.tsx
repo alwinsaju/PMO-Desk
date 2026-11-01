@@ -98,7 +98,7 @@ export function ActivityTab() {
   };
 
   return (
-    <Section title="Everything AI OS did on your behalf" settingId="activity-log">
+    <Section title="Everything PMO Desk did on your behalf" settingId="activity-log">
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <input
           value={query}

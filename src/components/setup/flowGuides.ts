@@ -180,10 +180,10 @@ export const GUIDES: readonly FlowGuide[] = [
     brand: "outlook",
     purpose:
       "Copies each PTO email into OneDrive. The local AI reads it and marks PTO, comp off or sick leave in the shift roster.",
-    flowName: "AI OS - PTO email",
+    flowName: "PMO Desk - PTO email",
     folder: "AI-OS \\ PTO-Inbox",
     steps: [
-      CREATE("AI OS - PTO email", "new email", "When a new email arrives (V3)"),
+      CREATE("PMO Desk - PTO email", "new email", "When a new email arrives (V3)"),
       {
         id: "trigger",
         connector: "outlook",
@@ -251,7 +251,7 @@ export const GUIDES: readonly FlowGuide[] = [
       },
       SAVE([
         "Send yourself an email saying you are on leave on a few days, and move it to the PTO folder.",
-        "Within a minute a file appears in AI-OS \\ PTO-Inbox. AI OS reads it and adds the leave to Time off as a pending request; approve it there and it shows on the roster.",
+        "Within a minute a file appears in AI-OS \\ PTO-Inbox. PMO Desk reads it and adds the leave to Time off as a pending request; approve it there and it shows on the roster.",
         "Try one that says you are taking a comp off: it is filed as Comp off.",
       ]),
     ],
@@ -266,10 +266,14 @@ export const GUIDES: readonly FlowGuide[] = [
     brand: "powerautomate",
     purpose:
       "When you add someone to the Directory by email, this fetches their name, title, location and photo from Microsoft 365.",
-    flowName: "AI OS - Staff M365 profile",
+    flowName: "PMO Desk - Staff M365 profile",
     folder: "AI-OS \\ Staff-Exchange",
     steps: [
-      CREATE("AI OS - Staff M365 profile", "file is created", "When a file is created"),
+      CREATE(
+        "PMO Desk - Staff M365 profile",
+        "file is created",
+        "When a file is created",
+      ),
       {
         id: "trigger",
         connector: "onedrive",
@@ -368,7 +372,7 @@ export const GUIDES: readonly FlowGuide[] = [
           "Add a Compose and rename it Profile.",
           `Paste the code as the Inputs. ${PASTE_JSON}`,
         ],
-        tip: "Empty values are fine: AI OS never blanks what is already on file.",
+        tip: "Empty values are fine: PMO Desk never blanks what is already on file.",
       },
       {
         id: "file",

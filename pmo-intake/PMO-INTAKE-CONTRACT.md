@@ -125,7 +125,7 @@ Either use **Allow this tenant** (or **Allow this chat**, which adds the item's
 Conversation ID to `teamsChatAllowlist`) on a filtered Teams item in the app, or open
 **Settings** (the gear in the app's top bar) and put the GUID under _Allowed
 Teams tenant IDs_, or edit `config.json` in the PMO data folder
-(`%LOCALAPPDATA%\AI OS\pmo` in development; `<AI OS user data>\pmo` in the
+(`%LOCALAPPDATA%\AI OS\pmo` in development; `<PMO Desk user data>\pmo` in the
 desktop app) and add the GUID:
 
 ```json
@@ -249,7 +249,7 @@ code, so the machine's regional settings cannot change what is exported.
 
 Run it by hand first (`-DryRun`, then for real). To run it every 15 minutes while
 you are signed in, from a normal (not elevated) PowerShell. The installer ships the
-scripts to `%LOCALAPPDATA%\Programs\AI OS\resources\app\pmo-intake\scripts\`: for
+scripts to `%LOCALAPPDATA%\Programs\PMO Desk\resources\app\pmo-intake\scripts\`: for
 an installed copy, point `$script` there (the `schtasks` one-liner for that is in
 [`HOW-TO-GET-STARTED.md`](./HOW-TO-GET-STARTED.md) section 7).
 

@@ -30,7 +30,7 @@ interface Collections {
   offboarded: OffboardedEmployee;
 }
 
-const OFFLINE = "Can't reach the AI OS server. Try again in a moment.";
+const OFFLINE = "Can't reach the PMO Desk server. Try again in a moment.";
 
 /** True when a batch adds or changes someone who is waiting for an M365 profile. */
 const hasPendingProfile = (changes: unknown): boolean =>

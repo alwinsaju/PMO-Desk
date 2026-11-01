@@ -1,4 +1,4 @@
-// The tiny API desktop/preload.cjs exposes to the page when AI OS runs inside
+// The tiny API desktop/preload.cjs exposes to the page when PMO Desk runs inside
 // the Electron shell (window.aiOsDesktop). In a plain browser it is undefined,
 // which is also how the reminder code knows which path it is on: the shell
 // claims and shows reminders itself, a browser tab does it from the page.

@@ -15,6 +15,8 @@ import {
   PopoverTrigger,
   Tooltip,
 } from "@/components/ui";
+import { PmoDeskMark } from "@/components/brand/PmoDeskMark";
+import { QuickSettings } from "@/components/desktop/SettingsMenu";
 import { dockTileClassName } from "./DockTile";
 import { AppMenuEntry } from "./AppMenuEntry";
 import { builtInAppIds, builtInApps, type PinnedApp } from "./pinnedApps";
@@ -129,6 +131,14 @@ export function AppMenu({ hiddenCount = 0 }: { hiddenCount?: number }) {
         aria-label="Installed apps"
         className="w-[min(27rem,calc(100vw-1.5rem))] p-4"
       >
+        <div className="border-line mb-2 flex items-center gap-3 border-b px-2 pt-0.5 pb-3">
+          <PmoDeskMark size={32} title="" />
+          <div className="min-w-0 flex-1">
+            <p className="font-headline text-ink text-[15px] leading-tight">PMO Desk</p>
+            <p className="text-ink-muted text-[12px]">Apps and quick settings</p>
+          </div>
+          <QuickSettings />
+        </div>
         <p className="text-ink-muted px-3 pt-1 pb-1.5 text-[11.5px] font-bold tracking-[0.08em] uppercase">
           Installed apps
         </p>

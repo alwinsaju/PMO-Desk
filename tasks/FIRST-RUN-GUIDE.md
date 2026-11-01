@@ -14,7 +14,7 @@ confirm), [`ACCEPTANCE.md`](./ACCEPTANCE.md) (test evidence per criterion),
 
 ## 0. Before you start (one-time, about 3 minutes)
 
-1. **Make sure the Tasks engine is running the current code.** AI OS starts the engine by itself when the Tasks app
+1. **Make sure the Tasks engine is running the current code.** PMO Desk starts the engine by itself when the Tasks app
    opens (it shows a launch screen until the engine answers). The engine loads its code and the task manifests at
    start-up, so an engine that was already running before an update does not know the new tasks, the file upload,
    the questions form or the diff review. Restart it once:
@@ -26,7 +26,7 @@ confirm), [`ACCEPTANCE.md`](./ACCEPTANCE.md) (test evidence per criterion),
 2. **Check that the new code is loaded.** The Tasks app lists **Shift Roster** and **December Disconnect**, and
    pressing **Run** on either opens a dialog with file upload boxes. If Run just starts the task or the tasks are
    missing, the old engine is still running: repeat step 1. (Read-only check: the engine's address is at
-   `/api/tasks-engine/config` on the AI OS web address, for example http://localhost:3000/api/tasks-engine/config
+   `/api/tasks-engine/config` on the PMO Desk web address, for example http://localhost:3000/api/tasks-engine/config
    when running from the repo; open `<that address>/tasks` in a browser and the two tasks appear with an `inputs`
    list.)
 3. **Have these files ready** (any location; you upload them in the app):
@@ -47,8 +47,8 @@ confirm), [`ACCEPTANCE.md`](./ACCEPTANCE.md) (test evidence per criterion),
 
 ## 1. Where files go
 
-Paths below are relative to the repo's `tasks\` folder when AI OS runs from the repo (the tasks run in place). In the
-installed app the tasks run from a working copy under `%APPDATA%\AI OS\tasks-engine\tasks\<task>\`: the same
+Paths below are relative to the repo's `tasks\` folder when PMO Desk runs from the repo (the tasks run in place). In the
+installed app the tasks run from a working copy under `%APPDATA%\PMO Desk\tasks-engine\tasks\<task>\`: the same
 `input\`, `output\`, `config\` and `reference\` folders are there, and they are your data (never overwritten; task
 definitions are refreshed from the install at every engine start). Reinstalling keeps them.
 
@@ -256,13 +256,13 @@ Scripts print counts only (no names) in their log lines, so the Log tab is safe 
 
 ## 10. Getting fixes without reinstalling
 
-You should not need to reinstall AI OS when a bug is fixed:
+You should not need to reinstall PMO Desk when a bug is fixed:
 
 * **Screen/layout fixes** (the Tasks app, dialogs, menus): an installed build runs its bundled copy by default, so
   these need a reinstall unless you opt into a live mode. Set the user environment variable `AI_OS_MODE=live-dev`
   (the persistent way; the installer deletes `live-config.json` on every reinstall) and the app runs the UI from
   the project folder (`C:\Projects\AI OS`) and reloads when the code changes. The window title shows
-  `AI OS (live-dev: ...)` when this is active; `Help > About AI OS` explains it if it fell back to the bundled copy.
+  `PMO Desk (live-dev: ...)` when this is active; `Help > About PMO Desk` explains it if it fell back to the bundled copy.
   If a page looks stale, use `View > Reload`, or `Developer > Restart UI server` (this also restarts the Tasks engine).
 * **Task and engine fixes** (scripts, `task.json` manifests, the Tasks engine code) load when the engine
   restarts: click the **gear icon (top right) > Restart Tasks engine**. It first looks at the Tasks app state: if a
