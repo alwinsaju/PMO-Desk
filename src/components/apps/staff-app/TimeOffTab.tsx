@@ -2,26 +2,19 @@
 
 import { useMemo, useState } from "react";
 import {
-  ArrowCounterClockwiseIcon,
   CalendarPlusIcon,
-  CheckIcon,
-  EnvelopeSimpleIcon,
   MagnifyingGlassIcon,
-  TrashIcon,
   UsersThreeIcon,
   WarningCircleIcon,
-  XIcon,
 } from "@phosphor-icons/react";
-import { Button, IconButton, Input, Tooltip } from "@/components/ui";
+import { Button, Input } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { toast } from "@/lib/notifications/toastStore";
 import { formatRange, todayIso } from "@/lib/staff/dates";
 import { displayName } from "@/lib/staff/employees";
 import { useStaffStore } from "@/lib/staff/staffStore";
 import {
-  STATUS_META,
   TIME_OFF_META,
-  dayCount,
   filterTimeOff,
   timeOffStats,
   validateTimeOff,
@@ -29,7 +22,8 @@ import {
 import type { TimeOffRequest, TimeOffStatus } from "@/lib/staff/types";
 import { TERMS } from "@/lib/ui/terms";
 import { noSpellcheck } from "@/lib/ui/noSpellcheck";
-import { DASH, EmployeeAvatar, EmptyState, TONE_DOT, TonePill } from "./parts";
+import { EmptyState, TONE_DOT } from "./parts";
+import { TimeOffCard } from "./TimeOffCard";
 import { TimeOffDialog } from "./TimeOffDialog";
 import { ModelChip } from "./ModelChip";
 
@@ -41,15 +35,6 @@ const STATUS_TABS: { value: TimeOffStatus | ""; label: string }[] = [
 ];
 
 const CARD = "border-line bg-card rounded-card border";
-
-/** A reason cut to one line, with the whole text in a tooltip. */
-function Reason({ text, className }: { text: string; className?: string }) {
-  return (
-    <Tooltip label={text} className="max-w-xs break-words whitespace-normal">
-      <span className={cn("block truncate text-[13px]", className)}>{text}</span>
-    </Tooltip>
-  );
-}
 
 export function TimeOffTab({
   status,
@@ -243,123 +228,19 @@ export function TimeOffTab({
               : "Try another status or search."}
           </EmptyState>
         ) : (
-          <table className="border-line w-full border-separate border-spacing-0 overflow-hidden rounded-[var(--radius-card)] border text-left">
-            <thead className="bg-chip text-ink-muted text-[11.5px] tracking-[0.06em] uppercase">
-              <tr>
-                <th scope="col" className="px-4 py-2.5 font-bold">
-                  Employee
-                </th>
-                <th scope="col" className="px-3 py-2.5 font-bold">
-                  Type
-                </th>
-                <th scope="col" className="px-3 py-2.5 font-bold">
-                  Dates
-                </th>
-                <th scope="col" className="hidden px-3 py-2.5 font-bold @3xl:table-cell">
-                  Reason
-                </th>
-                <th scope="col" className="px-3 py-2.5 text-right font-bold">
-                  Status
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((request) => {
-                const person = byId.get(request.employeeId);
-                const who = person ? displayName(person) : "this person";
-                const meta = TIME_OFF_META[request.type];
-                const days = dayCount(request);
-                return (
-                  <tr key={request.id} className="border-line hover:bg-chip/60 group">
-                    <td className="border-line border-t px-4 py-2.5">
-                      {person ? (
-                        <div className="flex min-w-0 items-center gap-2.5">
-                          <EmployeeAvatar employee={person} size="sm" />
-                          <span className="text-ink truncate text-[13.5px] font-semibold">
-                            {displayName(person)}
-                          </span>
-                          {request.source === "email" && (
-                            <EnvelopeSimpleIcon
-                              size={14}
-                              aria-label="Filed from a PTO email"
-                              role="img"
-                              className="text-info shrink-0"
-                            />
-                          )}
-                        </div>
-                      ) : (
-                        DASH
-                      )}
-                    </td>
-                    <td className="border-line border-t px-3 py-2.5">
-                      <TonePill tone={meta.tone}>{meta.label}</TonePill>
-                    </td>
-                    <td className="border-line text-ink border-t px-3 py-2.5 text-[13px]">
-                      <span className="font-semibold whitespace-nowrap">
-                        {formatRange(request.startDate, request.endDate)}
-                      </span>
-                      <span className="text-ink-muted block text-[12px]">
-                        {days.working} working {days.working === 1 ? "day" : "days"}
-                      </span>
-                      {request.reason && (
-                        <Reason text={request.reason} className="mt-0.5 @3xl:hidden" />
-                      )}
-                    </td>
-                    <td className="border-line text-ink-muted hidden max-w-[220px] border-t px-3 py-2.5 text-[13px] @3xl:table-cell">
-                      {request.reason ? <Reason text={request.reason} /> : DASH}
-                    </td>
-                    <td className="border-line border-t px-3 py-2.5">
-                      <div className="flex items-center justify-end gap-1.5">
-                        {request.status === "pending" ? (
-                          <>
-                            <IconButton
-                              aria-label={`Reject ${who}'s request`}
-                              tooltip="Reject"
-                              variant="outline"
-                              size="sm"
-                              onClick={() => void decide(request, "rejected")}
-                            >
-                              <XIcon weight="bold" />
-                            </IconButton>
-                            <Button
-                              size="sm"
-                              onClick={() => void decide(request, "approved")}
-                            >
-                              <CheckIcon size={14} weight="bold" />
-                              Approve
-                            </Button>
-                          </>
-                        ) : (
-                          <>
-                            <TonePill tone={STATUS_META[request.status].tone}>
-                              {STATUS_META[request.status].label}
-                            </TonePill>
-                            <IconButton
-                              aria-label={`Move ${who}'s request back to pending`}
-                              tooltip="Move back to pending"
-                              size="sm"
-                              onClick={() => void decide(request, "pending")}
-                            >
-                              <ArrowCounterClockwiseIcon />
-                            </IconButton>
-                          </>
-                        )}
-                        <IconButton
-                          aria-label={`Delete ${who}'s request`}
-                          tooltip="Delete (you can undo it)"
-                          size="sm"
-                          className="hover:text-red"
-                          onClick={() => void remove(request)}
-                        >
-                          <TrashIcon />
-                        </IconButton>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <ul className="flex flex-col gap-2.5">
+            {rows.map((request) => (
+              <TimeOffCard
+                key={request.id}
+                request={request}
+                person={byId.get(request.employeeId)}
+                all={timeOff}
+                people={byId}
+                onDecide={(r, next) => void decide(r, next)}
+                onDelete={(r) => void remove(r)}
+              />
+            ))}
+          </ul>
         )}
       </div>
 
