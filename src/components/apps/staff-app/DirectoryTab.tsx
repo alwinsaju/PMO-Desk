@@ -9,6 +9,7 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react";
+import { motion, useReducedMotion } from "motion/react";
 import {
   CaretDownIcon,
   DownloadSimpleIcon,
@@ -28,10 +29,12 @@ import {
   Input,
 } from "@/components/ui";
 import { cn } from "@/lib/cn";
+import { easeEntrance } from "@/lib/motion";
 import { formatDate, relativeDays, todayIso } from "@/lib/staff/dates";
 import {
   NO_FILTER,
   SORT_LABELS,
+  defaultSortDir,
   distinctValues,
   displayName,
   employeesToCsv,
@@ -40,8 +43,10 @@ import {
   rollOffStatus,
   rosterStats,
   sortEmployees,
+  toggleSort,
   type DirectoryFilter,
   type SortKey,
+  type SortState,
 } from "@/lib/staff/employees";
 import { useStaffStore } from "@/lib/staff/staffStore";
 import { noSpellcheck } from "@/lib/ui/noSpellcheck";
@@ -65,7 +70,15 @@ import { EmployeeDialog } from "./EmployeeDialog";
 import { EmployeePane } from "./EmployeePane";
 import { ImportDialog } from "./ImportDialog";
 import { readSetting, writeSetting } from "./localSetting";
-import { DASH, EmployeeAvatar, EmptyState, FilterMenu, TonePill } from "./parts";
+import {
+  DASH,
+  EmployeeAvatar,
+  EmptyState,
+  FilterMenu,
+  LevelChip,
+  LocationChip,
+  SortableTh,
+} from "./parts";
 import { ResizeHandle } from "./ResizeHandle";
 import { useElementWidth } from "./useElementWidth";
 
@@ -86,7 +99,7 @@ export function DirectoryTab() {
   const status = useStaffStore((s) => s.status);
 
   const [filter, setFilter] = useState<DirectoryFilter>(NO_FILTER);
-  const [sort, setSort] = useState<SortKey>("name");
+  const [sort, setSort] = useState<SortState>({ key: "name", dir: "asc" });
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [paneOpen, setPaneOpen] = useState(false);
   const [dialog, setDialog] = useState<
@@ -101,6 +114,7 @@ export function DirectoryTab() {
     parsePaneWidth(readSetting(PANE_WIDTH_KEY)),
   );
   const layoutRef = useRef<HTMLDivElement>(null);
+  const reduceMotion = useReducedMotion() === true;
   const [tableAreaRef, tableWidth] = useElementWidth();
   const revealRef = useRef<string | null>(null);
 
@@ -117,7 +131,7 @@ export function DirectoryTab() {
     setPaneWidth(clampPaneWidth(width, layoutRef.current?.clientWidth));
 
   const shown = useMemo(
-    () => sortEmployees(filterEmployees(employees, filter), sort),
+    () => sortEmployees(filterEmployees(employees, filter), sort.key, sort.dir),
     [employees, filter, sort],
   );
   const stats = useMemo(() => rosterStats(employees, today), [employees, today]);
@@ -244,14 +258,17 @@ export function DirectoryTab() {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="sm" aria-label="Sort employees">
-                  Sort: {SORT_LABELS[sort]}
+                  Sort: {SORT_LABELS[sort.key]}
+                  {sort.dir !== defaultSortDir(sort.key) ? " (reversed)" : ""}
                   <CaretDownIcon size={12} weight="bold" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuRadioGroup
-                  value={sort}
-                  onValueChange={(v) => setSort(v as SortKey)}
+                  value={sort.key}
+                  onValueChange={(v) =>
+                    setSort({ key: v as SortKey, dir: defaultSortDir(v as SortKey) })
+                  }
                 >
                   {(Object.keys(SORT_LABELS) as SortKey[]).map((key) => (
                     <DropdownMenuRadioItem key={key} value={key}>
@@ -306,6 +323,8 @@ export function DirectoryTab() {
               keys={columns.keys}
               widths={columns.widths}
               onWidth={resizeColumn}
+              sort={sort}
+              onSort={(key) => setSort((s) => toggleSort(s, key))}
               onSelect={(id) => {
                 setSelectedId(id);
                 setPaneOpen(true);
@@ -342,7 +361,10 @@ export function DirectoryTab() {
       </section>
 
       {showPane && (
-        <aside
+        <motion.aside
+          initial={reduceMotion ? false : { opacity: 0, x: 28 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.22, ease: easeEntrance }}
           aria-label={`Details for ${displayName(selected)}`}
           style={{ "--pane-w": `${paneWidth}px` } as CSSProperties}
           className={cn(
@@ -372,7 +394,7 @@ export function DirectoryTab() {
               onClose={() => setPaneOpen(false)}
             />
           </div>
-        </aside>
+        </motion.aside>
       )}
 
       <EmployeeDialog
@@ -394,8 +416,18 @@ export function DirectoryTab() {
   );
 }
 
-const HEAD = "px-3 py-2 text-left text-[11.5px] font-bold tracking-[0.06em] uppercase";
-const CELL = "text-ink-soft truncate px-3 py-2 text-[13px]";
+/** The sort a column header triggers; the employee column sorts by name. */
+const SORT_OF_COLUMN: Record<DirectoryColumnKey, SortKey> = {
+  employee: "name",
+  level: "level",
+  op: "op",
+  offering: "offering",
+  team: "team",
+  location: "location",
+  rolloff: "rolloff",
+};
+
+const CELL = "text-ink-soft truncate px-3 py-1.5 text-[13px]";
 
 type RowContext = { employee: Employee; today: string };
 
@@ -405,8 +437,8 @@ const CELLS: Record<
   (ctx: RowContext) => ReactNode
 > = {
   level: ({ employee }) => (
-    <td className={CELL} title={employee.level}>
-      {employee.level || DASH}
+    <td className="truncate px-3 py-1.5">
+      <LevelChip level={employee.level} />
     </td>
   ),
   op: ({ employee }) => (
@@ -425,20 +457,14 @@ const CELLS: Record<
     </td>
   ),
   location: ({ employee }) => (
-    <td className="truncate px-3 py-2">
-      {employee.location ? (
-        <TonePill tone={employee.location === "Onshore" ? "accent" : "neutral"}>
-          {employee.location}
-        </TonePill>
-      ) : (
-        DASH
-      )}
+    <td className="truncate px-3 py-1.5">
+      <LocationChip location={employee.location} />
     </td>
   ),
   rolloff: ({ employee, today }) => {
     const rolloff = rollOffStatus(employee.rollOffDate, today);
     return (
-      <td className="truncate px-3 py-2 text-[13px]">
+      <td className="truncate px-3 py-1.5 text-[13px]">
         {employee.rollOffDate ? (
           <span
             className={cn(
@@ -467,6 +493,8 @@ function EmployeeTable({
   keys,
   widths,
   onWidth,
+  sort,
+  onSort,
 }: {
   employees: Employee[];
   selectedId: string | null;
@@ -476,6 +504,8 @@ function EmployeeTable({
   keys: readonly DirectoryColumnKey[];
   widths: ColumnWidths;
   onWidth: (key: DirectoryColumnKey, width: number) => void;
+  sort: SortState;
+  onSort: (key: SortKey) => void;
 }) {
   const columns = DIRECTORY_COLUMNS.filter((c) => keys.includes(c.key));
   return (
@@ -489,12 +519,14 @@ function EmployeeTable({
       <thead className="text-ink-muted bg-surface-elevated sticky top-0 z-[1]">
         <tr className="border-line border-b">
           {columns.map((column, index) => (
-            <th
+            <SortableTh
               key={column.key}
-              scope="col"
-              className={cn(HEAD, "relative", index === 0 && "pl-5")}
+              label={column.label}
+              sortKey={SORT_OF_COLUMN[column.key]}
+              sort={sort}
+              onSort={onSort}
+              className={index === 0 ? "pl-5" : undefined}
             >
-              <span className="block truncate">{column.label}</span>
               <ResizeHandle
                 label={`Resize the ${column.label} column`}
                 value={widths[column.key]}
@@ -504,7 +536,7 @@ function EmployeeTable({
                 onReset={() => onWidth(column.key, column.width)}
                 className="top-0 right-[-4px] h-full"
               />
-            </th>
+            </SortableTh>
           ))}
           <th scope="col" aria-hidden className="p-0" />
         </tr>
@@ -541,12 +573,12 @@ function EmployeeTable({
             >
               <td
                 className={cn(
-                  "py-2 pr-3 pl-5",
+                  "py-1.5 pr-3 pl-5",
                   active && "shadow-[inset_3px_0_0_var(--color-accent)]",
                 )}
               >
-                <div className="flex min-w-0 items-center gap-3">
-                  <EmployeeAvatar employee={employee} />
+                <div className="flex min-w-0 items-center gap-2.5">
+                  <EmployeeAvatar employee={employee} size="sm" />
                   <div className="min-w-0">
                     <p
                       className="text-ink truncate text-[13.5px] font-semibold"

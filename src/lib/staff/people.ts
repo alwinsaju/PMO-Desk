@@ -1,5 +1,5 @@
 /** People insights from the directory: end-of-contract alerts, birthdays and anniversaries, skills and an org chart. Pure. */
-import { daysBetween, isIsoDate, todayIso } from "./dates.ts";
+import { daysBetween, formatDayMonth, isIsoDate, todayIso } from "./dates.ts";
 import type { Employee } from "./types.ts";
 
 export const fullName = (e: Pick<Employee, "firstName" | "lastName">): string =>
@@ -72,6 +72,12 @@ export function monthDay(text: string): [number, number] | null {
   const mo = Number(m[1]);
   const d = Number(m[2]);
   return mo >= 1 && mo <= 12 && d >= 1 && d <= 31 ? [mo, d] : null;
+}
+
+/** "14 Mar" for a stored birthday ("03-14"); "" when there is none or it is unreadable. */
+export function birthdayLabel(text: string): string {
+  const parts = monthDay(text);
+  return parts ? formatDayMonth(`2000-${pad(parts[0])}-${pad(parts[1])}`) : "";
 }
 
 function nextOccurrence(mo: number, d: number, today: string): string | null {

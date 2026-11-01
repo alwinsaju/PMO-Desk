@@ -8,17 +8,39 @@ import {
   TrashIcon,
   UserMinusIcon,
 } from "@phosphor-icons/react";
-import { Button, Input } from "@/components/ui";
+import { Button, IconButton, Input } from "@/components/ui";
+import { cn } from "@/lib/cn";
 import { formatDate, todayIso } from "@/lib/staff/dates";
-import { NO_FILTER, displayName, filterEmployees } from "@/lib/staff/employees";
+import {
+  NO_FILTER,
+  defaultSortDir,
+  displayName,
+  filterEmployees,
+  sortEmployees,
+  type SortDir,
+  type SortKey,
+} from "@/lib/staff/employees";
 import { useRosterStore } from "@/lib/staff/rosterStore";
 import { useStaffPrefs } from "@/lib/staff/staffPrefsStore";
 import { useStaffStore } from "@/lib/staff/staffStore";
 import type { OffboardedEmployee } from "@/lib/staff/types";
 import { EmployeeDialog } from "./EmployeeDialog";
-import { ConfirmDialog, DASH, EmployeeAvatar, EmptyState } from "./parts";
+import {
+  ConfirmDialog,
+  DASH,
+  EmployeeAvatar,
+  EmptyState,
+  LevelChip,
+  LocationChip,
+  SortableTh,
+  TH_CLASS,
+} from "./parts";
 
-const HEAD = "px-3 py-2.5 text-left text-[11.5px] font-bold tracking-[0.06em] uppercase";
+type OffboardedSortKey = SortKey | "offboarded";
+type OffboardedSort = { key: OffboardedSortKey; dir: SortDir };
+
+const compareOffboarded = (a: OffboardedEmployee, b: OffboardedEmployee) =>
+  a.offboardedAt.localeCompare(b.offboardedAt);
 
 function offboardedOn(person: OffboardedEmployee): string {
   const at = new Date(person.offboardedAt);
@@ -33,18 +55,25 @@ export function OffboardedTab() {
   const restore = useStaffStore((s) => s.restore);
 
   const [query, setQuery] = useState("");
+  const [sort, setSort] = useState<OffboardedSort>({ key: "offboarded", dir: "desc" });
   const [editing, setEditing] = useState<OffboardedEmployee | null>(null);
   const [deleting, setDeleting] = useState<OffboardedEmployee | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const shown = useMemo(
-    () =>
-      filterEmployees(offboarded, { ...NO_FILTER, query }).sort((a, b) =>
-        b.offboardedAt.localeCompare(a.offboardedAt),
-      ),
-    [offboarded, query],
-  );
+  const shown = useMemo(() => {
+    const found = filterEmployees(offboarded, { ...NO_FILTER, query });
+    if (sort.key !== "offboarded") return sortEmployees(found, sort.key, sort.dir);
+    const sign = sort.dir === "desc" ? -1 : 1;
+    return [...found].sort((a, b) => sign * compareOffboarded(a, b));
+  }, [offboarded, query, sort]);
+
+  const onSort = (key: OffboardedSortKey) =>
+    setSort((s) =>
+      s.key === key
+        ? { key, dir: s.dir === "asc" ? "desc" : "asc" }
+        : { key, dir: key === "offboarded" ? "desc" : defaultSortDir(key) },
+    );
 
   if (status === "idle" || (status === "loading" && offboarded.length === 0)) {
     return <p className="text-ink-muted p-8 text-center text-sm">Loading…</p>;
@@ -79,7 +108,7 @@ export function OffboardedTab() {
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="@container flex min-h-0 flex-1 flex-col">
       {offboarded.length === 0 ? (
         <EmptyState icon={<UserMinusIcon size={26} />} title="No one has been offboarded">
           People you remove from the roster in the Directory are kept here. You can edit
@@ -118,28 +147,57 @@ export function OffboardedTab() {
                 Try a different name or email.
               </EmptyState>
             ) : (
-              <table className="w-full min-w-[820px] border-collapse text-left">
+              <table className="w-full border-collapse text-left">
                 <thead className="text-ink-muted bg-surface-elevated sticky top-0 z-[1]">
                   <tr className="border-line border-b">
-                    <th scope="col" className={`${HEAD} pl-5`}>
-                      Name
-                    </th>
-                    <th scope="col" className={HEAD}>
-                      Level
-                    </th>
-                    <th scope="col" className={HEAD}>
-                      Offering portfolio
-                    </th>
-                    <th scope="col" className={HEAD}>
-                      Team
-                    </th>
-                    <th scope="col" className={HEAD}>
-                      Roll-off
-                    </th>
-                    <th scope="col" className={HEAD}>
-                      Offboarded
-                    </th>
-                    <th scope="col" className={`${HEAD} pr-5 text-right`}>
+                    <SortableTh
+                      label="Employee"
+                      sortKey="name"
+                      sort={sort}
+                      onSort={onSort}
+                      className="pl-5"
+                    />
+                    <SortableTh
+                      label="Level"
+                      sortKey="level"
+                      sort={sort}
+                      onSort={onSort}
+                    />
+                    <SortableTh
+                      label="Offering portfolio"
+                      sortKey="op"
+                      sort={sort}
+                      onSort={onSort}
+                      className="hidden @3xl:table-cell"
+                    />
+                    <SortableTh
+                      label="Team"
+                      sortKey="team"
+                      sort={sort}
+                      onSort={onSort}
+                      className="hidden @2xl:table-cell"
+                    />
+                    <SortableTh
+                      label="Location"
+                      sortKey="location"
+                      sort={sort}
+                      onSort={onSort}
+                      className="hidden @4xl:table-cell"
+                    />
+                    <SortableTh
+                      label="Roll-off"
+                      sortKey="rolloff"
+                      sort={sort}
+                      onSort={onSort}
+                      className="hidden @4xl:table-cell"
+                    />
+                    <SortableTh
+                      label="Offboarded"
+                      sortKey="offboarded"
+                      sort={sort}
+                      onSort={onSort}
+                    />
+                    <th scope="col" className={cn(TH_CLASS, "pr-5 text-right")}>
                       Actions
                     </th>
                   </tr>
@@ -147,9 +205,9 @@ export function OffboardedTab() {
                 <tbody>
                   {shown.map((person) => (
                     <tr key={person.id} className="border-line hover:bg-chip border-b">
-                      <td className="py-2.5 pr-3 pl-5">
-                        <div className="flex min-w-0 items-center gap-3">
-                          <EmployeeAvatar employee={person} />
+                      <td className="py-1.5 pr-3 pl-5">
+                        <div className="flex min-w-0 items-center gap-2.5">
+                          <EmployeeAvatar employee={person} size="sm" />
                           <div className="min-w-0">
                             <p className="text-ink truncate text-[13.5px] font-semibold">
                               {displayName(person)}
@@ -160,34 +218,27 @@ export function OffboardedTab() {
                           </div>
                         </div>
                       </td>
-                      <td className="text-ink-soft px-3 py-2.5 text-[13px]">
-                        {person.level || DASH}
+                      <td className="px-3 py-1.5">
+                        <LevelChip level={person.level} />
                       </td>
-                      <td className="text-ink-soft px-3 py-2.5 text-[13px]">
+                      <td className="text-ink-soft hidden px-3 py-1.5 text-[13px] @3xl:table-cell">
                         {person.op || DASH}
                       </td>
-                      <td className="text-ink-soft px-3 py-2.5 text-[13px]">
+                      <td className="text-ink-soft hidden px-3 py-1.5 text-[13px] @2xl:table-cell">
                         {person.team || DASH}
                       </td>
-                      <td className="text-ink-soft px-3 py-2.5 text-[13px] whitespace-nowrap">
+                      <td className="hidden px-3 py-1.5 @4xl:table-cell">
+                        <LocationChip location={person.location} />
+                      </td>
+                      <td className="text-ink-soft hidden px-3 py-1.5 text-[13px] whitespace-nowrap @4xl:table-cell">
                         {formatDate(person.rollOffDate) || DASH}
                       </td>
-                      <td className="text-ink-soft px-3 py-2.5 text-[13px] whitespace-nowrap">
+                      <td className="text-ink-soft px-3 py-1.5 text-[13px] whitespace-nowrap">
                         {offboardedOn(person) || DASH}
                       </td>
-                      <td className="py-2.5 pr-5 pl-3">
-                        <div className="flex justify-end gap-1.5">
+                      <td className="py-1.5 pr-5 pl-3">
+                        <div className="flex items-center justify-end gap-1.5">
                           <Button
-                            variant="outline"
-                            size="sm"
-                            aria-label={`Edit ${displayName(person)}`}
-                            onClick={() => setEditing(person)}
-                          >
-                            <PencilSimpleIcon size={14} weight="bold" />
-                            Edit
-                          </Button>
-                          <Button
-                            variant="outline"
                             size="sm"
                             aria-label={`Restore ${displayName(person)} to the roster`}
                             onClick={() => void bringBack(person)}
@@ -195,19 +246,27 @@ export function OffboardedTab() {
                             <ArrowCounterClockwiseIcon size={14} weight="bold" />
                             Restore
                           </Button>
-                          <Button
-                            variant="ghost"
+                          <IconButton
+                            aria-label={`Edit ${displayName(person)}`}
+                            tooltip="Edit"
+                            variant="outline"
                             size="sm"
-                            className="text-red"
+                            onClick={() => setEditing(person)}
+                          >
+                            <PencilSimpleIcon />
+                          </IconButton>
+                          <IconButton
                             aria-label={`Delete ${displayName(person)} permanently`}
+                            tooltip="Delete permanently"
+                            size="sm"
+                            className="hover:text-red"
                             onClick={() => {
                               setError(null);
                               setDeleting(person);
                             }}
                           >
-                            <TrashIcon size={14} weight="bold" />
-                            Delete
-                          </Button>
+                            <TrashIcon />
+                          </IconButton>
                         </div>
                       </td>
                     </tr>

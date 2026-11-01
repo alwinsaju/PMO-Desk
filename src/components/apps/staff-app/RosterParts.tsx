@@ -389,62 +389,104 @@ export function CellMenu({
   );
 }
 
-const LEGEND: readonly { hue: Hue; short: string; label: string; dashed?: boolean }[] = [
+type LegendItem = { hue: Hue; short: string; label: string; dashed?: boolean };
+
+const SHIFT_LEGEND: readonly LegendItem[] = [
+  { hue: "s1", short: "S1", label: "Shift 1" },
+  { hue: "s2", short: "S2", label: "Shift 2" },
+  { hue: "s3", short: "S3", label: "Shift 3" },
+  { hue: "s4", short: "S4", label: "Shift 4" },
+  { hue: "s5", short: "S5", label: "Shift 5" },
+  { hue: "ns", short: "NS", label: "Night shift" },
+];
+
+const DAY_LEGEND: readonly LegendItem[] = [
   { hue: "hol", short: "HOL", label: "Holiday", dashed: true },
-  { hue: "leave", short: "PTO", label: "PTO / sick (from Time off)", dashed: true },
-  { hue: "temp", short: "T", label: "Temp PTO", dashed: true },
+  { hue: "leave", short: "PTO", label: "Leave", dashed: true },
   { hue: "comp", short: "COMP", label: "Comp off", dashed: true },
   { hue: "oc", short: "OC", label: "On-call", dashed: true },
-  { hue: "swap", short: "⇄", label: "Swapped shift" },
+  { hue: "swap", short: "⇄", label: "Swapped" },
   { hue: "custom", short: "9a", label: "Custom hours" },
 ];
 
+function Swatch({ item }: { item: LegendItem }) {
+  return (
+    <li className="flex shrink-0 items-center gap-1.5">
+      <span
+        className={cn(
+          "inline-block h-3.5 min-w-6 rounded-sm px-1 text-center text-[9px] leading-[14px] font-bold",
+          hueClass(item.hue),
+          item.dashed && "border border-dashed border-current/40",
+        )}
+      >
+        {item.short}
+      </span>
+      {item.label}
+    </li>
+  );
+}
+
+const LEGEND_SPAN = "inline-block h-3.5 w-6 shrink-0 rounded-sm";
+
+/** One line that explains the grid's colours and marks; the hours of each team's shifts are a toggle. */
 export function Legend({ open, onToggle }: { open: boolean; onToggle: () => void }) {
   return (
-    <div className="border-line text-ink-muted border-t px-5 py-1.5 text-[12px]">
+    <div className="border-line text-ink-muted flex items-center gap-3 border-t px-5 py-1.5 text-[12px]">
       <button
         type="button"
         aria-expanded={open}
-        aria-controls="roster-legend"
+        aria-label="Show each team's shift hours"
         onClick={onToggle}
-        className="text-ink-soft hover:text-ink focus-ring rounded-control -ml-1.5 flex items-center gap-1.5 px-1.5 py-1 font-semibold"
+        className={cn(
+          "text-ink-soft hover:text-ink focus-ring rounded-control flex shrink-0 items-center gap-1.5 px-1.5 py-1 font-semibold",
+          open && "bg-chip",
+        )}
       >
         <CaretRightIcon
           size={12}
           weight="bold"
           className={cn("transition-transform", open && "rotate-90")}
         />
-        Legend and shift hours
+        Shift hours
       </button>
-      {open && (
-        <ul
-          id="roster-legend"
-          aria-label="Legend"
-          className="flex flex-wrap items-center gap-x-5 gap-y-1.5 pt-1.5 pb-1"
-        >
-          <li className="text-ink-faint">
-            Each team&apos;s shifts and hours are listed above its people.
-          </li>
-          {LEGEND.map((item) => (
-            <li key={item.label} className="flex items-center gap-1.5">
-              <span
-                className={cn(
-                  "inline-block h-3.5 min-w-6 rounded-sm px-1 text-center text-[9px] leading-[14px] font-bold",
-                  hueClass(item.hue),
-                  item.dashed && "border border-dashed border-current/40",
-                )}
-              >
-                {item.short}
-              </span>
-              {item.label}
-            </li>
-          ))}
-          <li className="flex items-center gap-1.5">
-            <span className="border-line inline-block h-3.5 w-6 rounded-sm border bg-[color-mix(in_srgb,var(--rh-hol-bg)_40%,transparent)]" />
-            Day off for that person&apos;s location
-          </li>
-        </ul>
-      )}
+      <ul
+        aria-label="Legend"
+        className="scroll-thin flex min-w-0 flex-1 items-center gap-x-4 overflow-x-auto py-0.5 whitespace-nowrap"
+      >
+        {SHIFT_LEGEND.map((item) => (
+          <Swatch key={item.label} item={item} />
+        ))}
+        <li aria-hidden className="bg-line-strong h-3.5 w-px shrink-0" />
+        {DAY_LEGEND.map((item) => (
+          <Swatch key={item.label} item={item} />
+        ))}
+        <li className="flex shrink-0 items-center gap-1.5">
+          <span
+            className={cn(
+              LEGEND_SPAN,
+              "text-amber border border-dashed border-current [background-image:repeating-linear-gradient(135deg,color-mix(in_srgb,var(--color-amber)_45%,transparent)_0_2px,transparent_2px_6px)]",
+            )}
+          />
+          Leave waiting for approval
+        </li>
+        <li className="flex shrink-0 items-center gap-1.5">
+          <span className={cn(LEGEND_SPAN, "bg-chip border-line border")} />
+          Weekend
+        </li>
+        <li className="flex shrink-0 items-center gap-1.5">
+          <span
+            className={cn(
+              LEGEND_SPAN,
+              "border-line border bg-[color-mix(in_srgb,var(--rh-hol-bg)_40%,transparent)]",
+            )}
+          />
+          Day off for that location
+        </li>
+        <li className="flex shrink-0 items-center gap-1.5">
+          <span className={cn(LEGEND_SPAN, "bg-accent-soft border-accent/50 border")} />
+          Today
+        </li>
+      </ul>
     </div>
   );
 }

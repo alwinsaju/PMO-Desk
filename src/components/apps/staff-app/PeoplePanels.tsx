@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { EnvelopeSimpleIcon } from "@phosphor-icons/react";
 import { Button, Input } from "@/components/ui";
+import { cn } from "@/lib/cn";
 import { toast } from "@/lib/notifications/toastStore";
 import { buildMailto } from "@/lib/pmo/chaser";
 import {
@@ -37,6 +38,8 @@ import { useTemplateText } from "../templates-app/useTemplateText";
 import { EmployeeAvatar, PersonAvatar } from "./parts";
 import { noSpellcheck } from "@/lib/ui/noSpellcheck";
 import { DateField } from "./DateField";
+import { BarChartCard, DonutCard } from "./DistributionCharts";
+import { distribution, tagWeight } from "@/lib/staff/insightsData";
 
 /** Roll-off and contract ends in the next 30 days, birthdays and anniversaries in the next 14. */
 export function PeoplePanel() {
@@ -47,8 +50,22 @@ export function PeoplePanel() {
   const today = todayIso();
   const alerts = endAlerts(employees, today);
   const occasions = upcomingOccasions(employees, today, 14);
+  const byLocation = useMemo(() => distribution(employees, "location"), [employees]);
+  const byLevel = useMemo(() => distribution(employees, "level", 8), [employees]);
+  const byTeam = useMemo(() => distribution(employees, "team", 8), [employees]);
   return (
-    <div className="flex flex-col gap-5" data-testid="people-panel">
+    <div className="@container flex flex-col gap-5" data-testid="people-panel">
+      {employees.length > 0 && (
+        <section
+          aria-label="Distribution"
+          className="grid items-start gap-3 @2xl:grid-cols-2 @5xl:grid-cols-3"
+          data-testid="distributions"
+        >
+          <DonutCard title="By location" slices={byLocation} total={employees.length} />
+          <BarChartCard title="By level" slices={byLevel} />
+          <BarChartCard title="By team" slices={byTeam} />
+        </section>
+      )}
       <section aria-label="Ending soon" className="flex flex-col gap-1.5">
         <h3 className="text-ink text-[14px] font-bold">Ending in the next 30 days</h3>
         {alerts.length === 0 ? (
@@ -130,6 +147,13 @@ export function PeoplePanel() {
   );
 }
 
+const SKILL_WEIGHT = {
+  1: "bg-chip text-ink-soft text-[11.5px]",
+  2: "bg-chip-strong text-ink text-[12.5px]",
+  3: "bg-accent-soft text-accent-ink text-[13.5px]",
+  4: "bg-accent-soft text-accent-ink text-[15px]",
+} as const;
+
 /** Who has which skills, and who can cover a skill on a day (people on approved leave are listed apart). */
 export function SkillsPanel() {
   const employees = useStaffStore((s) => s.employees);
@@ -137,6 +161,9 @@ export function SkillsPanel() {
   const [query, setQuery] = useState("");
   const [day, setDay] = useState(todayIso());
   const matrix = useMemo(() => skillsMatrix(employees), [employees]);
+  const counts = matrix.skills.map((s) => s.count);
+  const minCount = Math.min(...counts);
+  const maxCount = Math.max(...counts);
   const away = new Set(
     employees.filter((e) => leaveOn(timeOff, e.id, day)).map((e) => e.id),
   );
@@ -171,39 +198,93 @@ export function SkillsPanel() {
           No skills are recorded yet. Add them in a person&apos;s profile.
         </p>
       ) : (
-        <div className="scroll-thin overflow-auto">
-          <table className="text-[12px]" data-testid="skills-matrix">
-            <thead>
-              <tr>
-                <th className="text-ink-muted px-2 py-1 text-left font-semibold">
-                  Person
-                </th>
-                {matrix.skills.map((s) => (
-                  <th
-                    key={s.skill}
-                    className="text-ink-muted px-2 py-1 text-left font-semibold"
-                  >
-                    {s.skill} ({s.count})
+        <>
+          <ul
+            aria-label="Skills by how many people have them"
+            className="flex flex-wrap items-baseline gap-2"
+            data-testid="skill-cloud"
+          >
+            {matrix.skills.map((s) => (
+              <li key={s.skill}>
+                <button
+                  type="button"
+                  aria-pressed={query.trim().toLowerCase() === s.skill.toLowerCase()}
+                  title={`Who can cover ${s.skill}`}
+                  onClick={() =>
+                    setQuery(
+                      query.trim().toLowerCase() === s.skill.toLowerCase() ? "" : s.skill,
+                    )
+                  }
+                  className={cn(
+                    "rounded-chip focus-ring px-2.5 py-1 font-semibold transition-colors",
+                    SKILL_WEIGHT[tagWeight(s.count, minCount, maxCount)],
+                    "aria-pressed:bg-accent aria-pressed:text-accent-contrast",
+                  )}
+                >
+                  {s.skill}
+                  <span className="ml-1.5 text-[11px] opacity-70">{s.count}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+          <div className="border-line bg-card rounded-card scroll-thin max-h-[60vh] overflow-auto border">
+            <table
+              className="border-separate border-spacing-0 text-[12px]"
+              data-testid="skills-matrix"
+            >
+              <thead>
+                <tr>
+                  <th className="text-ink-muted bg-card border-line sticky top-0 left-0 z-[2] border-b px-3 py-2 text-left font-semibold">
+                    Person
                   </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {matrix.rows.map((r) => (
-                <tr key={r.employee.id} className="border-line border-t">
-                  <td className="text-ink px-2 py-1">
-                    <PersonName name={fullName(r.employee)} employeeId={r.employee.id} />
-                  </td>
-                  {r.has.map((has, i) => (
-                    <td key={i} className="px-2 py-1 text-center">
-                      {has ? "●" : ""}
-                    </td>
+                  {matrix.skills.map((s) => (
+                    <th
+                      key={s.skill}
+                      scope="col"
+                      title={`${s.skill}: ${s.count}`}
+                      className="text-ink-muted bg-card border-line sticky top-0 z-[1] h-[110px] border-b px-1 align-bottom font-semibold"
+                    >
+                      <span className="inline-block max-h-[100px] rotate-180 truncate [writing-mode:vertical-rl]">
+                        {s.skill} ({s.count})
+                      </span>
+                    </th>
                   ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {matrix.rows.map((r) => (
+                  <tr key={r.employee.id} className="hover:bg-chip/60">
+                    <th
+                      scope="row"
+                      className="text-ink bg-card border-line sticky left-0 z-[1] border-b px-3 py-1.5 text-left font-normal whitespace-nowrap"
+                    >
+                      <PersonName
+                        name={fullName(r.employee)}
+                        employeeId={r.employee.id}
+                      />
+                    </th>
+                    {r.has.map((has, i) => (
+                      <td
+                        key={i}
+                        className="border-line border-b px-1 py-1.5 text-center"
+                      >
+                        {has ? (
+                          <>
+                            <span
+                              aria-hidden
+                              className="bg-accent inline-block h-3 w-3 rounded-full"
+                            />
+                            <span className="sr-only">Has {matrix.skills[i].skill}</span>
+                          </>
+                        ) : null}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </div>
   );

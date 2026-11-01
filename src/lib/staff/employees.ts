@@ -56,6 +56,10 @@ export function displayName(
   return fullName(employee) || employee.deloitteEmail;
 }
 
+/** Opens a Teams chat with the person (the web link also opens the Teams app). */
+export const teamsChatUrl = (email: string): string =>
+  `https://teams.microsoft.com/l/chat/0/0?users=${encodeURIComponent(email.trim())}`;
+
 export function initials(
   employee: Pick<Employee, "firstName" | "lastName" | "deloitteEmail">,
 ): string {
@@ -625,39 +629,64 @@ export function filterEmployees<T extends Employee>(
   });
 }
 
-export type SortKey = "name" | "level" | "rolloff" | "recent";
+export type SortKey =
+  "name" | "level" | "op" | "offering" | "team" | "location" | "rolloff" | "recent";
+export type SortDir = "asc" | "desc";
+export interface SortState {
+  key: SortKey;
+  dir: SortDir;
+}
 
 export const SORT_LABELS: Record<SortKey, string> = {
   name: "Name A–Z",
   level: "Level",
+  op: "Offering portfolio",
+  offering: "Offering",
+  team: "Team",
+  location: "Location",
   rolloff: "Roll-off (soonest)",
   recent: "Recently added",
 };
 
+const SORT_VALUE: Record<SortKey, (e: Employee) => string> = {
+  name: displayName,
+  level: (e) => e.level,
+  op: (e) => e.op,
+  offering: (e) => e.offering,
+  team: (e) => e.team,
+  location: (e) => e.location,
+  rolloff: (e) => e.rollOffDate,
+  recent: (e) => e.createdAt,
+};
+
+/** The direction a column starts in: A–Z and soonest first, but newest first for "recent". */
+export const defaultSortDir = (key: SortKey): SortDir =>
+  key === "recent" ? "desc" : "asc";
+
+/** Clicking the sorted column flips it; clicking another starts in that column's own direction. */
+export function toggleSort(current: SortState, key: SortKey): SortState {
+  if (current.key === key) return { key, dir: current.dir === "asc" ? "desc" : "asc" };
+  return { key, dir: defaultSortDir(key) };
+}
+
 const byName = (a: Employee, b: Employee) =>
   displayName(a).localeCompare(displayName(b), undefined, { sensitivity: "base" });
 
-export function sortEmployees(employees: readonly Employee[], key: SortKey): Employee[] {
-  const list = [...employees];
-  switch (key) {
-    case "level":
-      return list.sort(
-        (a, b) =>
-          (a.level || "\uffff").localeCompare(b.level || "\uffff", undefined, {
-            numeric: true,
-          }) || byName(a, b),
-      );
-    case "rolloff":
-      return list.sort(
-        (a, b) =>
-          (a.rollOffDate || "9999").localeCompare(b.rollOffDate || "9999") ||
-          byName(a, b),
-      );
-    case "recent":
-      return list.sort((a, b) => b.createdAt.localeCompare(a.createdAt) || byName(a, b));
-    default:
-      return list.sort(byName);
-  }
+/** People with no value in the column always come last, in either direction. */
+export function sortEmployees<T extends Employee>(
+  employees: readonly T[],
+  key: SortKey,
+  dir: SortDir = defaultSortDir(key),
+): T[] {
+  const value = SORT_VALUE[key];
+  const sign = dir === "desc" ? -1 : 1;
+  return [...employees].sort((a, b) => {
+    const x = value(a).trim();
+    const y = value(b).trim();
+    if (!x !== !y) return x ? -1 : 1;
+    const order = x.localeCompare(y, undefined, { numeric: true, sensitivity: "base" });
+    return sign * order || byName(a, b);
+  });
 }
 
 /** Distinct non-empty values of a text field, sorted. */

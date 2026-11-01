@@ -2,19 +2,13 @@
 
 import { useMemo, useRef, useState } from "react";
 import { FileXlsIcon, WarningCircleIcon } from "@phosphor-icons/react";
-import {
-  Button,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogTitle,
-} from "@/components/ui";
+import { Button, Dialog, DialogContent } from "@/components/ui";
 import { parseRosterRows, planImport, type ImportResult } from "@/lib/staff/employees";
 import { employeeTemplate } from "@/lib/staff/importTemplates";
 import { useStaffStore } from "@/lib/staff/staffStore";
 import { TemplateDownloadButton } from "../TemplateDownloadButton";
 import { readWorkbookSheets } from "../tasks-app/readWorkbook";
+import { DialogHead, DialogScroll, FormSection, StickyFooter } from "./FormParts";
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 
@@ -28,7 +22,7 @@ export function ImportDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       {open && (
-        <DialogContent className="max-w-lg">
+        <DialogContent className="flex max-h-[90vh] max-w-3xl flex-col gap-0 overflow-hidden p-0">
           <ImportBody onClose={() => onOpenChange(false)} />
         </DialogContent>
       )}
@@ -89,89 +83,107 @@ function ImportBody({ onClose }: { onClose: () => void }) {
   const count = plan?.upserts.length ?? 0;
   return (
     <>
-      <DialogTitle>Import from Excel</DialogTitle>
-      <DialogDescription>
-        Use the Staff roster template (download a blank one below). People are matched by
-        Deloitte email: existing ones are updated with the cells that have a value, new
-        ones are added. Everyone added or entered by hand is then looked up in Microsoft
-        365, which fills in name, level, offering portfolio, home office, phone and the
-        picture.
-      </DialogDescription>
+      <DialogHead
+        title="Import from Excel"
+        description="Use the Staff roster template (download a blank one below). People are matched by Deloitte email: existing ones are updated with the cells that have a value, new ones are added. Everyone added or entered by hand is then looked up in Microsoft 365, which fills in name, level, offering portfolio, home office, phone and the picture."
+      />
+      <DialogScroll>
+        <div className="grid gap-5 sm:grid-cols-2 [&>fieldset]:mt-0">
+          <FormSection title="1. Choose the file">
+            <div className="flex flex-col gap-4 sm:col-span-2">
+              <button
+                type="button"
+                onClick={() => fileRef.current?.click()}
+                className="border-line-strong hover:bg-chip transition-ui rounded-card focus-ring flex items-center gap-3 border border-dashed px-4 py-4 text-left"
+              >
+                <FileXlsIcon size={28} className="text-accent-ink shrink-0" />
+                <span className="min-w-0">
+                  <span className="text-ink block truncate text-[14px] font-semibold">
+                    {fileName || "Choose a workbook (.xlsx)"}
+                  </span>
+                  <span className="text-ink-muted text-[12.5px]">
+                    {busy && !result
+                      ? "Reading…"
+                      : "Read on this computer; it is not uploaded anywhere."}
+                  </span>
+                </span>
+              </button>
+              <input
+                ref={fileRef}
+                type="file"
+                accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                className="hidden"
+                onChange={(e) => {
+                  void read(e.target.files?.[0]);
+                  e.target.value = "";
+                }}
+              />
+              <TemplateDownloadButton
+                fileName="staff-roster-template.xlsx"
+                sheets={employeeTemplate}
+              />
+            </div>
+          </FormSection>
 
-      <div className="mt-5 flex flex-col gap-4">
-        <button
-          type="button"
-          onClick={() => fileRef.current?.click()}
-          className="border-line-strong hover:bg-chip transition-ui rounded-card flex items-center gap-3 border border-dashed px-4 py-4 text-left"
-        >
-          <FileXlsIcon size={28} className="text-accent-ink shrink-0" />
-          <span className="min-w-0">
-            <span className="text-ink block truncate text-[14px] font-semibold">
-              {fileName || "Choose a workbook (.xlsx)"}
-            </span>
-            <span className="text-ink-muted text-[12.5px]">
-              {busy && !result
-                ? "Reading…"
-                : "Read on this computer; it is not uploaded anywhere."}
-            </span>
-          </span>
-        </button>
-        <input
-          ref={fileRef}
-          type="file"
-          accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-          className="hidden"
-          onChange={(e) => {
-            void read(e.target.files?.[0]);
-            e.target.value = "";
-          }}
-        />
-        <TemplateDownloadButton
-          fileName="staff-roster-template.xlsx"
-          sheets={employeeTemplate}
-        />
-
-        {plan && result && (
-          <div className="bg-chip text-ink-soft rounded-card flex flex-col gap-1.5 px-4 py-3 text-[13px]">
-            <p className="text-ink font-semibold">
-              {plan.added} to add, {plan.updated} to update
-            </p>
-            {result.skipped.length > 0 && (
-              <>
-                <p>
-                  {result.skipped.length} row{result.skipped.length === 1 ? "" : "s"}{" "}
-                  skipped:
-                </p>
-                <ul className="text-ink-muted list-disc pl-5 text-[12.5px]">
-                  {result.skipped.slice(0, 5).map((skip) => (
-                    <li key={skip.row}>
-                      Row {skip.row}: {skip.reason}
-                    </li>
-                  ))}
-                  {result.skipped.length > 5 && (
-                    <li>and {result.skipped.length - 5} more</li>
+          <FormSection title="2. Check the result">
+            <div className="flex flex-col gap-3 sm:col-span-2" aria-live="polite">
+              {plan && result ? (
+                <>
+                  <dl className="grid grid-cols-3 gap-2">
+                    {[
+                      ["To add", plan.added, "text-success"],
+                      ["To update", plan.updated, "text-info"],
+                      ["Skipped", result.skipped.length, "text-amber"],
+                    ].map(([label, value, tone]) => (
+                      <div
+                        key={label as string}
+                        className="bg-chip rounded-card px-3 py-2"
+                      >
+                        <dt className="text-ink-muted text-[12px]">{label}</dt>
+                        <dd className={`text-[22px] leading-tight font-bold ${tone}`}>
+                          {value}
+                        </dd>
+                      </div>
+                    ))}
+                  </dl>
+                  {result.skipped.length > 0 && (
+                    <ul className="text-ink-muted list-disc pl-5 text-[12.5px]">
+                      {result.skipped.slice(0, 5).map((skip) => (
+                        <li key={skip.row}>
+                          Row {skip.row}: {skip.reason}
+                        </li>
+                      ))}
+                      {result.skipped.length > 5 && (
+                        <li>and {result.skipped.length - 5} more</li>
+                      )}
+                    </ul>
                   )}
-                </ul>
-              </>
-            )}
-          </div>
-        )}
-        {error && (
-          <p role="alert" className="text-red flex items-start gap-2 text-[13px]">
-            <WarningCircleIcon size={16} className="mt-px shrink-0" />
-            {error}
-          </p>
-        )}
-      </div>
+                </>
+              ) : (
+                <p className="text-ink-muted text-[13px]">
+                  Choose a workbook to see how many people will be added or updated, and
+                  which rows are skipped.
+                </p>
+              )}
+              {error && (
+                <p role="alert" className="text-red flex items-start gap-2 text-[13px]">
+                  <WarningCircleIcon size={16} className="mt-px shrink-0" />
+                  {error}
+                </p>
+              )}
+            </div>
+          </FormSection>
+        </div>
+      </DialogScroll>
 
-      <DialogFooter>
+      <StickyFooter>
         <Button variant="ghost" onClick={onClose}>
           Cancel
         </Button>
         <Button disabled={count === 0 || busy} onClick={() => void run()}>
           {count > 0 ? `Import ${count} ${count === 1 ? "person" : "people"}` : "Import"}
         </Button>
-      </DialogFooter>
+      </StickyFooter>
     </>
   );
 }

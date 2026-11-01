@@ -116,6 +116,12 @@ Never leave a pane blank, and never end on a dead-end message.
   input: `addedHeadline(3, "person", "people")`, then groups such as "Already on
   the roster, skipped" and "Not an email address" (red). It is the Staff "Add
   employees" pattern, extracted.
+- **Long dialogs** keep their actions in view: a heading, a body that scrolls
+  and a footer separated by a hairline (`DialogContent` with `p-0`, then the
+  Staff `DialogHead` / `DialogScroll` / `StickyFooter` in
+  `staff-app/FormParts.tsx`). Forms inside are two columns from `sm` up, grouped
+  under section headings (`FormSection`); a field with rules uses
+  `ValidatedInput` for the tick or warning icon next to the value.
 - **Spell-check off** on search, email, ID and similar fields:
   `<Input {...noSpellcheck} />` (`@/lib/ui/noSpellcheck`).
 - Validate on the server too; the client message is a courtesy.

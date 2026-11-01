@@ -1,7 +1,12 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { CaretDownIcon, WarningCircleIcon } from "@phosphor-icons/react";
+import {
+  CaretDownIcon,
+  CaretUpDownIcon,
+  CaretUpIcon,
+  WarningCircleIcon,
+} from "@phosphor-icons/react";
 import {
   Avatar,
   Button,
@@ -17,7 +22,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui";
 import { cn } from "@/lib/cn";
-import { initials, photoUrl } from "@/lib/staff/employees";
+import { initials, photoUrl, type SortDir } from "@/lib/staff/employees";
 import type { Hue, Tone } from "@/lib/staff/rosterCatalog";
 import type { Employee } from "@/lib/staff/types";
 
@@ -63,6 +68,87 @@ export function TonePill({
     >
       {children}
     </span>
+  );
+}
+
+/** Onshore / Offshore as a chip with a dot, so it reads at a glance down a column. */
+export function LocationChip({ location }: { location: string }) {
+  if (!location) return DASH;
+  const onshore = location === "Onshore";
+  return (
+    <TonePill tone={onshore ? "accent" : "info"}>
+      <span
+        aria-hidden
+        className={cn("h-1.5 w-1.5 rounded-full", onshore ? "bg-accent" : "bg-info")}
+      />
+      {location}
+    </TonePill>
+  );
+}
+
+export function LevelChip({ level }: { level: string }) {
+  if (!level) return DASH;
+  return (
+    <span
+      title={level}
+      className="bg-chip text-ink-soft rounded-chip inline-flex h-6 max-w-full items-center px-2.5 text-[12px] leading-none font-semibold"
+    >
+      <span className="truncate">{level}</span>
+    </span>
+  );
+}
+
+export const TH_CLASS =
+  "px-3 py-2 text-left text-[11.5px] font-bold tracking-[0.06em] uppercase";
+
+/** A column header that sorts its table when clicked and says which way it is sorted. */
+export function SortableTh<K extends string>({
+  label,
+  sortKey,
+  sort,
+  onSort,
+  className,
+  children,
+}: {
+  label: string;
+  sortKey: K;
+  sort: { key: K; dir: SortDir };
+  onSort: (key: K) => void;
+  className?: string;
+  /** Anything that sits on the header's edge, such as a resize handle. */
+  children?: ReactNode;
+}) {
+  const active = sort.key === sortKey;
+  const Caret = !active
+    ? CaretUpDownIcon
+    : sort.dir === "asc"
+      ? CaretUpIcon
+      : CaretDownIcon;
+  return (
+    <th
+      scope="col"
+      aria-sort={active ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}
+      className={cn(TH_CLASS, "relative", className)}
+    >
+      <button
+        type="button"
+        onClick={() => onSort(sortKey)}
+        title={`Sort by ${label.toLowerCase()}`}
+        className={cn(
+          "focus-ring rounded-control hover:text-ink -ml-1 inline-flex max-w-full items-center gap-1 px-1 py-0.5 tracking-[inherit] uppercase",
+          active && "text-ink",
+        )}
+      >
+        <span className="truncate">{label}</span>
+        <Caret
+          size={11}
+          weight="bold"
+          aria-hidden
+          className={cn("shrink-0", active ? "text-accent-ink" : "opacity-40")}
+        />
+      </button>
+      {children}
+    </th>
   );
 }
 

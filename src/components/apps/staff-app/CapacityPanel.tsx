@@ -6,6 +6,7 @@ import { Button } from "@/components/ui";
 import { coverageGaps, capacityOn } from "@/lib/staff/capacity";
 import { addDays, formatDate, todayIso } from "@/lib/staff/dates";
 import { useStaffPrefs } from "@/lib/staff/staffPrefsStore";
+import { CapacityHeatmap } from "./CapacityHeatmap";
 import { DateField } from "./DateField";
 import { useCapacityInput } from "./LeaveApprovals";
 import { LeaveApprovals } from "./LeaveApprovals";
@@ -19,6 +20,7 @@ export function CapacityPanel() {
   const rules = useStaffPrefs((s) => s.coverage);
   const update = useStaffPrefs((s) => s.update);
   const [day, setDay] = useState(todayIso());
+  const [from, setFrom] = useState(todayIso());
   const caps = capacityOn(day, input);
   const gaps = coverageGaps(todayIso(), 28, input, rules);
 
@@ -32,6 +34,14 @@ export function CapacityPanel() {
 
   return (
     <div className="@container flex flex-col gap-5" data-testid="capacity-panel">
+      <CapacityHeatmap
+        from={from}
+        onFromChange={setFrom}
+        input={input}
+        rules={rules}
+        selectedDay={day}
+        onPick={setDay}
+      />
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-ink-soft text-[13px] font-semibold">Day</span>
         <DateField label="Day" value={day} onChange={setDay} />

@@ -1,9 +1,18 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Button, Input } from "@/components/ui";
+import { CaretLeftIcon, CaretRightIcon } from "@phosphor-icons/react";
+import { Button, IconButton, Input } from "@/components/ui";
+import { cn } from "@/lib/cn";
 import { toast } from "@/lib/notifications/toastStore";
-import { addDays, formatDate, todayIso } from "@/lib/staff/dates";
+import {
+  addDays,
+  addMonths,
+  formatDate,
+  formatMonth,
+  monthStart,
+  todayIso,
+} from "@/lib/staff/dates";
 import { displayName } from "@/lib/staff/employees";
 import {
   buildIcs,
@@ -13,6 +22,7 @@ import {
   toCsv,
 } from "@/lib/staff/exportFiles";
 import { COUNTRIES, holidayEvents, type CountryId } from "@/lib/staff/holidayRules";
+import { balanceBar, holidayMonth } from "@/lib/staff/insightsData";
 import {
   checkSwap,
   leaveBalance,
@@ -27,6 +37,8 @@ import { useStaffStore } from "@/lib/staff/staffStore";
 
 const SELECT =
   "rounded-control border-line bg-surface-elevated text-ink h-9 border px-2.5 text-[13px]";
+
+const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 function download(name: string, text: string, type: string) {
   const url = URL.createObjectURL(new Blob([text], { type }));
@@ -84,28 +96,60 @@ export function BalancesPanel() {
           {year}; weekends and holidays on the roster do not count
         </span>
       </label>
-      <table className="text-[13px]">
-        <thead>
-          <tr className="text-ink-muted text-left text-[12px]">
-            <th className="py-1 pr-4 font-semibold">Person</th>
-            <th className="py-1 pr-4 font-semibold">Used</th>
-            <th className="py-1 pr-4 font-semibold">Waiting</th>
-            <th className="py-1 font-semibold">Left</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map(({ e, b }) => (
-            <tr key={e.id} className="border-line border-t" data-testid="balance-row">
-              <td className="text-ink py-1 pr-4">{displayName(e)}</td>
-              <td className="py-1 pr-4">{b.used}</td>
-              <td className="py-1 pr-4">{b.pending || ""}</td>
-              <td className={`py-1 ${b.remaining < 0 ? "text-red font-semibold" : ""}`}>
-                {b.remaining}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <ul
+        aria-label="Leave balances"
+        className="flex flex-col"
+        data-testid="balances-list"
+      >
+        {rows.map(({ e, b }) => {
+          const bar = balanceBar(b);
+          return (
+            <li
+              key={e.id}
+              data-testid="balance-row"
+              className="border-line grid grid-cols-[minmax(110px,190px)_minmax(0,1fr)_auto] items-center gap-3 border-t py-2 text-[13px]"
+            >
+              <span className="text-ink truncate font-medium">{displayName(e)}</span>
+              <span
+                role="img"
+                aria-label={`${b.used} used, ${b.pending} waiting, ${b.remaining} left of ${b.allowance}`}
+                title={`${b.used} used, ${b.pending} waiting, ${b.remaining} left of ${b.allowance}`}
+                className="bg-chip flex h-2.5 overflow-hidden rounded-full"
+              >
+                <span
+                  className={bar.over ? "bg-red" : "bg-accent"}
+                  style={{ width: `${bar.usedPct}%` }}
+                />
+                <span className="bg-amber/60" style={{ width: `${bar.pendingPct}%` }} />
+              </span>
+              <span className="flex w-[168px] items-baseline justify-end gap-2 whitespace-nowrap">
+                <span className="text-ink-muted text-[12px]">
+                  {b.used} used{b.pending ? ` · ${b.pending} waiting` : ""}
+                </span>
+                <span
+                  className={`w-14 text-right font-bold ${b.remaining < 0 ? "text-red" : "text-ink"}`}
+                >
+                  {b.remaining} left
+                </span>
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+      <p className="text-ink-muted flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px]">
+        <span className="flex items-center gap-1.5">
+          <span className="bg-accent h-2.5 w-4 rounded-full" />
+          Used
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="bg-amber/60 h-2.5 w-4 rounded-full" />
+          Waiting for approval
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="bg-red h-2.5 w-4 rounded-full" />
+          More than the allowance
+        </span>
+      </p>
     </div>
   );
 }
@@ -412,8 +456,15 @@ export function HolidaysPanel() {
   const config = useRosterStore((s) => s.config);
   const save = useRosterStore((s) => s.save);
   const [country, setCountry] = useState<CountryId>("in");
-  const [year, setYear] = useState(Number(todayIso().slice(0, 4)));
+  const [month, setMonth] = useState(monthStart(todayIso()));
+  const year = Number(month.slice(0, 4));
   const preview = holidayEvents(country, year, config.events, () => newId("ev"));
+  const weeks = useMemo(
+    () => holidayMonth(month, config.events, preview),
+    // `preview` is derived from the inputs below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [month, config.events, country],
+  );
   const add = async () => {
     const result = await save({ ...config, events: [...config.events, ...preview] });
     toast(
@@ -425,8 +476,9 @@ export function HolidaysPanel() {
         : { tone: "danger", message: result.reason },
     );
   };
+  const today = todayIso();
   return (
-    <div className="flex flex-col gap-3" data-testid="holidays-panel">
+    <div className="@container flex flex-col gap-3" data-testid="holidays-panel">
       <div className="flex flex-wrap items-center gap-2">
         <select
           aria-label="Country"
@@ -445,12 +497,124 @@ export function HolidaysPanel() {
           type="number"
           className="w-24"
           value={year}
-          onChange={(e) => setYear(Number(e.target.value) || year)}
+          onChange={(e) => {
+            const next = Number(e.target.value);
+            if (next >= 1900 && next <= 2200) setMonth(`${next}-${month.slice(5, 7)}-01`);
+          }}
         />
         <Button onClick={() => void add()} disabled={preview.length === 0}>
           Add {preview.length} holiday{preview.length === 1 ? "" : "s"}
         </Button>
       </div>
+
+      <section aria-label="Holiday calendar" className="flex flex-col gap-2">
+        <div className="flex items-center gap-2">
+          <IconButton
+            aria-label="Previous month"
+            size="sm"
+            onClick={() => setMonth(addMonths(month, -1))}
+          >
+            <CaretLeftIcon weight="bold" />
+          </IconButton>
+          <h3 className="text-ink min-w-[130px] text-center text-[14px] font-bold">
+            {formatMonth(month)}
+          </h3>
+          <IconButton
+            aria-label="Next month"
+            size="sm"
+            onClick={() => setMonth(addMonths(month, 1))}
+          >
+            <CaretRightIcon weight="bold" />
+          </IconButton>
+          {month !== monthStart(today) && (
+            <Button variant="ghost" size="sm" onClick={() => setMonth(monthStart(today))}>
+              This month
+            </Button>
+          )}
+        </div>
+        <table
+          data-testid="holiday-calendar"
+          className="border-line w-full table-fixed border-separate border-spacing-0 overflow-hidden rounded-[var(--radius-card)] border"
+        >
+          <thead>
+            <tr>
+              {WEEKDAYS.map((d) => (
+                <th
+                  key={d}
+                  scope="col"
+                  className="bg-chip text-ink-muted px-2 py-1.5 text-left text-[11px] font-bold tracking-[0.06em] uppercase"
+                >
+                  {d}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {weeks.map((week, i) => (
+              <tr key={i}>
+                {week.map((cell, j) =>
+                  cell ? (
+                    <td
+                      key={cell.date}
+                      className={cn(
+                        "border-line h-[76px] border-t border-l p-1.5 align-top first:border-l-0",
+                        j >= 5 && "bg-chip/50",
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "inline-grid h-6 min-w-6 place-items-center rounded-full px-1 text-[12px] font-semibold",
+                          cell.date === today
+                            ? "bg-accent text-accent-contrast"
+                            : "text-ink",
+                        )}
+                      >
+                        {Number(cell.date.slice(8))}
+                      </span>
+                      <ul className="mt-0.5 flex flex-col gap-0.5">
+                        {cell.saved.map((label) => (
+                          <li
+                            key={`s-${label}`}
+                            title={`${label} (in the calendar)`}
+                            className="rh-hol truncate rounded-sm px-1.5 py-0.5 text-[10.5px] leading-tight font-semibold"
+                          >
+                            {label}
+                          </li>
+                        ))}
+                        {cell.planned.map((label) => (
+                          <li
+                            key={`p-${label}`}
+                            title={`${label} (will be added)`}
+                            className="text-accent-ink border-accent/60 bg-accent-soft truncate rounded-sm border border-dashed px-1.5 py-0.5 text-[10.5px] leading-tight font-semibold"
+                          >
+                            {label}
+                          </li>
+                        ))}
+                      </ul>
+                    </td>
+                  ) : (
+                    <td
+                      key={`pad-${i}-${j}`}
+                      className="border-line bg-chip/30 border-t border-l first:border-l-0"
+                    />
+                  ),
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <p className="text-ink-muted flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px]">
+          <span className="flex items-center gap-1.5">
+            <span className="rh-hol h-3 w-5 rounded-sm" />
+            Already in the calendar
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="border-accent/60 bg-accent-soft h-3 w-5 rounded-sm border border-dashed" />
+            Will be added
+          </span>
+        </p>
+      </section>
+
       <ul className="text-[13px]" data-testid="holiday-preview">
         {preview.map((e) => (
           <li key={e.id} className="text-ink-soft">

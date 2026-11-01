@@ -21,6 +21,7 @@ import {
   type RosterSection,
 } from "@/lib/staff/shifts";
 import { TIME_OFF_META } from "@/lib/staff/timeoff";
+import { pendingLeaveOn } from "@/lib/staff/timeoffView";
 import type {
   RosterConfig,
   RosterEvent,
@@ -146,6 +147,7 @@ export function RosterGrid({
     () => timeOff.filter((r) => r.status === "approved"),
     [timeOff],
   );
+  const waiting = useMemo(() => timeOff.filter((r) => r.status === "pending"), [timeOff]);
   const rows = useMemo(() => sections.flatMap((s) => s.rows), [sections]);
   const weeks = useMemo(() => {
     if (!cycle) return [];
@@ -225,6 +227,8 @@ export function RosterGrid({
                   cycle && weekdayIndex(day) === 6 && "border-l-line-strong",
                   isWeekend(day) &&
                     "[background-image:linear-gradient(var(--color-chip),var(--color-chip))]",
+                  isToday &&
+                    "[background-image:linear-gradient(var(--color-accent-soft),var(--color-accent-soft))]",
                 )}
               >
                 <span className="text-ink-muted block text-[10.5px] font-bold tracking-[0.06em] uppercase">
@@ -293,6 +297,11 @@ export function RosterGrid({
                   const leave = row.employee
                     ? leaveOn(approved, row.employee.id, day)
                     : undefined;
+                  const waitingOn = row.employee
+                    ? pendingLeaveOn(waiting, row.employee.id, day)
+                    : undefined;
+                  const pendingLabel =
+                    waitingOn && !leave ? TIME_OFF_META[waitingOn.type].label : "";
                   const holiday = holidayAt(eventsByDay.get(day), row.location);
                   const weekend = isWeekend(day);
                   const works =
@@ -318,6 +327,8 @@ export function RosterGrid({
                       covered={covered}
                       weekend={weekend}
                       holiday={holiday?.label ?? ""}
+                      pending={pendingLabel}
+                      today={day === today}
                       weekStart={cycle && weekdayIndex(day) === 6}
                       who={row.name}
                       onOpen={actions.open}
@@ -343,7 +354,11 @@ export function RosterGrid({
           {days.map((day) => (
             <td
               key={day}
-              className="bg-chip text-ink border-line border-y border-l px-1 py-2.5 text-center text-[12.5px] font-bold"
+              className={cn(
+                "bg-chip text-ink border-line border-y border-l px-1 py-2.5 text-center text-[12.5px] font-bold",
+                day === today &&
+                  "[background-image:linear-gradient(var(--color-accent-soft),var(--color-accent-soft))]",
+              )}
             >
               {coverageOn(day, rows, index, config.schedules, approved)}
             </td>
