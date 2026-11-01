@@ -29,6 +29,7 @@ import {
   BULK_ARRIVALS,
   progressOf,
   sanitizeChecklists,
+  startedText,
   toggleItem,
 } from "./checklists.ts";
 import { buildIcs, rosterRows, timeOffIcs, timeOffRows, toCsv } from "./exportFiles.ts";
@@ -381,6 +382,15 @@ describe("people", () => {
       chart[0].teams.map((t) => t.team),
       ["Ops", "Support"],
     );
+    assert.deepEqual(
+      chart.map((n) => n.unassigned),
+      [false, false, true],
+    );
+    const mixed = orgChart([emp("x", "Xi", { team: "Zed" }), emp("y", "Yo")]);
+    assert.deepEqual(
+      mixed[0].teams.map((t) => t.team),
+      ["Zed", "No team"],
+    );
   });
 });
 
@@ -421,6 +431,19 @@ describe("checklists", () => {
     assert.equal(few.arrivals.length, BULK_ARRIVALS);
     // once recorded, the same people are not new again
     assert.deepEqual(newArrivals(bulk.seen, [emp("a", "Ann"), ...many]).arrivals, []);
+  });
+  it("says whose checklists started and where to find them", () => {
+    const one = startedText([{ kind: "onboarding", name: "Ann Test" }]);
+    assert.equal(one.title, "Checklist started");
+    assert.match(one.message, /^Ann Test \(onboarding\)\. .*Checklists/);
+    const many = startedText(
+      ["A", "B", "C", "D"].map((name) => ({ kind: "offboarding", name })),
+    );
+    assert.equal(many.title, "4 checklists started");
+    assert.match(
+      many.message,
+      /^A \(offboarding\), B \(offboarding\), C \(offboarding\) and 1 more\./,
+    );
   });
   it("drops malformed stored checklists", () => {
     assert.equal(

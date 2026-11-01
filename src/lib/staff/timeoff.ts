@@ -121,13 +121,14 @@ export function timeOffStats(
   };
 }
 
-/** Newest start date first; status and a free-text match on the person. */
+/** Pending first (they need a decision), then newest start date; status and a free-text match on the person. */
 export function filterTimeOff(
   requests: readonly TimeOffRequest[],
   employees: ReadonlyMap<string, Employee>,
   { status, query }: { status: TimeOffStatus | ""; query: string },
 ): TimeOffRequest[] {
   const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+  const pendingFirst = (r: TimeOffRequest) => (r.status === "pending" ? 0 : 1);
   return requests
     .filter((r) => {
       if (status && r.status !== status) return false;
@@ -137,7 +138,12 @@ export function filterTimeOff(
         `${person ? displayName(person) : ""} ${TIME_OFF_META[r.type].label} ${r.reason}`.toLowerCase();
       return terms.every((term) => haystack.includes(term));
     })
-    .sort((a, b) => b.startDate.localeCompare(a.startDate) || a.id.localeCompare(b.id));
+    .sort(
+      (a, b) =>
+        pendingFirst(a) - pendingFirst(b) ||
+        b.startDate.localeCompare(a.startDate) ||
+        a.id.localeCompare(b.id),
+    );
 }
 
 /** Approved leave that has not ended yet, soonest first. */

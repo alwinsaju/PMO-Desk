@@ -67,3 +67,74 @@ export function parsePaneWidth(text: string | null): number {
 
 export const totalWidth = (widths: ColumnWidths): number =>
   DIRECTORY_COLUMNS.reduce((sum, c) => sum + widths[c.key], 0);
+
+type ColumnSource = Record<"level" | "op" | "offering" | "team" | "location", string> & {
+  rollOffDate: string;
+};
+
+const COLUMN_VALUE: Record<
+  Exclude<DirectoryColumnKey, "employee">,
+  (e: ColumnSource) => string
+> = {
+  level: (e) => e.level,
+  op: (e) => e.op,
+  offering: (e) => e.offering,
+  team: (e) => e.team,
+  location: (e) => e.location,
+  rolloff: (e) => e.rollOffDate,
+};
+
+/** The columns worth showing: the employee, and every other column someone has a value in. */
+export function visibleColumns(employees: readonly ColumnSource[]): DirectoryColumnKey[] {
+  return DIRECTORY_COLUMNS.filter(
+    (c) =>
+      c.key === "employee" || employees.some((e) => COLUMN_VALUE[c.key](e).trim() !== ""),
+  ).map((c) => c.key);
+}
+
+/** Least important first: these go when the list is too narrow for every column. */
+const DROP_ORDER: readonly DirectoryColumnKey[] = [
+  "rolloff",
+  "offering",
+  "op",
+  "level",
+  "location",
+  "team",
+];
+
+/**
+ * The columns and widths to draw in `available` pixels: columns shrink towards their
+ * minimums, and the least important ones are dropped when even the minimums do not fit,
+ * so the table never needs a horizontal scrollbar. Unknown room (0) changes nothing.
+ */
+export function fitColumns(
+  keys: readonly DirectoryColumnKey[],
+  widths: ColumnWidths,
+  available: number,
+): { keys: DirectoryColumnKey[]; widths: ColumnWidths } {
+  const minOf = (key: DirectoryColumnKey) =>
+    DIRECTORY_COLUMNS.find((c) => c.key === key)!.min;
+  const sum = (
+    list: readonly DirectoryColumnKey[],
+    of: (k: DirectoryColumnKey) => number,
+  ) => list.reduce((n, k) => n + of(k), 0);
+  let shown = [...keys];
+  if (!(available > 0)) return { keys: shown, widths };
+
+  while (shown.length > 1 && sum(shown, minOf) > available) {
+    const drop = DROP_ORDER.find((k) => shown.includes(k));
+    if (!drop) break;
+    shown = shown.filter((k) => k !== drop);
+  }
+  const total = sum(shown, (k) => widths[k]);
+  if (total <= available) return { keys: shown, widths };
+
+  const slack = total - sum(shown, minOf);
+  const ratio = Math.min(1, (total - available) / slack);
+  const fitted = { ...widths };
+  for (const key of shown) {
+    const give = Math.ceil((widths[key] - minOf(key)) * ratio);
+    fitted[key] = Math.max(minOf(key), widths[key] - give);
+  }
+  return { keys: shown, widths: fitted };
+}

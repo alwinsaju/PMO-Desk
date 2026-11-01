@@ -8,9 +8,11 @@ import {
   clampColumnWidth,
   clampPaneWidth,
   defaultColumnWidths,
+  fitColumns,
   parseColumnWidths,
   parsePaneWidth,
   totalWidth,
+  visibleColumns,
 } from "./layout.ts";
 
 describe("column widths", () => {
@@ -57,5 +59,62 @@ describe("pane width", () => {
     assert.equal(parsePaneWidth("abc"), PANE_WIDTH.default);
     assert.equal(parsePaneWidth("420"), 420);
     assert.equal(parsePaneWidth("9999"), PANE_WIDTH.max);
+  });
+});
+
+const person = (over = {}) => ({
+  level: "",
+  op: "",
+  offering: "",
+  team: "",
+  location: "",
+  rollOffDate: "",
+  ...over,
+});
+
+describe("visible columns", () => {
+  it("always shows the employee and hides columns that are empty for everyone", () => {
+    assert.deepEqual(visibleColumns([]), ["employee"]);
+    assert.deepEqual(
+      visibleColumns([
+        person({ level: "Analyst", team: "Ops" }),
+        person({ level: " ", location: "Onshore" }),
+      ]),
+      ["employee", "level", "team", "location"],
+    );
+  });
+
+  it("keeps a column when one person has a value", () => {
+    const keys = visibleColumns([person(), person({ rollOffDate: "2026-12-01" })]);
+    assert.deepEqual(keys, ["employee", "rolloff"]);
+  });
+});
+
+describe("fitting columns to the room", () => {
+  const widths = defaultColumnWidths();
+  const all = DIRECTORY_COLUMNS.map((c) => c.key);
+  const sum = (w, keys) => keys.reduce((n, k) => n + w[k], 0);
+
+  it("leaves everything alone when it fits or the room is unknown", () => {
+    assert.deepEqual(fitColumns(all, widths, 5000), { keys: all, widths });
+    assert.deepEqual(fitColumns(all, widths, 0), { keys: all, widths });
+  });
+
+  it("shrinks columns towards their minimums so nothing scrolls sideways", () => {
+    const keys = all.filter((k) => k !== "offering");
+    const fit = fitColumns(keys, widths, 800);
+    assert.deepEqual(fit.keys, keys);
+    assert.ok(sum(fit.widths, keys) <= 800);
+    for (const column of DIRECTORY_COLUMNS) {
+      if (keys.includes(column.key)) assert.ok(fit.widths[column.key] >= column.min);
+    }
+  });
+
+  it("drops the least important columns when even the minimums do not fit", () => {
+    const fit = fitColumns(all, widths, 500);
+    assert.equal(fit.keys[0], "employee");
+    assert.ok(!fit.keys.includes("rolloff"));
+    assert.ok(sum(fit.widths, fit.keys) <= 500);
+    assert.deepEqual(fitColumns(all, widths, 100).keys, ["employee"]);
   });
 });

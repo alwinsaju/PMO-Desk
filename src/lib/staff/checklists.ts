@@ -69,6 +69,21 @@ export const isComplete = (list: Checklist): boolean => {
   return p.total > 0 && p.done === p.total;
 };
 
+/** What the "checklists started" toast says: whose checklists, and where to find them. */
+export function startedText(lists: readonly Pick<Checklist, "kind" | "name">[]): {
+  title: string;
+  message: string;
+} {
+  const shown = lists.slice(0, 3).map((l) => `${l.name} (${l.kind})`);
+  const more = lists.length - shown.length;
+  const who = shown.join(", ") + (more > 0 ? ` and ${more} more` : "");
+  return {
+    title:
+      lists.length === 1 ? "Checklist started" : `${lists.length} checklists started`,
+    message: `${who}. Tick them off under Staff > Insights > Checklists.`,
+  };
+}
+
 /** More people than this appearing at once is a roster import or a first load, not new hires. */
 export const BULK_ARRIVALS = 10;
 

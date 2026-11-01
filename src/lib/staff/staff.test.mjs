@@ -477,4 +477,24 @@ describe("time off", () => {
       "2026-04-01",
     );
   });
+
+  it("lists pending requests first, then the newest start date", () => {
+    const at = (id, status, startDate) => ({
+      ...base,
+      id,
+      status,
+      startDate,
+      endDate: startDate,
+    });
+    const requests = [
+      at("to_00000001", "approved", "2026-06-01"),
+      at("to_00000002", "pending", "2026-03-01"),
+      at("to_00000003", "rejected", "2026-07-01"),
+      at("to_00000004", "pending", "2026-04-01"),
+    ];
+    const ids = filterTimeOff(requests, new Map(), { status: "", query: "" }).map(
+      (r) => r.id,
+    );
+    assert.deepEqual(ids, ["to_00000004", "to_00000002", "to_00000003", "to_00000001"]);
+  });
 });
