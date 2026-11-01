@@ -90,11 +90,17 @@ export function AppHero({
               aria-label={`Show ${other.name}`}
               aria-current={i === at}
               onClick={() => setIndex(i)}
-              className={cn(
-                "focus-ring h-2 rounded-full transition-all",
-                i === at ? "bg-accent w-5" : "bg-ink-faint w-2",
-              )}
-            />
+              className="focus-ring group flex h-6 items-center rounded-full px-0.5"
+            >
+              <span
+                className={cn(
+                  "h-2 rounded-full transition-all",
+                  i === at
+                    ? "bg-accent w-5"
+                    : "bg-ink-faint group-hover:bg-ink-muted w-2",
+                )}
+              />
+            </button>
           ))}
           <IconButton
             aria-label="Next featured app"

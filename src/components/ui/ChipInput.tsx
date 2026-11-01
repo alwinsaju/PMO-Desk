@@ -156,7 +156,7 @@ export const ChipInput = React.forwardRef<HTMLInputElement, ChipInputProps>(
                   type="button"
                   aria-label={`Remove ${noun} ${value}`}
                   onClick={() => remove(index)}
-                  className="hover:bg-chip-strong focus-visible:ring-focus grid h-4 w-4 shrink-0 place-items-center rounded-full focus-visible:ring-2 focus-visible:outline-none"
+                  className="hover:bg-chip-strong focus-visible:ring-focus -mr-1 grid h-6 w-6 shrink-0 place-items-center rounded-full focus-visible:ring-2 focus-visible:outline-none"
                 >
                   <XIcon size={10} weight="bold" aria-hidden />
                 </button>
