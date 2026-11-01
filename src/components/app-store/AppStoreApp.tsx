@@ -38,7 +38,9 @@ export function AppStoreApp({ windowId }: { windowId: string }) {
   const [category, setCategory] = useState<CategoryFilter>("all");
   useWindowContext(
     windowId,
-    category === "all" ? null : (appCategories.find((c) => c.id === category)?.label ?? null),
+    category === "all"
+      ? null
+      : (appCategories.find((c) => c.id === category)?.label ?? null),
   );
 
   // Shared, persisted install state — see installedAppsStore.ts. Every open
