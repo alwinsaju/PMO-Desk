@@ -5,8 +5,9 @@ import { motion } from "motion/react";
 import { cn } from "@/lib/cn";
 import { easeStandard } from "@/lib/motion";
 import { EMBEDDABLE_IFRAME_SANDBOX, useEmbeddableUrl } from "@/lib/useEmbeddableUrl";
-import { EmbedBlocked, EmbedLoading } from "../web-app/EmbedStates";
-import { describeEmbedFailure, hostnameOf } from "./embedFailure";
+import { EmbedLoading } from "../web-app/EmbedStates";
+import { hostnameOf } from "./embedFailure";
+import { PageErrorCard } from "./PageErrorCard";
 
 /** Shared by this file's 3 mutually-exclusive return states (checking /
  *  blocked / embeddable) so each one fades in on mount instead of hard-
@@ -25,6 +26,8 @@ interface UrlPageProps {
   /** Reports a freshly-resolved check back up so BrowserApp.tsx can cache
    *  it. Not called at all when `knownEmbeddable` was already supplied. */
   onEmbeddableResolved: (url: string, embeddable: boolean) => void;
+  /** Loads the page afresh (the error card's Retry). */
+  onRetry: () => void;
 }
 
 /**
@@ -43,7 +46,12 @@ interface UrlPageProps {
  * `url`/reload (see its `key`), so every piece of state below starts
  * clean on each real navigation instead of needing to be reset by hand.
  */
-export function UrlPage({ url, knownEmbeddable, onEmbeddableResolved }: UrlPageProps) {
+export function UrlPage({
+  url,
+  knownEmbeddable,
+  onEmbeddableResolved,
+  onRetry,
+}: UrlPageProps) {
   const [isFrameLoading, setIsFrameLoading] = useState(true);
   const check = useEmbeddableUrl(url, knownEmbeddable);
   const host = hostnameOf(url);
@@ -67,12 +75,6 @@ export function UrlPage({ url, knownEmbeddable, onEmbeddableResolved }: UrlPageP
   }
 
   if (!check.embeddable) {
-    const failure = describeEmbedFailure({
-      host,
-      code: check.code,
-      reason: check.reason,
-      online: typeof navigator === "undefined" ? undefined : navigator.onLine,
-    });
     return (
       <motion.div
         key="blocked"
@@ -81,11 +83,15 @@ export function UrlPage({ url, knownEmbeddable, onEmbeddableResolved }: UrlPageP
         transition={STATE_TRANSITION}
         className="h-full w-full"
       >
-        <EmbedBlocked
-          name={host}
-          title={failure.title}
-          reason={failure.message}
-          onOpenInNewTab={() => window.open(url, "_blank", "noopener,noreferrer")}
+        <PageErrorCard
+          url={url}
+          failure={{
+            host,
+            code: check.code,
+            reason: check.reason,
+            online: typeof navigator === "undefined" ? undefined : navigator.onLine,
+          }}
+          onRetry={onRetry}
         />
       </motion.div>
     );

@@ -2,8 +2,9 @@
 
 import { createElement, useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/cn";
-import { EmbedBlocked, EmbedLoading } from "../web-app/EmbedStates";
-import { classifyWebviewError, describeEmbedFailure, hostnameOf } from "./embedFailure";
+import { EmbedLoading } from "../web-app/EmbedStates";
+import { classifyWebviewError, hostnameOf } from "./embedFailure";
+import { PageErrorCard } from "./PageErrorCard";
 
 /** Must match BROWSER_PARTITION in desktop/url-guard.cjs, which refuses any other. */
 const BROWSER_PARTITION = "persist:ai-os-browser";
@@ -43,18 +44,19 @@ export function DesktopWebview({ url }: { url: string }) {
   }, []);
 
   if (failure) {
-    const text = describeEmbedFailure({
-      host,
-      code: classifyWebviewError(failure),
-      reason: failure,
-      online: typeof navigator === "undefined" ? undefined : navigator.onLine,
-    });
     return (
-      <EmbedBlocked
-        name={host}
-        title={text.title}
-        reason={text.message}
-        onOpenInNewTab={() => window.open(url, "_blank", "noopener,noreferrer")}
+      <PageErrorCard
+        url={url}
+        failure={{
+          host,
+          code: classifyWebviewError(failure),
+          reason: failure,
+          online: typeof navigator === "undefined" ? undefined : navigator.onLine,
+        }}
+        onRetry={() => {
+          setFailure(null);
+          setLoading(true);
+        }}
       />
     );
   }

@@ -85,7 +85,7 @@ describe("notePreview", () => {
   });
 });
 
-describe("noteListEntry / noteDateLabel / noteSubtitle", () => {
+describe("noteListEntry / noteDateLabel", () => {
   it("shows a short one-line note as the title alone", () => {
     assert.deepEqual(noteListEntry("Buy milk"), { title: "Buy milk", preview: "" });
   });
@@ -229,10 +229,21 @@ describe("pinning and ordering", () => {
     assert.equal("pinned" in togglePinned(pinned), false);
   });
   it("lists pinned notes first and keeps each group's order", () => {
-    const notes = [note("a"), note("b", "b", { pinned: true }), note("c"), note("d", "d", { pinned: true })];
+    const notes = [
+      note("a"),
+      note("b", "b", { pinned: true }),
+      note("c"),
+      note("d", "d", { pinned: true }),
+    ];
     const { pinned, others } = orderNotes(notes);
-    assert.deepEqual(pinned.map((n) => n.id), ["b", "d"]);
-    assert.deepEqual(others.map((n) => n.id), ["a", "c"]);
+    assert.deepEqual(
+      pinned.map((n) => n.id),
+      ["b", "d"],
+    );
+    assert.deepEqual(
+      others.map((n) => n.id),
+      ["a", "c"],
+    );
   });
   it("keeps the pin when a person edits the note", () => {
     const edited = updateNoteByUser(note("a", "x", { pinned: true }), "y", "Just now");
@@ -242,10 +253,10 @@ describe("pinning and ordering", () => {
 
 describe("tags", () => {
   it("finds #tags anywhere, lower-cased and unique, but not headings", () => {
-    assert.deepEqual(noteTags("# Plan\nCall #Client and #client, then #q4-review.\n##x #1"), [
-      "client",
-      "q4-review",
-    ]);
+    assert.deepEqual(
+      noteTags("# Plan\nCall #Client and #client, then #q4-review.\n##x #1"),
+      ["client", "q4-review"],
+    );
     assert.deepEqual(noteTags("no tags a#b"), []);
   });
   it("counts notes per tag, most used first, and filters by one", () => {
@@ -254,7 +265,10 @@ describe("tags", () => {
       { tag: "work", count: 2 },
       { tag: "home", count: 1 },
     ]);
-    assert.deepEqual(filterByTag(notes, "work").map((n) => n.id), ["a", "b"]);
+    assert.deepEqual(
+      filterByTag(notes, "work").map((n) => n.id),
+      ["a", "b"],
+    );
     assert.equal(filterByTag(notes, null).length, 3);
     assert.equal(filterByTag(notes, "missing").length, 0);
   });
@@ -264,7 +278,10 @@ describe("formatting markers in titles, previews and word counts", () => {
   it("shows a heading or bold title as plain text", () => {
     assert.equal(noteTitle("# Weekly plan\nbody"), "Weekly plan");
     assert.equal(noteTitle("**Important** call"), "Important call");
-    assert.equal(notePreview("T\n- [ ] call Priya\n- [x] send deck"), "call Priya send deck");
+    assert.equal(
+      notePreview("T\n- [ ] call Priya\n- [x] send deck"),
+      "call Priya send deck",
+    );
   });
   it("counts words without markers or bullets", () => {
     assert.equal(wordCount(""), 0);

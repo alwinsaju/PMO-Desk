@@ -21,6 +21,8 @@ export interface ErrorStateProps
   onRetry?: () => void;
   retrying?: boolean;
   retryLabel?: string;
+  /** Extra buttons beside Retry, e.g. "Open in default browser". */
+  actions?: React.ReactNode;
   icon?: React.ReactNode;
   compact?: boolean;
 }
@@ -40,6 +42,7 @@ export function ErrorState({
   onRetry,
   retrying = false,
   retryLabel = TERMS.retry,
+  actions,
   icon,
   compact = false,
   className,
@@ -102,6 +105,7 @@ export function ErrorState({
             {retrying ? "Retrying..." : retryLabel}
           </Button>
         )}
+        {actions}
         <Button size="sm" variant="ghost" onClick={() => void copyDetails()}>
           {copy === "copied" ? <CheckIcon size={14} /> : <CopyIcon size={14} />}
           {copy === "copied" ? TERMS.copied : TERMS.copyDetails}

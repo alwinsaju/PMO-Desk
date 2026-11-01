@@ -13,31 +13,36 @@ import { IconButton, ScrollArea } from "@/components/ui";
 import { useWindowContext } from "@/components/window-manager";
 import { cn } from "@/lib/cn";
 import { noSpellcheck } from "@/lib/ui/noSpellcheck";
+import { readSetting, writeSetting } from "../staff-app/localSetting";
+import { RECENTS_KEY, addRecent, parseRecents, type RecentSite } from "./browserRecents";
+import {
+  activeTab,
+  closeTab,
+  createTabs,
+  currentEntry,
+  entryAddress,
+  goBack,
+  goForward,
+  openTab,
+  pushEntry,
+  reloadTab,
+  selectTab,
+  updateTab,
+  type NavEntry,
+  type Tab,
+  type TabsState,
+} from "./browserTabs";
+import { TabStrip } from "./TabStrip";
 import { initialMockPage, mockPageMeta, type MockPageId } from "./mockPages";
 import { addressSecurity, hostnameOf } from "./embedFailure";
 import { HomePage } from "./HomePage";
+import { NewTabPage } from "./NewTabPage";
 import { WikiPage } from "./WikiPage";
 import { AboutPage } from "./AboutPage";
 import { UrlPage } from "./UrlPage";
 import { SearchOpenedPage } from "./SearchOpenedPage";
 import { resolveBrowserInput } from "./resolveBrowserInput";
 import { LoadBar } from "../web-app/EmbedStates";
-
-/** One history entry is either one of the 3 static "Pathfinder" mock
- *  pages, or a real url the address bar (or a real page's own link)
- *  navigated to. Both kinds share the exact same back/forward/reload
- *  history stack below — there is no separate mock-only vs. url-only
- *  history, so e.g. home -> a real site -> back correctly lands you on
- *  home again either way. */
-type NavEntry =
-  | { kind: "mock"; id: MockPageId }
-  | { kind: "url"; url: string }
-  | { kind: "search"; url: string; query: string };
-
-interface NavState {
-  history: NavEntry[];
-  index: number;
-}
 
 const RELOAD_DURATION_MS = 400;
 
@@ -77,28 +82,27 @@ function AddressIcon({ url }: { url: string }) {
 /**
  * Root Browser window — matches the `AppComponent` contract
  * (`ComponentType<{ windowId: string }>`) and is registered under "browser"
- * in `index.ts`. Real browser chrome (back/forward/reload + a real,
- * editable address bar) around two kinds of content sharing one history
- * stack: the 3 static "Pathfinder" mock pages authored as plain React
- * (HomePage/WikiPage/AboutPage, unchanged from before — still the default
- * home page) and, new, any real url typed into the address bar, rendered
- * by `UrlPage.tsx` using the exact sandboxed-iframe-with-graceful-fallback
- * approach `WebAppWindow.tsx` uses for the App Store's real web apps (see
- * `src/lib/useEmbeddableUrl.ts`, shared by both rather than duplicated).
+ * in `index.ts`. Tabs (each with its own back/forward history, see
+ * `browserTabs.ts`) around real browser chrome and an editable address bar.
+ * A tab shows the 3 static "Pathfinder" mock pages, the new-tab page
+ * (shortcuts and recent sites) or any real url typed into the address bar,
+ * rendered by `UrlPage.tsx` with the same sandboxed-iframe-with-graceful-
+ * fallback approach `WebAppWindow.tsx` uses for the App Store's real web
+ * apps (see `src/lib/useEmbeddableUrl.ts`).
  *
- * `nav` is a single state object (history stack + current index) rather
- * than two separate `useState`s, so a click that both truncates forward
- * history and appends a new page can never observe an inconsistent
- * in-between state.
+ * Every tab stays mounted (inactive ones hidden), so a page keeps its state
+ * while another tab is in front. All tabs live in one state object so a click
+ * that truncates forward history and appends a page cannot be observed half done.
  */
 export function BrowserApp({ windowId }: { windowId: string }) {
-  const [nav, setNav] = useState<NavState>({
-    history: [{ kind: "mock", id: initialMockPage }],
-    index: 0,
-  });
+  const nextTabId = useRef(1);
+  const [tabsState, setTabsState] = useState<TabsState>(() =>
+    createTabs("tab-0", { kind: "mock", id: initialMockPage }),
+  );
+  const [recents, setRecents] = useState<RecentSite[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [reloadNonce, setReloadNonce] = useState(0);
   const reloadTimeoutRef = useRef<number | null>(null);
+  const addressRef = useRef<HTMLInputElement>(null);
   // Populated as each real url's embeddability gets resolved, so
   // revisiting one via back/forward (or retyping it) shows it instantly
   // instead of re-running the header check. Plain ref, not state: nothing
@@ -106,6 +110,7 @@ export function BrowserApp({ windowId }: { windowId: string }) {
   const embedCacheRef = useRef<Map<string, boolean>>(new Map());
 
   useEffect(() => {
+    setRecents(parseRecents(readSetting(RECENTS_KEY)));
     return () => {
       if (reloadTimeoutRef.current !== null) {
         window.clearTimeout(reloadTimeoutRef.current);
@@ -113,42 +118,44 @@ export function BrowserApp({ windowId }: { windowId: string }) {
     };
   }, []);
 
-  const currentEntry = nav.history[nav.index];
-  const currentUrl =
-    currentEntry.kind === "mock" ? mockPageMeta[currentEntry.id].url : currentEntry.url;
-  const canGoBack = nav.index > 0;
-  const canGoForward = nav.index < nav.history.length - 1;
-  useWindowContext(
-    windowId,
-    currentEntry.kind === "url" ? hostnameOf(currentEntry.url) : null,
-  );
+  const tab = activeTab(tabsState);
+  const entry = currentEntry(tab);
+  const currentUrl = entryAddress(entry);
+  const canGoBack = tab.index > 0;
+  const canGoForward = tab.index < tab.history.length - 1;
+  useWindowContext(windowId, entry.kind === "url" ? hostnameOf(entry.url) : null);
 
   const [addressDraft, setAddressDraft] = useState(currentUrl);
   const [addressError, setAddressError] = useState<string | null>(null);
   // The address bar shows whatever was typed while it's being edited, but
   // snaps back to the real current url whenever navigation happens through
   // any OTHER means (back/forward, reload, a mock page's own in-page
-  // links) — same as a real browser's omnibox.
+  // links, another tab) — same as a real browser's omnibox.
   useEffect(() => {
     setAddressDraft(currentUrl);
-  }, [currentUrl]);
+    setAddressError(null);
+  }, [currentUrl, tab.id]);
+  useEffect(() => {
+    if (entry.kind === "newtab") addressRef.current?.focus();
+  }, [entry.kind, tab.id]);
 
-  function pushEntry(entry: NavEntry) {
-    setNav((prev) => ({
-      history: [...prev.history.slice(0, prev.index + 1), entry],
-      index: prev.index + 1,
-    }));
-  }
+  const changeActive = (change: (t: Tab) => Tab) =>
+    setTabsState((s) => updateTab(s, s.activeId, change));
 
-  function navigateMock(id: MockPageId) {
-    pushEntry({ kind: "mock", id });
+  function navigate(next: NavEntry) {
+    if (next.kind === "url") {
+      const list = addRecent(recents, next.url, Date.now());
+      setRecents(list);
+      writeSetting(RECENTS_KEY, JSON.stringify(list));
+    }
+    changeActive((t) => pushEntry(t, next));
   }
 
   function navigateToAddress(raw: string) {
     const mockId = findMockPageByUrl(raw.trim());
     if (mockId) {
       setAddressError(null);
-      pushEntry({ kind: "mock", id: mockId });
+      navigate({ kind: "mock", id: mockId });
       return;
     }
     const input = resolveBrowserInput(raw);
@@ -160,21 +167,10 @@ export function BrowserApp({ windowId }: { windowId: string }) {
     setAddressError(null);
     if (input.kind === "search") {
       openInOsBrowser(input.url);
-      pushEntry({ kind: "search", url: input.url, query: input.query });
+      navigate({ kind: "search", url: input.url, query: input.query });
       return;
     }
-    pushEntry({ kind: "url", url: input.url });
-  }
-
-  function goBack() {
-    setNav((prev) => ({ ...prev, index: Math.max(0, prev.index - 1) }));
-  }
-
-  function goForward() {
-    setNav((prev) => ({
-      ...prev,
-      index: Math.min(prev.history.length - 1, prev.index + 1),
-    }));
+    navigate({ kind: "url", url: input.url });
   }
 
   function reload() {
@@ -184,10 +180,10 @@ export function BrowserApp({ windowId }: { windowId: string }) {
       setIsLoading(false);
     }, RELOAD_DURATION_MS);
     // Mock pages are static React with nothing to actually reload — the
-    // spin above is the whole effect, same as before. A real url instead
-    // gets a genuine reload: bumping this remounts UrlPage (see its `key`
-    // below), which throws away its iframe and starts a fresh load.
-    if (currentEntry.kind === "url") setReloadNonce((n) => n + 1);
+    // spin above is the whole effect. A real url instead gets a genuine
+    // reload: bumping the count remounts UrlPage (see its `key` below),
+    // which throws away its iframe and starts a fresh load.
+    if (entry.kind === "url") changeActive(reloadTab);
   }
 
   const handleEmbeddableResolved = useCallback((url: string, embeddable: boolean) => {
@@ -195,14 +191,89 @@ export function BrowserApp({ windowId }: { windowId: string }) {
     if (embeddable) embedCacheRef.current.set(url, true);
   }, []);
 
+  const clearRecents = () => {
+    setRecents([]);
+    writeSetting(RECENTS_KEY, "[]");
+  };
+
+  const renderPage = (t: Tab) => {
+    const page = currentEntry(t);
+    if (page.kind === "newtab") {
+      return (
+        <ScrollArea className="h-full">
+          <NewTabPage
+            recents={recents}
+            onOpen={navigate}
+            onSearch={navigateToAddress}
+            onClearRecents={clearRecents}
+          />
+        </ScrollArea>
+      );
+    }
+    if (page.kind === "mock") {
+      return (
+        <>
+          {isLoading && t.id === tab.id && <LoadBar />}
+          <ScrollArea className="h-full">
+            <div
+              className={cn(
+                "transition-opacity duration-150",
+                isLoading && t.id === tab.id && "opacity-40",
+              )}
+            >
+              {page.id === "home" && (
+                <HomePage onNavigate={(id) => navigate({ kind: "mock", id })} />
+              )}
+              {page.id === "wiki" && (
+                <WikiPage onNavigate={(id) => navigate({ kind: "mock", id })} />
+              )}
+              {page.id === "about" && (
+                <AboutPage onNavigate={(id) => navigate({ kind: "mock", id })} />
+              )}
+            </div>
+          </ScrollArea>
+        </>
+      );
+    }
+    if (page.kind === "search") {
+      return (
+        <SearchOpenedPage
+          query={page.query}
+          onOpenAgain={() => openInOsBrowser(page.url)}
+        />
+      );
+    }
+    return (
+      <UrlPage
+        key={`${page.url}::${t.reloads}`}
+        url={page.url}
+        knownEmbeddable={embedCacheRef.current.get(page.url)}
+        onEmbeddableResolved={handleEmbeddableResolved}
+        onRetry={() => setTabsState((s) => updateTab(s, t.id, reloadTab))}
+      />
+    );
+  };
+
   return (
     <div data-window-id={windowId} className="flex h-full w-full flex-col">
+      <TabStrip
+        state={tabsState}
+        onSelect={(id) => setTabsState((s) => selectTab(s, id))}
+        onClose={(id) =>
+          setTabsState((s) => closeTab(s, id, `tab-${nextTabId.current++}`))
+        }
+        onNew={() =>
+          setTabsState((s) =>
+            openTab(s, `tab-${nextTabId.current++}`, { kind: "newtab" }),
+          )
+        }
+      />
       <div className="px-gutter flex items-center gap-1.5 pt-1 pb-3">
         <IconButton
           aria-label="Back"
           variant="ghost"
           disabled={!canGoBack}
-          onClick={goBack}
+          onClick={() => changeActive(goBack)}
         >
           <ArrowLeftIcon size={18} />
         </IconButton>
@@ -210,7 +281,7 @@ export function BrowserApp({ windowId }: { windowId: string }) {
           aria-label="Forward"
           variant="ghost"
           disabled={!canGoForward}
-          onClick={goForward}
+          onClick={() => changeActive(goForward)}
         >
           <ArrowRightIcon size={18} />
         </IconButton>
@@ -230,6 +301,7 @@ export function BrowserApp({ windowId }: { windowId: string }) {
         >
           <AddressIcon url={currentUrl} />
           <input
+            ref={addressRef}
             value={addressDraft}
             onChange={(event) => setAddressDraft(event.target.value)}
             onFocus={(event) => event.currentTarget.select()}
@@ -248,6 +320,7 @@ export function BrowserApp({ windowId }: { windowId: string }) {
             }}
             onBlur={() => setAddressDraft(currentUrl)}
             aria-label="Address"
+            placeholder="Search or type a web address"
             {...noSpellcheck}
             className="text-ink-soft placeholder:text-ink-faint min-w-0 flex-1 bg-transparent font-mono text-[12.5px] outline-none"
           />
@@ -263,35 +336,17 @@ export function BrowserApp({ windowId }: { windowId: string }) {
           toolbar): a real url's own check/iframe load draws it inside
           UrlPage, a reload of a static mock page draws it here. */}
       <div className="border-line relative min-h-0 flex-1 border-t">
-        {currentEntry.kind === "mock" ? (
-          <>
-            {isLoading && <LoadBar />}
-            <ScrollArea className="h-full">
-              <div
-                className={cn(
-                  "transition-opacity duration-150",
-                  isLoading && "opacity-40",
-                )}
-              >
-                {currentEntry.id === "home" && <HomePage onNavigate={navigateMock} />}
-                {currentEntry.id === "wiki" && <WikiPage onNavigate={navigateMock} />}
-                {currentEntry.id === "about" && <AboutPage onNavigate={navigateMock} />}
-              </div>
-            </ScrollArea>
-          </>
-        ) : currentEntry.kind === "search" ? (
-          <SearchOpenedPage
-            query={currentEntry.query}
-            onOpenAgain={() => openInOsBrowser(currentEntry.url)}
-          />
-        ) : (
-          <UrlPage
-            key={`${currentEntry.url}::${reloadNonce}`}
-            url={currentEntry.url}
-            knownEmbeddable={embedCacheRef.current.get(currentEntry.url)}
-            onEmbeddableResolved={handleEmbeddableResolved}
-          />
-        )}
+        {tabsState.tabs.map((t) => (
+          <div
+            key={t.id}
+            hidden={t.id !== tabsState.activeId}
+            role="tabpanel"
+            aria-labelledby={`browser-tab-${t.id}`}
+            className="relative h-full"
+          >
+            {renderPage(t)}
+          </div>
+        ))}
       </div>
     </div>
   );
