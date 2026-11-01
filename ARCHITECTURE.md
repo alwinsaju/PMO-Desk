@@ -516,8 +516,8 @@ themselves, not a task list.
 
 4. **Demo Apps bundle**
    (`src/components/apps/{files-app,notes-app,browser-app}/*`) — a file
-   browser (breadcrumb navigation over a static mock tree, file names/paths
-   in `font-mono`), a notes editor (sidebar list and a `<textarea>` pane,
+   browser (breadcrumb navigation over a static mock tree, labelled as sample
+   files in a banner; names use the app font), a notes editor (sidebar list and a `<textarea>` pane,
    local create/select/edit/delete), and a fake browser-in-a-window (mocked
    address-bar chrome around 3 static internal page templates, with
    in-page links wired to the same navigation as the chrome). Each
