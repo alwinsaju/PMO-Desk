@@ -32,6 +32,7 @@ import {
 import { cn } from "@/lib/cn";
 import { toast } from "@/lib/notifications/toastStore";
 import { easeEntrance, rowEnterClass, rowEnterStyle } from "@/lib/motion";
+import { useChangeCount } from "@/lib/useChangeCount";
 import { formatDate, relativeDays, todayIso } from "@/lib/staff/dates";
 import {
   NO_FILTER,
@@ -513,6 +514,20 @@ const CELLS: Record<
   },
 };
 
+/** Highlights a person's cell for a moment when their M365 profile arrives while the
+ *  Directory is open (waiting goes from true to false). Nothing on first render. */
+function ArrivalFlash({ waiting }: { waiting: boolean }) {
+  const changes = useChangeCount(waiting);
+  if (waiting || changes === 0) return null;
+  return (
+    <span
+      key={changes}
+      aria-hidden
+      className="anim-flash bg-accent-soft pointer-events-none absolute inset-0"
+    />
+  );
+}
+
 function EmployeeTable({
   employees,
   selectedId,
@@ -603,10 +618,11 @@ function EmployeeTable({
             >
               <td
                 className={cn(
-                  "py-1.5 pr-3 pl-5",
+                  "relative py-1.5 pr-3 pl-5",
                   active && "shadow-[inset_3px_0_0_var(--color-accent)]",
                 )}
               >
+                <ArrivalFlash waiting={isAwaitingProfile(employee)} />
                 <div className="flex min-w-0 items-center gap-2.5">
                   <EmployeeAvatar employee={employee} size="sm" />
                   <div className="min-w-0">

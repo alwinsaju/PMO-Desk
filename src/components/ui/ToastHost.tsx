@@ -10,7 +10,7 @@ import {
   type IconProps,
 } from "@phosphor-icons/react";
 import { cn } from "@/lib/cn";
-import { overlayEnter } from "@/lib/motion";
+import { overlayEnter, overlayExit } from "@/lib/motion";
 import { useToasts } from "@/lib/notifications/toastStore";
 import { toastAnchorBox, type Box } from "@/lib/notifications/toastAnchor";
 import type { Toast, ToastTone } from "@/lib/notifications/toasts";
@@ -23,6 +23,9 @@ const TONE_ICON: Record<ToastTone, { Icon: ComponentType<IconProps>; color: stri
   danger: { Icon: XCircleIcon, color: "text-red" },
 };
 
+/** Matches the 120 ms of `overlayExit` (src/lib/motion.ts), plus a little slack. */
+const TOAST_EXIT_MS = 160;
+
 function ToastCard({
   toast,
   onDismiss,
@@ -32,11 +35,18 @@ function ToastCard({
 }) {
   // Hovering or focusing a toast pauses its timer, so it can be read and its action used.
   const [paused, setPaused] = useState(false);
+  // Every way of closing goes through `leaving`: the card plays its exit, then is removed.
+  const [leaving, setLeaving] = useState(false);
   useEffect(() => {
-    if (toast.durationMs === 0 || paused) return;
-    const timer = setTimeout(() => onDismiss(toast.id), toast.durationMs);
+    if (leaving || toast.durationMs === 0 || paused) return;
+    const timer = setTimeout(() => setLeaving(true), toast.durationMs);
     return () => clearTimeout(timer);
-  }, [toast.id, toast.durationMs, paused, onDismiss]);
+  }, [toast.durationMs, paused, leaving]);
+  useEffect(() => {
+    if (!leaving) return;
+    const timer = setTimeout(() => onDismiss(toast.id), TOAST_EXIT_MS);
+    return () => clearTimeout(timer);
+  }, [leaving, toast.id, onDismiss]);
 
   const { Icon, color } = TONE_ICON[toast.tone];
 
@@ -45,6 +55,7 @@ function ToastCard({
       role={toast.tone === "danger" ? "alert" : "status"}
       data-testid="toast"
       data-tone={toast.tone}
+      data-state={leaving ? "closed" : "open"}
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
       onFocus={() => setPaused(true)}
@@ -52,6 +63,8 @@ function ToastCard({
       className={cn(
         "bg-surface-elevated border-line-strong rounded-card shadow-float pointer-events-auto flex w-[min(22rem,100%)] items-start gap-3 border py-3 pr-2 pl-3.5",
         overlayEnter,
+        overlayExit,
+        leaving && "pointer-events-none",
       )}
     >
       <Icon aria-hidden size={20} weight="fill" className={cn("mt-px shrink-0", color)} />
@@ -76,7 +89,7 @@ function ToastCard({
           className="text-accent-ink hover:bg-chip rounded-control focus-ring h-8 shrink-0 px-2.5 text-[12.5px] font-semibold"
           onClick={() => {
             toast.action?.run();
-            onDismiss(toast.id);
+            setLeaving(true);
           }}
         >
           {toast.action.label}
@@ -86,7 +99,7 @@ function ToastCard({
         type="button"
         aria-label="Dismiss"
         className="text-ink-muted hover:text-ink hover:bg-chip rounded-control focus-ring flex h-8 w-8 shrink-0 items-center justify-center"
-        onClick={() => onDismiss(toast.id)}
+        onClick={() => setLeaving(true)}
       >
         <XIcon size={14} aria-hidden />
       </button>
