@@ -443,7 +443,7 @@
   --color-neutral-300: #555555;
   --color-neutral-400: #6a6a6a;
   --color-neutral-500: #8a8a8a;
-  --color-neutral-600: #a0a0a0;
+  --color-neutral-600: #acacac; /* >= 4.5:1 on the chip fill (#3a393a) */
   --color-neutral-700: #b8b8b8;
   --color-neutral-800: #d4d4d4;
   --color-neutral-900: #e6e6e6;

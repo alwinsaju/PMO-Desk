@@ -8,9 +8,21 @@ import type { Intake } from "@/lib/pmo/types";
 import { fetchRaw } from "./api";
 import { ScrollBody, SourceBadge, Spinner } from "./parts";
 
-/** A long message can put the quote below the fold: bring it into view. */
-const scrollIntoView = (element: HTMLElement | null) =>
-  element?.scrollIntoView?.({ block: "nearest" });
+/** A long message can put the quote below the fold: bring it into view inside the
+ *  message box only. (`scrollIntoView` would also scroll the review pane around it
+ *  and hide the draft fields above.) */
+const scrollIntoView = (element: HTMLElement | null) => {
+  if (!element) return;
+  let box = element.parentElement;
+  while (box && !/(auto|scroll)/.test(getComputedStyle(box).overflowY)) {
+    box = box.parentElement;
+  }
+  if (!box) return;
+  const inner = element.getBoundingClientRect();
+  const outer = box.getBoundingClientRect();
+  if (inner.top >= outer.top && inner.bottom <= outer.bottom) return;
+  box.scrollTop += inner.top - outer.top - (outer.height - inner.height) / 2;
+};
 
 interface OriginalMessageProps {
   intakeId: string;
