@@ -441,16 +441,6 @@ body {
   background-color: var(--color-scrim);
 }
 
-/* The modal PANEL (ui/Dialog.tsx adds `glass-modal` next to `glass-pop`): lean
-   drops its 24px backdrop blur for the same reason as the scrim. The fill is
-   made ~96% opaque instead (from 86-98%) so what is behind the panel does not
-   show through un-blurred. */
-:root:not([data-fx="rich"]) .glass-modal {
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-  background-color: color-mix(in srgb, var(--color-pop) 25%, var(--color-neutral-0));
-}
-
 /* Lean: while a modal is open, the decorative loops BEHIND it (progress
    shimmer, pulsing progress dot, blinking status dots) are frozen. Nobody sees
    them through the scrim, but each frame of them still dirtied the screen and

@@ -5,6 +5,7 @@ import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { XIcon } from "@phosphor-icons/react";
 import { cn } from "@/lib/cn";
 import { dialogEnter, dialogExit } from "@/lib/motion";
+import { announceModalOpened } from "./modalEvents";
 
 export const Dialog = DialogPrimitive.Root;
 export const DialogTrigger = DialogPrimitive.Trigger;
@@ -37,11 +38,19 @@ export interface DialogContentProps extends React.ComponentPropsWithoutRef<
   hideClose?: boolean;
 }
 
+/** Rendered inside the portal, so it mounts exactly when the dialog opens: tells open
+ *  tooltips and popovers to close (see useCloseOnModalOpen). */
+function AnnounceModalOpen() {
+  React.useEffect(() => announceModalOpened(), []);
+  return null;
+}
+
 export const DialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   DialogContentProps
 >(({ className, children, hideClose = false, ...props }, ref) => (
   <DialogPrimitive.Portal>
+    <AnnounceModalOpen />
     <DialogOverlay />
     {/* Centering is done with flex on this wrapper (not a top/left + -50%
         transform trick) because the open/close keyframes below animate
@@ -51,8 +60,10 @@ export const DialogContent = React.forwardRef<
       <DialogPrimitive.Content
         ref={ref}
         className={cn(
-          // `glass-modal`: lean mode drops glass-pop's backdrop blur (globals.css).
-          "glass-pop glass-modal shadow-modal rounded-surface pointer-events-auto relative w-full max-w-md p-7",
+          // Fully opaque (QA-05): page text must never show through a dialog. The one
+          // dialog surface: elevated fill, hairline border, surface radius, modal shadow.
+          "bg-surface-elevated border-line-strong shadow-modal rounded-surface border",
+          "pointer-events-auto relative w-full max-w-md p-7",
           "focus:outline-none",
           dialogEnter,
           dialogExit,
@@ -66,8 +77,7 @@ export const DialogContent = React.forwardRef<
             aria-label="Close"
             className={cn(
               "text-ink-muted absolute top-4 right-4 flex h-9 w-9 items-center justify-center rounded-full",
-              "transition-ui hover:text-ink hover:bg-chip-strong hover:rotate-90",
-              "focus-visible:ring-focus focus-visible:ring-2 focus-visible:outline-none",
+              "transition-ui focus-ring hover:text-ink hover:bg-chip-strong hover:rotate-90",
             )}
           >
             <XIcon size={16} weight="bold" />

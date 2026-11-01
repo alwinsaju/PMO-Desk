@@ -2,6 +2,14 @@
 
 Decisions for the shared UI (see `docs/qa/uiux-2026-10-30/IMPLEMENTATION-PLAN.md`, Phase 1). Reuse the primitives in `src/components/ui/` and the tokens in `src/styles/tokens.css`; do not hand-roll per-app variants.
 
+## Dialogs
+
+`Dialog` (`src/components/ui/Dialog.tsx`) is the only modal surface. The panel is **fully opaque** (`bg-surface-elevated`: white in light/Deloitte light, the dark elevated neutral in dark themes), with a hairline `border-line-strong`, the `surface` radius (24 px, 14 px in Deloitte) and `shadow-modal`. Never put a translucent or glass class on a dialog: page text must not show through (QA-05). The backdrop is the soft `scrim` tint; its blur appears only in rich-effects mode.
+
+- Title with `DialogTitle` (22 px), optional `DialogDescription`, actions in `DialogFooter` (see "Buttons and footers").
+- Opening a modal closes every open `Tooltip` and `Popover` first (QA-15). This is central: `Dialog` announces via `ui/modalEvents.ts` and the two primitives subscribe, so callers need no code. Use the `ui` `Tooltip` / `Popover`, not the raw Radix ones, to get this.
+- Do not nest a dialog inside popover content: the popover closes when the dialog opens and would take the dialog with it. Render the dialog as a sibling and open it from the popover's handler.
+
 ## Type scale, spacing, focus, contrast
 
 **Type scale** (tokens `--type-*`, utilities in `globals.css`):

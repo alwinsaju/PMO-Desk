@@ -286,6 +286,8 @@ via `cn()` (so consumers can always override), and uses the token system
 never a raw hex or an arbitrary shadow value. Overlay-based primitives
 (Tooltip, Popover, DropdownMenu, ContextMenu, Dialog) all share the same
 open/close treatment via `overlayEnter`/`overlayExit` from `src/lib/motion.ts`.
+A modal `Dialog` announces itself when it opens (`ui/modalEvents.ts`); open `Tooltip`s
+and `Popover`s listen (`useCloseOnModalOpen`) and close, so none stays on top of it.
 
 `Avatar` has a `presence?: "none" | "active" | "idle"` prop that draws the
 accent ring reserved for presence indicators — built now, intended for the
