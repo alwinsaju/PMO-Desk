@@ -86,8 +86,9 @@ on the user's computer (loopback only; the AI is a local Ollama model, no cloud 
   chart, onboarding and offboarding checklists, public holidays by rule, and exports (CSV for Excel
   and calendar files). Click a name for a small profile card. Leave can be entered for several dates at once
   ("5–7 Nov, 12 Nov"), and Settings has a colour-blind-safe roster palette.
-- **PMO Toolkit** (`src/lib/registers/`, `src/components/apps/toolkit/`): fourteen small tools, each its own
-  window opened from the toolkit, the command bar ("open raid log") or Ctrl+K: RAID log, meeting minutes
+- **PMO Toolkit** (`src/lib/registers/`, `src/components/apps/toolkit/`): fourteen small tools, each opened from
+  the toolkit in the same window (with an "All tools" Back button), or in its own window from the command bar
+  ("open raid log") or Ctrl+K: RAID log, meeting minutes
   (action lines become to-dos you tick), timesheet chaser (leave is skipped; one draft for everyone missing),
   decision log, SLA watcher (paste incidents; days per priority), change requests (weekly summary),
   governance calendar (prep to-dos dated back from the meeting), stakeholder register (contact cadence),
