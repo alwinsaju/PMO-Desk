@@ -70,6 +70,7 @@ import {
 } from "@/lib/staff/shifts";
 import { useStaffStore } from "@/lib/staff/staffStore";
 import { TIME_OFF_META } from "@/lib/staff/timeoff";
+import { pendingLeaveOn } from "@/lib/staff/timeoffView";
 import { noSpellcheck } from "@/lib/ui/noSpellcheck";
 import type {
   RosterConfig,
@@ -418,6 +419,10 @@ export function ShiftRoster() {
     menu && target?.row.employee
       ? leaveOn(approved, target.row.employee.id, menu.date)
       : undefined;
+  const targetWaiting =
+    menu && target?.row.employee
+      ? pendingLeaveOn(timeOff, target.row.employee.id, menu.date)
+      : undefined;
 
   async function setRef(ref: string) {
     if (!menu) return;
@@ -699,7 +704,9 @@ export function ShiftRoster() {
         leaveNote={
           targetLeave
             ? `Approved ${TIME_OFF_META[targetLeave.type].label} in the Time off tab covers this day, so the roster shows it instead of the shift.`
-            : null
+            : targetWaiting
+              ? `A ${TIME_OFF_META[targetWaiting.type].label} request is waiting for approval in the Time off tab. It shows hatched until it is approved.`
+              : null
         }
         onClose={() => setMenu(null)}
         onSet={(ref) => void setRef(ref)}

@@ -1,7 +1,12 @@
 "use client";
 
 import { memo } from "react";
-import { ArrowsLeftRightIcon, CalendarCheckIcon, PlusIcon } from "@phosphor-icons/react";
+import {
+  ArrowsLeftRightIcon,
+  CalendarCheckIcon,
+  HourglassMediumIcon,
+  PlusIcon,
+} from "@phosphor-icons/react";
 import { cn } from "@/lib/cn";
 import type { CellView } from "@/lib/staff/shifts";
 import { hueClass } from "./parts";
@@ -19,12 +24,21 @@ export interface RosterCellProps {
   weekend: boolean;
   /** The name of a holiday this person's location observes (tints the day). */
   holiday: string;
+  /** The type of leave (PTO, Sick leave ...) waiting for approval on this day, else "". */
+  pending: string;
+  /** Today's column is tinted so it can be followed down the grid. */
+  today: boolean;
   /** First day of a Sunday-Saturday week in the cycle view. */
   weekStart: boolean;
   /** For screen readers and the tooltip: who and which day. */
   who: string;
   onOpen: (rowKey: string, date: string, rect: DOMRect) => void;
 }
+
+const HATCH_LEAVE =
+  "[background-image:repeating-linear-gradient(135deg,color-mix(in_srgb,currentColor_20%,transparent)_0_2px,transparent_2px_7px)]";
+const HATCH_PENDING =
+  "[background-image:repeating-linear-gradient(135deg,color-mix(in_srgb,var(--color-amber)_45%,transparent)_0_2px,transparent_2px_6px)]";
 
 /** One person's day. Memoised: a roster has thousands of these. */
 export const RosterCell = memo(function RosterCell({
@@ -35,6 +49,8 @@ export const RosterCell = memo(function RosterCell({
   covered,
   weekend,
   holiday,
+  pending,
+  today,
   weekStart,
   who,
   onOpen,
@@ -45,21 +61,26 @@ export const RosterCell = memo(function RosterCell({
     weekStart && "border-l-line-strong",
     weekend && "bg-chip",
     holiday && "bg-[color-mix(in_srgb,var(--rh-hol-bg)_40%,transparent)]",
+    today && "bg-accent-soft/60",
   );
 
   if (!rowKey) {
     return <td className={cn(frame, "bg-chip/40")} />;
   }
 
+  // Waiting leave only marks working days: a weekend with nothing entered stays quiet.
+  const showPending = pending !== "" && (!weekend || cell !== null);
   const origin =
     cell?.source === "leave"
       ? " · from Time off"
       : cell?.source === "holiday"
         ? " · holiday"
         : "";
-  const title = cell
-    ? `${who}, ${date}: ${cell.label}${cell.hours ? `, ${cell.hours}` : ""}${cell.days ? ` (${cell.days})` : ""}${cell.schedule ? ` · ${cell.schedule}` : ""}${cell.swap ? " · swapped" : ""}${cell.note ? ` · ${cell.note}` : ""}${origin}${covered ? ` · planned: ${covered}` : ""}${holiday && cell.source !== "holiday" ? ` · holiday: ${holiday}` : ""}`
-    : `${who}, ${date}: nothing entered`;
+  const title =
+    (cell
+      ? `${who}, ${date}: ${cell.label}${cell.hours ? `, ${cell.hours}` : ""}${cell.days ? ` (${cell.days})` : ""}${cell.schedule ? ` · ${cell.schedule}` : ""}${cell.swap ? " · swapped" : ""}${cell.note ? ` · ${cell.note}` : ""}${origin}${covered ? ` · planned: ${covered}` : ""}${holiday && cell.source !== "holiday" ? ` · holiday: ${holiday}` : ""}`
+      : `${who}, ${date}: nothing entered`) +
+    (showPending ? ` · ${pending} waiting for approval` : "");
 
   return (
     <td className={frame}>
@@ -76,11 +97,29 @@ export const RosterCell = memo(function RosterCell({
             ? cn(
                 hueClass(cell.hue),
                 cell.dashed && "border border-dashed border-current/40",
+                cell.source === "leave" && HATCH_LEAVE,
                 "hover:brightness-95",
               )
             : "text-ink-faint hover:bg-chip-strong hover:text-ink-soft",
         )}
       >
+        {showPending && (
+          <span
+            aria-hidden
+            className={cn(
+              "text-amber rounded-control pointer-events-none absolute inset-0 border border-dashed border-current",
+              HATCH_PENDING,
+            )}
+          >
+            {!compact && (
+              <HourglassMediumIcon
+                size={10}
+                weight="bold"
+                className="absolute bottom-[3px] left-[3px]"
+              />
+            )}
+          </span>
+        )}
         {cell ? (
           <>
             <span
