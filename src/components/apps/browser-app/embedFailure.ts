@@ -55,9 +55,10 @@ export function describeEmbedFailure({
       return {
         title: `Can't reach ${host}`,
         message:
-          "The site did not answer. Check your internet connection, then press Reload.",
-        cause: "The site did not answer.",
-        nextStep: "Check your internet connection, then retry.",
+          "AI OS could not connect to the site. Check your internet connection and press Reload. On a work network a proxy or security filter can block AI OS even when the site opens in your regular browser.",
+        cause:
+          "AI OS could not connect. A work-network proxy or security filter can cause this even when the site works in your browser.",
+        nextStep: "Retry, or open it in your default browser.",
         retryable: true,
       };
     case "not-found":

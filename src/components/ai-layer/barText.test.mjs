@@ -25,8 +25,7 @@ describe("placeholderFor", () => {
 
   it("explains a wake-up while thinking, with the time so far", () => {
     const text = placeholderFor("thinking", { waking: true, elapsedSeconds: 75 });
-    assert.match(text, /^Waking the AI model… 1:15/);
-    assert.match(text, /few minutes/);
+    assert.equal(text, "Waking the AI model… 1:15");
   });
 
   it("shows the running clock while a model answer is awaited", () => {

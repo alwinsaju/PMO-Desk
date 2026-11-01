@@ -32,7 +32,7 @@ export function placeholderFor(
   switch (status) {
     case "thinking":
       if (wake.waking) {
-        return `Waking the AI model… ${formatElapsed(wake.elapsedSeconds)} (the first answer can take a few minutes)`;
+        return `Waking the AI model… ${formatElapsed(wake.elapsedSeconds)}`;
       }
       return wake.thinkingSeconds === undefined
         ? "Thinking…"
