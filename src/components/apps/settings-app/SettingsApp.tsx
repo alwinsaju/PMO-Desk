@@ -9,6 +9,8 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui";
+import { useWindowContext } from "@/components/window-manager";
+import { noSpellcheck } from "@/lib/ui/noSpellcheck";
 import { useFocusActive, useFocusMode } from "@/lib/focusModeStore";
 import { remainingText } from "@/lib/focusMode";
 import { toast, useToasts } from "@/lib/notifications/toastStore";
@@ -239,6 +241,7 @@ function Shortcuts() {
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         aria-label="Filter shortcuts"
+        {...noSpellcheck}
         placeholder="Filter shortcuts"
         className="border-line bg-chip text-ink rounded-control mb-4 w-full border px-3 py-2 text-[13.5px] outline-none"
       />
@@ -311,10 +314,22 @@ function Accessibility() {
   );
 }
 
+const TAB_LABELS: Record<SettingsTab, string> = {
+  general: "General",
+  notifications: "Notifications",
+  shortcuts: "Shortcuts",
+  accessibility: "Accessibility",
+  data: "Data",
+  activity: "Activity",
+  help: "Help",
+  about: "About",
+};
+
 /** One place for the settings that were spread over menus: start up, focus, what the command bar
  *  asks first, its history, notifications, shortcuts and accessibility. */
 export function SettingsApp({ windowId }: { windowId: string }) {
   const [tab, setTab] = useState<SettingsTab>("general");
+  useWindowContext(windowId, TAB_LABELS[tab]);
   const request = useSettingsNav((s) => s.request);
   useEffect(() => {
     if (!request) return;
