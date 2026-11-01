@@ -8,22 +8,36 @@ import {
   SunIcon,
   UsersIcon,
 } from "@phosphor-icons/react";
+import { Button } from "@/components/ui";
+import { cn } from "@/lib/cn";
+import {
+  TODAY_APP_LABEL,
+  TODAY_TONE,
+  deltaText,
+  healthChips,
+  polylinePoints,
+  sparkPoints,
+  toneForPercent,
+  workloadBars,
+  type RowTone,
+  type WeekMetric,
+} from "@/lib/dashboard/charts";
 import {
   AGE_BUCKETS,
   type AgeBucket,
   type Health,
   type Pipeline,
   type TodayItem,
-  type WeekCompare,
   type Workload,
 } from "@/lib/dashboard/insights";
+import { Chip } from "../pmo-todo-app/parts";
 import { Empty, Widget } from "./widgets";
 
 const Line = ({ children }: { children: React.ReactNode }) => (
   <li className="text-ink-soft text-[13px] leading-snug">{children}</li>
 );
 
-/** Everything that needs you today in one ordered list; each line opens the app behind it. */
+/** Everything that needs you today in one ordered list; each row has an Open button for the app behind it. */
 export function TodayWidget({
   items,
   onOpen,
@@ -41,17 +55,30 @@ export function TodayWidget({
       {items.length === 0 ? (
         <Empty>Nothing needs you right now.</Empty>
       ) : (
-        <ol className="flex flex-col gap-1.5">
+        <ol className="flex flex-col divide-y divide-[var(--color-line)]">
           {items.map((item, i) => (
-            <li key={`${item.kind}-${i}`}>
-              <button
-                type="button"
+            <li
+              key={`${item.kind}-${i}`}
+              className="flex items-center gap-3 py-1.5 first:pt-0 last:pb-0"
+            >
+              <span
+                aria-hidden
+                className={cn(
+                  "h-2 w-2 shrink-0 rounded-full",
+                  TONE_DOT[TODAY_TONE[item.kind]],
+                )}
+              />
+              <span className="text-ink min-w-0 flex-1 text-[13px] leading-snug">
+                {item.text}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={() => onOpen(item.appId)}
-                className="hover:bg-chip focus-visible:ring-focus rounded-control w-full px-2 py-1 text-left text-[13px] outline-none focus-visible:ring-2"
+                aria-label={`Open ${TODAY_APP_LABEL[item.appId]}: ${item.text}`}
               >
-                <span className="text-ink-muted mr-2">{i + 1}.</span>
-                <span className="text-ink">{item.text}</span>
-              </button>
+                Open
+              </Button>
             </li>
           ))}
         </ol>
@@ -60,40 +87,70 @@ export function TodayWidget({
   );
 }
 
+const TONE_DOT: Record<RowTone, string> = {
+  danger: "bg-red",
+  warning: "bg-amber",
+  info: "bg-info",
+  neutral: "bg-ink-faint",
+};
+
+/** One stacked bar per person: late in red, due soon in amber, the rest in the accent. */
 export function WorkloadWidget({ rows }: { rows: Workload[] }) {
-  const max = Math.max(1, ...rows.map((r) => r.open));
+  const bars = workloadBars(rows);
   return (
     <Widget title="Workload by person" icon={UsersIcon} testId="workload-widget">
-      {rows.length === 0 ? (
+      {bars.length === 0 ? (
         <Empty>No open to-dos.</Empty>
       ) : (
-        <ul className="flex flex-col gap-1.5">
-          {rows.slice(0, 8).map((r) => (
-            <li key={r.owner} className="flex items-center gap-2 text-[12.5px]">
-              <span className="text-ink w-28 shrink-0 truncate" title={r.owner}>
-                {r.owner}
-              </span>
-              <span className="bg-chip h-2.5 min-w-0 flex-1 overflow-hidden rounded-full">
+        <>
+          <ul className="flex flex-col gap-1.5">
+            {bars.map((r) => (
+              <li key={r.owner} className="flex items-center gap-2 text-[12.5px]">
                 <span
-                  className="bg-accent block h-full rounded-full"
-                  style={{ width: `${(r.open / max) * 100}%` }}
-                />
-              </span>
-              <span className="text-ink-muted w-24 shrink-0 text-right">
-                {r.open} open
-                {r.overdue
-                  ? `, ${r.overdue} late`
-                  : r.dueSoon
-                    ? `, ${r.dueSoon} soon`
-                    : ""}
-              </span>
-            </li>
-          ))}
-        </ul>
+                  className="text-ink w-24 shrink-0 truncate @md:w-28"
+                  title={r.owner}
+                >
+                  {r.owner}
+                </span>
+                <span
+                  role="img"
+                  aria-label={`${r.owner}: ${r.label}`}
+                  className="bg-chip flex h-2.5 min-w-0 flex-1 overflow-hidden rounded-full"
+                >
+                  <span className="bg-red h-full" style={{ width: `${r.overduePct}%` }} />
+                  <span className="bg-amber h-full" style={{ width: `${r.soonPct}%` }} />
+                  <span
+                    className="bg-accent h-full"
+                    style={{ width: `${r.otherPct}%` }}
+                  />
+                </span>
+                <span className="text-ink-muted w-24 shrink-0 text-right">{r.label}</span>
+              </li>
+            ))}
+          </ul>
+          <p className="text-ink-muted flex flex-wrap gap-x-3 gap-y-1 text-[11.5px]">
+            <LegendDot className="bg-red">Late</LegendDot>
+            <LegendDot className="bg-amber">Due soon</LegendDot>
+            <LegendDot className="bg-accent">Other</LegendDot>
+          </p>
+        </>
       )}
     </Widget>
   );
 }
+
+const LegendDot = ({
+  className,
+  children,
+}: {
+  className: string;
+  children: React.ReactNode;
+}) => (
+  <span className="inline-flex items-center gap-1.5">
+    <span aria-hidden className={cn("h-2 w-2 rounded-full", className)} />
+    {children}
+  </span>
+);
 
 /** A bar for each age band of the open to-dos. */
 export function AgingWidget({ buckets }: { buckets: AgeBucket[] }) {
@@ -173,53 +230,117 @@ export function PipelineWidget({ pipeline }: { pipeline: Pipeline }) {
 }
 
 export function HealthWidget({ health }: { health: Health }) {
+  const chips = healthChips(health);
   return (
     <Widget
       title="Report health"
       icon={HeartbeatIcon}
       count={health.score === null ? undefined : `${health.score}%`}
-      countTone={
-        health.score === null
-          ? "neutral"
-          : health.score >= 80
-            ? "success"
-            : health.score >= 50
-              ? "warning"
-              : "danger"
-      }
+      countTone={toneForPercent(health.score)}
       testId="health-widget"
     >
       {health.score === null ? (
         <Empty neutral>No report has run yet.</Empty>
       ) : (
-        <ul className="flex flex-col gap-1.5">
-          {health.tasks.map((t) => (
-            <li
-              key={t.id}
-              className="flex items-center justify-between gap-3 text-[13px]"
-            >
-              <span className="text-ink min-w-0 truncate">{t.name}</span>
-              <span className={t.failing ? "text-red font-semibold" : "text-ink-muted"}>
-                {t.percent === null ? "no runs" : `${t.percent}% of last runs`}
-                {t.failing ? " · failing now" : ""}
-              </span>
-            </li>
-          ))}
-        </ul>
+        <>
+          <ul className="flex flex-wrap gap-2">
+            {chips.map((c) => (
+              <li key={c.id}>
+                <Chip
+                  tone={c.tone}
+                  title={
+                    c.failing
+                      ? `${c.name}: failing now`
+                      : c.text === "No runs"
+                        ? `${c.name}: no runs yet`
+                        : `${c.name}: ${c.text} of its last runs worked`
+                  }
+                  className="h-7 gap-1.5 px-3 text-[12.5px]"
+                >
+                  <span className="font-semibold">{c.name}</span>
+                  <span>{c.text}</span>
+                  {c.failing && <span>· failing</span>}
+                </Chip>
+              </li>
+            ))}
+          </ul>
+          <p className="text-ink-muted text-[11.5px]">
+            Share of each report&apos;s last five runs that finished. Red is failing now
+            or under half.
+          </p>
+        </>
       )}
     </Widget>
   );
 }
 
-/** This week against last, written by code from the to-dos, report runs and leave. */
-export function WeekWidget({ week }: { week: WeekCompare }) {
+/** A small two-line chart: last week in grey, this week in the accent colour. */
+function Sparkline({ metric }: { metric: WeekMetric }) {
+  const width = 96;
+  const height = 28;
+  const max = Math.max(...metric.thisSeries, ...metric.lastSeries, 1);
+  const last = sparkPoints(metric.lastSeries, { width, height, max, slots: 7 });
+  const now = sparkPoints(metric.thisSeries, { width, height, max, slots: 7 });
+  const tip = now.at(-1);
+  return (
+    <svg
+      viewBox={`0 0 ${width} ${height}`}
+      width={width}
+      height={height}
+      aria-hidden
+      className="shrink-0 overflow-visible"
+    >
+      <polyline
+        points={polylinePoints(last)}
+        fill="none"
+        strokeWidth={1.5}
+        strokeLinejoin="round"
+        strokeLinecap="round"
+        className="stroke-ink-faint"
+      />
+      <polyline
+        points={polylinePoints(now)}
+        fill="none"
+        strokeWidth={2}
+        strokeLinejoin="round"
+        strokeLinecap="round"
+        className="stroke-accent"
+      />
+      {tip && <circle cx={tip.x} cy={tip.y} r={2.5} className="fill-accent" />}
+    </svg>
+  );
+}
+
+/** This week against last: a number, the change and a sparkline per measure. */
+export function WeekWidget({ metrics }: { metrics: WeekMetric[] }) {
   return (
     <Widget title="This week vs last" icon={CalendarCheckIcon} testId="week-widget">
-      <ul className="flex flex-col gap-1.5">
-        {week.lines.map((l) => (
-          <Line key={l}>{l}</Line>
+      <ul className="flex flex-col divide-y divide-[var(--color-line)]">
+        {metrics.map((m) => (
+          <li
+            key={m.key}
+            className="flex items-center gap-3 py-1.5 first:pt-0 last:pb-0"
+            aria-label={`${m.label}: ${m.thisWeek} this week, ${m.lastWeek} last week`}
+          >
+            <span className="min-w-0 flex-1">
+              <span className="text-ink block truncate text-[13px] font-semibold">
+                {m.label}
+              </span>
+              <span className="text-ink-muted block text-[12px]">
+                {deltaText(m.delta)}
+              </span>
+            </span>
+            <span className="text-ink w-8 text-right text-[20px] leading-none font-bold tabular-nums">
+              {m.thisWeek}
+            </span>
+            <Sparkline metric={m} />
+          </li>
         ))}
       </ul>
+      <p className="text-ink-muted flex flex-wrap gap-x-3 text-[11.5px]">
+        <LegendDot className="bg-accent">This week</LegendDot>
+        <LegendDot className="bg-ink-faint">Last week</LegendDot>
+      </p>
     </Widget>
   );
 }

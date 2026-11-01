@@ -68,6 +68,7 @@ function Updates() {
   return (
     <Section title="Updates">
       <Row
+        settingId="updates"
         title="Check for updates"
         hint="Off by default. When on, AI OS reads one small file from the address below about once a day. It never installs anything by itself."
       >
@@ -170,6 +171,7 @@ function Support() {
   return (
     <Section title="Support">
       <Row
+        settingId="diagnostics"
         title="Diagnostics file"
         hint="Versions, counts and the end of the logs, with passwords, tokens, email addresses and user names removed. No to-do or message text is included."
       >
@@ -200,6 +202,7 @@ export function AboutTab() {
     <>
       <Section title="AI OS">
         <Row
+          settingId="version"
           title="Version"
           hint={info?.desktop ? "Desktop app" : "Running in a browser"}
         >

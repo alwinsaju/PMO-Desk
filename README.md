@@ -10,6 +10,11 @@ on the user's computer (loopback only; the AI is a local Ollama model, no cloud 
   per-window human/AI control; each app's window reopens where you left it), light/dark and
   Deloitte themes, a tray icon, and a Settings
   menu (gear) with a _Fast AI model_ switch, _Skip the lock screen_, _Setup and health check_ and _Restart Tasks engine_.
+  The dock shows a hover label for every icon (with what a badge means, for example "3 need
+  attention: 2 PMO items, 1 time-off request"), an accent dot for open apps, the launchers in their
+  own group and, on a narrow screen, the apps that do not fit under the App Menu's "+N". The lock
+  screen greets you by name (the name set in PMO To-Do, else your computer account's first name)
+  with your initials, and shows what needs you under the clock (Settings > General turns it off).
 - **Command bar with a local AI**: the AI can open, focus, minimize, maximize and close windows
   with a visible cursor and ownership handoff, and create, update and delete notes when Notes
   is focused. It uses Ollama on `127.0.0.1`. It also answers PMO questions from the real data,
@@ -18,18 +23,23 @@ on the user's computer (loopback only; the AI is a local Ollama model, no cloud 
   _"What do I need to chase?"_, _"PMO status"_, and _"Prepare this week's aging report"_, which
   opens the Tasks app on that task's Run form (you add the files and press Run; nothing is sent
   without your approval). Anything it does not recognise goes to the model as before. An answer
-  stays on screen until you dismiss it (Esc or the close button) and can be copied; Ctrl+Space
-  jumps to the bar from anywhere; a misspelt day or task name gets a "Did you mean...?". It also
+  appears as a card with the question as its title and Copy and "Show me in ..." buttons in its
+  footer; it stays until you dismiss it (Esc or the close button). The bar shows its Ctrl+Space
+  hint, which jumps to it from anywhere; a misspelt day or task name gets a "Did you mean...?". It also
   creates, snoozes and closes to-dos ("remind me to send the invoice Friday"; it asks first), says
   when someone is back or what their shift is, lists what changed since yesterday, and can chain
-  steps ("open Tasks, then what's overdue"). Ctrl+K searches everything; Ctrl+, opens Settings.
+  steps ("open Tasks, then what's overdue"). Ctrl+K searches everything in groups (Apps, People,
+  To-dos, Templates, Records, Notes, Time off), highlights what you typed and lists the last five
+  things you opened when the box is empty; Ctrl+, opens Settings.
 - **Dashboard**: one screen for what needs you today: open to-dos (overdue, due today and
   tomorrow, waiting), overdue chasers, the status of the report tasks and the PMO weekly report
   (running, needs review, failed, last run), and who is out this week or next (approved time off,
   requests waiting, and the leave days the shift roster marks). It only reads; each card opens
-  the app behind it. **Customise** shows, hides, reorders and widens cards and saves named
-  layouts. Extra cards: a merged Today list, workload by person, how long to-dos have sat,
-  the sign-off pipeline, report health and this week against last. The desktop app shows a
+  the app behind it. **Customise** shows, hides, drags to reorder (the Dashboard follows live; Up and
+  Down arrows on the grip work too) and widens cards and saves named
+  layouts. Extra cards: a merged Today list with an Open button per row, workload by person (late, due
+  soon and other in one bar), how long to-dos have sat, the sign-off pipeline, report health as coloured
+  chips and this week against last with sparklines. The desktop app shows a
   "needs you" count on the dock and taskbar, a once-a-day briefing, and exports the dashboard
   as a PNG or PDF.
 - **Templates**: a library of email and report templates (`src/lib/templates/`,
@@ -64,10 +74,13 @@ on the user's computer (loopback only; the AI is a local Ollama model, no cloud 
   tasks without reinstalling: install a checksummed task pack (you confirm its fingerprint first),
   or build a mailer from a table and a template with a wizard. See
   [`docs/task-packs.md`](./docs/task-packs.md).
-- **Settings** (Ctrl+,): General (profile, start-up, command bar), Notifications, Shortcuts,
-  Accessibility and four platform tabs. **Data** shows the data folder and its size and backs up,
+- **Settings** (Ctrl+,): a search box at the top filters every setting and jumps to its tab and row.
+  General (profile, lock screen and desktop, to-dos, focus, command bar; each group is a card),
+  Notifications, Shortcuts,
+  Accessibility and four platform tabs. **Data** shows the data folder, a storage meter, the last backup
+  time, and backs up,
   restores (after saving what it replaces) and exports to JSON or CSV. **Activity** is the audit log in
-  plain words. **Help** has a guided tour, sample data you can add and remove again, and three tasks
+  plain words as a timeline with icons, day headings and filters. **Help** has a guided tour, sample data you can add and remove again, and three tasks
   for each app. **About** shows the version and what's new, an update check that is off until you turn
   it on (it only downloads an installer whose SHA-256 matches, and never runs it for you) and a
   diagnostics file for support with passwords, tokens, emails and user names removed.

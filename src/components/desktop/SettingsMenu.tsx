@@ -14,6 +14,7 @@ import {
   LightningIcon,
   ListChecksIcon,
   LockKeyOpenIcon,
+  BellRingingIcon,
   MoonIcon,
   RobotIcon,
   SlidersHorizontalIcon,
@@ -374,6 +375,25 @@ function InstantUnlockRow() {
   );
 }
 
+/** "Needs you on the lock screen" - a one-line summary under the lock screen's clock. */
+function LockSummaryRow() {
+  const lockSummary = usePreferences((s) => s.lockSummary);
+  const setLockSummary = usePreferences((s) => s.setLockSummary);
+  return (
+    <DropdownMenuSwitchItem
+      checked={lockSummary}
+      onCheckedChange={setLockSummary}
+      className="group py-2.5"
+    >
+      <RowBody
+        icon={<BellRingingIcon size={18} weight="regular" aria-hidden />}
+        title="Show what needs you"
+        hint="A line under the lock screen clock"
+      />
+    </DropdownMenuSwitchItem>
+  );
+}
+
 /** "Focus mode" - hides the dock and holds back notices for 25 minutes (or say "focus for 40
  *  minutes" in the command bar). Errors still show; everything held is in the notification list. */
 function FocusModeRow() {
@@ -421,6 +441,7 @@ const settingsRows: { id: string; Row: ComponentType }[] = [
   { id: "dark-mode", Row: DarkModeRow },
   { id: "deloitte-mode", Row: DeloitteModeRow },
   { id: "instant-unlock", Row: InstantUnlockRow },
+  { id: "lock-summary", Row: LockSummaryRow },
   { id: "focus-mode", Row: FocusModeRow },
   { id: "all-settings", Row: AllSettingsRow },
   { id: "hardware-acceleration", Row: HardwareAccelerationRow },

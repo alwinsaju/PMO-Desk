@@ -1,10 +1,28 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import {
+  ChatTextIcon,
+  ClockIcon,
+  ChartLineUpIcon,
+  GearSixIcon,
+  ListChecksIcon,
+  SealCheckIcon,
+  type Icon,
+} from "@phosphor-icons/react";
 import { Button } from "@/components/ui";
 import { toast } from "@/lib/notifications/toastStore";
 import { noSpellcheck } from "@/lib/ui/noSpellcheck";
 import { actorLabel } from "@/lib/platform/auditReadable";
+import {
+  CATEGORY_LABEL,
+  categoryCounts,
+  categoryOf,
+  filterByCategory,
+  groupByDay,
+  timeOfDay,
+  type ActivityCategory,
+} from "@/lib/platform/activityTimeline";
 import {
   actionCounts,
   actionLabel,
@@ -13,19 +31,31 @@ import {
   type AuditEntry,
 } from "@/lib/platform/auditView";
 import { toCsv } from "@/lib/staff/exportFiles";
+import { FilterPill } from "../pmo-todo-app/parts";
 import { fetchAudit } from "./platformApi";
-import { Note, Section, when } from "./SettingsParts";
+import { Note, Section } from "./SettingsParts";
 
 const SHOWN = 200;
 
-/** Settings > Activity: the PMO audit log in plain words, newest first. Read only. */
+const CATEGORY_ICON: Record<ActivityCategory, Icon> = {
+  todos: ListChecksIcon,
+  messages: ChatTextIcon,
+  signoff: SealCheckIcon,
+  reports: ChartLineUpIcon,
+  settings: GearSixIcon,
+  other: ClockIcon,
+};
+
+/** Settings > Activity: the PMO audit log in plain words as a timeline, newest first. Read only. */
 export function ActivityTab() {
   const [entries, setEntries] = useState<AuditEntry[] | null>(null);
   const [total, setTotal] = useState(0);
   const [error, setError] = useState<{ reason: string; detail?: string } | null>(null);
   const [action, setAction] = useState("");
+  const [category, setCategory] = useState<ActivityCategory | "">("");
   const [query, setQuery] = useState("");
   const [technical, setTechnical] = useState(false);
+  const [now, setNow] = useState(() => new Date());
 
   const load = async () => {
     setError(null);
@@ -33,6 +63,7 @@ export function ActivityTab() {
     if (reply.ok) {
       setEntries(reply.entries);
       setTotal(reply.total);
+      setNow(new Date());
     } else setError({ reason: reply.reason, detail: reply.detail });
   };
   useEffect(() => {
@@ -46,10 +77,16 @@ export function ActivityTab() {
   }, []);
 
   const actions = useMemo(() => actionCounts(entries ?? []), [entries]);
+  const categories = useMemo(() => categoryCounts(entries ?? []), [entries]);
   const shown = useMemo(
-    () => filterAudit(entries ?? [], { action: action || undefined, query }),
-    [entries, action, query],
+    () =>
+      filterByCategory(
+        filterAudit(entries ?? [], { action: action || undefined, query }),
+        category,
+      ),
+    [entries, action, query, category],
   );
+  const groups = useMemo(() => groupByDay(shown.slice(0, SHOWN), now), [shown, now]);
 
   const copy = async () => {
     try {
@@ -61,7 +98,7 @@ export function ActivityTab() {
   };
 
   return (
-    <Section title="Everything AI OS did on your behalf">
+    <Section title="Everything AI OS did on your behalf" settingId="activity-log">
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <input
           value={query}
@@ -117,42 +154,83 @@ export function ActivityTab() {
       )}
       {entries && entries.length > 0 && (
         <>
-          <ul className="divide-line divide-y" aria-label="Activity">
-            {shown.slice(0, SHOWN).map((entry, index) => (
-              <li
-                key={`${entry.at}-${index}`}
-                className="flex items-baseline gap-3 py-2 text-[13px]"
-              >
-                <span className="text-ink-muted w-28 shrink-0 text-[12px]">
-                  {when(entry.at)}
-                </span>
-                <span className="min-w-0 flex-1" title={entry.details.join(" · ")}>
-                  <span className="text-ink font-medium">
-                    {actionLabel(entry.action)}
-                  </span>
-                  {entry.readable.length > 0 && (
-                    <span className="text-ink-muted block truncate text-[12px]">
-                      {entry.readable.join(" · ")}
-                    </span>
-                  )}
-                  {technical && entry.details.length > 0 && (
-                    <span className="text-ink-faint block font-mono text-[11.5px] break-all">
-                      {entry.details.join(" · ")}
-                    </span>
-                  )}
-                </span>
-                <span
-                  className="text-ink-muted shrink-0 text-[12px]"
-                  title={
-                    entry.user ? `Recorded under the account "${entry.user}"` : undefined
-                  }
+          <ul className="flex flex-wrap gap-2 pb-3" aria-label="Filter by kind">
+            <li>
+              <FilterPill active={category === ""} onClick={() => setCategory("")}>
+                All
+              </FilterPill>
+            </li>
+            {categories.map((c) => (
+              <li key={c.category}>
+                <FilterPill
+                  active={category === c.category}
+                  count={c.count}
+                  onClick={() => setCategory(c.category)}
                 >
-                  {actorLabel(entry.user)}
-                </span>
+                  {CATEGORY_LABEL[c.category]}
+                </FilterPill>
               </li>
             ))}
           </ul>
-          <p className="text-ink-muted pt-3 text-[12.5px]">
+          <div aria-label="Activity" role="list">
+            {groups.map((group) => (
+              <div key={group.day} role="listitem" className="pb-3">
+                <h3 className="text-ink-muted pb-1.5 text-[12px] font-bold tracking-[0.06em] uppercase">
+                  {group.label}
+                </h3>
+                <ol className="border-line relative ml-4 flex flex-col gap-3 border-l pl-6">
+                  {group.entries.map((entry, index) => {
+                    const Glyph = CATEGORY_ICON[categoryOf(entry.action)];
+                    return (
+                      <li
+                        key={`${entry.at}-${index}`}
+                        className="relative flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-[13px]"
+                      >
+                        <span
+                          aria-hidden
+                          className="bg-accent-soft text-accent-ink border-card absolute top-0 -left-[calc(1.5rem+1rem)] grid h-8 w-8 place-items-center rounded-full border-4"
+                        >
+                          <Glyph size={15} weight="bold" />
+                        </span>
+                        <span className="text-ink-muted w-12 shrink-0 text-[12px] tabular-nums">
+                          {timeOfDay(entry.at)}
+                        </span>
+                        <span
+                          className="min-w-0 flex-1 basis-56"
+                          title={entry.details.join(" · ")}
+                        >
+                          <span className="text-ink font-medium">
+                            {actionLabel(entry.action)}
+                          </span>
+                          {entry.readable.length > 0 && (
+                            <span className="text-ink-muted block text-[12px] break-words">
+                              {entry.readable.join(" · ")}
+                            </span>
+                          )}
+                          {technical && entry.details.length > 0 && (
+                            <span className="text-ink-faint block font-mono text-[11.5px] break-all">
+                              {entry.details.join(" · ")}
+                            </span>
+                          )}
+                        </span>
+                        <span
+                          className="text-ink-muted shrink-0 text-[12px]"
+                          title={
+                            entry.user
+                              ? `Recorded under the account "${entry.user}"`
+                              : undefined
+                          }
+                        >
+                          {actorLabel(entry.user)}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ol>
+              </div>
+            ))}
+          </div>
+          <p className="text-ink-muted pt-1 text-[12.5px]">
             {shown.length === 0
               ? "No line matches."
               : `Showing ${Math.min(shown.length, SHOWN)} of ${shown.length} matching lines (${total} kept in all).`}

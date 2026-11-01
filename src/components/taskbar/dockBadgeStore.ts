@@ -11,16 +11,24 @@ import { create } from "zustand";
  */
 interface DockBadgeState {
   badges: Record<string, number>;
-  setBadge: (appId: string, count: number) => void;
+  /** What each badge is made of ("3 need attention: 2 PMO items, ..."), shown on hover. */
+  meanings: Record<string, string>;
+  setBadge: (appId: string, count: number, meaning?: string | null) => void;
 }
 
 export const useDockBadgeStore = create<DockBadgeState>()((set) => ({
   badges: {},
-  setBadge: (appId, count) =>
+  meanings: {},
+  setBadge: (appId, count, meaning) =>
     set((state) => {
       const next = Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0;
-      return (state.badges[appId] ?? 0) === next
-        ? state
-        : { badges: { ...state.badges, [appId]: next } };
+      const text = next > 0 ? (meaning ?? "") : "";
+      if ((state.badges[appId] ?? 0) === next && (state.meanings[appId] ?? "") === text) {
+        return state;
+      }
+      return {
+        badges: { ...state.badges, [appId]: next },
+        meanings: { ...state.meanings, [appId]: text },
+      };
     }),
 }));

@@ -79,6 +79,29 @@ export function moveWidget(layout: Layout, id: WidgetId, by: -1 | 1): Layout {
   return { ...layout, order };
 }
 
+/** Puts `id` at position `index` among the visible cards (what dragging a handle does). Hidden cards keep
+ *  their slots, so showing one again returns it where it was. Same object when nothing moves. */
+export function moveWidgetTo(layout: Layout, id: WidgetId, index: number): Layout {
+  const visible = visibleWidgets(layout);
+  const from = visible.indexOf(id);
+  if (from < 0) return layout;
+  const to = Math.min(Math.max(0, Math.trunc(index)), visible.length - 1);
+  if (to === from) return layout;
+  const next = [...visible];
+  next.splice(from, 1);
+  next.splice(to, 0, id);
+  let n = 0;
+  const order = layout.order.map((slot) =>
+    layout.hidden.includes(slot) ? slot : next[n++],
+  );
+  return { ...layout, order };
+}
+
+/** Where a dragged row lands: how many of the OTHER rows' middles lie above the pointer. */
+export function dropIndex(otherMiddles: readonly number[], pointerY: number): number {
+  return otherMiddles.filter((middle) => middle < pointerY).length;
+}
+
 const toggled = (list: readonly WidgetId[], id: WidgetId): WidgetId[] =>
   list.includes(id) ? list.filter((x) => x !== id) : [...list, id];
 

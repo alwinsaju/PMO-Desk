@@ -1,5 +1,6 @@
 // What the app is and where its data is. Server only.
 import { readFileSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { resolveDataDir } from "../pmo/server/paths.ts";
 import { folderSize } from "./backup.ts";
@@ -26,6 +27,16 @@ export interface PlatformInfo {
   files: number;
   bytes: number;
   desktop: boolean;
+  /** The computer account's name, only used to greet the person ("Welcome, Alex"). */
+  account: string;
+}
+
+function accountName(env: Record<string, string | undefined>): string {
+  try {
+    return os.userInfo().username;
+  } catch {
+    return env.USERNAME ?? "";
+  }
 }
 
 export async function platformInfo(
@@ -39,5 +50,6 @@ export async function platformInfo(
     files: size.files,
     bytes: size.bytes,
     desktop: env.AI_OS_DESKTOP_MODE === "1",
+    account: accountName(env),
   };
 }

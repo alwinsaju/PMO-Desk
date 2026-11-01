@@ -19,6 +19,7 @@ import {
   XIcon,
 } from "@phosphor-icons/react";
 import { cn } from "@/lib/cn";
+import { KeyHint } from "@/components/ui/KeyHint";
 import { easeEntrance, easeExit } from "@/lib/motion";
 import { isFocusBarShortcut } from "@/lib/focusKeys";
 import { useWindowStore, type WindowState } from "@/components/window-manager";
@@ -60,7 +61,7 @@ import type {
 } from "@/app/api/ai/command/types";
 import { useAgentStore } from "./agentStore";
 import { ACTION_HOLD_MS, EMPTY_STATE_NOTICE_MS, TASK_SETTLE_MS } from "./constants";
-import { placeholderFor } from "./barText";
+import { answerTitle, placeholderFor } from "./barText";
 import { postCommand } from "./commandClient";
 import {
   IDLE_THINKING,
@@ -582,6 +583,7 @@ export function CommandBar() {
         message: result.text,
         position: messageAnnotationPoint(),
         sticky: true,
+        title: answerTitle(prompt),
         action: showMeAction(pmoIntent ?? localIntent),
       });
       scheduleTimeout(clearCurrentTask, TASK_SETTLE_MS);
@@ -873,11 +875,22 @@ export function CommandBar() {
             thinkingSeconds: thinkingActive ? thinking.elapsedSeconds : undefined,
           })}
           aria-label="Ask the AI agent"
+          aria-keyshortcuts="Control+Space"
           className={cn(
             "text-ink placeholder:text-ink-muted h-full min-w-0 flex-1 bg-transparent text-[15.5px] font-medium outline-none",
             "disabled:cursor-not-allowed",
           )}
         />
+        {value === "" && !isBusy && (
+          <span
+            aria-hidden
+            title="Press Ctrl+Space from anywhere to ask"
+            className="hidden shrink-0 items-center gap-1 sm:flex"
+          >
+            <KeyHint>Ctrl</KeyHint>
+            <KeyHint>Space</KeyHint>
+          </span>
+        )}
         {value.trim() !== "" && !isBusy && (
           <button
             type="button"

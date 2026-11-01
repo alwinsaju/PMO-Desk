@@ -2293,3 +2293,50 @@ title, tone, action, key })` from anywhere; a repeated `key` replaces the earlie
   tests, not against a live https site. The mailer's PowerShell steps were not run against Outlook in the
   automated desktop test (they would create a real draft); they follow the report tasks' scripts. Plain
   "Copy details" errors are on every new screen; older screens keep their own messages.
+
+## UI overhaul, Phase 5: shell UI
+
+Presentation changes with their logic kept pure and tested (`*.test.mjs` beside each file).
+
+- **Dock** (`components/taskbar/`). `dockBadge.ts` has `attentionMeaning` ("3 need attention: 2 PMO items,
+  1 time-off request") and `tileHover` (name, badge meaning, Open/Minimized, window titles); `NeedsYouBadge`
+  stores the meaning next to the count in `dockBadgeStore.meanings`, and `DockTile` shows it in the shared
+  `Tooltip`. An open app has a 6 px accent dot and a filled icon; a minimised one a hollow dot. The dock draws
+  pinned tiles, a thin divider, tiles that are only there because a window is open, then the launchers (App
+  Menu and "+") in their own inset group. `dockOverflow.ts` (`dockCapacity`, `splitDockItems`) keeps the dock
+  inside the screen: tiles that do not fit (running apps are kept first) are left to the App Menu, whose tile
+  shows "+N".
+- **Command bar** (`components/ai-layer/`). The empty bar shows a Ctrl+Space `KeyHint`
+  (`components/ui/KeyHint.tsx`, a small additive primitive). A reply is an answer card in
+  `AIAnnotationBubble`: the question as title (`barText.answerTitle`), the answer, and a footer with Copy and
+  the "Show me in ..." button (right-most, the primary).
+- **Ctrl+K** (`components/search/`, `lib/search/`). `searchSections.ts` groups the ranked matches (Apps, People,
+  To-dos, Templates, Records, Notes, Time off) and, for an empty query, leads with "Recent";
+  `recentSearches.ts` keeps the last five opened items (stored items are resolved against the live ones, so a
+  renamed to-do shows its new title and a deleted one drops out once its source has loaded);
+  `recentSearchesStore.ts` persists them in localStorage only; `highlight.ts` splits text around the typed words
+  for `<mark>`.
+- **Lock screen** (`components/login/`). `lib/shell/userIdentity.ts` picks the name (PMO `me.names[0]`, else the
+  computer account's first name from `/api/platform/info`'s new `account` field, ignoring "Administrator" and
+  similar) and the initials; `userIdentityStore.ts` loads it once. The lock screen shows the initials avatar,
+  "Welcome back" and the name, and `LockSummary` shows the Dashboard badge's meaning under the clock when
+  `preferences.lockSummary` (default on, Settings > General and the gear menu) is on and something needs the
+  person. "Skip the lock screen" is untouched.
+- **Dashboard** (`components/apps/dashboard-app/`, `lib/dashboard/charts.ts`). Today rows have a tone dot and an
+  Open button; workload is one stacked bar per person (`workloadBars`); report health is chips
+  (`healthChips`); "This week vs last" uses `weekMetrics` (running totals per weekday) and `sparkPoints` /
+  `polylinePoints` for small SVG sparklines, with no chart library. Customise uses `CustomiseList`: a grip per
+  card with `@use-gesture/react`'s `useDrag` (window listeners, because rows move in the DOM mid-drag),
+  `layout.dropIndex` / `moveWidgetTo` for the live preview (hidden cards keep their slots) and the Up/Down arrow
+  keys on the focused grip as the keyboard alternative. The grid follows the draft layout and the saved one is
+  written on release.
+- **Settings** (`components/apps/settings-app/`, `lib/settings/settingsIndex.ts`). `SETTINGS_INDEX` lists every
+  setting with tab, section and keywords; a test checks each id is still a `settingId` / `data-setting-id` in the
+  screens. The search box replaces the tab content with matches; choosing one switches tab, scrolls to the row and
+  flashes it. `Section` is a card with a header; General is grouped as Profile, Lock screen and desktop, To-dos,
+  Focus, The command bar asks first, Command history. Data shows a storage meter against a 1 GB guide and the last
+  backup time (`dataHealth.ts`; `platformPrefs.lastBackupAt` is set when a backup is created). Activity is a
+  timeline (`activityTimeline.ts`: category and icon per action, filter chips, day headings), still using the
+  readable labels from QA-44.
+- **Responsive (1024 x 720).** The dock overflows into the App Menu, the Settings tabs become a list under 48 rem
+  (container query), rows and footers wrap, and cards use container widths instead of the screen's.

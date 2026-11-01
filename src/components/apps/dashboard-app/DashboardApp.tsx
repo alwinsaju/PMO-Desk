@@ -15,17 +15,14 @@ import {
   reportHealth,
   signoffPipeline,
   todayList,
-  weekOverWeek,
   workloadByOwner,
 } from "@/lib/dashboard/insights";
+import { weekMetrics } from "@/lib/dashboard/charts";
 import {
   DEFAULT_LAYOUT,
-  WIDGET_TITLE,
-  moveWidget,
   saveLayout,
-  toggleHidden,
-  toggleWide,
   visibleWidgets,
+  type Layout,
   type WidgetId,
 } from "@/lib/dashboard/layout";
 import { awayWindow, openTodos, overdueChasers } from "@/lib/dashboard/summary";
@@ -57,6 +54,7 @@ import {
   WeekWidget,
   WorkloadWidget,
 } from "./InsightWidgets";
+import { CustomiseList } from "./CustomiseList";
 import { StaffAttentionWidget } from "./StaffAttentionWidget";
 import { RegistersWidget } from "./RegistersWidget";
 import { useNow, useReportStatuses, useRoster } from "./useDashboardData";
@@ -83,6 +81,9 @@ export function DashboardApp({ windowId }: { windowId: string }) {
   const period = usePreferences((s) => s.dashboardPeriod);
   const setPeriod = usePreferences((s) => s.setDashboardPeriod);
   const layout = useDashboardPrefs((s) => s.layout);
+  // The order while a card is being dragged in Customise: the grid below follows it live.
+  const [draft, setDraft] = useState<Layout | null>(null);
+  const shownLayout = draft ?? layout;
   const layouts = useDashboardPrefs((s) => s.layouts);
   const updatePrefs = useDashboardPrefs((s) => s.update);
   const [editing, setEditing] = useState(false);
@@ -148,7 +149,7 @@ export function DashboardApp({ windowId }: { windowId: string }) {
       aging: agingBuckets(state.todos, now),
       pipeline: signoffPipeline(state.todos, now, prefs),
       health: reportHealth(reports.rows ?? [], reports.histories),
-      week: weekOverWeek({
+      week: weekMetrics({
         todos: state.todos,
         runs: Object.values(reports.histories).flatMap((h) => [...(h ?? [])]),
         leave: timeOff,
@@ -232,11 +233,11 @@ export function DashboardApp({ windowId }: { windowId: string }) {
     aging: insights && <AgingWidget buckets={insights.aging} />,
     signoff: insights && <PipelineWidget pipeline={insights.pipeline} />,
     health: insights && <HealthWidget health={insights.health} />,
-    week: insights && <WeekWidget week={insights.week} />,
+    week: insights && <WeekWidget metrics={insights.week} />,
     registers: <RegistersWidget onOpen={(toolId) => openOrFocusBuiltInApp(toolId)} />,
   };
 
-  const shown = visibleWidgets(layout).filter((id) => cards[id]);
+  const shown = visibleWidgets(shownLayout).filter((id) => cards[id]);
   const canExport = Boolean(getDesktopBridge()?.view);
 
   return (
@@ -288,78 +289,15 @@ export function DashboardApp({ windowId }: { windowId: string }) {
               data-testid="customise"
               className="border-line bg-card rounded-card flex flex-col gap-3 border p-4"
             >
-              <ul className="flex flex-col gap-1.5">
-                {layout.order.map((id) => {
-                  const hidden = layout.hidden.includes(id);
-                  return (
-                    <li
-                      key={id}
-                      className="flex flex-wrap items-center gap-3 text-[13px]"
-                    >
-                      <label className="text-ink flex min-w-44 items-center gap-2">
-                        <input
-                          type="checkbox"
-                          checked={!hidden}
-                          onChange={() =>
-                            updatePrefs((p) => ({
-                              ...p,
-                              layout: toggleHidden(p.layout, id),
-                            }))
-                          }
-                          className="accent-accent h-4 w-4"
-                          aria-label={`Show ${WIDGET_TITLE[id]}`}
-                        />
-                        {WIDGET_TITLE[id]}
-                      </label>
-                      {!hidden && (
-                        <>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            aria-label={`Move ${WIDGET_TITLE[id]} up`}
-                            onClick={() =>
-                              updatePrefs((p) => ({
-                                ...p,
-                                layout: moveWidget(p.layout, id, -1),
-                              }))
-                            }
-                          >
-                            Up
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            aria-label={`Move ${WIDGET_TITLE[id]} down`}
-                            onClick={() =>
-                              updatePrefs((p) => ({
-                                ...p,
-                                layout: moveWidget(p.layout, id, 1),
-                              }))
-                            }
-                          >
-                            Down
-                          </Button>
-                          <label className="text-ink-soft flex items-center gap-1.5">
-                            <input
-                              type="checkbox"
-                              checked={layout.wide.includes(id)}
-                              onChange={() =>
-                                updatePrefs((p) => ({
-                                  ...p,
-                                  layout: toggleWide(p.layout, id),
-                                }))
-                              }
-                              className="accent-accent h-4 w-4"
-                              aria-label={`Wide ${WIDGET_TITLE[id]}`}
-                            />
-                            Wide
-                          </label>
-                        </>
-                      )}
-                    </li>
-                  );
-                })}
-              </ul>
+              <p className="text-ink-muted text-[12.5px]">
+                Drag the grip to reorder: the Dashboard below follows as you drag. With
+                the grip focused, press the Up or Down arrow key instead.
+              </p>
+              <CustomiseList
+                layout={layout}
+                onPreview={setDraft}
+                onCommit={(next) => updatePrefs((p) => ({ ...p, layout: next }))}
+              />
               <div className="border-line flex flex-wrap items-center gap-2 border-t pt-3">
                 <Input
                   aria-label="Layout name"
@@ -421,7 +359,7 @@ export function DashboardApp({ windowId }: { windowId: string }) {
               {shown.map((id) => (
                 <div
                   key={id}
-                  className={layout.wide.includes(id) ? "@3xl:col-span-2" : ""}
+                  className={shownLayout.wide.includes(id) ? "@3xl:col-span-2" : ""}
                 >
                   {cards[id]}
                 </div>

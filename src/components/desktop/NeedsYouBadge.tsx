@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { useRemindersStore } from "@/components/apps/pmo-todo-app/remindersStore";
+import { attentionMeaning } from "@/components/taskbar/dockBadge";
 import { useDockBadgeStore } from "@/components/taskbar/dockBadgeStore";
 import { needsYouTotal } from "@/lib/dashboard/insights";
 import { useNeedsYou } from "@/lib/dashboard/needsYouStore";
@@ -22,10 +23,12 @@ export function NeedsYouBadge() {
   const registers = useNeedsYou((s) => s.registers);
   const total = needsYouTotal({ pmo, leave, tasks, registers });
 
+  const meaning = attentionMeaning({ pmo, leave, tasks, registers });
+
   useEffect(() => {
-    useDockBadgeStore.getState().setBadge("dashboard", total);
+    useDockBadgeStore.getState().setBadge("dashboard", total, meaning);
     getDesktopBridge()?.setBadge(total);
-  }, [total]);
+  }, [total, meaning]);
 
   return null;
 }

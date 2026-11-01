@@ -45,6 +45,8 @@ export interface PlatformInfo {
   files: number;
   bytes: number;
   desktop: boolean;
+  /** The computer account's name, used to greet the person on the lock screen. */
+  account?: string;
 }
 
 export const fetchInfo = () => json<PlatformInfo>("info");

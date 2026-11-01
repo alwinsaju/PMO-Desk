@@ -22,6 +22,7 @@ import {
 interface PreferencesState extends Preferences {
   setDashboardPeriod: (period: DashboardPeriod) => void;
   setInstantUnlock: (on: boolean) => void;
+  setLockSummary: (on: boolean) => void;
   rememberWindow: (appId: string, rect: WindowRect) => void;
   setConfirmAction: (key: ConfirmKey, ask: boolean) => void;
   setReducedMotion: (on: boolean) => void;
@@ -47,6 +48,7 @@ export const usePreferences = create<PreferencesState>()(
       ...DEFAULT_PREFERENCES,
       setDashboardPeriod: (dashboardPeriod) => set({ dashboardPeriod }),
       setInstantUnlock: (instantUnlock) => set({ instantUnlock }),
+      setLockSummary: (lockSummary) => set({ lockSummary }),
       rememberWindow: (appId, rect) =>
         set((state) => ({
           windowRects: rememberWindowRect(state.windowRects, appId, rect),
@@ -74,6 +76,7 @@ export const usePreferences = create<PreferencesState>()(
       partialize: (state): Preferences => ({
         dashboardPeriod: state.dashboardPeriod,
         instantUnlock: state.instantUnlock,
+        lockSummary: state.lockSummary,
         windowRects: state.windowRects,
         confirmActions: state.confirmActions,
         reducedMotion: state.reducedMotion,

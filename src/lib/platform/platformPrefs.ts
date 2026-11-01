@@ -20,6 +20,8 @@ export interface PlatformPrefs {
   /** Sample data was added and not yet removed. */
   sampleLoaded: boolean;
   updates: UpdatePrefs;
+  /** When a backup was last created from Settings > Data (ISO; "" = never). */
+  lastBackupAt: string;
 }
 
 export const DEFAULT_UPDATE_PREFS: UpdatePrefs = {
@@ -35,6 +37,7 @@ export const DEFAULT_PLATFORM_PREFS: PlatformPrefs = {
   tourDone: false,
   sampleLoaded: false,
   updates: DEFAULT_UPDATE_PREFS,
+  lastBackupAt: "",
 };
 
 const str = (v: unknown, max: number): string =>
@@ -60,5 +63,8 @@ export function sanitizePlatformPrefs(value: unknown): PlatformPrefs {
     tourDone: raw.tourDone === true,
     sampleLoaded: raw.sampleLoaded === true,
     updates: sanitizeUpdatePrefs(raw.updates),
+    lastBackupAt: Number.isNaN(Date.parse(str(raw.lastBackupAt, 40)))
+      ? ""
+      : str(raw.lastBackupAt, 40),
   };
 }

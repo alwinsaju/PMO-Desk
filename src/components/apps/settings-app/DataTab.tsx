@@ -2,9 +2,19 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui";
+import { Chip } from "../pmo-todo-app/parts";
 import { getDisplayBridge } from "@/lib/displayFx";
 import { getDesktopBridge } from "@/lib/pmo/desktopBridge";
 import type { BackupManifest } from "@/lib/platform/backup";
+import {
+  STORAGE_GUIDE_BYTES,
+  backupStatus,
+  storageMeter,
+  type MeterTone,
+  type StorageMeter,
+} from "@/lib/platform/dataHealth";
+import { usePlatformPrefs } from "@/lib/platform/platformPrefsStore";
+import { formatDateTime } from "@/lib/ui/dates";
 import {
   checkBackup,
   fetchInfo,
@@ -22,6 +32,32 @@ type Message = {
   detail?: string;
 } | null;
 
+const METER_FILL: Record<MeterTone, string> = {
+  success: "bg-success-dot",
+  warning: "bg-amber",
+  danger: "bg-red",
+};
+
+/** A horizontal meter of how much of the data-folder guide is used. */
+function StorageBar({ meter }: { meter: StorageMeter }) {
+  return (
+    <div
+      role="meter"
+      aria-label="Storage used"
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={meter.percent}
+      aria-valuetext={`${meter.percent}% of the guide. ${meter.note}`}
+      className="bg-chip h-2.5 w-full basis-full overflow-hidden rounded-full"
+    >
+      <span
+        className={`block h-full rounded-full ${METER_FILL[meter.tone]}`}
+        style={{ width: `${Math.max(meter.percent, 2)}%` }}
+      />
+    </div>
+  );
+}
+
 /** Settings > Data: where the data lives, back up, restore and export it for audits. */
 export function DataTab() {
   const [info, setInfo] = useState<PlatformInfo | null>(null);
@@ -31,6 +67,10 @@ export function DataTab() {
   const [restored, setRestored] = useState(false);
   const picker = useRef<HTMLInputElement>(null);
   const bridge = getDesktopBridge();
+  const lastBackupAt = usePlatformPrefs((s) => s.lastBackupAt);
+  const [now] = useState(() => new Date());
+  const lastBackup = backupStatus(lastBackupAt, now);
+  const meter = info ? storageMeter(info.bytes) : null;
 
   const refresh = useCallback(async () => {
     const reply = await fetchInfo();
@@ -45,6 +85,11 @@ export function DataTab() {
     setMessage(null);
     const reply = await saveDownload(path, name);
     setBusy(null);
+    if (reply.ok && key === "backup") {
+      usePlatformPrefs
+        .getState()
+        .update((p) => ({ ...p, lastBackupAt: new Date().toISOString() }));
+    }
     setMessage(
       reply.ok
         ? { tone: "success", text: `${done} (${reply.name}).` }
@@ -92,6 +137,7 @@ export function DataTab() {
     <>
       <Section title="Where your data lives">
         <Row
+          settingId="data-folder"
           title="Data folder"
           hint={
             info
@@ -109,6 +155,17 @@ export function DataTab() {
             </Button>
           )}
         </Row>
+        <Row
+          settingId="storage"
+          title="Storage used"
+          hint={
+            info
+              ? `${formatBytes(info.bytes)} of a ${formatBytes(STORAGE_GUIDE_BYTES)} guide. ${meter?.note ?? ""}`
+              : "Reading the folder…"
+          }
+        >
+          {meter && <StorageBar meter={meter} />}
+        </Row>
         <p className="text-ink-muted pt-2 text-[12.5px]">
           To-dos, the queue, staff, templates and saved settings are kept here, on this
           computer only. Task inputs and outputs live with the Tasks engine and are not
@@ -118,6 +175,7 @@ export function DataTab() {
 
       <Section title="Back up and restore">
         <Row
+          settingId="backup-now"
           title="Back up now"
           hint="One zip with everything above. Keep a copy somewhere safe."
         >
@@ -131,7 +189,15 @@ export function DataTab() {
             {busy === "backup" ? "Backing up…" : "Back up"}
           </Button>
         </Row>
+        <Row settingId="last-backup" title="Last backup" hint={lastBackup.note}>
+          <Chip tone={lastBackup.tone}>
+            {lastBackupAt
+              ? `${lastBackup.when} · ${formatDateTime(lastBackupAt)}`
+              : lastBackup.when}
+          </Chip>
+        </Row>
         <Row
+          settingId="restore"
           title="Restore from a backup"
           hint="Replaces your current data with a backup's. The current data is saved first."
         >
@@ -190,6 +256,7 @@ export function DataTab() {
 
       <Section title="Export for audits">
         <Row
+          settingId="export-json"
           title="JSON"
           hint="To-dos, people, time off and templates in one file. Private fields are left out."
         >
@@ -205,6 +272,7 @@ export function DataTab() {
           </Button>
         </Row>
         <Row
+          settingId="export-csv"
           title="Excel (CSV)"
           hint="One CSV file per list, in a zip. Excel opens them."
         >

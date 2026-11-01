@@ -255,6 +255,12 @@ test("prefs: sanitised, with the update check off by default", () => {
   assert.equal(p.updates.enabled, true);
   assert.equal(p.updates.manifestUrl.length, 500);
   assert.equal(p.updates.availableVersion, "");
+  assert.equal(p.lastBackupAt, "");
+  assert.equal(
+    sanitizePlatformPrefs({ lastBackupAt: "2026-10-30T09:05:00.000Z" }).lastBackupAt,
+    "2026-10-30T09:05:00.000Z",
+  );
+  assert.equal(sanitizePlatformPrefs({ lastBackupAt: "yesterday" }).lastBackupAt, "");
 });
 
 test("release notes: shown once per update, first run shows only the latest", () => {

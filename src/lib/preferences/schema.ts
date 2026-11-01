@@ -32,6 +32,8 @@ export interface Preferences {
   dashboardPeriod: DashboardPeriod;
   /** Skip the lock screen's short pause and its "Continue" delay. */
   instantUnlock: boolean;
+  /** A one-line "what needs you" summary under the lock screen's clock. */
+  lockSummary: boolean;
   /** Last position and size of each app's window, by app id. */
   windowRects: Record<string, WindowRect>;
   /** Which command-bar actions ask "are you sure?" first. */
@@ -61,6 +63,7 @@ export const DEFAULT_CONFIRM_ACTIONS: Record<ConfirmKey, boolean> = {
 export const DEFAULT_PREFERENCES: Preferences = {
   dashboardPeriod: "this-week",
   instantUnlock: false,
+  lockSummary: true,
   windowRects: {},
   confirmActions: DEFAULT_CONFIRM_ACTIONS,
   reducedMotion: false,
@@ -271,6 +274,10 @@ export function sanitizePreferences(value: unknown): Preferences {
       typeof raw.instantUnlock === "boolean"
         ? raw.instantUnlock
         : DEFAULT_PREFERENCES.instantUnlock,
+    lockSummary:
+      typeof raw.lockSummary === "boolean"
+        ? raw.lockSummary
+        : DEFAULT_PREFERENCES.lockSummary,
     windowRects: sanitizeWindowRects(raw.windowRects),
     confirmActions: sanitizeConfirm(raw.confirmActions),
     reducedMotion: typeof raw.reducedMotion === "boolean" ? raw.reducedMotion : false,

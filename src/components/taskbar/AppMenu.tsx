@@ -48,7 +48,7 @@ import { isDefaultPinnedIds } from "./taskbarLayout";
  * system's other flyout-style overlays (Popover/DropdownMenu/ContextMenu
  * all share the same open/close treatment — see src/lib/motion.ts).
  */
-export function AppMenu() {
+export function AppMenu({ hiddenCount = 0 }: { hiddenCount?: number }) {
   const [open, setOpen] = useState(false);
   const openWindow = useWindowStore((s) => s.openWindow);
   const installedIds = useInstalledAppsStore((s) => s.installedIds);
@@ -94,7 +94,15 @@ export function AppMenu() {
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <Tooltip label="Installed apps" side="bottom" sideOffset={16}>
+      <Tooltip
+        label={
+          hiddenCount > 0
+            ? `More apps (${hiddenCount} not shown in the dock)`
+            : "Installed apps"
+        }
+        side="bottom"
+        sideOffset={16}
+      >
         <PopoverTrigger asChild>
           <button
             type="button"
@@ -103,6 +111,14 @@ export function AppMenu() {
             className={dockTileClassName}
           >
             <DotsNineIcon size={23} />
+            {hiddenCount > 0 && (
+              <span
+                aria-hidden
+                className="bg-accent text-accent-contrast border-surface-elevated rounded-pill pointer-events-none absolute -top-1 -right-1 flex h-[18px] min-w-[18px] items-center justify-center border-2 px-1 text-[10px] leading-none font-semibold"
+              >
+                +{hiddenCount}
+              </span>
+            )}
           </button>
         </PopoverTrigger>
       </Tooltip>

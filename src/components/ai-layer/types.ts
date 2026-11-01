@@ -60,6 +60,8 @@ export interface AgentAnnotation {
   /** An answer to read, not a status: stays until dismissed (Esc, the close button or the
    *  next question) and offers Copy. */
   sticky?: boolean;
+  /** Heading of an answer card: the question that was asked. */
+  title?: string;
   /** A link under the answer ("Show me in PMO To-Do"). */
   action?: { label: string; run: () => void };
 }

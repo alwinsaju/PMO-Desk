@@ -154,6 +154,7 @@ describe("sanitizePreferences", () => {
     const stored = {
       dashboardPeriod: "next-week",
       instantUnlock: true,
+      lockSummary: false,
       windowRects: { staff: { x: 10, y: 20, width: 900, height: 600 } },
       confirmActions: { create_todo: false, todo_done: true, todo_snooze: true },
       reducedMotion: true,
@@ -192,6 +193,7 @@ describe("sanitizePreferences", () => {
     });
     assert.equal(result.dashboardPeriod, "this-week");
     assert.equal(result.instantUnlock, false);
+    assert.equal(result.lockSummary, true);
     assert.deepEqual(result.windowRects.staff, { x: 1, y: 2, width: 300, height: 200 });
   });
 
