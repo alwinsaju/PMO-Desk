@@ -12,8 +12,9 @@ import {
   WarningCircleIcon,
   XIcon,
 } from "@phosphor-icons/react";
-import { Button, IconButton, Input } from "@/components/ui";
+import { Button, IconButton, Input, Tooltip } from "@/components/ui";
 import { cn } from "@/lib/cn";
+import { toast } from "@/lib/notifications/toastStore";
 import { formatRange, todayIso } from "@/lib/staff/dates";
 import { displayName } from "@/lib/staff/employees";
 import { useStaffStore } from "@/lib/staff/staffStore";
@@ -26,14 +27,9 @@ import {
   validateTimeOff,
 } from "@/lib/staff/timeoff";
 import type { TimeOffRequest, TimeOffStatus } from "@/lib/staff/types";
-import {
-  ConfirmDialog,
-  DASH,
-  EmployeeAvatar,
-  EmptyState,
-  TONE_DOT,
-  TonePill,
-} from "./parts";
+import { TERMS } from "@/lib/ui/terms";
+import { noSpellcheck } from "@/lib/ui/noSpellcheck";
+import { DASH, EmployeeAvatar, EmptyState, TONE_DOT, TonePill } from "./parts";
 import { TimeOffDialog } from "./TimeOffDialog";
 import { ModelChip } from "./ModelChip";
 
@@ -45,6 +41,15 @@ const STATUS_TABS: { value: TimeOffStatus | ""; label: string }[] = [
 ];
 
 const CARD = "border-line bg-card rounded-card border";
+
+/** A reason cut to one line, with the whole text in a tooltip. */
+function Reason({ text, className }: { text: string; className?: string }) {
+  return (
+    <Tooltip label={text} className="max-w-xs break-words whitespace-normal">
+      <span className={cn("block truncate text-[13px]", className)}>{text}</span>
+    </Tooltip>
+  );
+}
 
 export function TimeOffTab({
   status,
@@ -59,8 +64,6 @@ export function TimeOffTab({
 
   const [query, setQuery] = useState("");
   const [adding, setAdding] = useState(false);
-  const [deleting, setDeleting] = useState<TimeOffRequest | null>(null);
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const today = todayIso();
@@ -87,13 +90,21 @@ export function TimeOffTab({
     if (!result.ok) setError(result.reason);
   }
 
-  async function remove() {
-    if (!deleting) return;
-    setBusy(true);
-    const result = await commit("timeoff", { remove: [deleting.id] });
-    setBusy(false);
-    if (result.ok) setDeleting(null);
-    else setError(result.reason);
+  async function remove(request: TimeOffRequest) {
+    setError(null);
+    const result = await commit("timeoff", { remove: [request.id] });
+    if (!result.ok) return setError(result.reason);
+    const person = byId.get(request.employeeId);
+    toast({
+      title: "Time off deleted",
+      message: `${person ? `${displayName(person)}'s` : "The"} ${TIME_OFF_META[request.type].label} request, ${formatRange(request.startDate, request.endDate)}.`,
+      action: { label: "Undo", run: () => void restore(request) },
+    });
+  }
+
+  async function restore(request: TimeOffRequest) {
+    const result = await commit("timeoff", { upsert: [request] });
+    if (!result.ok) toast({ tone: "danger", message: result.reason });
   }
 
   if (employees.length === 0) {
@@ -121,10 +132,10 @@ export function TimeOffTab({
           </div>
           <dl className="grid grid-cols-4 gap-3">
             {[
-              ["Requested", stats.total, "text-ink"],
-              ["Approved", stats.approved, "text-success"],
+              [TERMS.total, stats.total, "text-ink"],
+              [TERMS.approved, stats.approved, "text-success"],
               ["Rejected", stats.rejected, "text-red"],
-              ["Pending", stats.pending, "text-amber"],
+              [TERMS.pending, stats.pending, "text-amber"],
             ].map(([label, value, tone]) => (
               <div key={label as string}>
                 <dt className="text-ink-muted text-[12px]">{label}</dt>
@@ -198,6 +209,7 @@ export function TimeOffTab({
             className="text-ink-muted pointer-events-none absolute top-1/2 left-3 -translate-y-1/2"
           />
           <Input
+            {...noSpellcheck}
             aria-label="Search time off"
             placeholder="Search requests"
             value={query}
@@ -254,6 +266,7 @@ export function TimeOffTab({
             <tbody>
               {rows.map((request) => {
                 const person = byId.get(request.employeeId);
+                const who = person ? displayName(person) : "this person";
                 const meta = TIME_OFF_META[request.type];
                 const days = dayCount(request);
                 return (
@@ -288,19 +301,20 @@ export function TimeOffTab({
                       <span className="text-ink-muted block text-[12px]">
                         {days.working} working {days.working === 1 ? "day" : "days"}
                       </span>
+                      {request.reason && (
+                        <Reason text={request.reason} className="mt-0.5 @3xl:hidden" />
+                      )}
                     </td>
-                    <td
-                      className="border-line text-ink-muted hidden max-w-[220px] truncate border-t px-3 py-2.5 text-[13px] @3xl:table-cell"
-                      title={request.reason}
-                    >
-                      {request.reason || DASH}
+                    <td className="border-line text-ink-muted hidden max-w-[220px] border-t px-3 py-2.5 text-[13px] @3xl:table-cell">
+                      {request.reason ? <Reason text={request.reason} /> : DASH}
                     </td>
                     <td className="border-line border-t px-3 py-2.5">
                       <div className="flex items-center justify-end gap-1.5">
                         {request.status === "pending" ? (
                           <>
                             <IconButton
-                              aria-label={`Reject ${person ? displayName(person) : "request"}`}
+                              aria-label={`Reject ${who}'s request`}
+                              tooltip="Reject"
                               variant="outline"
                               size="sm"
                               onClick={() => void decide(request, "rejected")}
@@ -321,8 +335,8 @@ export function TimeOffTab({
                               {STATUS_META[request.status].label}
                             </TonePill>
                             <IconButton
-                              aria-label="Move back to pending"
-                              title="Move back to pending"
+                              aria-label={`Move ${who}'s request back to pending`}
+                              tooltip="Move back to pending"
                               size="sm"
                               onClick={() => void decide(request, "pending")}
                             >
@@ -331,13 +345,11 @@ export function TimeOffTab({
                           </>
                         )}
                         <IconButton
-                          aria-label="Delete request"
+                          aria-label={`Delete ${who}'s request`}
+                          tooltip="Delete (you can undo it)"
                           size="sm"
                           className="hover:text-red"
-                          onClick={() => {
-                            setError(null);
-                            setDeleting(request);
-                          }}
+                          onClick={() => void remove(request)}
                         >
                           <TrashIcon />
                         </IconButton>
@@ -352,16 +364,6 @@ export function TimeOffTab({
       </div>
 
       <TimeOffDialog open={adding} onOpenChange={setAdding} />
-      <ConfirmDialog
-        open={deleting !== null}
-        title="Delete this request?"
-        description="It will be removed from the list and from the shift planner."
-        confirmLabel="Delete"
-        busy={busy}
-        error={deleting ? error : null}
-        onConfirm={() => void remove()}
-        onOpenChange={(open) => !open && setDeleting(null)}
-      />
     </div>
   );
 }

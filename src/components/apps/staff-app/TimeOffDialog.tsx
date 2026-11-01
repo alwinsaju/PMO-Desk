@@ -9,9 +9,10 @@ import {
   DialogDescription,
   DialogFooter,
   DialogTitle,
+  FormField,
   Input,
 } from "@/components/ui";
-import { todayIso } from "@/lib/staff/dates";
+import { formatDate, formatRange, todayIso } from "@/lib/staff/dates";
 import { parseDateList } from "@/lib/staff/leave";
 import { displayName, sortEmployees } from "@/lib/staff/employees";
 import { useStaffStore } from "@/lib/staff/staffStore";
@@ -30,6 +31,7 @@ import {
   type TimeOffStatus,
   type TimeOffType,
 } from "@/lib/staff/types";
+import { noSpellcheck } from "@/lib/ui/noSpellcheck";
 import { Field, SELECT_CLASS } from "./parts";
 
 export function TimeOffDialog({
@@ -75,7 +77,7 @@ function TimeOffForm({
       endDate: todayIso(),
     }),
   );
-  const [errors, setErrors] = useState<TimeOffErrors>({});
+  const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -87,7 +89,20 @@ function TimeOffForm({
   const parsed = useMemo(() => (pasted.trim() ? parseDateList(pasted) : null), [pasted]);
   const ranges = parsed?.ranges ?? [];
 
+  // From and To are ignored while dates are typed in the list, so only the employee is checked then.
+  const found = useMemo(
+    () => validateTimeOff(draft, timeOff, ids),
+    [draft, timeOff, ids],
+  );
+  const errors: TimeOffErrors =
+    ranges.length > 0 ? { employeeId: found.employeeId } : found;
+
   async function save() {
+    setSubmitted(true);
+    setError(null);
+    if (parsed && parsed.unreadable.length > 0)
+      return setError(`Could not read: ${parsed.unreadable.join(", ")}`);
+    if (Object.keys(errors).length > 0) return;
     const base: TimeOffRequest = {
       ...draft,
       reason: draft.reason.trim(),
@@ -104,12 +119,7 @@ function TimeOffForm({
             }),
           )
         : [base];
-    if (parsed && parsed.unreadable.length > 0)
-      return setError(`Could not read: ${parsed.unreadable.join(", ")}`);
-    const found = validateTimeOff(requests[0], timeOff, ids);
-    setErrors(found);
-    if (Object.keys(found).length > 0) return;
-    for (let i = 1; i < requests.length; i++) {
+    for (let i = 0; i < requests.length; i++) {
       const more = validateTimeOff(
         requests[i],
         [...timeOff, ...requests.slice(0, i)],
@@ -117,11 +127,10 @@ function TimeOffForm({
       );
       if (Object.keys(more).length > 0)
         return setError(
-          `${requests[i].startDate}: ${Object.values(more)[0] ?? "this request is not valid."}`,
+          `${formatDate(requests[i].startDate)}: ${Object.values(more)[0] ?? "this request is not valid."}`,
         );
     }
     setBusy(true);
-    setError(null);
     const result = await commit("timeoff", { upsert: requests });
     setBusy(false);
     if (!result.ok) return setError(result.reason);
@@ -142,26 +151,28 @@ function TimeOffForm({
       </DialogDescription>
 
       <div className="mt-5 grid gap-x-4 gap-y-3.5 sm:grid-cols-2">
-        <Field
+        <FormField
           label="Employee"
-          htmlFor="to-employee"
           error={errors.employeeId}
+          showErrorNow={submitted}
           className="sm:col-span-2"
         >
-          <select
-            id="to-employee"
-            className={SELECT_CLASS}
-            value={draft.employeeId}
-            onChange={(e) => set("employeeId", e.target.value)}
-          >
-            <option value="">Choose…</option>
-            {people.map((p) => (
-              <option key={p.id} value={p.id}>
-                {displayName(p)}
-              </option>
-            ))}
-          </select>
-        </Field>
+          {(control) => (
+            <select
+              {...control}
+              className={SELECT_CLASS}
+              value={draft.employeeId}
+              onChange={(e) => set("employeeId", e.target.value)}
+            >
+              <option value="">Choose…</option>
+              {people.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {displayName(p)}
+                </option>
+              ))}
+            </select>
+          )}
+        </FormField>
         <Field label="Type" htmlFor="to-type">
           <select
             id="to-type"
@@ -190,29 +201,33 @@ function TimeOffForm({
             ))}
           </select>
         </Field>
-        <Field label="From" htmlFor="to-start" error={errors.startDate}>
-          <Input
-            id="to-start"
-            type="date"
-            value={draft.startDate}
-            onChange={(e) => {
-              const start = e.target.value;
-              setDraft((d) => ({
-                ...d,
-                startDate: start,
-                endDate: d.endDate < start ? start : d.endDate,
-              }));
-            }}
-          />
-        </Field>
-        <Field label="To (inclusive)" htmlFor="to-end" error={errors.endDate}>
-          <Input
-            id="to-end"
-            type="date"
-            value={draft.endDate}
-            onChange={(e) => set("endDate", e.target.value)}
-          />
-        </Field>
+        <FormField label="From" error={errors.startDate} showErrorNow={submitted}>
+          {(control) => (
+            <Input
+              {...control}
+              type="date"
+              value={draft.startDate}
+              onChange={(e) => {
+                const start = e.target.value;
+                setDraft((d) => ({
+                  ...d,
+                  startDate: start,
+                  endDate: d.endDate < start ? start : d.endDate,
+                }));
+              }}
+            />
+          )}
+        </FormField>
+        <FormField label="To (inclusive)" error={errors.endDate} showErrorNow={submitted}>
+          {(control) => (
+            <Input
+              {...control}
+              type="date"
+              value={draft.endDate}
+              onChange={(e) => set("endDate", e.target.value)}
+            />
+          )}
+        </FormField>
         <Field label="Reason" htmlFor="to-reason" className="sm:col-span-2">
           <Input
             id="to-reason"
@@ -222,26 +237,35 @@ function TimeOffForm({
             placeholder="Optional"
           />
         </Field>
-        <Field label="Several dates at once" htmlFor="to-paste" className="sm:col-span-2">
-          <Input
-            id="to-paste"
-            value={pasted}
-            onChange={(e) => setPasted(e.target.value)}
-            placeholder="Optional: 5–7 Nov, 12 Nov (replaces From and To)"
-          />
-          {parsed && (
-            <p className="text-ink-muted mt-1 text-[12px]" data-testid="pasted-dates">
-              {ranges.length > 0
-                ? `${ranges.length} request${ranges.length === 1 ? "" : "s"}: ${ranges
-                    .map((r) => (r.start === r.end ? r.start : `${r.start} to ${r.end}`))
-                    .join(", ")}`
-                : "No dates found yet."}
-              {parsed.unreadable.length > 0
-                ? ` Could not read: ${parsed.unreadable.join(", ")}.`
-                : ""}
-            </p>
+        <FormField
+          label="Several dates at once"
+          hint="Optional. Type dates or ranges separated by commas, for example 5–7 Nov, 12 Nov. One request is added for each, and From and To are ignored."
+          className="sm:col-span-2"
+        >
+          {(control) => (
+            <>
+              <Input
+                {...noSpellcheck}
+                {...control}
+                value={pasted}
+                onChange={(e) => setPasted(e.target.value)}
+                placeholder="5–7 Nov, 12 Nov"
+              />
+              {parsed && (
+                <p className="text-ink-muted text-[12px]" data-testid="pasted-dates">
+                  {ranges.length > 0
+                    ? `${ranges.length} request${ranges.length === 1 ? "" : "s"}: ${ranges
+                        .map((r) => formatRange(r.start, r.end))
+                        .join(", ")}`
+                    : "No dates found yet."}
+                  {parsed.unreadable.length > 0
+                    ? ` Could not read: ${parsed.unreadable.join(", ")}.`
+                    : ""}
+                </p>
+              )}
+            </>
           )}
-        </Field>
+        </FormField>
       </div>
 
       {error && (
