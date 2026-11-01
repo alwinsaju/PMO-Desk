@@ -68,6 +68,8 @@ export interface RosterGridProps {
   /** Every location a holiday can apply to. */
   choices: readonly string[];
   actions: GridActions;
+  /** Show each team's shift cards (hours) under its name; off by default to keep the people in view. */
+  showShifts?: boolean;
 }
 
 /** The holiday / swap / note of a day, above its date: loud in the week view
@@ -134,6 +136,7 @@ export function RosterGrid({
   eventsByDay,
   choices,
   actions,
+  showShifts = false,
 }: RosterGridProps) {
   const cycle = view === "cycle";
   const hasEvents = days.some((d) => eventsByDay.has(d));
@@ -256,7 +259,11 @@ export function RosterGrid({
               colSpan={days.length + 1}
               className="border-line-strong bg-card relative border-y border-l p-0"
             >
-              <SectionHeader section={section} onHide={() => actions.hide(section)} />
+              <SectionHeader
+                section={section}
+                showShifts={showShifts}
+                onHide={() => actions.hide(section)}
+              />
             </td>
           </tr>
           {section.rows.map((row) => {

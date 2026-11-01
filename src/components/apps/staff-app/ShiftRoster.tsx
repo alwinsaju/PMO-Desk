@@ -6,6 +6,7 @@ import {
   CaretLeftIcon,
   CaretRightIcon,
   CopyIcon,
+  DotsThreeIcon,
   EyeIcon,
   FileXlsIcon,
   GearSixIcon,
@@ -21,6 +22,9 @@ import {
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
   IconButton,
   Input,
@@ -66,6 +70,7 @@ import {
 } from "@/lib/staff/shifts";
 import { useStaffStore } from "@/lib/staff/staffStore";
 import { TIME_OFF_META } from "@/lib/staff/timeoff";
+import { noSpellcheck } from "@/lib/ui/noSpellcheck";
 import type {
   RosterConfig,
   RosterEvent,
@@ -78,6 +83,7 @@ import { CellDialog, type CellEdit } from "./CellDialog";
 import { DayView } from "./DayView";
 import { HolidayDialog } from "./HolidayDialog";
 import { LinkDialog } from "./LinkDialog";
+import { readSetting, writeSetting } from "./localSetting";
 import { ConfirmDialog, EmptyState, FilterMenu } from "./parts";
 import type { RosterView } from "./RosterCell";
 import { RosterGrid, type GridActions } from "./RosterGrid";
@@ -86,6 +92,7 @@ import { RosterImportDialog } from "./RosterImportDialog";
 import { ScheduleDialog } from "./ScheduleDialog";
 
 const VIEWS: readonly RosterView[] = ["today", "week", "month", "cycle"];
+const LEGEND_KEY = "ai-os:staff:roster-legend";
 const VIEW_LABEL: Record<RosterView, string> = {
   today: "Day",
   week: "Week",
@@ -151,6 +158,11 @@ export function ShiftRoster() {
   const [view, setView] = useState<RosterView>("week");
   const [anchor, setAnchor] = useState(() => mondayOf(today));
   const [query, setQuery] = useState("");
+  const [legendOpen, setLegendOpen] = useState(() => readSetting(LEGEND_KEY) === "open");
+  const toggleLegend = () => {
+    writeSetting(LEGEND_KEY, legendOpen ? "closed" : "open");
+    setLegendOpen(!legendOpen);
+  };
   const [groupName, setGroupName] = useState("");
   const [menu, setMenu] = useState<MenuTarget | null>(null);
   const [cellEdit, setCellEdit] = useState<CellEdit | null>(null);
@@ -440,14 +452,17 @@ export function ShiftRoster() {
             <CaretRightIcon weight="bold" />
           </IconButton>
         </div>
-        <div className="min-w-[150px]" aria-live="polite">
-          <h2 className="text-ink text-[15px] leading-tight font-bold">{title}</h2>
+        <div className="shrink-0" aria-live="polite">
+          <h2 className="text-ink text-[15px] leading-tight font-bold whitespace-nowrap">
+            {title}
+          </h2>
           {subtitle && <p className="text-ink-muted text-[11.5px]">{subtitle}</p>}
         </div>
         <Button
-          variant="ghost"
+          variant="outline"
           size="sm"
           disabled={todayInView}
+          title={todayInView ? "Today is already in view" : undefined}
           onClick={() => setAnchor(anchorFor(view, today))}
         >
           Today
@@ -475,12 +490,13 @@ export function ShiftRoster() {
           ))}
         </div>
 
-        <div className="relative ml-auto max-w-[220px] min-w-[160px] flex-1">
+        <div className="relative ml-auto max-w-[220px] min-w-[130px] flex-1">
           <MagnifyingGlassIcon
             size={15}
             className="text-ink-muted pointer-events-none absolute top-1/2 left-3 -translate-y-1/2"
           />
           <Input
+            {...noSpellcheck}
             aria-label="Search people in the roster"
             placeholder="Search people"
             value={query}
@@ -496,96 +512,86 @@ export function ShiftRoster() {
         />
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="sm" aria-label="Show or hide teams">
-              <EyeIcon size={14} weight="bold" />
-              Teams
-              {hiddenTeams > 0 && (
-                <span className="bg-accent-soft text-accent-ink rounded-chip px-1.5 text-[11px] font-bold">
-                  {hiddenTeams} hidden
-                </span>
-              )}
+            <Button variant="outline" size="sm" aria-label="More roster actions">
+              <DotsThreeIcon size={16} weight="bold" />
+              More
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent
-            align="end"
-            className="max-h-[360px] min-w-[230px] overflow-y-auto"
-          >
-            <DropdownMenuLabel>Teams shown in the roster</DropdownMenuLabel>
-            {teams.length === 0 && (
-              <p className="text-ink-muted px-3 py-2 text-[12.5px]">No teams yet.</p>
-            )}
-            {teams.map((t) => (
-              <DropdownMenuCheckboxItem
-                key={t.id}
-                checked={!t.hidden}
-                onSelect={(e) => e.preventDefault()}
-                onCheckedChange={(show) =>
-                  void setTeamHidden(
-                    { id: t.id, name: t.name, scheduleId: t.scheduleId },
-                    !show,
-                  )
-                }
+          <DropdownMenuContent align="end" className="min-w-[230px]">
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger>
+                <EyeIcon size={14} weight="bold" />
+                Show or hide teams
+                {hiddenTeams > 0 && (
+                  <span className="text-ink-muted ml-auto pl-3 text-[12px]">
+                    {hiddenTeams} hidden
+                  </span>
+                )}
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className="max-h-[360px] min-w-[230px] overflow-y-auto">
+                <DropdownMenuLabel>Teams shown in the roster</DropdownMenuLabel>
+                {teams.length === 0 && (
+                  <p className="text-ink-muted px-3 py-2 text-[12.5px]">No teams yet.</p>
+                )}
+                {teams.map((t) => (
+                  <DropdownMenuCheckboxItem
+                    key={t.id}
+                    checked={!t.hidden}
+                    onSelect={(e) => e.preventDefault()}
+                    onCheckedChange={(show) =>
+                      void setTeamHidden(
+                        { id: t.id, name: t.name, scheduleId: t.scheduleId },
+                        !show,
+                      )
+                    }
+                  >
+                    <span className="flex-1">{t.name}</span>
+                    <span className="text-ink-muted ml-3 text-[12px]">{t.count}</span>
+                  </DropdownMenuCheckboxItem>
+                ))}
+                {hiddenTeams > 0 && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onSelect={() => {
+                        const current = latest();
+                        void saveRoster({
+                          ...current,
+                          groups: current.groups.map((g) =>
+                            g.hidden ? { ...g, hidden: undefined } : g,
+                          ),
+                        });
+                      }}
+                    >
+                      Show all teams
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+            {view === "week" && (
+              <DropdownMenuItem
+                disabled={copies.length === 0}
+                onSelect={() => void run({ upsert: copies })}
               >
-                <span className="flex-1">{t.name}</span>
-                <span className="text-ink-muted ml-3 text-[12px]">{t.count}</span>
-              </DropdownMenuCheckboxItem>
-            ))}
-            {hiddenTeams > 0 && (
-              <>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onSelect={() => {
-                    const current = latest();
-                    void saveRoster({
-                      ...current,
-                      groups: current.groups.map((g) =>
-                        g.hidden ? { ...g, hidden: undefined } : g,
-                      ),
-                    });
-                  }}
-                >
-                  Show all teams
-                </DropdownMenuItem>
-              </>
+                <CopyIcon size={14} weight="bold" />
+                Copy last week
+                <span className="text-ink-muted ml-auto pl-3 text-[12px]">
+                  fills empty days
+                </span>
+              </DropdownMenuItem>
             )}
-          </DropdownMenuContent>
-        </DropdownMenu>
-        <Button
-          variant="outline"
-          size="sm"
-          aria-label="Holidays by location"
-          onClick={() => setDialog("holidays")}
-        >
-          <CalendarDotsIcon size={14} weight="bold" />
-          Holidays
-        </Button>
-        {view === "week" && (
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={copies.length === 0}
-            title="Fill empty days this week with last week's shifts"
-            onClick={() => void run({ upsert: copies })}
-          >
-            <CopyIcon size={14} weight="bold" />
-            Copy last week
-          </Button>
-        )}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="sm" aria-label="Manage the shift roster">
-              <GearSixIcon size={14} weight="bold" />
-              Manage
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
+            <DropdownMenuSeparator />
             <DropdownMenuItem onSelect={() => setDialog("schedules")}>
+              <GearSixIcon size={14} weight="bold" />
               Schedules and teams…
             </DropdownMenuItem>
             <DropdownMenuItem onSelect={() => setDialog("holidays")}>
+              <CalendarDotsIcon size={14} weight="bold" />
               Holidays by location…
             </DropdownMenuItem>
             <DropdownMenuItem onSelect={() => setDialog("import")}>
+              <FileXlsIcon size={14} weight="bold" />
               Import from Excel…
             </DropdownMenuItem>
             <DropdownMenuItem onSelect={matchNames}>
@@ -678,11 +684,12 @@ export function ShiftRoster() {
             eventsByDay={eventsByDay}
             choices={choices}
             actions={actions}
+            showShifts={legendOpen}
           />
         )}
       </div>
 
-      <Legend />
+      <Legend open={legendOpen} onToggle={toggleLegend} />
 
       <CellMenu
         menu={menu}
