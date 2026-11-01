@@ -2,12 +2,14 @@
 
 import {
   useCallback,
+  useId,
   useLayoutEffect,
   useRef,
+  useState,
   type ComponentProps,
   type ReactNode,
 } from "react";
-import { CircleNotchIcon } from "@phosphor-icons/react";
+import { CaretRightIcon, CircleNotchIcon } from "@phosphor-icons/react";
 import { Badge, type BadgeProps, type BadgeVariant } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import type { Proposal, StructuringInfo } from "@/lib/pmo/types";
@@ -157,6 +159,51 @@ export function PanelMessage({
       )}
     >
       <p className="text-ink-muted max-w-sm text-[13.5px] leading-relaxed">{children}</p>
+    </div>
+  );
+}
+
+/** A closed-by-default "Advanced" group: a button that shows or hides what follows.
+ *  Pass `open` and `onOpenChange` to control it (e.g. to open it for an error). */
+export function Disclosure({
+  summary,
+  children,
+  open,
+  onOpenChange,
+  className,
+}: {
+  summary: ReactNode;
+  children: ReactNode;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  className?: string;
+}) {
+  const [inner, setInner] = useState(false);
+  const shown = open ?? inner;
+  const id = useId();
+  return (
+    <div className={cn("flex flex-col gap-3.5", className)}>
+      <button
+        type="button"
+        aria-expanded={shown}
+        aria-controls={id}
+        onClick={() => {
+          setInner(!shown);
+          onOpenChange?.(!shown);
+        }}
+        className="text-ink-soft hover:text-ink focus-visible:ring-focus rounded-control -mx-1 flex items-center gap-2 self-start px-1 py-0.5 text-[13px] font-semibold outline-none focus-visible:ring-2"
+      >
+        <CaretRightIcon
+          size={12}
+          weight="bold"
+          aria-hidden
+          className={cn("transition-transform", shown && "rotate-90")}
+        />
+        {summary}
+      </button>
+      <div id={id} hidden={!shown} className="flex flex-col gap-3.5">
+        {children}
+      </div>
     </div>
   );
 }
