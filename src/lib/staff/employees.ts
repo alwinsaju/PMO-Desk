@@ -673,11 +673,11 @@ const byName = (a: Employee, b: Employee) =>
   displayName(a).localeCompare(displayName(b), undefined, { sensitivity: "base" });
 
 /** People with no value in the column always come last, in either direction. */
-export function sortEmployees(
-  employees: readonly Employee[],
+export function sortEmployees<T extends Employee>(
+  employees: readonly T[],
   key: SortKey,
   dir: SortDir = defaultSortDir(key),
-): Employee[] {
+): T[] {
   const value = SORT_VALUE[key];
   const sign = dir === "desc" ? -1 : 1;
   return [...employees].sort((a, b) => {

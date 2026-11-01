@@ -22,7 +22,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui";
 import { cn } from "@/lib/cn";
-import { initials, photoUrl, type SortKey, type SortState } from "@/lib/staff/employees";
+import { initials, photoUrl, type SortDir } from "@/lib/staff/employees";
 import type { Hue, Tone } from "@/lib/staff/rosterCatalog";
 import type { Employee } from "@/lib/staff/types";
 
@@ -102,7 +102,7 @@ export const TH_CLASS =
   "px-3 py-2 text-left text-[11.5px] font-bold tracking-[0.06em] uppercase";
 
 /** A column header that sorts its table when clicked and says which way it is sorted. */
-export function SortableTh({
+export function SortableTh<K extends string>({
   label,
   sortKey,
   sort,
@@ -111,9 +111,9 @@ export function SortableTh({
   children,
 }: {
   label: string;
-  sortKey: SortKey;
-  sort: SortState;
-  onSort: (key: SortKey) => void;
+  sortKey: K;
+  sort: { key: K; dir: SortDir };
+  onSort: (key: K) => void;
   className?: string;
   /** Anything that sits on the header's edge, such as a resize handle. */
   children?: ReactNode;
