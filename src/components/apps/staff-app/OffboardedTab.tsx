@@ -8,7 +8,7 @@ import {
   TrashIcon,
   UserMinusIcon,
 } from "@phosphor-icons/react";
-import { Button, IconButton, Input } from "@/components/ui";
+import { Button, IconButton, Input, SkeletonList } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { formatDate, todayIso } from "@/lib/staff/dates";
 import {
@@ -76,7 +76,7 @@ export function OffboardedTab() {
     );
 
   if (status === "idle" || (status === "loading" && offboarded.length === 0)) {
-    return <p className="text-ink-muted p-8 text-center text-sm">Loading…</p>;
+    return <SkeletonList rows={5} label="Loading" className="px-5 py-2" />;
   }
 
   async function bringBack(person: OffboardedEmployee) {

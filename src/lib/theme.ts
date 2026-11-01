@@ -1,7 +1,7 @@
 /**
  * Appearance persistence: TWO orthogonal choices, each one attribute on
  * <html> plus one localStorage key. There is no Settings app (the toggles
- * live in the top-right SettingsMenu.tsx, which reads them via `useTheme` /
+ * live in Quick settings (SettingsMenu.tsx), which reads them via `useTheme` /
  * `useBrand`). localStorage is the source of truth (it must be readable before
  * hydration); each change is also mirrored, best effort, to the server's
  * `preferences` key so a new origin (another port) can restore it once.
@@ -26,6 +26,16 @@ import {
   mirrorPreferences,
   type PreferencesFetch,
 } from "./preferencesSync.ts";
+
+import {
+  currentOrigin,
+  mountBrandFx,
+  playBrandReveal,
+  trackOrigin,
+  wantsReveal,
+} from "./lookTransition.ts";
+
+trackOrigin();
 
 export type Theme = "light" | "dark";
 export type Brand = "default" | "deloitte";
@@ -54,13 +64,19 @@ export function getStoredTheme(): Theme {
  * globals.css) so nothing animates twice. Without the View Transitions API, or when the
  * person asked for less motion, the change is applied at once.
  */
-export function withLookTransition(change: () => void): void {
+export function withLookTransition(
+  change: () => void,
+  brand?: { entering: boolean },
+): void {
   if (typeof document === "undefined") {
     change();
     return;
   }
   const doc = document as Document & {
-    startViewTransition?: (update: () => void) => { finished: Promise<unknown> };
+    startViewTransition?: (update: () => void) => {
+      finished: Promise<unknown>;
+      ready?: Promise<unknown>;
+    };
   };
   const reduced =
     typeof window.matchMedia === "function" &&
@@ -71,9 +87,36 @@ export function withLookTransition(change: () => void): void {
   }
   const root = document.documentElement;
   root.setAttribute("data-look-switching", "");
-  const done = () => root.removeAttribute("data-look-switching");
+  const done = () => {
+    root.removeAttribute("data-look-switching");
+    root.removeAttribute("data-look-fx");
+  };
   try {
-    doc.startViewTransition(change).finished.then(done, done);
+    if (!brand) {
+      doc.startViewTransition(change).finished.then(done, done);
+      return;
+    }
+    // The brand switch: the dot, rings and circular reveal of lookTransition.ts.
+    const viewport = { width: window.innerWidth, height: window.innerHeight };
+    const reveal = {
+      entering: brand.entering,
+      origin: currentOrigin(viewport),
+      reveal: wantsReveal(),
+    };
+    let mounted: ReturnType<typeof mountBrandFx> = null;
+    // With the circular reveal the page's own cross-fade is switched off (globals.css).
+    if (reveal.reveal) {
+      root.setAttribute("data-look-fx", brand.entering ? "enter" : "leave");
+    }
+    const transition = doc.startViewTransition(() => {
+      change();
+      mounted = mountBrandFx(reveal);
+    });
+    void transition.ready?.then(
+      () => playBrandReveal(reveal, viewport, mounted),
+      () => mounted?.root.remove(),
+    );
+    transition.finished.then(done, done);
   } catch {
     done();
     change();
@@ -122,7 +165,7 @@ export function getStoredBrand(): Brand {
 /** Applies `brand` to <html> and persists the choice for next time. */
 export function setBrand(brand: Brand): void {
   persistBrand(brand);
-  withLookTransition(() => writeBrand(brand));
+  withLookTransition(() => writeBrand(brand), { entering: brand === "deloitte" });
   mirrorPreferences({ theme: getStoredTheme(), brand });
 }
 

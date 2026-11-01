@@ -344,7 +344,13 @@ toggles live in Quick settings, opened from the App Menu (`QuickSettings` in
 `SettingsMenu.tsx`: "Dark mode" and "Deloitte mode"). A switch runs as one View Transition
 (`withLookTransition` in `theme.ts`: the browser cross-fades two snapshots of the screen on the
 compositor over 520 ms, and `data-look-switching` turns the page's own CSS transitions off while it
-runs); without the API, or with reduced motion, it applies at once. The Deloitte wordmark
+runs); without the API, or with reduced motion, it applies at once. The Deloitte switch adds a brand
+animation (`src/lib/lookTransition.ts`): a soft green dot swells at the toggle and three rings
+(Deloitte green/blue entering, the default palette leaving) sweep out of it, drawn inside the new page
+state with transform and opacity only. With rich effects on (Settings > Hardware acceleration) the new
+look is also revealed by a circle growing out of the toggle (leaving: the old look shrinks back into
+it); that clip is the costly part under software rendering, so without rich effects the page simply
+cross-fades under the rings. The Deloitte wordmark
 (`public/brand/deloitte-{light,dark}.png`) sits in the middle of the Deloitte wallpapers (`.wp-logo`)
 and on the lock screen and About page. Cascade order in tokens.css (later wins): default light,
 `[data-theme=dark]`, `[data-brand=deloitte]` (shared: radii, font, ring),

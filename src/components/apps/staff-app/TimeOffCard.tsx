@@ -18,6 +18,8 @@ import {
 } from "@phosphor-icons/react";
 import { Button, IconButton, Tooltip } from "@/components/ui";
 import { cn } from "@/lib/cn";
+import { rowEnterClass, rowEnterStyle } from "@/lib/motion";
+import { useChangeCount } from "@/lib/useChangeCount";
 import { formatRange } from "@/lib/staff/dates";
 import { displayName } from "@/lib/staff/employees";
 import { STATUS_META, TIME_OFF_META, dayCount } from "@/lib/staff/timeoff";
@@ -88,6 +90,7 @@ function OverlapStrip({
 }
 
 export function TimeOffCard({
+  index,
   request,
   person,
   all,
@@ -96,6 +99,8 @@ export function TimeOffCard({
   onDecide,
   onDelete,
 }: {
+  /** Position in the list, for the staggered entrance. */
+  index: number;
   request: TimeOffRequest;
   person: Employee | undefined;
   all: readonly TimeOffRequest[];
@@ -113,12 +118,25 @@ export function TimeOffCard({
   const peers =
     request.status === "rejected" ? [] : overlappingLeave(request, all, people);
 
+  const flash = useChangeCount(request.status);
+
   return (
     <li
       data-testid="timeoff-card"
       data-status={request.status}
-      className="border-line bg-card rounded-card flex overflow-hidden border"
+      style={rowEnterStyle(index)}
+      className={cn(
+        "border-line bg-card rounded-card relative flex overflow-hidden border",
+        rowEnterClass(index),
+      )}
     >
+      {flash > 0 && (
+        <span
+          key={flash}
+          aria-hidden
+          className="anim-flash bg-accent-soft pointer-events-none absolute inset-0"
+        />
+      )}
       <span
         aria-hidden
         className={cn("w-1.5 shrink-0", TONE_DOT[status.tone])}

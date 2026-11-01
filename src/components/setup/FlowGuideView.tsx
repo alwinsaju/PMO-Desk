@@ -22,7 +22,8 @@ import {
   UserCircleIcon,
 } from "@phosphor-icons/react";
 import { Button } from "@/components/ui";
-import { easeEntrance, easeStandard } from "@/lib/motion";
+import { easeEntrance } from "@/lib/motion";
+import { useFx } from "@/lib/useFx";
 import { BrandMark } from "./BrandMark";
 import type { ConnectorId, FlowField, FlowGuide, FlowStep } from "./flowGuides";
 
@@ -265,6 +266,7 @@ function Card({
   state,
   onSelect,
   animate,
+  grow,
   cardRef,
 }: {
   step: FlowStep;
@@ -272,23 +274,22 @@ function Card({
   state: "done" | "active" | "later";
   onSelect: () => void;
   animate: boolean;
+  /** Animate the card opening (height). Only with the GPU: it relayouts every frame. */
+  grow: boolean;
   cardRef: (el: HTMLDivElement | null) => void;
 }) {
   const active = state === "active";
   return (
     <div ref={cardRef} className="relative">
-      <motion.div
-        layout={animate ? "position" : false}
+      <div
         className="overflow-hidden rounded-lg border bg-white"
         style={{
           borderColor: active ? BLUE : LINE,
           boxShadow: active
-            ? "0 6px 22px rgba(15,108,189,0.18)"
+            ? "0 4px 12px rgba(15,108,189,0.16)"
             : "0 1px 2px rgba(0,0,0,0.06)",
           opacity: state === "later" ? 0.62 : 1,
         }}
-        animate={{ scale: active ? 1 : 0.985 }}
-        transition={{ duration: 0.3, ease: easeStandard }}
       >
         <button
           type="button"
@@ -335,9 +336,9 @@ function Card({
           {active && step.fields.length > 0 && (
             <motion.div
               key="body"
-              initial={animate ? { height: 0, opacity: 0 } : false}
+              initial={grow ? { height: 0, opacity: 0 } : false}
               animate={{ height: "auto", opacity: 1 }}
-              exit={animate ? { height: 0, opacity: 0 } : undefined}
+              exit={grow ? { height: 0, opacity: 0 } : undefined}
               transition={{ duration: 0.32, ease: easeEntrance }}
               className="overflow-hidden"
             >
@@ -357,30 +358,28 @@ function Card({
             </motion.div>
           )}
         </AnimatePresence>
-      </motion.div>
+      </div>
     </div>
   );
 }
 
+/** The wire between two cards. Plain elements with a CSS colour transition: no JS animation
+ *  runs per connector, and none at all when `animate` is off. */
 function Connector({ lit, animate }: { lit: boolean; animate: boolean }) {
+  const wire = {
+    background: lit ? BLUE : "#b8b8b8",
+    transition: animate ? "background-color 0.4s" : undefined,
+  };
   return (
     <div className="flex h-9 flex-col items-center" aria-hidden>
-      <motion.span
-        className="w-px flex-1"
-        animate={{ background: lit ? BLUE : "#b8b8b8" }}
-        transition={{ duration: animate ? 0.4 : 0 }}
-      />
+      <span className="w-px flex-1" style={wire} />
       <span
         className="-my-0.5 grid h-5 w-5 place-items-center rounded-full border bg-white"
         style={{ borderColor: LINE }}
       >
         <PlusIcon size={10} weight="bold" style={{ color: BLUE }} />
       </span>
-      <motion.span
-        className="w-px flex-1"
-        animate={{ background: lit ? BLUE : "#b8b8b8" }}
-        transition={{ duration: animate ? 0.4 : 0 }}
-      />
+      <span className="w-px flex-1" style={wire} />{" "}
       <ArrowRightIcon
         size={10}
         weight="bold"
@@ -394,7 +393,7 @@ function Connector({ lit, animate }: { lit: boolean; animate: boolean }) {
 function Chrome({ guide, children }: { guide: FlowGuide; children: ReactNode }) {
   return (
     <div
-      className="overflow-hidden rounded-xl border shadow-[0_18px_60px_rgba(20,24,40,0.22)]"
+      className="overflow-hidden rounded-xl border shadow-[0_8px_24px_rgba(20,24,40,0.16)]"
       style={{ borderColor: LINE, background: "#fff", color: INK }}
     >
       <div
@@ -468,7 +467,11 @@ export function FlowGuideView({
   onFinished?: () => void;
 }) {
   const reduce = useReducedMotion() === true;
+  const { fx } = useFx();
   const animate = !reduce;
+  // Opening a card resizes it, which relayouts the whole canvas every frame; the smooth
+  // scroll that follows would fight it. Both are for the GPU mode only.
+  const grow = animate && fx === "rich";
   const [index, setIndex] = useState(0);
   const canvas = useRef<HTMLDivElement>(null);
   const cards = useRef<(HTMLDivElement | null)[]>([]);
@@ -486,14 +489,14 @@ export function FlowGuideView({
         if (el && canvas.current) {
           canvas.current.scrollTo({
             top: Math.max(0, el.offsetTop - 18),
-            behavior: animate ? "smooth" : "auto",
+            behavior: grow ? "smooth" : "auto",
           });
         }
       },
-      animate ? 340 : 0,
+      grow ? 340 : 0,
     );
     return () => clearTimeout(timer);
-  }, [index, animate, guide.id]);
+  }, [index, grow, guide.id]);
 
   const states = useMemo(
     () =>
@@ -540,11 +543,12 @@ export function FlowGuideView({
           </nav>
           <div
             ref={canvas}
-            className="relative min-w-0 flex-1 overflow-y-auto px-4 py-4 sm:px-8"
+            className="relative min-w-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-8"
             style={{
               background: "#f5f5f5",
               backgroundImage: "radial-gradient(#d9d9d9 1px, transparent 1px)",
               backgroundSize: "16px 16px",
+              contain: "layout paint",
             }}
           >
             <div className="mx-auto flex max-w-[520px] flex-col">
@@ -557,6 +561,7 @@ export function FlowGuideView({
                     state={states[i]}
                     onSelect={() => setIndex(i)}
                     animate={animate}
+                    grow={grow}
                     cardRef={(el) => {
                       cards.current[i] = el;
                     }}

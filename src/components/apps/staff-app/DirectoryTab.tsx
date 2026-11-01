@@ -27,10 +27,11 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
   Input,
+  SkeletonList,
 } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { toast } from "@/lib/notifications/toastStore";
-import { easeEntrance } from "@/lib/motion";
+import { easeEntrance, rowEnterClass, rowEnterStyle } from "@/lib/motion";
 import { formatDate, relativeDays, todayIso } from "@/lib/staff/dates";
 import {
   NO_FILTER,
@@ -189,7 +190,7 @@ export function DirectoryTab() {
   ) => setFilter((f) => ({ ...f, [key]: value }));
 
   if (status === "idle" || (status === "loading" && employees.length === 0)) {
-    return <p className="text-ink-muted p-8 text-center text-sm">Loading the roster…</p>;
+    return <SkeletonList rows={8} label="Loading the roster" className="px-5 py-2" />;
   }
   if (status === "offline" && employees.length === 0) {
     return (
@@ -569,11 +570,12 @@ function EmployeeTable({
         </tr>
       </thead>
       <tbody>
-        {employees.map((employee) => {
+        {employees.map((employee, rowIndex) => {
           const active = employee.id === selectedId;
           return (
             <tr
               key={employee.id}
+              style={rowEnterStyle(rowIndex)}
               data-employee-id={employee.id}
               tabIndex={0}
               aria-selected={active}
@@ -596,6 +598,7 @@ function EmployeeTable({
                 "transition-colors duration-150",
                 "focus-visible:ring-focus focus-visible:ring-2 focus-visible:ring-inset",
                 active ? "bg-accent-soft" : "hover:bg-chip",
+                rowEnterClass(rowIndex),
               )}
             >
               <td

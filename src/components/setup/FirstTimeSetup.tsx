@@ -16,6 +16,7 @@ import {
 import { Button } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { easeEntrance, easeStandard } from "@/lib/motion";
+import { useFx } from "@/lib/useFx";
 import type { SetupCheck } from "@/lib/setup/report";
 import { BrandMark, BrandTile } from "./BrandMark";
 import { FlowGuideView } from "./FlowGuideView";
@@ -827,10 +828,13 @@ function FinishStep({
 // The page
 // ---------------------------------------------------------------------------
 
+// No `filter` here: a blur on the page wrapper is re-rasterised on the CPU in the default
+// (software) mode and leaves `filter: blur(0px)` on the wrapper, which then repaints
+// everything inside it (the flow guides' scrolling canvas) on every scroll.
 const variants = {
-  enter: (d: number) => ({ opacity: 0, x: d * 56, scale: 0.98, filter: "blur(8px)" }),
-  center: { opacity: 1, x: 0, scale: 1, filter: "blur(0px)" },
-  exit: (d: number) => ({ opacity: 0, x: -d * 56, scale: 0.98, filter: "blur(8px)" }),
+  enter: (d: number) => ({ opacity: 0, x: d * 56 }),
+  center: { opacity: 1, x: 0 },
+  exit: (d: number) => ({ opacity: 0, x: -d * 56 }),
 };
 const plain = {
   enter: { opacity: 0 },
@@ -838,23 +842,28 @@ const plain = {
   exit: { opacity: 0 },
 };
 
+/** Soft colour pools behind the page. Radial gradients, not blurred discs: a live
+ *  `blur(110px)` on a 500px element costs a CPU blur per frame without a GPU. They drift
+ *  only in the rich (GPU) mode. */
 function Backdrop() {
   const reduce = useReducedMotion() === true;
+  const { fx } = useFx();
+  const drift = !reduce && fx === "rich";
   const blobs = [
     {
-      cls: "bg-accent-soft",
+      cls: "[--blob:var(--color-accent-soft)]",
       pos: "-top-40 -left-32 h-[520px] w-[520px]",
       move: { x: [0, 80, 0], y: [0, 60, 0] },
       dur: 22,
     },
     {
-      cls: "bg-info-soft",
+      cls: "[--blob:var(--color-info-soft)]",
       pos: "-right-40 top-1/3 h-[560px] w-[560px]",
       move: { x: [0, -70, 0], y: [0, 50, 0] },
       dur: 26,
     },
     {
-      cls: "bg-amber-soft",
+      cls: "[--blob:var(--color-amber-soft)]",
       pos: "-bottom-48 left-1/3 h-[480px] w-[480px]",
       move: { x: [0, 60, 0], y: [0, -50, 0] },
       dur: 30,
@@ -865,10 +874,13 @@ function Backdrop() {
       {blobs.map((b) => (
         <motion.div
           key={b.pos}
-          className={cn("absolute rounded-full blur-[110px]", b.cls, b.pos)}
-          animate={reduce ? undefined : b.move}
+          className={cn(
+            "absolute rounded-full bg-[radial-gradient(closest-side,var(--blob),transparent)]",
+            b.cls,
+            b.pos,
+          )}
+          animate={drift ? b.move : undefined}
           transition={{ repeat: Infinity, duration: b.dur, ease: "easeInOut" }}
-          style={{ opacity: 0.9 }}
         />
       ))}
     </div>
@@ -1082,7 +1094,7 @@ function Page({
       aria-label={guidesOnly ? "Power Automate flow guides" : "First-time setup"}
       initial={reduce ? false : { opacity: 0 }}
       animate={{ opacity: 1 }}
-      exit={reduce ? undefined : { opacity: 0, scale: 1.03, filter: "blur(10px)" }}
+      exit={reduce ? undefined : { opacity: 0, scale: 1.03 }}
       transition={{ duration: 0.5, ease: easeEntrance }}
       className="bg-surface text-ink fixed inset-0 z-[calc(var(--z-overlay)+2)] flex flex-col overflow-hidden"
     >

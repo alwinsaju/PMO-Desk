@@ -231,9 +231,10 @@ export function TimeOffTab({
           </EmptyState>
         ) : (
           <ul className="flex flex-col gap-2.5">
-            {rows.map((request) => (
+            {rows.map((request, index) => (
               <TimeOffCard
                 key={request.id}
+                index={index}
                 request={request}
                 person={byId.get(request.employeeId)}
                 all={timeOff}

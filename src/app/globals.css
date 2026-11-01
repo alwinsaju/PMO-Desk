@@ -133,6 +133,44 @@
   }
 }
 
+/* Light entrances that cost almost nothing without a GPU: opacity and a few px of
+   transform only. `backwards` (not `both`) so nothing is left applied afterwards.
+   `anim-row` is for list rows (stagger via rowEnterStyle in src/lib/motion.ts);
+   `anim-fade` is for a value or picture that has just arrived. */
+@keyframes row-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.anim-row {
+  animation: row-in 220ms var(--ease-entrance) backwards;
+}
+
+.anim-fade {
+  animation: fade-in 260ms var(--ease-standard) backwards;
+}
+
+/* A highlight laid over a card whose status just changed; fades out on its own. Its resting
+   opacity is 0, so it is invisible when the animation is off. */
+@keyframes flash-out {
+  from {
+    opacity: 1;
+  }
+}
+
+.anim-flash {
+  opacity: 0;
+  animation: flash-out 900ms var(--ease-standard) both;
+}
+
 @keyframes wp-drift {
   0% {
     transform: translate(0, 0) scale(1);
@@ -323,6 +361,20 @@
   animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
   mix-blend-mode: normal;
 }
+
+/* The brand switch (lookTransition.ts) drives the page snapshots itself: no cross-fade, the new
+   look is revealed by a growing circle (or the old one shrunk away when leaving). The dot and
+   rings are drawn inside the new page state. */
+:root[data-look-fx]::view-transition-old(root),
+:root[data-look-fx]::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+:root[data-look-fx="leave"]::view-transition-old(root) {
+  z-index: 2;
+}
+
 /* =========================================================================
  * BASE
  * ======================================================================= */
@@ -1232,6 +1284,9 @@ body {
  * `ai-ring` and `morph` utilities handle themselves above.)
  * ======================================================================= */
 @media (prefers-reduced-motion: reduce) {
+  .anim-row,
+  .anim-fade,
+  .anim-flash,
   .wp-blob,
   .progress[data-state] .progress-fill,
   .progress[data-state] .progress-dot,

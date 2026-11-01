@@ -10,6 +10,7 @@ import {
   type IconProps,
 } from "@phosphor-icons/react";
 import { cn } from "@/lib/cn";
+import { overlayEnter } from "@/lib/motion";
 import { useToasts } from "@/lib/notifications/toastStore";
 import { toastAnchorBox, type Box } from "@/lib/notifications/toastAnchor";
 import type { Toast, ToastTone } from "@/lib/notifications/toasts";
@@ -48,7 +49,10 @@ function ToastCard({
       onMouseLeave={() => setPaused(false)}
       onFocus={() => setPaused(true)}
       onBlur={() => setPaused(false)}
-      className="bg-surface-elevated border-line-strong rounded-card shadow-float pointer-events-auto flex w-[min(22rem,100%)] items-start gap-3 border py-3 pr-2 pl-3.5"
+      className={cn(
+        "bg-surface-elevated border-line-strong rounded-card shadow-float pointer-events-auto flex w-[min(22rem,100%)] items-start gap-3 border py-3 pr-2 pl-3.5",
+        overlayEnter,
+      )}
     >
       <Icon aria-hidden size={20} weight="fill" className={cn("mt-px shrink-0", color)} />
       <div className="min-w-0 flex-1">

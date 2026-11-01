@@ -226,6 +226,68 @@ describe("look transition", () => {
     assert.equal(env.attrs.has("data-look-switching"), false);
   });
 
+  it("keeps the page cross-fade and only adds the dot and rings without rich effects", async () => {
+    const env = fakeEnv();
+    install(env);
+    globalThis.window.innerWidth = 1000;
+    globalThis.window.innerHeight = 600;
+    globalThis.document.startViewTransition = (update) => {
+      queueMicrotask(update);
+      return { ready: Promise.resolve(), finished: Promise.resolve() };
+    };
+    setBrand("deloitte");
+    assert.equal(
+      env.attrs.has("data-look-fx"),
+      false,
+      "the cross-fade is not switched off",
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(env.attrs.get("data-brand"), "deloitte");
+  });
+
+  it("starts the brand effect after the transition is ready, and always cleans up", async () => {
+    const env = fakeEnv();
+    env.attrs.set("data-fx", "rich");
+    install(env);
+    globalThis.window.innerWidth = 1000;
+    globalThis.window.innerHeight = 600;
+    let finish;
+    let updateRan = false;
+    globalThis.document.startViewTransition = (update) => {
+      queueMicrotask(() => {
+        update();
+        updateRan = true;
+      });
+      return {
+        ready: Promise.resolve(),
+        finished: new Promise((resolve) => (finish = resolve)),
+      };
+    };
+    setBrand("deloitte");
+    assert.equal(env.attrs.get("data-look-fx"), "enter");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(updateRan, true);
+    assert.equal(env.attrs.get("data-brand"), "deloitte");
+    finish();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(env.attrs.has("data-look-fx"), false);
+    assert.equal(env.attrs.has("data-look-switching"), false);
+  });
+
+  it("marks a switch back from Deloitte mode as leaving", () => {
+    const env = fakeEnv({ stored: { [BRAND_STORAGE_KEY]: "deloitte" } });
+    env.attrs.set("data-fx", "rich");
+    install(env);
+    globalThis.window.innerWidth = 1000;
+    globalThis.window.innerHeight = 600;
+    globalThis.document.startViewTransition = () => ({
+      ready: new Promise(() => {}),
+      finished: new Promise(() => {}),
+    });
+    setBrand("default");
+    assert.equal(env.attrs.get("data-look-fx"), "leave");
+  });
+
   it("skips the transition when the person asked for less motion", () => {
     const env = fakeEnv();
     install(env);

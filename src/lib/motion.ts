@@ -56,6 +56,23 @@ export const easeEntrance = [0.16, 1, 0.3, 1] as const;
 /** Accelerate — menus, tooltips, dialogs, popovers closing. */
 export const easeExit = [0.4, 0, 1, 1] as const;
 
+/** Rows that get the staggered `anim-row` entrance. Later rows appear at once: a long
+ *  list must not wait, and rows below the fold gain nothing from animating. */
+export const ROW_ENTER_MAX = 12;
+export const ROW_ENTER_STEP_MS = 18;
+
+/** `anim-row` for the first ROW_ENTER_MAX rows of a list, nothing after that. */
+export function rowEnterClass(index: number): string | undefined {
+  return index >= 0 && index < ROW_ENTER_MAX ? "anim-row" : undefined;
+}
+
+/** Stagger for `rowEnterClass`; pair the two on the same element. */
+export function rowEnterStyle(index: number): { animationDelay: string } | undefined {
+  return rowEnterClass(index)
+    ? { animationDelay: `${Math.floor(index) * ROW_ENTER_STEP_MS}ms` }
+    : undefined;
+}
+
 /**
  * Ready-to-spread className fragments for the open/close animation shared
  * by every Radix-based overlay primitive (Tooltip, Popover, DropdownMenu,

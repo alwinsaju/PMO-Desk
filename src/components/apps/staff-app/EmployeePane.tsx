@@ -9,6 +9,7 @@ import {
   XIcon,
 } from "@phosphor-icons/react";
 import { Button, IconButton, Switch } from "@/components/ui";
+import { cn } from "@/lib/cn";
 import { formatDate, formatRange, relativeDays, todayIso } from "@/lib/staff/dates";
 import {
   displayName,
@@ -53,7 +54,13 @@ function Row({
   return (
     <>
       <dt className="text-ink-muted pt-px text-[12.5px]">{label}</dt>
-      <dd className="text-ink min-w-0 text-[13.5px] leading-snug font-semibold break-words">
+      <dd
+        className={cn(
+          "text-ink min-w-0 text-[13.5px] leading-snug font-semibold break-words",
+          // Starts when the value arrives from M365 while the pane is open.
+          !empty && fromProfile && "anim-fade",
+        )}
+      >
         {empty ? (
           pending && fromProfile ? (
             <span className="text-ink-faint font-normal italic">Waiting for M365</span>
@@ -166,7 +173,12 @@ export function EmployeePane({
             <XIcon />
           </IconButton>
           <div className="flex items-center gap-4">
-            <EmployeeAvatar employee={employee} size="xl" />
+            <EmployeeAvatar
+              key={employee.photoVersion}
+              employee={employee}
+              size="xl"
+              className="anim-fade"
+            />
             <div className="min-w-0 pr-5">
               <h3 className="text-ink text-[18px] leading-tight font-bold break-words">
                 {displayName(employee)}
