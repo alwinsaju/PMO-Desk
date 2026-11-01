@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { motion } from "motion/react";
-import { SparkleIcon, CopyIcon, XIcon } from "@phosphor-icons/react";
+import { SparkleIcon, ArrowSquareOutIcon, CopyIcon, XIcon } from "@phosphor-icons/react";
+import { Button, IconButton } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { easeStandard } from "@/lib/motion";
 import { toast } from "@/lib/notifications/toastStore";
@@ -93,54 +94,66 @@ export function AIAnnotationBubble() {
       )}
       style={{ left: display.position.x, top: display.position.y - 14 }}
     >
-      <div className="glass-pop rounded-card relative flex max-w-[22rem] items-start gap-3 px-4 py-3">
+      <div
+        className={cn(
+          "glass-pop rounded-card relative flex items-start gap-3 px-4 py-3",
+          sticky ? "w-[min(34rem,92vw)]" : "max-w-[22rem]",
+        )}
+      >
         <span
           aria-hidden
           className="bg-accent-soft text-accent-ink rounded-control grid h-[30px] w-[30px] shrink-0 place-items-center"
         >
           <SparkleIcon size={17} weight="duotone" />
         </span>
-        <div className="min-w-0">
-          <b className="text-accent-ink block text-xs font-bold tracking-[0.04em] uppercase">
+        <div className="min-w-0 flex-1">
+          <b className="text-accent-ink block truncate text-xs font-bold tracking-[0.04em] uppercase">
             AI Agent
           </b>
-          <p className="text-ink-soft scroll-thin max-h-[45vh] overflow-y-auto text-[13.5px] leading-snug font-medium break-words whitespace-pre-line">
+          {display.sticky && display.title && (
+            <h2 className="text-ink type-section-title mt-0.5 break-words">
+              {display.title}
+            </h2>
+          )}
+          <p
+            className={cn(
+              "text-ink-soft scroll-thin max-h-[45vh] overflow-y-auto leading-snug font-medium break-words whitespace-pre-line",
+              display.sticky ? "mt-1 text-[14px]" : "text-[13.5px]",
+            )}
+          >
             {display.message}
           </p>
-          {sticky && display.action && (
-            <button
-              type="button"
-              onClick={() => {
-                display.action?.run();
-                useAgentStore.getState().setAnnotation(null);
-              }}
-              className="text-accent-ink hover:bg-chip rounded-control mt-1.5 -ml-2 px-2 py-1 text-[12.5px] font-semibold"
-            >
-              {display.action.label}
-            </button>
+          {sticky && (
+            <div className="border-line mt-3 flex flex-wrap items-center justify-end gap-2 border-t pt-2.5">
+              <Button variant="secondary" size="sm" onClick={() => void copy()}>
+                <CopyIcon size={15} aria-hidden />
+                Copy
+              </Button>
+              {display.action && (
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    display.action?.run();
+                    useAgentStore.getState().setAnnotation(null);
+                  }}
+                >
+                  <ArrowSquareOutIcon size={15} aria-hidden />
+                  {display.action.label}
+                </Button>
+              )}
+            </div>
           )}
         </div>
         {sticky && display.sticky && (
-          <div className="-mt-1 -mr-2 flex shrink-0 items-center">
-            <button
-              type="button"
-              aria-label="Copy answer"
-              title="Copy answer"
-              onClick={() => void copy()}
-              className="text-ink-muted hover:text-ink hover:bg-chip rounded-control p-1.5"
-            >
-              <CopyIcon size={15} aria-hidden />
-            </button>
-            <button
-              type="button"
-              aria-label="Dismiss answer"
-              title="Dismiss (Esc)"
-              onClick={() => useAgentStore.getState().setAnnotation(null)}
-              className="text-ink-muted hover:text-ink hover:bg-chip rounded-control p-1.5"
-            >
-              <XIcon size={15} aria-hidden />
-            </button>
-          </div>
+          <IconButton
+            aria-label="Dismiss answer"
+            tooltip="Dismiss (Esc)"
+            size="sm"
+            className="-mt-1 -mr-2 shrink-0"
+            onClick={() => useAgentStore.getState().setAnnotation(null)}
+          >
+            <XIcon size={15} aria-hidden />
+          </IconButton>
         )}
         {/* Pointer tail: a plain border triangle in the popover fill, so it
             never double-stacks the translucent body like a rotated square

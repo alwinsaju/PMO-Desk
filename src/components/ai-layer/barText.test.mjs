@@ -1,6 +1,19 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { formatElapsed, placeholderFor } from "./barText.ts";
+import { answerTitle, formatElapsed, placeholderFor } from "./barText.ts";
+
+describe("answerTitle", () => {
+  it("echoes the question with a capital and tidy spaces", () => {
+    assert.equal(answerTitle("  what's   overdue? "), "What's overdue?");
+  });
+
+  it("falls back to Answer and shortens long questions", () => {
+    assert.equal(answerTitle("   "), "Answer");
+    const long = answerTitle("x".repeat(100));
+    assert.equal(long.length, 60);
+    assert.ok(long.endsWith("…"));
+  });
+});
 
 describe("placeholderFor", () => {
   it("keeps the plain wording for each state", () => {

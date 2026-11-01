@@ -9,6 +9,14 @@ export function formatElapsed(totalSeconds: number): string {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
+/** The heading of an answer card: what was asked, short ("What is overdue?"), or "Answer". */
+export function answerTitle(prompt: string, max = 60): string {
+  const text = prompt.replace(/\s+/g, " ").trim();
+  if (!text) return "Answer";
+  const first = text.charAt(0).toUpperCase() + text.slice(1);
+  return first.length > max ? `${first.slice(0, max - 1).trimEnd()}…` : first;
+}
+
 /**
  * The command bar's placeholder. While the local model is asleep the first answer has
  * to load it, which takes minutes on a CPU-only computer, so say so (with a running
