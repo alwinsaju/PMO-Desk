@@ -1,12 +1,17 @@
 // The Activity viewer over the PMO audit log (audit.jsonl and its rotated copies).
 // Pure parsing, wording and filtering; the file reading is in auditServer.ts.
 
+import { actorLabel, readableDetails } from "./auditReadable.ts";
+
 export interface AuditEntry {
   at: string;
   action: string;
   user: string;
-  /** What the line recorded besides who and when, as short "key: value" pairs. */
+  /** What the line recorded besides who and when, as short "key: value" pairs
+   *  (raw, ids included: for tooltips and the CSV). */
   details: string[];
+  /** The same facts in plain words, without internal ids. */
+  readable: string[];
 }
 
 export const ACTION_LABELS: Readonly<Record<string, string>> = {
@@ -76,11 +81,15 @@ export function parseAuditLine(line: string): AuditEntry | null {
       ([key, v]) => !SKIP_KEYS.has(key) && v !== null && v !== undefined && v !== "",
     )
     .map(([key, v]) => `${key}: ${short(v)}`);
+  const extras = Object.fromEntries(
+    Object.entries(record).filter(([key]) => !SKIP_KEYS.has(key)),
+  );
   return {
     at: record.ts,
     action: record.action,
     user: typeof record.user === "string" ? record.user : "",
     details,
+    readable: readableDetails(extras),
   };
 }
 
@@ -116,6 +125,7 @@ export function filterAudit(
       actionLabel(entry.action).toLowerCase().includes(query) ||
       entry.action.includes(query) ||
       entry.user.toLowerCase().includes(query) ||
+      actorLabel(entry.user).toLowerCase().includes(query) ||
       entry.details.some((d) => d.toLowerCase().includes(query))
     );
   });

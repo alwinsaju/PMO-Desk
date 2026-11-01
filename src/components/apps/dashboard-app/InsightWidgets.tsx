@@ -190,7 +190,7 @@ export function HealthWidget({ health }: { health: Health }) {
       testId="health-widget"
     >
       {health.score === null ? (
-        <Empty>No report has run yet.</Empty>
+        <Empty neutral>No report has run yet.</Empty>
       ) : (
         <ul className="flex flex-col gap-1.5">
           {health.tasks.map((t) => (

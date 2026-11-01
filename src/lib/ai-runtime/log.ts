@@ -144,7 +144,9 @@ export function levelFor(body: AiLogBody): AiLogLevel {
       return "warn";
     case "call-end":
       if (body.ok) return "info";
-      return body.errorCode === "timeout" || body.errorCode === "invalid-output"
+      return body.errorCode === "timeout" ||
+        body.errorCode === "invalid-output" ||
+        body.errorCode === "cancelled"
         ? "warn"
         : "error";
     default:

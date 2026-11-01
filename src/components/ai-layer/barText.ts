@@ -16,16 +16,19 @@ export function formatElapsed(totalSeconds: number): string {
  */
 export function placeholderFor(
   status: AgentTaskStatus | null,
-  wake: { waking: boolean; elapsedSeconds: number } = {
+  wake: { waking: boolean; elapsedSeconds: number; thinkingSeconds?: number } = {
     waking: false,
     elapsedSeconds: 0,
   },
 ): string {
   switch (status) {
     case "thinking":
-      return wake.waking
-        ? `Waking the AI model… ${formatElapsed(wake.elapsedSeconds)} (the first answer can take a few minutes)`
-        : "Thinking…";
+      if (wake.waking) {
+        return `Waking the AI model… ${formatElapsed(wake.elapsedSeconds)} (the first answer can take a few minutes)`;
+      }
+      return wake.thinkingSeconds === undefined
+        ? "Thinking…"
+        : `Thinking… ${formatElapsed(wake.thinkingSeconds)}`;
     case "working":
       return "Working…";
     case "completed":

@@ -1,18 +1,16 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import type { Icon } from "@phosphor-icons/react";
 import { motion } from "motion/react";
 import { Button } from "@/components/ui";
 import { springSnappy } from "@/lib/motion";
 import { SpinnerRing } from "@/components/apps/web-app/EmbedStates";
 import { AppIconTile } from "./AppIconTile";
+import { INSTALLING_MS, isDemoApp } from "./installFlow";
 import type { AppListing } from "./types";
 
-/** How long the card shows its "Installing" ring after an install click.
- *  Purely visual: the shared install store flips immediately, this only
- *  delays when the button settles on "Open". */
-const INSTALLING_MS = 700;
+const INSTALLING_LABEL = "Installing…";
 
 interface AppCardProps {
   app: AppListing;
@@ -39,27 +37,23 @@ export function AppCard({
   index = 0,
 }: AppCardProps) {
   const [installing, setInstalling] = useState(false);
-  const timerRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    return () => {
-      if (timerRef.current !== null) window.clearTimeout(timerRef.current);
-    };
-  }, []);
 
   function handleClick() {
     if (installing) return;
-    const wasInstalled = isInstalled;
-    onToggleInstall();
-    if (!wasInstalled) {
-      // Install -> brief "Installing" ring -> Open. The store has already
-      // flipped; the ring is the visible settle, not a pending state.
-      setInstalling(true);
-      timerRef.current = window.setTimeout(() => setInstalling(false), INSTALLING_MS);
+    if (isInstalled) {
+      onToggleInstall();
+      return;
     }
+    setInstalling(true);
+    // Not cancelled on unmount: leaving the tab mid-install still completes it.
+    window.setTimeout(() => {
+      onToggleInstall();
+      setInstalling(false);
+    }, INSTALLING_MS);
   }
 
-  const label = installing ? "Installing" : isInstalled ? "Open" : "Install";
+  const label = installing ? INSTALLING_LABEL : isInstalled ? "Open" : "Install";
+  const demo = isDemoApp(app);
 
   return (
     <li
@@ -68,13 +62,24 @@ export function AppCard({
     >
       <AppIconTile icon={icon} seed={app.id} />
       <span className="flex min-w-0 flex-1 flex-col">
-        <span className="text-ink line-clamp-1 text-[15px] font-bold">{app.name}</span>
+        <span className="flex min-w-0 items-center gap-1.5">
+          <span className="text-ink line-clamp-1 text-[15px] font-bold">{app.name}</span>
+          {demo && (
+            <span
+              title="A sample app: it does not do anything yet"
+              className="bg-chip text-ink-muted rounded-chip shrink-0 px-1.5 text-[10.5px] font-bold uppercase"
+            >
+              Demo
+            </span>
+          )}
+        </span>
         <span className="text-ink-muted line-clamp-1 text-[12.5px]">{app.tagline}</span>
       </span>
       <Button
         type="button"
         variant={isInstalled && !installing ? "line" : "primary"}
         aria-busy={installing}
+        aria-label={installing ? `Installing ${app.name}` : undefined}
         onClick={handleClick}
         className="min-w-[84px] shrink-0 overflow-hidden"
       >

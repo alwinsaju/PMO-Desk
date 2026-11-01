@@ -198,6 +198,7 @@ const MESSAGE_TASKS = new Set(["structure", "update", "update-signoff"]);
 
 const FAILURE_WHY: Record<string, string> = {
   timeout: "the model did not answer in time",
+  cancelled: "you stopped it",
   "runtime-down": "Ollama could not be reached",
   "model-missing": "the model is not installed",
   "invalid-output": "the model's answer was not valid, even after a retry",

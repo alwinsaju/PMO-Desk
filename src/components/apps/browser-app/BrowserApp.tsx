@@ -5,11 +5,16 @@ import {
   ArrowClockwiseIcon,
   ArrowLeftIcon,
   ArrowRightIcon,
+  GlobeSimpleIcon,
   LockSimpleIcon,
+  WarningIcon,
 } from "@phosphor-icons/react";
 import { IconButton, ScrollArea } from "@/components/ui";
+import { useWindowContext } from "@/components/window-manager";
 import { cn } from "@/lib/cn";
+import { noSpellcheck } from "@/lib/ui/noSpellcheck";
 import { initialMockPage, mockPageMeta, type MockPageId } from "./mockPages";
+import { addressSecurity, hostnameOf } from "./embedFailure";
 import { HomePage } from "./HomePage";
 import { WikiPage } from "./WikiPage";
 import { AboutPage } from "./AboutPage";
@@ -50,6 +55,23 @@ function findMockPageByUrl(value: string): MockPageId | null {
 /** A search runs in the OS browser: search engines refuse to be framed. */
 function openInOsBrowser(url: string) {
   window.open(url, "_blank", "noopener,noreferrer");
+}
+
+/** Padlock for https only; a warning for plain http; a globe for the app's own pages. */
+function AddressIcon({ url }: { url: string }) {
+  const security = addressSecurity(url);
+  const className = "text-ink-muted shrink-0";
+  if (security === "secure") {
+    return (
+      <LockSimpleIcon size={14} className={className} aria-label="Secure connection" />
+    );
+  }
+  if (security === "insecure") {
+    return (
+      <WarningIcon size={14} className="text-amber shrink-0" aria-label="Not secure" />
+    );
+  }
+  return <GlobeSimpleIcon size={14} className={className} aria-hidden />;
 }
 
 /**
@@ -96,6 +118,10 @@ export function BrowserApp({ windowId }: { windowId: string }) {
     currentEntry.kind === "mock" ? mockPageMeta[currentEntry.id].url : currentEntry.url;
   const canGoBack = nav.index > 0;
   const canGoForward = nav.index < nav.history.length - 1;
+  useWindowContext(
+    windowId,
+    currentEntry.kind === "url" ? hostnameOf(currentEntry.url) : null,
+  );
 
   const [addressDraft, setAddressDraft] = useState(currentUrl);
   const [addressError, setAddressError] = useState<string | null>(null);
@@ -202,7 +228,7 @@ export function BrowserApp({ windowId }: { windowId: string }) {
             "focus-within:bg-field focus-within:shadow-[inset_0_0_0_1px_var(--color-focus),0_0_0_4px_var(--color-accent-soft)]",
           )}
         >
-          <LockSimpleIcon size={14} className="text-ink-muted shrink-0" />
+          <AddressIcon url={currentUrl} />
           <input
             value={addressDraft}
             onChange={(event) => setAddressDraft(event.target.value)}
@@ -222,8 +248,7 @@ export function BrowserApp({ windowId }: { windowId: string }) {
             }}
             onBlur={() => setAddressDraft(currentUrl)}
             aria-label="Address"
-            spellCheck={false}
-            autoComplete="off"
+            {...noSpellcheck}
             className="text-ink-soft placeholder:text-ink-faint min-w-0 flex-1 bg-transparent font-mono text-[12.5px] outline-none"
           />
         </form>

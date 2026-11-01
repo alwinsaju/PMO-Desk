@@ -5,6 +5,7 @@ import {
   ArrowSquareOutIcon,
   BellRingingIcon,
   ChartLineUpIcon,
+  CheckCircleIcon,
   ListChecksIcon,
   UsersThreeIcon,
   type Icon,
@@ -57,7 +58,7 @@ export function Widget({
     <section
       aria-label={title}
       data-testid={testId}
-      className={cn(ROW_CARD, "flex min-h-[15rem] flex-col gap-3 p-4")}
+      className={cn(ROW_CARD, "flex flex-col gap-3 p-4")}
     >
       <header className="flex items-center gap-2.5">
         <span className="bg-accent-soft text-accent-ink grid h-8 w-8 shrink-0 place-items-center rounded-full">
@@ -80,10 +81,26 @@ export function Widget({
   );
 }
 
-export function Empty({ children }: { children: ReactNode }) {
+/** A short line in place of a list. Default is the "all clear" case, with a green tick;
+ *  `neutral` is for loading and error lines, which must not look like good news. */
+export function Empty({
+  children,
+  neutral = false,
+}: {
+  children: ReactNode;
+  neutral?: boolean;
+}) {
   return (
-    <p className="text-ink-muted flex flex-1 items-center justify-center px-4 py-6 text-center text-[13px] leading-relaxed">
-      {children}
+    <p className="text-ink-muted flex items-center gap-2 py-1 text-[13px] leading-relaxed">
+      {!neutral && (
+        <CheckCircleIcon
+          size={18}
+          weight="fill"
+          aria-hidden
+          className="text-success shrink-0"
+        />
+      )}
+      <span>{children}</span>
     </p>
   );
 }
@@ -230,7 +247,7 @@ export function ChasersWidget({
     >
       {rows.length === 0 ? (
         <Empty>
-          No one is overdue a nudge. Anything you wait on shows here once it has been
+          No chasers are overdue. Anything you are waiting on shows here once it has been
           quiet for its chaser days.
         </Empty>
       ) : (
@@ -286,7 +303,7 @@ export function ReportsWidget({
       testId="widget-reports"
     >
       {rows === null ? (
-        <Empty>Checking the reports…</Empty>
+        <Empty neutral>Checking the reports…</Empty>
       ) : (
         <>
           {engineUp === false && (
@@ -296,7 +313,7 @@ export function ReportsWidget({
             </p>
           )}
           {rows.length === 0 ? (
-            <Empty>No reports to show yet.</Empty>
+            <Empty neutral>No reports to show yet.</Empty>
           ) : (
             <List>
               {rows.map((row) => (
@@ -368,9 +385,9 @@ export function WhosOutWidget({
         </FilterPill>
       </div>
       {status === "loading" ? (
-        <Empty>Checking the staff roster…</Empty>
+        <Empty neutral>Checking the staff roster…</Empty>
       ) : status === "offline" ? (
-        <Empty>Can’t reach the staff data right now.</Empty>
+        <Empty neutral>Can’t reach the staff data right now.</Empty>
       ) : result.entries.length === 0 && result.holidays.length === 0 ? (
         <Empty>
           Nobody is off{" "}

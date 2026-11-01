@@ -67,6 +67,7 @@ export async function GET(request: Request) {
     return NextResponse.json({
       embeddable: false,
       reason: "The site did not answer in time.",
+      code: "unreachable",
     });
   }
 }

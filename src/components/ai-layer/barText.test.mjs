@@ -16,6 +16,17 @@ describe("placeholderFor", () => {
     assert.match(text, /few minutes/);
   });
 
+  it("shows the running clock while a model answer is awaited", () => {
+    assert.equal(
+      placeholderFor("thinking", {
+        waking: false,
+        elapsedSeconds: 0,
+        thinkingSeconds: 12,
+      }),
+      "Thinking… 0:12",
+    );
+  });
+
   it("only says it while thinking", () => {
     assert.equal(
       placeholderFor("working", { waking: true, elapsedSeconds: 5 }),

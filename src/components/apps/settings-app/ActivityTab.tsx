@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui";
 import { toast } from "@/lib/notifications/toastStore";
+import { noSpellcheck } from "@/lib/ui/noSpellcheck";
+import { actorLabel } from "@/lib/platform/auditReadable";
 import {
   actionCounts,
   actionLabel,
@@ -23,6 +25,7 @@ export function ActivityTab() {
   const [error, setError] = useState<{ reason: string; detail?: string } | null>(null);
   const [action, setAction] = useState("");
   const [query, setQuery] = useState("");
+  const [technical, setTechnical] = useState(false);
 
   const load = async () => {
     setError(null);
@@ -64,6 +67,7 @@ export function ActivityTab() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           aria-label="Search activity"
+          {...noSpellcheck}
           placeholder="Search activity"
           className="border-line bg-chip text-ink rounded-control min-w-40 flex-1 border px-3 py-2 text-[13.5px] outline-none"
         />
@@ -82,6 +86,14 @@ export function ActivityTab() {
         </select>
         <Button variant="outline" size="sm" onClick={() => void load()}>
           Refresh
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          aria-pressed={technical}
+          onClick={() => setTechnical((on) => !on)}
+        >
+          {technical ? "Hide technical details" : "Show technical details"}
         </Button>
         <Button
           variant="outline"
@@ -114,17 +126,29 @@ export function ActivityTab() {
                 <span className="text-ink-muted w-28 shrink-0 text-[12px]">
                   {when(entry.at)}
                 </span>
-                <span className="min-w-0 flex-1">
+                <span className="min-w-0 flex-1" title={entry.details.join(" · ")}>
                   <span className="text-ink font-medium">
                     {actionLabel(entry.action)}
                   </span>
-                  {entry.details.length > 0 && (
+                  {entry.readable.length > 0 && (
                     <span className="text-ink-muted block truncate text-[12px]">
+                      {entry.readable.join(" · ")}
+                    </span>
+                  )}
+                  {technical && entry.details.length > 0 && (
+                    <span className="text-ink-faint block font-mono text-[11.5px] break-all">
                       {entry.details.join(" · ")}
                     </span>
                   )}
                 </span>
-                <span className="text-ink-muted shrink-0 text-[12px]">{entry.user}</span>
+                <span
+                  className="text-ink-muted shrink-0 text-[12px]"
+                  title={
+                    entry.user ? `Recorded under the account "${entry.user}"` : undefined
+                  }
+                >
+                  {actorLabel(entry.user)}
+                </span>
               </li>
             ))}
           </ul>

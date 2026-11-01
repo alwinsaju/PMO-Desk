@@ -391,9 +391,19 @@ export async function POST(request: Request) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(ollamaRequest),
-      signal: AbortSignal.timeout(timeoutMs),
+      signal: AbortSignal.any([request.signal, AbortSignal.timeout(timeoutMs)]),
     });
   } catch (err) {
+    // The command bar's Stop button closes the request: end the logged call and
+    // free the model instead of letting it finish an answer nobody will read.
+    if (request.signal.aborted) {
+      call.fail("cancelled", "Stopped by the user.");
+      return NextResponse.json({
+        type: "error",
+        kind: "unreachable",
+        message: "Stopped.",
+      } satisfies AiCommandResult);
+    }
     const isTimeout = err instanceof Error && err.name === "TimeoutError";
     call.fail(
       isTimeout ? "timeout" : "runtime-down",

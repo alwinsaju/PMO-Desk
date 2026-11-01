@@ -40,9 +40,9 @@ interface FileRowProps {
 }
 
 /**
- * One row in the current folder's listing — icon tile, name (in `font-mono`,
- * per ARCHITECTURE.md's note that IBM Plex Mono is reserved for file names/
- * paths), last-modified date, and size. The whole row is a single `<button>`
+ * One row in the current folder's listing — icon tile, name (app font, like
+ * every other app), last-modified date, and size. Text selection is off so a
+ * double-click opens the folder instead of highlighting the name. The whole row is a single `<button>`
  * (no nested interactive elements): a plain click selects it, a double
  * click or Enter activates it — for a folder, activating navigates into it;
  * for a file, activating is a deliberate no-op (there's nothing to open).
@@ -66,7 +66,7 @@ export function FileRow({ node, isSelected, onSelect, onActivate }: FileRowProps
           }
         }}
         className={cn(
-          "row-bar rounded-control ease-smooth grid h-13 w-full items-center gap-3 px-3.5 text-left transition-colors duration-200",
+          "row-bar rounded-control ease-smooth grid h-13 w-full items-center gap-3 px-3.5 text-left transition-colors duration-200 select-none",
           FILE_ROW_GRID,
           "focus-visible:ring-focus outline-none focus-visible:ring-2 focus-visible:ring-inset",
           isSelected ? "bg-accent-soft" : "hover:bg-chip",
@@ -92,8 +92,8 @@ export function FileRow({ node, isSelected, onSelect, onActivate }: FileRowProps
           </span>
           {/* The selected fill is the translucent `accent-soft` tint, so the
               plain ink tokens stay readable on it in every theme x brand
-              combination. File names stay in `font-mono` (technical text). */}
-          <span className="text-ink line-clamp-1 font-mono text-[13.5px] font-medium">
+              combination. */}
+          <span className="text-ink line-clamp-1 text-[13.5px] font-medium">
             {node.name}
           </span>
         </span>

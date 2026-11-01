@@ -25,27 +25,66 @@ export const UNDO_WINDOW_MS = 10_000;
 export const TITLE_MAX_CHARS = 60;
 export const UNTITLED_NOTE = "Untitled note";
 
-/** First non-empty line, whitespace collapsed, capped at 60 chars. */
-export function noteTitle(content: string): string {
-  const firstLine = /[^\r\n]*\S[^\r\n]*/.exec(content ?? "")?.[0] ?? "";
-  const collapsed = firstLine.replace(/\s+/g, " ").trim();
-  if (!collapsed) return UNTITLED_NOTE;
-  if (collapsed.length <= TITLE_MAX_CHARS) return collapsed;
-  return `${collapsed.slice(0, TITLE_MAX_CHARS - 1).trimEnd()}…`;
-}
+/** Title length in the sidebar list, where rows are narrower than a window title. */
+export const LIST_TITLE_MAX_CHARS = 30;
+const PREVIEW_MAX_CHARS = 120;
 
-/** Everything after the title line, collapsed to one short line. */
-export function notePreview(content: string): string {
+/** Splits the first non-empty line at a word boundary within `max` chars: the
+ *  part that fits (with "…" when cut) and the spill-over that moves to the preview. */
+function splitFirstLine(
+  content: string,
+  max: number,
+): { title: string; spill: string; rest: string } {
   const text = content ?? "";
   const match = /[^\r\n]*\S[^\r\n]*/.exec(text);
+  const collapsed = (match?.[0] ?? "").replace(/\s+/g, " ").trim();
   const rest = match ? text.slice(match.index + match[0].length) : "";
-  const preview = rest
+  if (collapsed.length <= max) return { title: collapsed, spill: "", rest };
+  const wordEnd = collapsed.lastIndexOf(" ", max - 1);
+  // No usable space (one long token or URL): cut mid-word rather than show nothing.
+  const cut = wordEnd >= Math.floor(max / 2) ? wordEnd : max - 1;
+  return {
+    title: `${collapsed.slice(0, cut).trimEnd()}…`,
+    spill: collapsed.slice(cut).trim(),
+    rest,
+  };
+}
+
+/** First non-empty line, whitespace collapsed, cut at a word boundary. */
+export function noteTitle(content: string, max = TITLE_MAX_CHARS): string {
+  return splitFirstLine(content, max).title || UNTITLED_NOTE;
+}
+
+/** What the title line did not show plus everything after it, collapsed to one
+ *  short line. Empty for a note that is only its title. */
+export function notePreview(content: string, titleMax = TITLE_MAX_CHARS): string {
+  const { spill, rest } = splitFirstLine(content, titleMax);
+  const preview = `${spill} ${rest}`
     .replace(/\s+/g, " ")
     .trim()
-    // A leading list marker would read as a stray dash after the date separator.
+    // A leading list marker would read as a stray dash after the title.
     .replace(/^[-*•]\s+/, "");
-  if (!preview) return "No additional text";
-  return preview.length > 120 ? `${preview.slice(0, 119).trimEnd()}…` : preview;
+  return preview.length > PREVIEW_MAX_CHARS
+    ? `${preview.slice(0, PREVIEW_MAX_CHARS - 1).trimEnd()}…`
+    : preview;
+}
+
+/** Title and preview for a sidebar row. */
+export function noteListEntry(content: string): { title: string; preview: string } {
+  return {
+    title: noteTitle(content, LIST_TITLE_MAX_CHARS),
+    preview: notePreview(content, LIST_TITLE_MAX_CHARS),
+  };
+}
+
+/** The date shown for a note; samples have none, so they never look stale. */
+export function noteDateLabel(note: Pick<Note, "sample" | "updatedLabel">): string {
+  return note.sample ? "" : note.updatedLabel;
+}
+
+/** Date and preview as one subtitle line, skipping whichever part is empty. */
+export function noteSubtitle(date: string, preview: string): string {
+  return [date, preview].filter(Boolean).join(" — ");
 }
 
 /** Appends `previous` to the history, capped to the newest MAX_REVISIONS. */

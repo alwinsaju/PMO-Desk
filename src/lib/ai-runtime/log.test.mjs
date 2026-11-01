@@ -153,6 +153,7 @@ describe("event levels", () => {
     assert.equal(levelFor(end("c1")), "info");
     assert.equal(levelFor(end("c1", { ok: false, errorCode: "timeout" })), "warn");
     assert.equal(levelFor(end("c1", { ok: false, errorCode: "invalid-output" })), "warn");
+    assert.equal(levelFor(end("c1", { ok: false, errorCode: "cancelled" })), "warn");
     assert.equal(levelFor(end("c1", { ok: false, errorCode: "runtime-down" })), "error");
     assert.equal(levelFor(end("c1", { ok: false, errorCode: "model-missing" })), "error");
     assert.equal(
