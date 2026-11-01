@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useState, Fragment, type ReactNode } from "react";
 import {
   EnvelopeSimpleIcon,
   PencilSimpleIcon,
@@ -10,6 +10,7 @@ import {
 import { Button, IconButton, Switch } from "@/components/ui";
 import { formatDate, formatRange, relativeDays, todayIso } from "@/lib/staff/dates";
 import { displayName, isAwaitingProfile, rollOffStatus } from "@/lib/staff/employees";
+import { emailBreakParts } from "@/lib/staff/emailBreaks";
 import { TIME_OFF_META, upcomingLeave } from "@/lib/staff/timeoff";
 import { useStaffStore } from "@/lib/staff/staffStore";
 import type { Employee } from "@/lib/staff/types";
@@ -60,6 +61,20 @@ function Row({
   );
 }
 
+/** An address that wraps only after "@" or ".", so it is never cut mid-word. */
+function Email({ address }: { address: string }) {
+  return (
+    <span className="[overflow-wrap:normal]" title={address}>
+      {emailBreakParts(address).map((part, index) => (
+        <Fragment key={index}>
+          {part}
+          <wbr />
+        </Fragment>
+      ))}
+    </span>
+  );
+}
+
 function RollOff({ date }: { date: string }) {
   const status = rollOffStatus(date, todayIso());
   return (
@@ -83,7 +98,7 @@ export function EmployeePane({
   employee: Employee;
   onEdit: () => void;
   onDeleted: () => void;
-  /** Only used when the pane is an overlay in a narrow window. */
+  /** Closes the pane: on a narrow window it is a drawer over the list. */
   onClose: () => void;
 }) {
   const commit = useStaffStore((s) => s.commit);
@@ -138,13 +153,13 @@ export function EmployeePane({
           size="sm"
           shape="round"
           onClick={onClose}
-          className="absolute top-3 right-3 @3xl:hidden"
+          className="absolute top-3 right-3"
         >
           <XIcon />
         </IconButton>
         <div className="flex items-center gap-4">
           <EmployeeAvatar employee={employee} size="xl" />
-          <div className="min-w-0">
+          <div className="min-w-0 pr-7">
             <h3 className="text-ink text-[19px] leading-tight font-bold break-words">
               {displayName(employee)}
             </h3>
@@ -201,8 +216,12 @@ export function EmployeePane({
 
       <div className="scroll-thin min-h-0 flex-1 overflow-y-auto">
         <Section title="Contact">
-          <Row label="Deloitte email">{employee.deloitteEmail}</Row>
-          <Row label="Takeda email">{employee.takedaEmail}</Row>
+          <Row label="Deloitte email">
+            {employee.deloitteEmail && <Email address={employee.deloitteEmail} />}
+          </Row>
+          <Row label="Takeda email">
+            {employee.takedaEmail && <Email address={employee.takedaEmail} />}
+          </Row>
           <Row label="Phone" fromProfile pending={pending}>
             {employee.phone}
           </Row>

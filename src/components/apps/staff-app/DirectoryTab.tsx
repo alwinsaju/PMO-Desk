@@ -1,6 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import {
+  Fragment,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import {
   CaretDownIcon,
   DownloadSimpleIcon,
@@ -36,6 +44,7 @@ import {
   type SortKey,
 } from "@/lib/staff/employees";
 import { useStaffStore } from "@/lib/staff/staffStore";
+import { noSpellcheck } from "@/lib/ui/noSpellcheck";
 import {
   COLUMN_WIDTHS_KEY,
   DIRECTORY_COLUMNS,
@@ -44,9 +53,10 @@ import {
   PANE_WIDTH_KEY,
   clampColumnWidth,
   clampPaneWidth,
+  fitColumns,
   parseColumnWidths,
   parsePaneWidth,
-  totalWidth,
+  visibleColumns,
   type ColumnWidths,
   type DirectoryColumnKey,
 } from "@/lib/staff/layout";
@@ -54,24 +64,10 @@ import type { Employee } from "@/lib/staff/types";
 import { EmployeeDialog } from "./EmployeeDialog";
 import { EmployeePane } from "./EmployeePane";
 import { ImportDialog } from "./ImportDialog";
+import { readSetting, writeSetting } from "./localSetting";
 import { DASH, EmployeeAvatar, EmptyState, FilterMenu, TonePill } from "./parts";
 import { ResizeHandle } from "./ResizeHandle";
-
-function readSetting(key: string): string | null {
-  try {
-    return window.localStorage.getItem(key);
-  } catch {
-    return null;
-  }
-}
-
-function writeSetting(key: string, value: string): void {
-  try {
-    window.localStorage.setItem(key, value);
-  } catch {
-    // Sizes just won't be remembered.
-  }
-}
+import { useElementWidth } from "./useElementWidth";
 
 function downloadCsv(employees: readonly Employee[]) {
   const blob = new Blob(["\uFEFF", employeesToCsv(employees)], {
@@ -105,6 +101,8 @@ export function DirectoryTab() {
     parsePaneWidth(readSetting(PANE_WIDTH_KEY)),
   );
   const layoutRef = useRef<HTMLDivElement>(null);
+  const [tableAreaRef, tableWidth] = useElementWidth();
+  const revealRef = useRef<string | null>(null);
 
   useEffect(() => {
     writeSetting(COLUMN_WIDTHS_KEY, JSON.stringify(widths));
@@ -126,14 +124,32 @@ export function DirectoryTab() {
   const ops = useMemo(() => distinctValues(employees, "op"), [employees]);
   const offerings = useMemo(() => distinctValues(employees, "offering"), [employees]);
   const levels = useMemo(() => distinctValues(employees, "level"), [employees]);
+  const columns = useMemo(
+    () => fitColumns(visibleColumns(employees), widths, tableWidth),
+    [employees, widths, tableWidth],
+  );
 
-  const selected = shown.find((e) => e.id === selectedId) ?? shown[0] ?? null;
+  // The details pane stays closed until someone is picked.
+  const selected = shown.find((e) => e.id === selectedId) ?? null;
+  const showPane = selected !== null && paneOpen;
   const filtering =
     filter.query !== "" ||
     filter.location !== "" ||
     filter.op !== "" ||
     filter.offering !== "" ||
     filter.level !== "";
+
+  // A person just added or edited is scrolled into view once their row exists.
+  useEffect(() => {
+    const id = revealRef.current;
+    if (!id || id !== selectedId) return;
+    const row = layoutRef.current?.querySelector<HTMLElement>(
+      `[data-employee-id="${CSS.escape(id)}"]`,
+    );
+    if (!row) return;
+    row.scrollIntoView({ block: "nearest" });
+    revealRef.current = null;
+  }, [shown, selectedId]);
 
   const setFilterKey = <K extends keyof DirectoryFilter>(
     key: K,
@@ -180,6 +196,7 @@ export function DirectoryTab() {
               className="text-ink-muted pointer-events-none absolute top-1/2 left-3 -translate-y-1/2"
             />
             <Input
+              {...noSpellcheck}
               aria-label="Search employees"
               placeholder="Search name, email, skill…"
               value={filter.query}
@@ -193,24 +210,30 @@ export function DirectoryTab() {
             options={["Onshore", "Offshore"]}
             onChange={(v) => setFilterKey("location", v as DirectoryFilter["location"])}
           />
-          <FilterMenu
-            label="offering portfolios"
-            value={filter.op}
-            options={ops}
-            onChange={(v) => setFilterKey("op", v)}
-          />
-          <FilterMenu
-            label="offerings"
-            value={filter.offering}
-            options={offerings}
-            onChange={(v) => setFilterKey("offering", v)}
-          />
-          <FilterMenu
-            label="levels"
-            value={filter.level}
-            options={levels}
-            onChange={(v) => setFilterKey("level", v)}
-          />
+          {ops.length > 0 && (
+            <FilterMenu
+              label="offering portfolios"
+              value={filter.op}
+              options={ops}
+              onChange={(v) => setFilterKey("op", v)}
+            />
+          )}
+          {offerings.length > 0 && (
+            <FilterMenu
+              label="offerings"
+              value={filter.offering}
+              options={offerings}
+              onChange={(v) => setFilterKey("offering", v)}
+            />
+          )}
+          {levels.length > 0 && (
+            <FilterMenu
+              label="levels"
+              value={filter.level}
+              options={levels}
+              onChange={(v) => setFilterKey("level", v)}
+            />
+          )}{" "}
           {filtering && (
             <Button variant="ghost" size="sm" onClick={() => setFilter(NO_FILTER)}>
               <XIcon size={12} weight="bold" />
@@ -252,28 +275,7 @@ export function DirectoryTab() {
           </div>
         </div>
 
-        {employees.length > 0 && (
-          <div className="text-ink-muted flex flex-wrap items-center gap-x-4 gap-y-1 px-5 pb-3 text-[12.5px]">
-            <span>
-              <strong className="text-ink font-bold">{stats.total}</strong>{" "}
-              {stats.total === 1 ? "person" : "people"}
-            </span>
-            <span>{stats.onshore} onshore</span>
-            <span>{stats.offshore} offshore</span>
-            {stats.rollingOff > 0 && (
-              <span className="text-amber font-semibold">
-                {stats.rollingOff} rolling off soon
-              </span>
-            )}
-            {stats.awaitingProfile > 0 && (
-              <span className="text-info font-semibold">
-                {stats.awaitingProfile} waiting for M365 profile
-              </span>
-            )}
-          </div>
-        )}
-
-        <div className="scroll-thin min-h-0 flex-1 overflow-auto">
+        <div ref={tableAreaRef} className="scroll-thin min-h-0 flex-1 overflow-y-auto">
           {employees.length === 0 ? (
             <EmptyState
               icon={<UsersThreeIcon size={26} />}
@@ -299,9 +301,10 @@ export function DirectoryTab() {
           ) : (
             <EmployeeTable
               employees={shown}
-              selectedId={selected?.id ?? null}
+              selectedId={showPane ? selected.id : null}
               today={today}
-              widths={widths}
+              keys={columns.keys}
+              widths={columns.widths}
               onWidth={resizeColumn}
               onSelect={(id) => {
                 setSelectedId(id);
@@ -312,25 +315,39 @@ export function DirectoryTab() {
         </div>
 
         {employees.length > 0 && (
-          <div className="border-line flex items-center justify-between gap-2 border-t px-5 py-2.5">
-            <span className="text-ink-muted text-[12.5px]">
-              {filtering
-                ? `${shown.length} of ${employees.length} shown`
-                : `${employees.length} total`}
-            </span>
+          <div className="border-line flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t px-5 py-2">
+            <div className="text-ink-muted flex flex-wrap items-center gap-x-4 gap-y-1 text-[12.5px]">
+              <span>
+                <strong className="text-ink font-bold">
+                  {filtering ? `${shown.length} of ${stats.total}` : stats.total}
+                </strong>{" "}
+                {filtering ? "shown" : stats.total === 1 ? "person" : "people"}
+              </span>
+              <span>{stats.onshore} onshore</span>
+              <span>{stats.offshore} offshore</span>
+              {stats.rollingOff > 0 && (
+                <span className="text-amber font-semibold">
+                  {stats.rollingOff} rolling off soon
+                </span>
+              )}
+              {stats.awaitingProfile > 0 && (
+                <span className="text-info font-semibold">
+                  {stats.awaitingProfile} waiting for M365 profile
+                </span>
+              )}
+            </div>
             <div className="flex gap-2">{addButtons}</div>
           </div>
         )}
       </section>
 
-      {selected && (
+      {showPane && (
         <aside
           aria-label={`Details for ${displayName(selected)}`}
           style={{ "--pane-w": `${paneWidth}px` } as CSSProperties}
           className={cn(
-            "border-line bg-surface-elevated z-10 w-[340px] max-w-full shrink-0 border-l",
-            "shadow-pop absolute inset-y-0 right-0 @3xl:relative @3xl:inset-auto @3xl:flex @3xl:w-[var(--pane-w)] @3xl:max-w-[calc(100%-320px)] @3xl:shadow-none",
-            paneOpen ? "flex" : "hidden",
+            "border-line bg-surface-elevated z-10 flex w-[340px] max-w-full shrink-0 border-l",
+            "shadow-pop absolute inset-y-0 right-0 @3xl:relative @3xl:inset-auto @3xl:w-[var(--pane-w)] @3xl:max-w-[calc(100%-320px)] @3xl:shadow-none",
           )}
         >
           <ResizeHandle
@@ -363,7 +380,9 @@ export function DirectoryTab() {
         employee={dialog?.kind === "edit" ? dialog.employee : null}
         onOpenChange={(open) => !open && setDialog(null)}
         onSaved={(id) => {
+          revealRef.current = id;
           setSelectedId(id);
+          setPaneOpen(true);
           setFilter(NO_FILTER);
         }}
       />
@@ -375,15 +394,77 @@ export function DirectoryTab() {
   );
 }
 
-const HEAD = "px-3 py-2.5 text-left text-[11.5px] font-bold tracking-[0.06em] uppercase";
-/** Empty space kept after the last column, so the table always ends with room to grow into. */
-const FILLER_WIDTH = 24;
+const HEAD = "px-3 py-2 text-left text-[11.5px] font-bold tracking-[0.06em] uppercase";
+const CELL = "text-ink-soft truncate px-3 py-2 text-[13px]";
+
+type RowContext = { employee: Employee; today: string };
+
+/** One cell per optional column; the employee column is drawn by the table itself. */
+const CELLS: Record<
+  Exclude<DirectoryColumnKey, "employee">,
+  (ctx: RowContext) => ReactNode
+> = {
+  level: ({ employee }) => (
+    <td className={CELL} title={employee.level}>
+      {employee.level || DASH}
+    </td>
+  ),
+  op: ({ employee }) => (
+    <td className={CELL} title={employee.op}>
+      {employee.op || DASH}
+    </td>
+  ),
+  offering: ({ employee }) => (
+    <td className={CELL} title={employee.offering}>
+      {employee.offering || DASH}
+    </td>
+  ),
+  team: ({ employee }) => (
+    <td className={CELL} title={employee.team}>
+      {employee.team || DASH}
+    </td>
+  ),
+  location: ({ employee }) => (
+    <td className="truncate px-3 py-2">
+      {employee.location ? (
+        <TonePill tone={employee.location === "Onshore" ? "accent" : "neutral"}>
+          {employee.location}
+        </TonePill>
+      ) : (
+        DASH
+      )}
+    </td>
+  ),
+  rolloff: ({ employee, today }) => {
+    const rolloff = rollOffStatus(employee.rollOffDate, today);
+    return (
+      <td className="truncate px-3 py-2 text-[13px]">
+        {employee.rollOffDate ? (
+          <span
+            className={cn(
+              "whitespace-nowrap",
+              rolloff.kind === "soon" && "text-amber font-semibold",
+              rolloff.kind === "past" && "text-red font-semibold",
+              rolloff.kind === "later" && "text-ink-soft",
+            )}
+            title={rolloff.kind === "none" ? undefined : relativeDays(rolloff.days)}
+          >
+            {formatDate(employee.rollOffDate)}
+          </span>
+        ) : (
+          DASH
+        )}
+      </td>
+    );
+  },
+};
 
 function EmployeeTable({
   employees,
   selectedId,
   today,
   onSelect,
+  keys,
   widths,
   onWidth,
 }: {
@@ -391,23 +472,23 @@ function EmployeeTable({
   selectedId: string | null;
   today: string;
   onSelect: (id: string) => void;
+  /** The columns to draw (empty ones are left out; narrow lists drop some). */
+  keys: readonly DirectoryColumnKey[];
   widths: ColumnWidths;
   onWidth: (key: DirectoryColumnKey, width: number) => void;
 }) {
+  const columns = DIRECTORY_COLUMNS.filter((c) => keys.includes(c.key));
   return (
-    <table
-      className="w-full table-fixed border-collapse text-left"
-      style={{ minWidth: totalWidth(widths) + FILLER_WIDTH }}
-    >
+    <table className="w-full table-fixed border-collapse text-left">
       <colgroup>
-        {DIRECTORY_COLUMNS.map((column) => (
+        {columns.map((column) => (
           <col key={column.key} style={{ width: widths[column.key] }} />
         ))}
         <col />
       </colgroup>
       <thead className="text-ink-muted bg-surface-elevated sticky top-0 z-[1]">
         <tr className="border-line border-b">
-          {DIRECTORY_COLUMNS.map((column, index) => (
+          {columns.map((column, index) => (
             <th
               key={column.key}
               scope="col"
@@ -431,10 +512,10 @@ function EmployeeTable({
       <tbody>
         {employees.map((employee) => {
           const active = employee.id === selectedId;
-          const rolloff = rollOffStatus(employee.rollOffDate, today);
           return (
             <tr
               key={employee.id}
+              data-employee-id={employee.id}
               tabIndex={0}
               aria-selected={active}
               onClick={() => onSelect(employee.id)}
@@ -452,7 +533,7 @@ function EmployeeTable({
                 }
               }}
               className={cn(
-                "border-line group cursor-pointer border-b outline-none",
+                "border-line group cursor-pointer scroll-mt-10 border-b outline-none",
                 "transition-colors duration-150",
                 "focus-visible:ring-focus focus-visible:ring-2 focus-visible:ring-inset",
                 active ? "bg-accent-soft" : "hover:bg-chip",
@@ -460,7 +541,7 @@ function EmployeeTable({
             >
               <td
                 className={cn(
-                  "py-2.5 pr-3 pl-5",
+                  "py-2 pr-3 pl-5",
                   active && "shadow-[inset_3px_0_0_var(--color-accent)]",
                 )}
               >
@@ -477,52 +558,23 @@ function EmployeeTable({
                     >
                       {displayName(employee)}
                     </p>
-                    <p className="text-ink-muted truncate text-[12px]">
+                    <p
+                      className="text-ink-muted truncate text-[12px]"
+                      title={employee.deloitteEmail}
+                    >
                       {employee.deloitteEmail}
                     </p>
                   </div>
                 </div>
               </td>
-              <td className="text-ink-soft truncate px-3 py-2.5 text-[13px]">
-                {employee.level || DASH}
-              </td>
-              <td className="text-ink-soft truncate px-3 py-2.5 text-[13px]">
-                {employee.op || DASH}
-              </td>
-              <td className="text-ink-soft truncate px-3 py-2.5 text-[13px]">
-                {employee.offering || DASH}
-              </td>
-              <td className="text-ink-soft truncate px-3 py-2.5 text-[13px]">
-                {employee.team || DASH}
-              </td>
-              <td className="truncate px-3 py-2.5">
-                {employee.location ? (
-                  <TonePill tone={employee.location === "Onshore" ? "accent" : "neutral"}>
-                    {employee.location}
-                  </TonePill>
-                ) : (
-                  DASH
-                )}
-              </td>
-              <td className="truncate px-3 py-2.5 text-[13px]">
-                {employee.rollOffDate ? (
-                  <span
-                    className={cn(
-                      "whitespace-nowrap",
-                      rolloff.kind === "soon" && "text-amber font-semibold",
-                      rolloff.kind === "past" && "text-red font-semibold",
-                      rolloff.kind === "later" && "text-ink-soft",
-                    )}
-                    title={
-                      rolloff.kind === "none" ? undefined : relativeDays(rolloff.days)
-                    }
-                  >
-                    {formatDate(employee.rollOffDate)}
-                  </span>
-                ) : (
-                  DASH
-                )}
-              </td>
+              {columns.slice(1).map((column) => (
+                <Fragment key={column.key}>
+                  {CELLS[column.key as Exclude<DirectoryColumnKey, "employee">]({
+                    employee,
+                    today,
+                  })}
+                </Fragment>
+              ))}
               <td aria-hidden className="p-0" />
             </tr>
           );

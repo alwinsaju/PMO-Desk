@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { CameraIcon, WarningCircleIcon } from "@phosphor-icons/react";
 import {
   Avatar,
@@ -29,6 +29,7 @@ import {
   type EmployeeErrors,
 } from "@/lib/staff/employees";
 import { useStaffStore } from "@/lib/staff/staffStore";
+import { noSpellcheck } from "@/lib/ui/noSpellcheck";
 import {
   GENDERS,
   LOCATIONS,
@@ -142,21 +143,7 @@ function QuickAdd({
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [folder, setFolder] = useState<string | null>(null);
   const batch = useMemo(() => parseEmailList(text, employees), [text, employees]);
-
-  useEffect(() => {
-    let live = true;
-    fetch("/api/staff/sync")
-      .then((r) => r.json() as Promise<{ folder?: unknown }>)
-      .then((body) => {
-        if (live && typeof body.folder === "string") setFolder(body.folder);
-      })
-      .catch(() => undefined);
-    return () => {
-      live = false;
-    };
-  }, []);
 
   async function add() {
     setBusy(true);
@@ -177,20 +164,6 @@ function QuickAdd({
         Enter their Deloitte email. Name, level, offering portfolio, home office, phone
         and profile picture are filled in from their M365 profile.
       </DialogDescription>
-      {folder && (
-        <p className="text-ink-muted mt-2 text-[12px] leading-snug">
-          The profile is requested through{" "}
-          <code className="[overflow-wrap:anywhere]">
-            {folder.split(/(?<=\\)/).map((part, index) => (
-              <Fragment key={index}>
-                {part}
-                <wbr />
-              </Fragment>
-            ))}
-          </code>
-          .
-        </p>
-      )}
       <div className="mt-5 flex flex-col gap-3">
         <Field
           label="Deloitte email(s)"
@@ -198,6 +171,7 @@ function QuickAdd({
           hint="One per line, or separated by commas."
         >
           <textarea
+            {...noSpellcheck}
             id="staff-emails"
             autoFocus
             rows={5}
@@ -311,6 +285,7 @@ function EmployeeForm({
         className={options.className}
       >
         <Input
+          {...noSpellcheck}
           id={id}
           type={options.type}
           value={draft[key]}
