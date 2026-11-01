@@ -580,6 +580,14 @@
 [data-window-chrome][data-gesture] > .glass-win {
   contain: layout paint;
 }
+/* No text selection anywhere while a window is dragged or resized. Keyed off the
+   same attribute (not a flag set from JS), so it cannot get stuck if the window
+   is closed mid-drag. */
+:root:has([data-window-chrome][data-gesture]),
+:root:has([data-window-chrome][data-gesture]) * {
+  -webkit-user-select: none !important;
+  user-select: none !important;
+}
 
 /* Lean (default) mode: window bodies are fully opaque so text of windows
    behind never ghosts through the translucent fill. */

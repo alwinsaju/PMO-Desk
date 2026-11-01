@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { attentionSuffix, titleWithSuffix } from "./windowTitles.ts";
+import { attentionSuffix, joinSuffixes, titleWithSuffix } from "./windowTitles.ts";
 
 describe("window title suffix", () => {
   it("says what is waiting, in the right grammar", () => {
@@ -20,5 +20,15 @@ describe("window title suffix", () => {
     );
     assert.equal(titleWithSuffix("PMO To-Do", null), "PMO To-Do");
     assert.equal(titleWithSuffix("PMO To-Do", ""), "PMO To-Do");
+  });
+
+  it("joins the window context and the live status for the title bar", () => {
+    assert.equal(
+      joinSuffixes("Shift roster", "3 need attention"),
+      "Shift roster · 3 need attention",
+    );
+    assert.equal(joinSuffixes("Shift roster", null), "Shift roster");
+    assert.equal(joinSuffixes(undefined, "1 needs attention"), "1 needs attention");
+    assert.equal(joinSuffixes("  ", "", null), null);
   });
 });

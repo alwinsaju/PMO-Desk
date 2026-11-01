@@ -1968,8 +1968,9 @@ it up.
   instead of landing on the first. Web apps are never remembered. Rectangles are saved 600 ms after the
   last move or resize; a window that opened before the saved rectangles loaded and was not touched is
   moved into place when they arrive (`pristineUpdates`).
-- **Window titles** (`windowTitles.ts`, `titleSuffixStore.ts`). An app can add live status after its
-  title: PMO To-Do shows "(3 need attention)", fed by `PmoReminders`.
+- **Window titles** (`windowTitles.ts`, `titleSuffixStore.ts`). The title bar shows the app icon, the app name and a muted
+  context suffix: an app can add live status after its title ("3 need attention", PMO To-Do, fed by `PmoReminders`)
+  and a window can say where the user is (`useWindowContext`). Dragging a window switches text selection off page-wide.
 - **Toasts and notification history** (`src/lib/notifications/`, `ui/ToastHost.tsx`). `toast({ message,
 title, tone, action, key })` from anywhere; a repeated `key` replaces the earlier toast, errors and toasts
   with an action stay longer, and every toast is kept in a capped history (the notification centre will

@@ -5,6 +5,7 @@
 
 export { WindowManager } from "./WindowManager";
 export { useWindowStore, useVisibleWindowIds, useAllWindowIds } from "./windowStore";
+export { useWindowContext } from "./titleSuffixStore";
 export type {
   WindowState,
   WindowPosition,

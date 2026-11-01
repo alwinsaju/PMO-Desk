@@ -14,3 +14,14 @@ export function titleWithSuffix(
 ): string {
   return suffix ? `${title} (${suffix})` : title;
 }
+
+/** The text after the app name in the title bar: the window's own context (e.g. the open
+ *  tab, "Shift roster") then the app's live status ("3 need attention"), joined with a
+ *  middle dot. Null when there is neither. */
+export function joinSuffixes(...parts: Array<string | null | undefined>): string | null {
+  const text = parts
+    .map((part) => part?.trim())
+    .filter(Boolean)
+    .join(" · ");
+  return text || null;
+}

@@ -50,6 +50,14 @@ toast({
 
 **Icon-only buttons** use `IconButton`. `aria-label` is a required prop (the compiler rejects an `IconButton` without it) and doubles as the tooltip, shown on hover and keyboard focus. A more helpful hint can be passed as `tooltip="Hide this team"` (or `title`); `tooltip={false}` turns it off when the button is already inside another tooltip trigger. Do not wrap an `IconButton` in `Tooltip`. A disabled `IconButton` keeps the native `title` instead, so it can say why it is disabled. Never build an icon-only control from a bare `<button>`.
 
+## Window title bar
+
+54 px, left to right: the app icon in an accent chip (a generic window icon if the app gave none), the **app name** (semibold) and an optional **context suffix** (smaller, muted, after a middle dot), then pin, minimise, maximise/restore and close. The window's accessible name is "App name (suffix)".
+
+- **Context suffix** = where the user is inside the window and/or live status: `Staff Management · Shift roster · 3 need attention`. An app sets the in-window part with `useWindowContext(windowId, "Shift roster")` (`window-manager/titleSuffixStore.ts`; cleared on unmount); an app-wide status comes from `setAppTitleSuffix(appId, ...)` (PMO uses it for "N need attention"). Keep it short; it truncates before the name does.
+- **Controls** are 36 px round `IconButton`s (each with a tooltip from its label); pin/minimise/maximise appear on hover, focus or when the window is focused, close is always visible and turns red on hover.
+- **No text selection while dragging.** The bar is `select-none`, and while a window is dragged or resized (`data-gesture` on it) text selection is off page-wide (`tokens.css`), so the drag never highlights text in the window underneath. Any selection made before the drag is cleared.
+
 ## Type scale, spacing, focus, contrast
 
 **Type scale** (tokens `--type-*`, utilities in `globals.css`):
