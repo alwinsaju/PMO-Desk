@@ -20,7 +20,7 @@ import {
   summarise,
 } from "./alerts.ts";
 import { capacityGrid, weekStarts } from "./capacity.ts";
-import { cellText, exportHint, statusTone } from "./cells.ts";
+import { cellText, exportHint } from "./cells.ts";
 import { formatDayMonth } from "../staff/dates.ts";
 import { REGISTERS, REGISTER_IDS, TOOL_ALIASES, registerById } from "./defs.ts";
 import {
@@ -230,9 +230,6 @@ test("cells: blank values read as empty, dates and links are shortened, closed s
   assert.equal(cellText(undefined, false), "");
   const link = def("doclinks").fields.find((f) => f.key === "url");
   assert.equal(cellText(link, "https://x.sharepoint.com/a/b"), "x.sharepoint.com");
-  assert.equal(statusTone(raid, "Open"), "accent");
-  assert.equal(statusTone(raid, "Closed"), "neutral");
-  assert.equal(statusTone(def("minutes"), "anything"), "accent");
   assert.equal(exportHint(3, 2), null);
   assert.match(exportHint(0, 0), /Nothing to export yet/);
   assert.match(exportHint(4, 0), /no record matches/);

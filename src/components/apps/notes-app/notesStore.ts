@@ -8,6 +8,7 @@ import {
   restoreDeleted,
   restorePreviousRevision,
   seedFirstRun,
+  togglePinned,
   updateNoteByAssistant,
   updateNoteByUser,
   type DeletedBy,
@@ -82,6 +83,8 @@ export interface NotesStoreState {
   dismissUndo: () => void;
   /** Puts back the newest body the assistant replaced. */
   restoreRevision: (id: string) => void;
+  /** Pins a note to the top of the list, or unpins it. */
+  togglePin: (id: string) => void;
   clearSamples: () => void;
   seedSamples: () => void;
 }
@@ -137,6 +140,12 @@ export const useNotesStore = create<NotesStoreState>()(
           notes: state.notes.map((note) =>
             note.id === id ? restorePreviousRevision(note, "Just now") : note,
           ),
+        }));
+      },
+
+      togglePin: (id) => {
+        set((state) => ({
+          notes: state.notes.map((note) => (note.id === id ? togglePinned(note) : note)),
         }));
       },
 

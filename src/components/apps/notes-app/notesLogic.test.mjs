@@ -6,21 +6,26 @@ import {
   UNDO_WINDOW_MS,
   canRestoreRevision,
   clearSamples,
+  filterByTag,
   isUndoActive,
   migrateNotesState,
+  noteTags,
   noteTitle,
   noteListEntry,
   noteDateLabel,
-  noteSubtitle,
   notePreview,
+  orderNotes,
   pushRevision,
   removeNote,
   restoreDeleted,
   restorePreviousRevision,
   seedFirstRun,
+  tagCounts,
+  togglePinned,
   undoNoticeText,
   updateNoteByAssistant,
   updateNoteByUser,
+  wordCount,
 } from "./notesLogic.ts";
 
 const note = (id, content = id, extra = {}) => ({
@@ -80,19 +85,13 @@ describe("notePreview", () => {
   });
 });
 
-describe("noteListEntry / noteDateLabel / noteSubtitle", () => {
+describe("noteListEntry / noteDateLabel", () => {
   it("shows a short one-line note as the title alone", () => {
     assert.deepEqual(noteListEntry("Buy milk"), { title: "Buy milk", preview: "" });
   });
   it("hides the date of sample notes only", () => {
     assert.equal(noteDateLabel({ sample: true, updatedLabel: "Aug 25, 2026" }), "");
     assert.equal(noteDateLabel({ updatedLabel: "Just now" }), "Just now");
-  });
-  it("joins date and preview without a dangling separator", () => {
-    assert.equal(noteSubtitle("Just now", "More"), "Just now — More");
-    assert.equal(noteSubtitle("Just now", ""), "Just now");
-    assert.equal(noteSubtitle("", "More"), "More");
-    assert.equal(noteSubtitle("", ""), "");
   });
 });
 
@@ -218,5 +217,75 @@ describe("samples", () => {
   });
   it("migrates garbage to an empty, already-seeded state", () => {
     assert.deepEqual(migrateNotesState(null), { notes: [], samplesSeeded: true });
+  });
+});
+
+describe("pinning and ordering", () => {
+  it("toggles a pin on and off without touching the rest", () => {
+    const n = note("a", "x", { updatedLabel: "Aug" });
+    const pinned = togglePinned(n);
+    assert.equal(pinned.pinned, true);
+    assert.equal(pinned.updatedLabel, "Aug");
+    assert.equal("pinned" in togglePinned(pinned), false);
+  });
+  it("lists pinned notes first and keeps each group's order", () => {
+    const notes = [
+      note("a"),
+      note("b", "b", { pinned: true }),
+      note("c"),
+      note("d", "d", { pinned: true }),
+    ];
+    const { pinned, others } = orderNotes(notes);
+    assert.deepEqual(
+      pinned.map((n) => n.id),
+      ["b", "d"],
+    );
+    assert.deepEqual(
+      others.map((n) => n.id),
+      ["a", "c"],
+    );
+  });
+  it("keeps the pin when a person edits the note", () => {
+    const edited = updateNoteByUser(note("a", "x", { pinned: true }), "y", "Just now");
+    assert.equal(edited.pinned, true);
+  });
+});
+
+describe("tags", () => {
+  it("finds #tags anywhere, lower-cased and unique, but not headings", () => {
+    assert.deepEqual(
+      noteTags("# Plan\nCall #Client and #client, then #q4-review.\n##x #1"),
+      ["client", "q4-review"],
+    );
+    assert.deepEqual(noteTags("no tags a#b"), []);
+  });
+  it("counts notes per tag, most used first, and filters by one", () => {
+    const notes = [note("a", "x #work #home"), note("b", "y #work"), note("c", "z")];
+    assert.deepEqual(tagCounts(notes), [
+      { tag: "work", count: 2 },
+      { tag: "home", count: 1 },
+    ]);
+    assert.deepEqual(
+      filterByTag(notes, "work").map((n) => n.id),
+      ["a", "b"],
+    );
+    assert.equal(filterByTag(notes, null).length, 3);
+    assert.equal(filterByTag(notes, "missing").length, 0);
+  });
+});
+
+describe("formatting markers in titles, previews and word counts", () => {
+  it("shows a heading or bold title as plain text", () => {
+    assert.equal(noteTitle("# Weekly plan\nbody"), "Weekly plan");
+    assert.equal(noteTitle("**Important** call"), "Important call");
+    assert.equal(
+      notePreview("T\n- [ ] call Priya\n- [x] send deck"),
+      "call Priya send deck",
+    );
+  });
+  it("counts words without markers or bullets", () => {
+    assert.equal(wordCount(""), 0);
+    assert.equal(wordCount("  \n "), 0);
+    assert.equal(wordCount("# Plan\n- one two\n- [ ] three **four**"), 5);
   });
 });

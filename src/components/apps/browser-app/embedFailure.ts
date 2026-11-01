@@ -16,7 +16,13 @@ export interface EmbedFailureInput {
 
 export interface EmbedFailureText {
   title: string;
+  /** One paragraph (cause and next step together), for the plain blocked card. */
   message: string;
+  /** For the shared ErrorState: what probably went wrong, and what to do. */
+  cause: string;
+  nextStep: string;
+  /** False when trying again would only be refused again. */
+  retryable: boolean;
 }
 
 export function describeEmbedFailure({
@@ -29,6 +35,9 @@ export function describeEmbedFailure({
     return {
       title: "You appear to be offline",
       message: `Can't load ${host} without an internet connection. Reconnect, then press Reload.`,
+      cause: "This computer has no internet connection.",
+      nextStep: "Reconnect, then retry.",
+      retryable: true,
     };
   }
   switch (code) {
@@ -37,23 +46,38 @@ export function describeEmbedFailure({
         title: `${host} doesn't allow being shown inside AI OS`,
         message:
           "The site's own security settings stop other apps from displaying it. Nothing is wrong on your side. Open it in your regular browser instead.",
+        cause:
+          "The site's own security settings stop other apps from displaying it. Nothing is wrong on your side.",
+        nextStep: "Open it in your default browser.",
+        retryable: false,
       };
     case "unreachable":
       return {
         title: `Can't reach ${host}`,
         message:
           "The site did not answer. Check your internet connection, then press Reload.",
+        cause: "The site did not answer.",
+        nextStep: "Check your internet connection, then retry.",
+        retryable: true,
       };
     case "not-found":
       return {
         title: `Can't find ${host}`,
         message: "That address does not exist. Check the spelling and try again.",
+        cause: "That address does not exist.",
+        nextStep: "Check the spelling in the address bar, then retry.",
+        retryable: true,
       };
-    default:
+    default: {
+      const message = reason ?? "This page could not be shown inside AI OS.";
       return {
         title: `Can't show ${host} here`,
-        message: reason ?? "This page could not be shown inside AI OS.",
+        message,
+        cause: message,
+        nextStep: "Retry, or open it in your default browser.",
+        retryable: true,
       };
+    }
   }
 }
 

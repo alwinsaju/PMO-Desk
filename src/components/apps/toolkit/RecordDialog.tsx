@@ -11,6 +11,7 @@ import {
 import { toast } from "@/lib/notifications/toastStore";
 import { buildMailto } from "@/lib/pmo/chaser";
 import { recordAlert } from "@/lib/registers/alerts";
+import { formSections } from "@/lib/registers/layout";
 import {
   defaultValues,
   fieldErrors,
@@ -94,6 +95,7 @@ export function RecordDialog({
   const me = useMyFirstName();
   const problems = useMemo(() => fieldErrors(def, values), [def, values]);
   const problemCount = Object.keys(problems).length;
+  const sections = useMemo(() => formSections(def), [def]);
 
   const draftRecord: RegisterRecord = {
     id: record?.id ?? "rg_000000000000",
@@ -198,23 +200,30 @@ export function RecordDialog({
         {/* Only the fields scroll; the buttons below stay in view. */}
         <div
           ref={bodyRef}
-          className="scroll-thin -mx-2 mt-3 grid min-h-0 flex-1 grid-cols-2 content-start gap-3 overflow-y-auto px-2 py-1"
+          className="scroll-thin -mx-2 mt-3 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-2 py-1"
         >
-          {def.fields.map((field) => (
-            <FieldInput
-              key={field.key}
-              field={field}
-              value={values[field.key]}
-              onChange={(v) => setValues((cur) => ({ ...cur, [field.key]: v }))}
-              people={names}
-              error={problems[field.key]}
-              showErrorNow={attempted}
-            />
+          {sections.map((section) => (
+            <fieldset key={section.title} className="min-w-0" data-testid="form-section">
+              <legend className="text-ink-muted mb-2 text-[11.5px] font-bold tracking-[0.06em] uppercase">
+                {section.title}
+              </legend>
+              <div className="grid grid-cols-2 content-start gap-3">
+                {section.fields.map((field) => (
+                  <FieldInput
+                    key={field.key}
+                    field={field}
+                    value={values[field.key]}
+                    onChange={(v) => setValues((cur) => ({ ...cur, [field.key]: v }))}
+                    people={names}
+                    error={problems[field.key]}
+                    showErrorNow={attempted}
+                  />
+                ))}
+              </div>
+            </fieldset>
           ))}
           {renderExtras && (
-            <div className="col-span-2">
-              {renderExtras({ values, setValues, record, saveNow })}
-            </div>
+            <div>{renderExtras({ values, setValues, record, saveNow })}</div>
           )}
         </div>
         {error && (

@@ -503,9 +503,11 @@ themselves, not a task list.
    for task/cursor/annotation state.
 
 3. **App Store** (`src/components/app-store/*`) — `AppStoreApp`, registered
-   under `"app-store"`: a mocked, browsable catalog (search + category
-   tabs; no per-app detail view — cards show just a name/icon and an
-   Install/Open control). Install state lives in `installedAppsStore.ts`,
+   under `"app-store"`: a mocked, browsable catalog (search, category
+   chips with counts, a hero for the featured apps, and a detail sheet per
+   app opened from a card). The Install / Installing… / Open flow is one
+   hook, `useAppInstall`, shared by the cards, the hero and the sheet; the
+   sheet's copy and sizes are sample data in `appDetails.ts`. Install state lives in `installedAppsStore.ts`,
    a small `persist`-backed Zustand store shaped like `windowStore.ts`/
    `agentStore.ts`, shared across every open App Store window and
    surviving reloads. It's the intended cross-directory contract for
@@ -517,10 +519,13 @@ themselves, not a task list.
 4. **Demo Apps bundle**
    (`src/components/apps/{files-app,notes-app,browser-app}/*`) — a file
    browser (breadcrumb navigation over a static mock tree, labelled as sample
-   files in a banner; names use the app font), a notes editor (sidebar list and a `<textarea>` pane,
-   local create/select/edit/delete), and a fake browser-in-a-window (mocked
-   address-bar chrome around 3 static internal page templates, with
-   in-page links wired to the same navigation as the chrome). Each
+   files in a banner; names use the app font), a notes editor (sidebar list
+   with pinned notes and `#tag` filter, a formatting toolbar over a `<textarea>`;
+   a note stays plain text with simple markers, see `noteFormat.ts`), and a
+   browser-in-a-window (tabs as pure state in `browserTabs.ts`, a new-tab page
+   with shortcuts and recent sites from `browserRecents.ts`, address-bar chrome
+   around 3 static internal page templates and real pages in a sandboxed frame;
+   a page that cannot be shown uses the shared `ErrorState`). Each
    registers under its own id (`"files"` / `"notes"` / `"browser"`) via the
    same one-line-in-`apps/index.ts` pattern as the App Store.
 

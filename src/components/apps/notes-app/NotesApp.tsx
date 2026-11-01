@@ -2,20 +2,21 @@
 
 import { useEffect, useRef, useState } from "react";
 import { motion } from "motion/react";
-import { NotePencilIcon, PlusIcon, TrashIcon } from "@phosphor-icons/react";
-import { Button, IconButton, ScrollArea } from "@/components/ui";
-import { cn } from "@/lib/cn";
+import { NotePencilIcon, PlusIcon } from "@phosphor-icons/react";
+import { Button } from "@/components/ui";
 import { easeStandard } from "@/lib/motion";
 import {
   UNDO_WINDOW_MS,
   canRestoreRevision,
+  filterByTag,
   hasSamples,
-  noteTitle,
-  noteListEntry,
   noteDateLabel,
-  noteSubtitle,
+  orderNotes,
+  tagCounts,
   undoNoticeText,
 } from "./notesLogic";
+import { NoteEditor } from "./NoteEditor";
+import { NoteList, TagFilter } from "./NoteList";
 import { useNotesStore } from "./notesStore";
 
 /**
@@ -42,14 +43,22 @@ export function NotesApp({ windowId }: { windowId: string }) {
   const dismissUndo = useNotesStore((s) => s.dismissUndo);
   const restoreRevision = useNotesStore((s) => s.restoreRevision);
   const clearSamples = useNotesStore((s) => s.clearSamples);
+  const togglePin = useNotesStore((s) => s.togglePin);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [tag, setTag] = useState<string | null>(null);
   const editorRef = useRef<HTMLTextAreaElement>(null);
   const focusEditorForRef = useRef<string | null>(null);
 
-  // Falls back to the first note when nothing (or a vanished note) is
+  const tags = tagCounts(notes);
+  // A tag nobody uses any more filters nothing out.
+  const activeTag = tags.some((t) => t.tag === tag) ? tag : null;
+  const { pinned, others } = orderNotes(filterByTag(notes, activeTag));
+
+  // Falls back to the first listed note when nothing (or a vanished note) is
   // selected, which also covers notes that arrive after async hydration.
-  const selectedNote = notes.find((note) => note.id === selectedId) ?? notes[0] ?? null;
+  const selectedNote =
+    notes.find((note) => note.id === selectedId) ?? pinned[0] ?? others[0] ?? null;
   const selectedNoteId = selectedNote?.id ?? null;
 
   useEffect(() => {
@@ -73,16 +82,13 @@ export function NotesApp({ windowId }: { windowId: string }) {
   function handleCreate() {
     const note = createNote("");
     focusEditorForRef.current = note.id;
+    setTag(null);
     setSelectedId(note.id);
   }
 
   function handleChangeContent(content: string) {
     if (!selectedNoteId) return;
     updateNote(selectedNoteId, content);
-  }
-
-  function handleDelete(id: string) {
-    deleteNote(id);
   }
 
   return (
@@ -111,81 +117,15 @@ export function NotesApp({ windowId }: { windowId: string }) {
             </Button>
           </div>
         </div>
-        <ScrollArea className="min-h-0 flex-1">
-          <ul className="flex flex-col gap-1 px-2.5 pb-3">
-            {notes.map((note) => {
-              const isSelected = note.id === selectedNoteId;
-              const { title, preview } = noteListEntry(note.content);
-              const subtitle = noteSubtitle(noteDateLabel(note), preview);
-              return (
-                // The `li` is the visual row (hover fill, accent bar), so the
-                // delete button that floats over its corner keeps the row
-                // lit while it is hovered instead of dropping the highlight.
-                <li
-                  key={note.id}
-                  data-active={isSelected}
-                  className={cn(
-                    "group row-bar rounded-control ease-smooth flex min-w-0 items-center transition-colors duration-200",
-                    isSelected ? "bg-accent-soft" : "hover:bg-chip",
-                  )}
-                >
-                  <button
-                    type="button"
-                    onClick={() => setSelectedId(note.id)}
-                    className={cn(
-                      "rounded-control flex min-w-0 flex-1 flex-col gap-px py-[11px] pr-1 pl-3 text-left",
-                      "focus-visible:ring-focus outline-none focus-visible:ring-2 focus-visible:ring-inset",
-                    )}
-                  >
-                    {/* line-clamp-1 (not `truncate`) deliberately: `truncate`'s
-                      `white-space: nowrap` makes this text's min-content
-                      width equal its full unwrapped width, which the
-                      ScrollArea's internal content-measuring wrapper
-                      (`display: table`) then honors as a hard floor —
-                      inflating the whole list to the widest note's natural
-                      text width and pushing every row's text out of view,
-                      no `min-w-0` upstream fixes that. `line-clamp-1` still
-                      allows normal wrapping for min-content purposes, so it
-                      clips to one line without the blowup. */}
-                    {/* The selected fill is the translucent `accent-soft`
-                      tint, so plain ink tokens stay readable on it in every
-                      theme x brand combination. */}
-                    <span className="flex min-w-0 items-center gap-1.5">
-                      <span className="text-ink line-clamp-1 min-w-0 text-[14px] font-semibold [overflow-wrap:anywhere]">
-                        {title}
-                      </span>
-                      {note.sample && (
-                        <span className="bg-chip text-ink-muted rounded-chip shrink-0 px-1.5 text-[10.5px] font-bold uppercase">
-                          Sample
-                        </span>
-                      )}
-                    </span>
-                    {subtitle && (
-                      <span className="text-ink-muted line-clamp-1 text-[12.5px] [overflow-wrap:anywhere]">
-                        {subtitle}
-                      </span>
-                    )}
-                  </button>
-                  <IconButton
-                    aria-label={`Delete "${noteTitle(note.content)}"`}
-                    variant="ghost"
-                    size="sm"
-                    shape="round"
-                    onClick={() => handleDelete(note.id)}
-                    className="text-ink-muted hover:bg-red-soft hover:text-red mr-2 h-[26px] w-[26px] flex-shrink-0 shrink-0"
-                  >
-                    <TrashIcon size={14} />
-                  </IconButton>
-                </li>
-              );
-            })}
-            {notes.length === 0 && (
-              <li className="text-ink-faint px-3 py-8 text-center text-[13px]">
-                No notes yet.
-              </li>
-            )}
-          </ul>
-        </ScrollArea>
+        <TagFilter tags={tags} active={activeTag} onChange={setTag} />
+        <NoteList
+          notes={notes}
+          selectedId={selectedNoteId}
+          tag={activeTag}
+          onSelect={setSelectedId}
+          onDelete={deleteNote}
+          onTogglePin={togglePin}
+        />
         {lastDeleted && (
           <p
             role="status"
@@ -230,13 +170,10 @@ export function NotesApp({ windowId }: { windowId: string }) {
                 </Button>
               )}
             </div>
-            <textarea
-              ref={editorRef}
-              value={selectedNote.content}
-              onChange={(event) => handleChangeContent(event.target.value)}
-              placeholder="Start typing…"
-              aria-label="Note content"
-              className="text-ink placeholder:text-ink-faint px-gutter min-h-0 flex-1 resize-none bg-transparent pt-1.5 pb-7 text-[16px] leading-[1.7] outline-none"
+            <NoteEditor
+              content={selectedNote.content}
+              editorRef={editorRef}
+              onChange={handleChangeContent}
             />
           </motion.div>
         ) : (

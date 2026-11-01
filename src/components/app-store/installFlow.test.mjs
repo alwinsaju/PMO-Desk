@@ -1,9 +1,18 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { installedToast, isDemoApp, removedToast } from "./installFlow.ts";
+import { installLabel, installedToast, isDemoApp, removedToast } from "./installFlow.ts";
 
 const real = { id: "gmail", name: "Gmail", url: "https://mail.google.com/" };
 const demo = { id: "taskflow", name: "TaskFlow" };
+
+describe("installLabel", () => {
+  it("reads Install, Installing… or Open", () => {
+    assert.equal(installLabel(false, false), "Install");
+    assert.equal(installLabel(true, false), "Installing…");
+    assert.equal(installLabel(false, true), "Open");
+    assert.equal(installLabel(true, true), "Installing…");
+  });
+});
 
 describe("isDemoApp", () => {
   it("is true for fictional entries (no url) only", () => {

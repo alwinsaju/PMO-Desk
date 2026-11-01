@@ -9,8 +9,17 @@ interface AppIconTileProps {
   /** Stable key (the app id) that picks this tile's gradient from the
    *  palette below, so an app keeps its color across renders and windows. */
   seed: string;
+  /** Deloitte-mode colour for a tile that is not inside a list (the hero, the detail sheet):
+   *  the list rule below paints by position, which does not exist there. */
+  brandSlot?: 0 | 1 | 2;
   className?: string;
 }
+
+const BRAND_SLOT_CLASSES = [
+  "brand-dl:bg-[linear-gradient(145deg,#86bc25,#63c631)]",
+  "brand-dl:bg-[linear-gradient(145deg,#282728,#555)] brand-dl:text-[#86eb22]!",
+  "brand-dl:bg-[linear-gradient(145deg,#00a3e0,#3fc3ec)]",
+] as const;
 
 /** Default-mode tile gradients (top-left -> bottom-right). */
 const TILE_GRADIENTS = [
@@ -42,11 +51,16 @@ function gradientFor(seed: string): string {
  * can't express, so it is a handful of `brand-dl:` + `li:nth-child` rules
  * (the tile's parent is the `<li>` card).
  *
- * Used to come in "sm"/"lg" sizes (the "lg" one for AppDetailView's
- * header), back when the App Store had a per-app detail screen. Now that
- * AppCard is the only consumer, it's just the one fixed size.
+ * Used to come in "sm"/"lg" sizes, back when the App Store had a per-app
+ * detail screen. The card uses the one fixed size; the hero and the detail
+ * sheet pass a larger `className` and a `brandSlot`.
  */
-export function AppIconTile({ icon: IconGlyph, seed, className }: AppIconTileProps) {
+export function AppIconTile({
+  icon: IconGlyph,
+  seed,
+  brandSlot,
+  className,
+}: AppIconTileProps) {
   return (
     <span
       style={{ "--tile-bg": gradientFor(seed) } as CSSProperties}
@@ -56,6 +70,7 @@ export function AppIconTile({ icon: IconGlyph, seed, className }: AppIconTilePro
         "brand-dl:[li:nth-child(3n+1)_&]:bg-[linear-gradient(145deg,#86bc25,#63c631)]",
         "brand-dl:[li:nth-child(3n+2)_&]:bg-[linear-gradient(145deg,#282728,#555)] brand-dl:[li:nth-child(3n+2)_&]:text-[#86eb22]",
         "brand-dl:[li:nth-child(3n)_&]:bg-[linear-gradient(145deg,#00a3e0,#3fc3ec)]",
+        brandSlot !== undefined && BRAND_SLOT_CLASSES[brandSlot],
         className,
       )}
     >

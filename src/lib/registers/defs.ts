@@ -54,6 +54,16 @@ export const REGISTERS: readonly RegisterDef[] = [
     sortKey: "dueDate",
     sortDir: "asc",
     rule: "raid",
+    heat: { rows: "impact", cols: "likelihood" },
+    formGroups: [
+      {
+        title: "What",
+        keys: ["kind", "title", "description", "status", "impact", "likelihood"],
+      },
+      { title: "Who", keys: ["owner"] },
+      { title: "When", keys: ["raisedOn", "dueDate"] },
+      { title: "Mitigation", keys: ["mitigation"] },
+    ],
   },
   {
     id: "minutes",

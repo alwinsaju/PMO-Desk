@@ -61,6 +61,10 @@ export interface RegisterDef {
   custom?: "timesheets" | "capacity";
   /** Settings the rule needs, editable in the tool (e.g. SLA days by priority). */
   config?: Record<string, FieldValue>;
+  /** Two select fields shown as a count grid above the list (RAID: impact x likelihood). */
+  heat?: { rows: string; cols: string };
+  /** How the Add/Edit form groups its fields; without it they are grouped by type (see layout.ts). */
+  formGroups?: readonly { title: string; keys: readonly string[] }[];
 }
 
 export interface RegisterRecord {

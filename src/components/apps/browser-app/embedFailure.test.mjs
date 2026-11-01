@@ -48,6 +48,38 @@ describe("describeEmbedFailure", () => {
   it("has a generic message when there is no reason", () => {
     assert.ok(describeEmbedFailure({ host: "a.com" }).message.length > 0);
   });
+  it("offers Retry unless the site will only refuse again", () => {
+    assert.equal(
+      describeEmbedFailure({ host: "a.com", code: "framing" }).retryable,
+      false,
+    );
+    for (const code of ["unreachable", "not-found", undefined]) {
+      assert.equal(
+        describeEmbedFailure({ host: "a.com", code }).retryable,
+        true,
+        String(code),
+      );
+    }
+    assert.equal(
+      describeEmbedFailure({ host: "a.com", code: "unreachable", online: false })
+        .retryable,
+      true,
+    );
+  });
+  it("gives every failure a cause and a next step for the error card", () => {
+    for (const code of ["framing", "unreachable", "not-found", undefined]) {
+      const f = describeEmbedFailure({ host: "a.com", code });
+      assert.ok(f.cause.length > 0 && f.nextStep.length > 0, String(code));
+    }
+    assert.match(
+      describeEmbedFailure({ host: "a.com", code: "framing" }).nextStep,
+      /default browser/i,
+    );
+    assert.equal(
+      describeEmbedFailure({ host: "a.com", reason: "HTTP 503" }).cause,
+      "HTTP 503",
+    );
+  });
 });
 
 describe("classifyWebviewError", () => {
