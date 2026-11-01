@@ -90,7 +90,8 @@ Never leave a pane blank, and never end on a dead-end message.
 - **Error** - `ErrorState`: what failed (`title`), the likely cause (`cause`),
   the next step (`nextStep`), a **Retry** button (`onRetry`) and **Copy
   details** (version, time, place and the technical line, built from the same
-  text as `CopyDetailsButton`). Pass a cleaned technical line from
+  text as `CopyDetailsButton`). Extra buttons (e.g. "Open in default browser")
+  go in `actions`. Pass a cleaned technical line from
   `explainError`; never show a raw stack trace or a file path as the message.
 - **Loading** - `Skeleton` (`line`, `block`, `list-row`), `SkeletonList` and
   `SkeletonText`, shaped like the final layout so nothing jumps when data

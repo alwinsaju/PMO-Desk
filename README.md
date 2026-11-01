@@ -86,7 +86,9 @@ on the user's computer (loopback only; the AI is a local Ollama model, no cloud 
   chart, onboarding and offboarding checklists, public holidays by rule, and exports (CSV for Excel
   and calendar files). Click a name for a small profile card. Leave can be entered for several dates at once
   ("5–7 Nov, 12 Nov"), and Settings has a colour-blind-safe roster palette.
-- **PMO Toolkit** (`src/lib/registers/`, `src/components/apps/toolkit/`): fourteen small tools, each opened from
+- **PMO Toolkit** (`src/lib/registers/`, `src/components/apps/toolkit/`): fourteen small tools, grouped on the
+  launcher as Risks and decisions, People and time, Delivery, and Finance and contracts (each card has an open /
+  late / soon count). A tool opens from
   the toolkit in the same window (with an "All tools" Back button), or in its own window from the command bar
   ("open raid log") or Ctrl+K: RAID log, meeting minutes
   (action lines become to-dos you tick), timesheet chaser (leave is skipped; one draft for everyone missing),
@@ -97,6 +99,19 @@ on the user's computer (loopback only; the AI is a local Ollama model, no cloud 
   and lessons learned, and a document link library. Each shows what is late or due soon, can make a to-do
   or an unsent chaser mail, exports CSV and is included in backups and data export. Late items appear in
   the "needs you" count, the dock badge and an optional Dashboard card. Nothing is sent from any of them.
+  Every list shows status, impact and likelihood in red/amber/green, type chips and owner initials, and can
+  switch between a table and cards (remembered per tool); the RAID log adds an impact x likelihood heat map
+  whose cells filter the list. Add and Edit forms group their fields (What, Who, When, Details).
+- **Notes**: pin notes to the top, filter by `#tag` written in a note, and format with the toolbar (heading,
+  bullet list, checklist, bold). A note is still plain text: `# ` heading, `- ` bullet, `- [ ] ` / `- [x] `
+  checklist and `**bold**`; Ctrl+Enter ticks the checklist item under the cursor. Word count and a Saved
+  indicator sit under the editor.
+- **Browser**: tabs (up to 8), each with its own history. A new tab shows shortcuts and the last 8 sites you
+  opened (kept on this computer; Clear removes them). A page that cannot be shown gets an error card with
+  Retry and "Open in default browser".
+- **App Store**: a hero for the featured apps, category chips with counts, and a detail sheet per app
+  (description, what it does, size, Install / Open). The descriptions and sizes are sample copy
+  (`app-store/appDetails.ts`).
 - **First-run Setup screen**: checks and installs what a new computer lacks (Ollama, the AI
   model, the OneDrive folders, classic Outlook, the Tasks engine). A first install also creates one
   `OneDrive\AI-OS` folder for every flow and opens an animated first-time setup, one step at a time,
