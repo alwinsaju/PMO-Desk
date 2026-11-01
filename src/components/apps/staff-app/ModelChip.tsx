@@ -59,7 +59,7 @@ export function ModelChip() {
           type="button"
           onClick={() => setOpen(true)}
           aria-haspopup="dialog"
-          aria-label={`${chip.label}. Click to see what the model is doing.`}
+          aria-label={`PTO email reader: ${chip.label}. Click to see what the model is doing.`}
           className="text-ink-soft hover:text-ink rounded-chip focus-visible:ring-focus flex h-8 cursor-pointer items-center gap-2 px-2 text-[12.5px] font-semibold outline-none focus-visible:ring-2"
         >
           <span
@@ -69,6 +69,7 @@ export function ModelChip() {
               chip.busy && "motion-safe:animate-blink",
             )}
           />
+          <span className="text-ink-muted font-normal">PTO emails ·</span>
           <span className="truncate">{chip.label}</span>
         </button>
       </Tooltip>

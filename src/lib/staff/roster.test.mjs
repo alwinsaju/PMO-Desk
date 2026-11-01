@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { addMonths, formatMonth, monthDates, monthStart } from "./dates.ts";
+import { addMonths, formatMonth, monthDates, monthStart, monthWeeks } from "./dates.ts";
 import { createEmployee } from "./employees.ts";
 import { workbookRosterConfig, workbookSchedules, STATUS_DEFS } from "./rosterCatalog.ts";
 import { findRosterSheet, parseRosterSheet, planRosterImport } from "./rosterImport.ts";
@@ -147,6 +147,15 @@ describe("times", () => {
     assert.equal(monthDates("2026-02-10").length, 28);
     assert.equal(monthDates("2028-02-10").length, 29);
     assert.equal(formatMonth("2026-03-01"), "March 2026");
+  });
+
+  it("lays a month out in Monday-first weeks padded with blanks", () => {
+    const weeks = monthWeeks("2026-11-15"); // 1 Nov 2026 is a Sunday
+    assert.ok(weeks.every((w) => w.length === 7));
+    assert.deepEqual(weeks[0], [null, null, null, null, null, null, "2026-11-01"]);
+    assert.equal(weeks[1][0], "2026-11-02");
+    assert.deepEqual(weeks.at(-1).slice(0, 2), ["2026-11-30", null]);
+    assert.equal(weeks.flat().filter(Boolean).length, 30);
   });
 });
 

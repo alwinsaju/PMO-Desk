@@ -118,7 +118,7 @@ leave, or the person already has different time off on those days. Add the leave
 **Time off > Add time off** if it is real.
 
 The model sleeps on its own: it frees its memory two minutes after the last email, and the
-chip beside the search box in **Time off** shows **Model asleep**, the countdown while it is
+chip beside the search box in **Time off** shows **PTO emails · Model asleep**, the countdown while it is
 loaded, or what it is reading.
 
 ## It runs on its own

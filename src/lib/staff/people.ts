@@ -203,35 +203,47 @@ export function whoCanCover(
 // --- org chart --------------------------------------------------------------------------------
 
 export interface OrgNode {
-  /** The client manager's name, or "No client manager". */
+  /** The client manager's name, or "No client manager" when none is set. */
   manager: string;
+  /** No client manager is set for these people. */
+  unassigned: boolean;
   teams: { team: string; people: Employee[] }[];
   count: number;
 }
 
+const NO_MANAGER = "No client manager";
+const NO_TEAM = "No team";
+
 export function orgChart(employees: readonly Employee[]): OrgNode[] {
   const byManager = new Map<string, Map<string, Employee[]>>();
   for (const e of employees) {
-    const manager = e.clientManager.trim() || "No client manager";
-    const team = e.team.trim() || "No team";
+    const manager = e.clientManager.trim() || NO_MANAGER;
+    const team = e.team.trim() || NO_TEAM;
     const teams = byManager.get(manager) ?? new Map<string, Employee[]>();
     teams.set(team, [...(teams.get(team) ?? []), e]);
     byManager.set(manager, teams);
   }
+  const lastIf = (a: boolean, b: boolean) => Number(a) - Number(b);
   return [...byManager]
     .map(([manager, teams]) => ({
       manager,
+      unassigned: manager === NO_MANAGER,
       teams: [...teams]
         .map(([team, people]) => ({
           team,
           people: [...people].sort((a, b) => fullName(a).localeCompare(fullName(b))),
         }))
-        .sort((a, b) => a.team.localeCompare(b.team)),
+        .sort(
+          (a, b) =>
+            lastIf(a.team === NO_TEAM, b.team === NO_TEAM) ||
+            a.team.localeCompare(b.team),
+        ),
       count: [...teams.values()].reduce((n, p) => n + p.length, 0),
     }))
-    .sort((a, b) => {
-      if (a.manager === "No client manager") return 1;
-      if (b.manager === "No client manager") return -1;
-      return b.count - a.count || a.manager.localeCompare(b.manager);
-    });
+    .sort(
+      (a, b) =>
+        lastIf(a.unassigned, b.unassigned) ||
+        b.count - a.count ||
+        a.manager.localeCompare(b.manager),
+    );
 }

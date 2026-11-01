@@ -129,6 +129,19 @@ export function monthDates(iso: string): string[] {
   return days;
 }
 
+/** The month `iso` is in as Monday-first weeks of 7, `null` where the week spills into the next or previous month. */
+export function monthWeeks(iso: string): (string | null)[][] {
+  const days = monthDates(iso);
+  const cells: (string | null)[] = [
+    ...Array<null>(weekdayIndex(days[0])).fill(null),
+    ...days,
+  ];
+  while (cells.length % 7 !== 0) cells.push(null);
+  return Array.from({ length: cells.length / 7 }, (_, i) =>
+    cells.slice(i * 7, i * 7 + 7),
+  );
+}
+
 /** "March 2026". */
 export function formatMonth(iso: string): string {
   const [y, m] = iso.split("-").map(Number);

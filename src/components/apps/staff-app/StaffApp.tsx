@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui";
+import { useWindowContext } from "@/components/window-manager";
 import { useStaffStore, useStaffSync } from "@/lib/staff/staffStore";
 import type { TimeOffStatus } from "@/lib/staff/types";
 import { DirectoryTab } from "./DirectoryTab";
@@ -13,6 +14,14 @@ import { TimeOffTab } from "./TimeOffTab";
 
 const PANEL = "flex min-h-0 flex-1 flex-col data-[state=inactive]:hidden";
 
+const TAB_LABEL: Record<string, string> = {
+  directory: "Directory",
+  shifts: "Shift roster",
+  timeoff: "Time off",
+  offboarded: "Offboarded",
+  insights: "Insights",
+};
+
 /**
  * Root Staff Management window, registered as "staff" (see apps/index.ts).
  * Four sections over one shared roster: the Directory (the list every other
@@ -23,6 +32,7 @@ const PANEL = "flex min-h-0 flex-1 flex-col data-[state=inactive]:hidden";
 export function StaffApp({ windowId }: { windowId: string }) {
   useStaffSync();
   const [tab, setTab] = useState("directory");
+  useWindowContext(windowId, TAB_LABEL[tab] ?? null);
   const [timeOffStatus, setTimeOffStatus] = useState<TimeOffStatus | "">("");
   const openRequest = useStaffNav((s) => s.openRequest);
   const clearOpenRequest = useStaffNav((s) => s.clearOpenRequest);

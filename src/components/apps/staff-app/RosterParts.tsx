@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  CaretRightIcon,
   DotsThreeIcon,
   EyeSlashIcon,
   LinkBreakIcon,
@@ -52,18 +53,25 @@ export function teamHue(id: string): Hue {
   return TEAM_HUES[sum % TEAM_HUES.length];
 }
 
-/** The team's name and its legend: each shift with its hours. The same name can
- *  mean different hours in another team, so every section shows its own. */
+/** The team's name and, when `showShifts` is on, its legend: each shift with its hours.
+ *  The same name can mean different hours in another team, so every section shows its own. */
 export function SectionHeader({
   section,
+  showShifts,
   onHide,
 }: {
   section: RosterSection;
+  showShifts: boolean;
   onHide: () => void;
 }) {
   const { group, schedule, rows } = section;
   return (
-    <div className="sticky left-0 flex w-[min(100%,1100px)] items-start gap-3 py-3 pr-4 pl-5">
+    <div
+      className={cn(
+        "sticky left-0 flex w-[min(100%,1100px)] items-start gap-3 pr-4 pl-5",
+        showShifts ? "py-3" : "py-2",
+      )}
+    >
       <span
         aria-hidden
         className={cn(
@@ -71,7 +79,9 @@ export function SectionHeader({
           hueDot(group ? teamHue(section.id) : "off"),
         )}
       />
-      <div className="flex min-w-0 flex-1 flex-col gap-2.5">
+      <div
+        className={cn("flex min-w-0 flex-1 flex-col", showShifts ? "gap-2.5" : "gap-1")}
+      >
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
           <h3 className="text-ink flex items-center gap-2 text-[15px] font-bold">
             {group ? group.name : "Not in a team yet"}
@@ -93,7 +103,7 @@ export function SectionHeader({
             <span className="text-ink-muted text-[12px]">{schedule.name} schedule</span>
           )}
         </div>
-        {group && schedule && (
+        {showShifts && group && schedule && (
           <ul
             aria-label={`${schedule.name} shifts`}
             className="grid gap-2"
@@ -389,33 +399,52 @@ const LEGEND: readonly { hue: Hue; short: string; label: string; dashed?: boolea
   { hue: "custom", short: "9a", label: "Custom hours" },
 ];
 
-export function Legend() {
+export function Legend({ open, onToggle }: { open: boolean; onToggle: () => void }) {
   return (
-    <ul
-      aria-label="Legend"
-      className="border-line text-ink-muted flex flex-wrap items-center justify-center gap-x-5 gap-y-1.5 border-t px-5 py-2.5 text-[12px]"
-    >
-      <li className="text-ink-faint">
-        Each team lists its shifts and hours above its people.
-      </li>
-      {LEGEND.map((item) => (
-        <li key={item.label} className="flex items-center gap-1.5">
-          <span
-            className={cn(
-              "inline-block h-3.5 min-w-6 rounded-sm px-1 text-center text-[9px] leading-[14px] font-bold",
-              hueClass(item.hue),
-              item.dashed && "border border-dashed border-current/40",
-            )}
-          >
-            {item.short}
-          </span>
-          {item.label}
-        </li>
-      ))}
-      <li className="flex items-center gap-1.5">
-        <span className="border-line inline-block h-3.5 w-6 rounded-sm border bg-[color-mix(in_srgb,var(--rh-hol-bg)_40%,transparent)]" />
-        Day off for that person&apos;s location
-      </li>
-    </ul>
+    <div className="border-line text-ink-muted border-t px-5 py-1.5 text-[12px]">
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls="roster-legend"
+        onClick={onToggle}
+        className="text-ink-soft hover:text-ink focus-ring rounded-control -ml-1.5 flex items-center gap-1.5 px-1.5 py-1 font-semibold"
+      >
+        <CaretRightIcon
+          size={12}
+          weight="bold"
+          className={cn("transition-transform", open && "rotate-90")}
+        />
+        Legend and shift hours
+      </button>
+      {open && (
+        <ul
+          id="roster-legend"
+          aria-label="Legend"
+          className="flex flex-wrap items-center gap-x-5 gap-y-1.5 pt-1.5 pb-1"
+        >
+          <li className="text-ink-faint">
+            Each team&apos;s shifts and hours are listed above its people.
+          </li>
+          {LEGEND.map((item) => (
+            <li key={item.label} className="flex items-center gap-1.5">
+              <span
+                className={cn(
+                  "inline-block h-3.5 min-w-6 rounded-sm px-1 text-center text-[9px] leading-[14px] font-bold",
+                  hueClass(item.hue),
+                  item.dashed && "border border-dashed border-current/40",
+                )}
+              >
+                {item.short}
+              </span>
+              {item.label}
+            </li>
+          ))}
+          <li className="flex items-center gap-1.5">
+            <span className="border-line inline-block h-3.5 w-6 rounded-sm border bg-[color-mix(in_srgb,var(--rh-hol-bg)_40%,transparent)]" />
+            Day off for that person&apos;s location
+          </li>
+        </ul>
+      )}
+    </div>
   );
 }
