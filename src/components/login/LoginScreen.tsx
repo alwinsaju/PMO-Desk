@@ -14,6 +14,9 @@ import { cn } from "@/lib/cn";
 import { trapTarget } from "@/lib/focusKeys";
 import { easeEntrance, easeExit, springSnappy, springWindow } from "@/lib/motion";
 import { Wallpaper } from "@/components/desktop/Wallpaper";
+import { useDockBadgeStore } from "@/components/taskbar/dockBadgeStore";
+import { usePreferences } from "@/lib/preferences/preferencesStore";
+import { useUserIdentity } from "./userIdentityStore";
 
 /** "9:41" — the locale's own hour/minute formatting, minus the AM/PM marker
  *  (at this size it just adds noise; the date line carries the context). */
@@ -73,6 +76,22 @@ function LoginClock() {
   );
 }
 
+/** One line under the clock: what needs the person ("3 need attention: 2 PMO items, ...").
+ *  Hidden with the Settings toggle, and while nothing needs them (or nothing has loaded). */
+function LockSummary() {
+  const on = usePreferences((s) => s.lockSummary);
+  const meaning = useDockBadgeStore((s) => s.meanings.dashboard);
+  if (!on || !meaning) return null;
+  return (
+    <p
+      role="status"
+      className="max-w-[min(34rem,88vw)] rounded-full border border-white/25 bg-white/10 px-4 py-1.5 text-center text-[14px] font-medium text-white [text-shadow:0_2px_14px_rgba(40,30,80,0.3)]"
+    >
+      {meaning}
+    </p>
+  );
+}
+
 /** True when Settings > Hardware acceleration is on (`data-fx="rich"`, see displayFx.ts). */
 function isRichFx(): boolean {
   return (
@@ -126,6 +145,10 @@ export function LoginScreen({ isUnlocking, onUnlock, onExitComplete }: LoginScre
 
   useEffect(() => {
     continueRef.current?.focus();
+  }, []);
+  const identity = useUserIdentity((s) => s.identity);
+  useEffect(() => {
+    void useUserIdentity.getState().load();
   }, []);
 
   // Tab/Shift+Tab cycle through the lock screen's own controls only.
@@ -256,8 +279,10 @@ export function LoginScreen({ isUnlocking, onUnlock, onExitComplete }: LoginScre
         }}
         className="relative flex flex-col items-center gap-10 px-6"
       >
-        <LoginClock />
-
+        <div className="flex flex-col items-center gap-3">
+          <LoginClock />
+          <LockSummary />
+        </div>
         <form
           onSubmit={handleSubmit}
           className={cn(
@@ -275,11 +300,18 @@ export function LoginScreen({ isUnlocking, onUnlock, onExitComplete }: LoginScre
               "shadow-[0_14px_34px_-8px_rgba(20,60,50,0.5),inset_0_1px_0_rgba(255,255,255,0.4)]",
             )}
           >
-            <UserIcon size={40} weight="fill" />
+            {identity.initials ? (
+              <span className="font-headline text-[32px] leading-none">
+                {identity.initials}
+              </span>
+            ) : (
+              <UserIcon size={40} weight="fill" />
+            )}
           </span>
-          <p className="text-xl font-semibold [text-shadow:0_2px_14px_rgba(40,30,80,0.3)]">
-            Welcome
-          </p>
+          <div className="text-center [text-shadow:0_2px_14px_rgba(40,30,80,0.3)]">
+            {identity.name && <p className="text-[13px] text-white/85">Welcome back</p>}
+            <p className="text-xl font-semibold">{identity.name || "Welcome"}</p>
+          </div>
 
           <button
             type="submit"

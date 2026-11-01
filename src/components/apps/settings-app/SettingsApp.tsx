@@ -61,6 +61,8 @@ function General() {
   const setAutoRecur = usePreferences((s) => s.setAutoRecur);
   const setDesktopWidget = usePreferences((s) => s.setDesktopWidget);
   const setInstantUnlock = usePreferences((s) => s.setInstantUnlock);
+  const lockSummary = usePreferences((s) => s.lockSummary);
+  const setLockSummary = usePreferences((s) => s.setLockSummary);
   const confirmActions = usePreferences((s) => s.confirmActions);
   const setConfirmAction = usePreferences((s) => s.setConfirmAction);
   const log = usePreferences((s) => s.commandLog);
@@ -116,6 +118,16 @@ function General() {
             checked={instantUnlock}
             onCheckedChange={setInstantUnlock}
             aria-label="Skip the lock screen"
+          />
+        </Row>
+        <Row
+          title="Show what needs you on the lock screen"
+          hint="A line under the clock: how many things need you and what they are."
+        >
+          <Switch
+            checked={lockSummary}
+            onCheckedChange={setLockSummary}
+            aria-label="Show what needs you on the lock screen"
           />
         </Row>
         <Row
