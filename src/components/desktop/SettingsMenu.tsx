@@ -484,7 +484,8 @@ export function QuickSettings() {
         align="end"
         sideOffset={10}
         aria-label="Settings"
-        className="w-[min(21rem,calc(100vw-2rem))] p-2.5"
+        collisionPadding={12}
+        className="max-h-[var(--radix-dropdown-menu-content-available-height)] w-[min(21rem,calc(100vw-2rem))] overflow-y-auto p-2.5"
       >
         <DropdownMenuLabel>Quick settings</DropdownMenuLabel>
         {settingsRows.map(({ id, Row }) => (
