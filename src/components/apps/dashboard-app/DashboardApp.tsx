@@ -29,7 +29,9 @@ import {
   type WidgetId,
 } from "@/lib/dashboard/layout";
 import { awayWindow, openTodos, overdueChasers } from "@/lib/dashboard/summary";
+import { updatedLabel } from "@/lib/dashboard/updatedLabel";
 import { toast } from "@/lib/notifications/toastStore";
+import { noSpellcheck } from "@/lib/ui/noSpellcheck";
 import { usePreferences } from "@/lib/preferences/preferencesStore";
 import { localParts } from "@/lib/pmo/due";
 import { getDesktopBridge } from "@/lib/pmo/desktopBridge";
@@ -77,6 +79,7 @@ export function DashboardApp({ windowId }: { windowId: string }) {
   const staffStatus = useStaffStore((s) => s.status);
   const roster = useRoster();
   const now = useNow();
+  const [updatedAt, setUpdatedAt] = useState(() => new Date());
   const period = usePreferences((s) => s.dashboardPeriod);
   const setPeriod = usePreferences((s) => s.setDashboardPeriod);
   const layout = useDashboardPrefs((s) => s.layout);
@@ -157,6 +160,10 @@ export function DashboardApp({ windowId }: { windowId: string }) {
 
   const openApp = (appId: string) => () => {
     openOrFocusBuiltInApp(appId);
+  };
+  const refresh = () => {
+    refetch();
+    setUpdatedAt(new Date());
   };
   const openStaffTimeOff = () => {
     useStaffNav.getState().requestOpen({ tab: "timeoff", timeOffStatus: "" });
@@ -246,6 +253,7 @@ export function DashboardApp({ windowId }: { windowId: string }) {
               </h1>
               <p className="text-ink-muted text-[13px]">
                 {dayName(today)} {formatDate(today)}
+                <span role="status"> · {updatedLabel(updatedAt, now)}</span>
               </p>
             </div>
             <Button
@@ -268,7 +276,7 @@ export function DashboardApp({ windowId }: { windowId: string }) {
                 </Button>
               </>
             )}
-            <Button variant="outline" size="sm" onClick={refetch} aria-label="Refresh">
+            <Button variant="outline" size="sm" onClick={refresh} aria-label="Refresh">
               <ArrowsClockwiseIcon size={14} />
               Refresh
             </Button>
@@ -356,6 +364,7 @@ export function DashboardApp({ windowId }: { windowId: string }) {
                 <Input
                   aria-label="Layout name"
                   placeholder="Name this layout"
+                  {...noSpellcheck}
                   className="w-44"
                   value={layoutName}
                   onChange={(e) => setLayoutName(e.target.value)}
@@ -406,7 +415,7 @@ export function DashboardApp({ windowId }: { windowId: string }) {
             <PanelMessage>Loading your dashboard…</PanelMessage>
           ) : (
             <div
-              className="grid grid-cols-1 gap-4 @3xl:grid-cols-2"
+              className="grid grid-cols-1 items-start gap-4 @3xl:grid-cols-2"
               data-testid="dashboard-grid"
             >
               {shown.map((id) => (

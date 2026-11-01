@@ -24,7 +24,7 @@ export function RegistersWidget({ onOpen }: { onOpen: (toolId: string) => void }
       testId="registers-widget"
     >
       {!loaded ? (
-        <Empty>Looking at your tools…</Empty>
+        <Empty neutral>Looking at your tools…</Empty>
       ) : rows.length === 0 ? (
         <Empty>Nothing in your PMO tools is late or due soon.</Empty>
       ) : (
