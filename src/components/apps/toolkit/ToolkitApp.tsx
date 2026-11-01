@@ -1,18 +1,25 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { openOrFocusBuiltInApp } from "@/components/taskbar/launchBuiltInApp";
+import { ArrowLeftIcon } from "@phosphor-icons/react";
+import { useWindowContext } from "@/components/window-manager";
 import { toolApps } from "@/components/taskbar/pinnedApps";
+import { Button } from "@/components/ui";
 import type { RegisterSummary } from "@/lib/registers/alerts";
 import { registerById } from "@/lib/registers/defs";
 import { fetchSummaries } from "./registersApi";
+import { toolComponent } from "./tools";
 
 const REFRESH_MS = 30_000;
 
-/** The PMO Toolkit: one card per tool with how many items are open and late. Each opens in its own window. */
+/** The PMO Toolkit: one card per tool with how many items are open and late. A tool opens
+ *  in this same window, with a Back button, so it never sits half over its parent. */
 export function ToolkitApp({ windowId }: { windowId: string }) {
   const [summaries, setSummaries] = useState<Record<string, RegisterSummary>>({});
   const [error, setError] = useState<string | null>(null);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const open = toolApps.find((tool) => tool.id === openId) ?? null;
+  useWindowContext(windowId, open?.title ?? null);
 
   const load = useCallback(async () => {
     const reply = await fetchSummaries();
@@ -26,6 +33,31 @@ export function ToolkitApp({ windowId }: { windowId: string }) {
     const timer = setInterval(() => void load(), REFRESH_MS);
     return () => clearInterval(timer);
   }, [load]);
+
+  if (open) {
+    const Tool = toolComponent(open.id);
+    return (
+      <div className="flex h-full w-full flex-col" data-testid="toolkit-open-tool">
+        <div className="px-6 pt-1 pb-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            data-testid="toolkit-back"
+            onClick={() => {
+              setOpenId(null);
+              void load();
+            }}
+          >
+            <ArrowLeftIcon size={14} weight="bold" />
+            All tools
+          </Button>
+        </div>
+        <div className="min-h-0 flex-1">
+          <Tool windowId={windowId} />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -52,7 +84,7 @@ export function ToolkitApp({ windowId }: { windowId: string }) {
               <button
                 type="button"
                 data-testid={`tool-card-${tool.id}`}
-                onClick={() => openOrFocusBuiltInApp(tool.id)}
+                onClick={() => setOpenId(tool.id)}
                 className="border-line bg-card hover:bg-chip rounded-card flex h-full w-full flex-col gap-2 border px-4 py-3 text-left transition-colors"
               >
                 <span className="flex items-center gap-2">

@@ -2,13 +2,33 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  CopyIcon,
-  FloppyDiskIcon,
   ArrowCounterClockwiseIcon,
+  CaretDownIcon,
+  CopyIcon,
+  DotsThreeIcon,
+  FloppyDiskIcon,
+  SlidersHorizontalIcon,
   TrashIcon,
 } from "@phosphor-icons/react";
-import { Button, Input } from "@/components/ui";
+import {
+  Button,
+  ChipInput,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+  FormField,
+  IconButton,
+  Input,
+} from "@/components/ui";
 import { cn } from "@/lib/cn";
+import {
+  joinRecipients,
+  recipientError,
+  splitRecipients,
+  tidyRecipients,
+} from "@/lib/templates/recipients";
 import { boldSegments, snippetsFrom } from "@/lib/templates/render";
 import { MailPreview } from "./MailPreview";
 import { TARGETS, targetLabel } from "@/lib/templates/targets";
@@ -75,6 +95,7 @@ interface TemplateEditorProps {
   onSave: (input: TemplateInput) => void;
   onDuplicate: () => void;
   onDelete: () => void;
+  onOpenExtras: () => void;
 }
 
 const KIND_OPTIONS = (["email", "report"] as const).map((value) => ({
@@ -99,6 +120,7 @@ export function TemplateEditor({
   onSave,
   onDuplicate,
   onDelete,
+  onOpenExtras,
 }: TemplateEditorProps) {
   const [draft, setDraft] = useState<Draft>(() => restoredDraft(template) ?? seed);
   // A draft kept from an earlier, unsaved edit was put back; say so and let it be dropped.
@@ -175,29 +197,18 @@ export function TemplateEditor({
         <h2 className="text-ink min-w-0 flex-1 truncate text-[16px] font-bold">
           {template ? template.name : "New template"}
         </h2>
-        {starter && (
-          <Button variant="ghost" size="sm" onClick={restoreOriginal} disabled={busy}>
-            <ArrowCounterClockwiseIcon size={14} />
-            Restore original wording
-          </Button>
-        )}
         {template && (
-          <>
-            <Button variant="ghost" size="sm" onClick={onDuplicate} disabled={busy}>
-              <CopyIcon size={14} />
-              Duplicate
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onDelete}
-              disabled={busy}
-              className="text-red"
-            >
-              <TrashIcon size={14} />
-              Delete
-            </Button>
-          </>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onOpenExtras}
+            disabled={busy}
+            data-testid="template-extras"
+          >
+            <SlidersHorizontalIcon size={14} />
+            Tags, wordings, versions, test…
+            <CaretDownIcon size={12} weight="bold" />
+          </Button>
         )}
         <Button
           size="sm"
@@ -208,6 +219,48 @@ export function TemplateEditor({
           <FloppyDiskIcon size={14} />
           {busy ? "Saving…" : "Save"}
         </Button>
+        {(template || starter) && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <IconButton
+                aria-label="More actions"
+                variant="outline"
+                size="sm"
+                data-testid="template-more"
+              >
+                <DotsThreeIcon weight="bold" />
+              </IconButton>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {starter && (
+                <DropdownMenuItem disabled={busy} onSelect={restoreOriginal}>
+                  <ArrowCounterClockwiseIcon size={14} />
+                  Restore original wording
+                </DropdownMenuItem>
+              )}
+              {template && (
+                <DropdownMenuItem disabled={busy} onSelect={onDuplicate}>
+                  <CopyIcon size={14} />
+                  Duplicate
+                </DropdownMenuItem>
+              )}
+              {template && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    disabled={busy}
+                    onSelect={onDelete}
+                    className="text-red"
+                    data-testid="template-delete"
+                  >
+                    <TrashIcon size={14} />
+                    Delete template
+                  </DropdownMenuItem>
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       </header>
 
       <ScrollBody className="@container px-5 py-4">
@@ -260,23 +313,36 @@ export function TemplateEditor({
             </Field>
 
             {isEmail && (
-              <div className="grid grid-cols-1 gap-4 @xl:grid-cols-2">
-                <Field label="To">
-                  <Input
-                    value={draft.to}
-                    placeholder="Leave blank to keep the task's own"
-                    onChange={(e) => change({ ...draft, to: e.target.value })}
-                  />
-                  <FieldError message={fieldError("to")} />
-                </Field>
-                <Field label="Cc">
-                  <Input
-                    value={draft.cc}
-                    placeholder="Leave blank to keep the task's own"
-                    onChange={(e) => change({ ...draft, cc: e.target.value })}
-                  />
-                  <FieldError message={fieldError("cc")} />
-                </Field>
+              <div className="flex flex-col gap-4">
+                {(["to", "cc"] as const).map((field) => (
+                  <FormField
+                    key={field}
+                    label={field === "to" ? "To" : "Cc"}
+                    error={fieldError(field)}
+                    showErrorNow
+                    hint="Separate people with a semicolon. Leave blank to keep the task's own."
+                  >
+                    {(control) => (
+                      <ChipInput
+                        {...control}
+                        values={splitRecipients(draft[field])}
+                        onChange={(list) =>
+                          change({
+                            ...draft,
+                            [field]: joinRecipients(tidyRecipients(list)),
+                          })
+                        }
+                        validate={recipientError}
+                        separators={["semicolon", "newline"]}
+                        noun="recipient"
+                        inputMode="email"
+                        placeholder={
+                          draft[field] ? undefined : "Name <name@company.com>; ..."
+                        }
+                      />
+                    )}
+                  </FormField>
+                ))}
               </div>
             )}
 

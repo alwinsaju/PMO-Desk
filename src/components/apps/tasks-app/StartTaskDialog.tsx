@@ -46,6 +46,7 @@ import {
   type SelectChoice,
 } from "./startForm";
 import { refusalText } from "./taskPresenter";
+import { stillNeededText } from "./stillNeeded";
 import { readWorkbookSheets } from "./readWorkbook";
 import {
   checkSheets,
@@ -73,6 +74,10 @@ interface StartTaskDialogProps {
 }
 
 type CheckState = "idle" | "checking" | "done" | "failed";
+
+/** A small label under a file's name: Required, .xlsx, Optional, On file. */
+const FILE_TAG =
+  "bg-chip text-ink-muted rounded-chip px-2 py-0.5 text-[10.5px] font-semibold";
 
 /**
  * Run form for a task that declares `inputs`: upload each file (drag-drop or
@@ -466,13 +471,17 @@ export function StartTaskDialog({
           </p>
         )}
 
-        <div className="mt-6 flex items-center justify-between gap-3">
-          <p className="text-ink-muted min-w-0 text-xs" aria-live="polite">
-            {loadState === "ready" && missing.length > 0
-              ? `Still needed: ${missing.join(", ")}`
-              : ""}
-          </p>
-          <div className="flex shrink-0 items-center gap-2">
+        <div className="mt-6 flex flex-col gap-2">
+          {loadState === "ready" && missing.length > 0 && (
+            <p
+              className="bg-chip text-ink-soft rounded-control px-3 py-2 text-[12.5px]"
+              aria-live="polite"
+              title={missing.join(", ")}
+            >
+              {stillNeededText(missing)}
+            </p>
+          )}
+          <div className="flex items-center justify-end gap-2">
             <Button
               variant="ghost"
               disabled={starting}
@@ -539,7 +548,7 @@ function FileInput({
           if (!disabled && !busy) take(event.dataTransfer.files);
         }}
         className={cn(
-          "rounded-card flex items-center gap-3 border transition-colors duration-200",
+          "rounded-card flex flex-col gap-2 border transition-colors duration-200",
           kept ? "px-4 py-3" : "px-4 py-3.5",
           dragging
             ? "border-focus bg-accent-soft border-solid"
@@ -548,84 +557,80 @@ function FileInput({
               : "border-line-strong border-dashed",
         )}
       >
-        <span
-          className={cn(
-            "flex h-8 w-8 shrink-0 items-center justify-center rounded-full",
-            present ? "bg-success-soft text-success" : "text-ink-muted bg-chip",
-          )}
-        >
-          {present ? (
-            <CheckIcon size={14} weight="bold" aria-hidden />
-          ) : (
-            <UploadSimpleIcon size={14} weight="bold" aria-hidden />
-          )}
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="text-ink text-[13.5px] font-semibold">
-            {input.label}
-            <span className="text-ink-muted ml-1.5 text-[11.5px] font-normal">
-              {input.required ? "Required" : null}
-              {accept ? `${input.required ? " · " : ""}${accept}` : ""}
-            </span>
-            {isOptionalFile(input) && (
-              <span className="bg-chip text-ink-muted rounded-chip ml-2 px-2 py-0.5 align-[1px] text-[10.5px] font-semibold">
-                Optional
-              </span>
+        <div className="flex items-center gap-3">
+          <span
+            className={cn(
+              "flex h-8 w-8 shrink-0 items-center justify-center rounded-full",
+              present ? "bg-success-soft text-success" : "text-ink-muted bg-chip",
             )}
-            {kept && (
-              <span className="bg-success-soft text-success rounded-chip ml-2 px-2 py-0.5 align-[1px] text-[10.5px] font-semibold">
-                On file
-              </span>
+          >
+            {present ? (
+              <CheckIcon size={14} weight="bold" aria-hidden />
+            ) : (
+              <UploadSimpleIcon size={14} weight="bold" aria-hidden />
             )}
-          </p>
-          {busy ? (
-            <p className="text-ink-muted text-[12.5px]">Uploading…</p>
-          ) : present ? (
-            <p className="text-ink-muted flex items-center gap-1.5 text-[12.5px]">
-              <FileXlsIcon size={13} weight="bold" aria-hidden className="shrink-0" />
-              <span className="min-w-0 truncate">{status?.filename ?? "Uploaded"}</span>
-              {status?.size != null && (
-                <span className="text-ink-muted shrink-0">
-                  {formatBytes(status.size, FILE_SIZE)}
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-ink text-[13.5px] font-semibold">{input.label}</p>
+            <p className="mt-1 flex flex-wrap items-center gap-1.5">
+              {input.required && <span className={FILE_TAG}>Required</span>}
+              {accept && <span className={FILE_TAG}>{accept}</span>}
+              {isOptionalFile(input) && <span className={FILE_TAG}>Optional</span>}
+              {kept && (
+                <span className={cn(FILE_TAG, "bg-success-soft text-success")}>
+                  On file
                 </span>
               )}
-              <span className="text-ink-muted shrink-0">
-                · uploaded{uploaded ? ` ${uploaded}` : ""}
-              </span>
             </p>
-          ) : (
-            <>
-              <p className="text-ink-muted text-[12.5px]">
-                Drop the file here, or choose it.
+            {busy ? (
+              <p className="text-ink-muted mt-1 text-[12.5px]">Uploading…</p>
+            ) : present ? (
+              <p className="text-ink-muted mt-1 flex items-center gap-1.5 text-[12.5px]">
+                <FileXlsIcon size={13} weight="bold" aria-hidden className="shrink-0" />
+                <span className="min-w-0 truncate">{status?.filename ?? "Uploaded"}</span>
+                {status?.size != null && (
+                  <span className="text-ink-muted shrink-0">
+                    {formatBytes(status.size, FILE_SIZE)}
+                  </span>
+                )}
+                <span className="text-ink-muted shrink-0">
+                  · uploaded{uploaded ? ` ${uploaded}` : ""}
+                </span>
               </p>
-              {emptyHint && <p className="text-ink-muted text-xs">{emptyHint}</p>}
-              {lastFile && (
-                <p className="text-ink-muted text-xs" data-testid="last-file">
-                  Last time: {lastFile}
+            ) : (
+              <div className="mt-1">
+                <p className="text-ink-muted text-[12.5px]">
+                  Drop the file here, or choose it.
                 </p>
-              )}
-            </>
-          )}
+                {emptyHint && <p className="text-ink-muted text-xs">{emptyHint}</p>}
+                {lastFile && (
+                  <p className="text-ink-muted text-xs" data-testid="last-file">
+                    Last time: {lastFile}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+          <input
+            ref={picker}
+            type="file"
+            accept={acceptAttr(input)}
+            className="hidden"
+            aria-label={`Choose ${input.label}`}
+            onChange={(event) => take(event.target.files)}
+          />
+          <Button
+            variant="outline"
+            disabled={disabled || busy}
+            onClick={() => picker.current?.click()}
+            aria-label={present ? `Replace ${input.label}` : undefined}
+            className="shrink-0"
+          >
+            {present ? "Replace" : "Choose file"}
+          </Button>
         </div>
-        <input
-          ref={picker}
-          type="file"
-          accept={acceptAttr(input)}
-          className="hidden"
-          aria-label={`Choose ${input.label}`}
-          onChange={(event) => take(event.target.files)}
-        />
-        <Button
-          variant="outline"
-          disabled={disabled || busy}
-          onClick={() => picker.current?.click()}
-          aria-label={present ? `Replace ${input.label}` : undefined}
-          className="shrink-0"
-        >
-          {present ? "Replace" : "Choose file"}
-        </Button>
+        <DesktopPickers input={input} disabled={disabled || busy} onFile={onFile} />
       </div>
-      <DesktopPickers input={input} disabled={disabled || busy} onFile={onFile} />
       {error && (
         <p className="text-red text-[12.5px]" role="alert">
           {error}
@@ -665,7 +670,10 @@ function DesktopPickers({
   };
 
   return (
-    <div className="flex flex-wrap items-center gap-2 pl-1" data-testid="desktop-pickers">
+    <div
+      className="flex flex-wrap items-center gap-2 pl-11"
+      data-testid="desktop-pickers"
+    >
       <Button variant="ghost" size="sm" disabled={disabled} onClick={() => void look()}>
         Newest in Downloads
       </Button>

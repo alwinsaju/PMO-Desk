@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowLeftIcon, FileTextIcon, PlusIcon } from "@phosphor-icons/react";
 import { Button } from "@/components/ui";
 import { cn } from "@/lib/cn";
+import { toast } from "@/lib/notifications/toastStore";
 import {
   KIND_LABEL,
   type Template,
@@ -26,7 +27,7 @@ import {
   type LibraryPayload,
 } from "./api";
 import { TemplateEditor } from "./TemplateEditor";
-import { blankDraft, copyOf, draftOf, type Draft } from "./templateForm";
+import { blankDraft, copyOf, draftOf, restoreInput, type Draft } from "./templateForm";
 
 type Filter = "all" | TemplateKind;
 
@@ -84,6 +85,17 @@ const usedByText = (template: Template): string => {
     : labels.join(", ");
 };
 
+/** The quiet third line of a list entry: how a snippet is used, when it last made a draft, its tags. */
+function listNote(template: Template, usedAt: string | undefined): string {
+  const use =
+    template.kind === "snippet"
+      ? `Use as {{> ${snippetKey(template.name)}}}`
+      : usedAt
+        ? lastUsedText(usedAt, new Date())
+        : "";
+  return [use, template.tags?.join(", ")].filter(Boolean).join(" · ");
+}
+
 /**
  * Root Templates window, registered as "templates" (see apps/index.ts). The email
  * and report templates that tasks and apps use instead of wording kept in a task
@@ -102,7 +114,6 @@ export function TemplatesApp({ windowId }: { windowId: string }) {
   const [fields, setFields] = useState<Record<string, string> | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [switchTo, setSwitchTo] = useState<Selection | null>(null);
-  const [deleting, setDeleting] = useState(false);
   const [newCount, setNewCount] = useState(0);
   // Only matters in a narrow window, where the list and the editor take turns.
   const [listOpen, setListOpen] = useState(true);
@@ -226,22 +237,43 @@ export function TemplatesApp({ windowId }: { windowId: string }) {
 
   const remove = async () => {
     if (!selected) return;
+    const gone = selected;
     setBusy(true);
     try {
-      const reply = await deleteTemplate(selected.id);
+      const reply = await deleteTemplate(gone.id);
       if (!reply.ok) {
         setError(reply.reason);
         return;
       }
-      setDeleting(false);
       setSelection(null);
       setDirty(false);
       await reload();
-      setNotice(`Deleted “${selected.name}”. What used it goes back to its own wording.`);
+      setNotice(null);
+      toast({
+        key: `undo-${gone.id}`,
+        message: `Deleted “${gone.name}”. What used it goes back to its own wording.`,
+        durationMs: 10_000,
+        action: { label: "Undo", run: () => void restore(gone) },
+      });
     } catch {
       setError("Could not reach the app server.");
     } finally {
       setBusy(false);
+    }
+  };
+
+  /** Puts a deleted template back (as a new copy of everything the person could set) and opens it. */
+  const restore = async (gone: Template) => {
+    try {
+      const reply = await createTemplate(restoreInput(gone));
+      if (!reply.ok) {
+        toast({ tone: "danger", message: reply.reason });
+        return;
+      }
+      await reload();
+      go({ type: "saved", id: reply.template.id });
+    } catch {
+      toast({ tone: "danger", message: "Could not reach the app server." });
     }
   };
 
@@ -282,7 +314,7 @@ export function TemplatesApp({ windowId }: { windowId: string }) {
                 New template
               </Button>
               <div
-                className="flex flex-wrap gap-1.5"
+                className="grid grid-cols-2 gap-1.5 [&>button]:justify-between"
                 role="group"
                 aria-label="Filter templates"
               >
@@ -332,6 +364,7 @@ export function TemplatesApp({ windowId }: { windowId: string }) {
                 {visible.map((template) => {
                   const active =
                     selection?.type === "saved" && selection.id === template.id;
+                  const note = listNote(template, usage[template.id]);
                   return (
                     <li key={template.id}>
                       <button
@@ -355,15 +388,14 @@ export function TemplatesApp({ windowId }: { windowId: string }) {
                         <span className="text-ink-muted line-clamp-2 text-[12px] leading-snug">
                           {usedByText(template)}
                         </span>
-                        <span
-                          className="text-ink-faint text-[11.5px]"
-                          data-testid="template-usage"
-                        >
-                          {template.kind === "snippet"
-                            ? `Use as {{> ${snippetKey(template.name)}}}`
-                            : lastUsedText(usage[template.id], new Date())}
-                          {template.tags?.length ? ` · ${template.tags.join(", ")}` : ""}
-                        </span>
+                        {note && (
+                          <span
+                            className="text-ink-faint text-[11.5px]"
+                            data-testid="template-usage"
+                          >
+                            {note}
+                          </span>
+                        )}
                       </button>
                     </li>
                   );
@@ -441,18 +473,6 @@ export function TemplatesApp({ windowId }: { windowId: string }) {
             {selection?.type === "saved" && !selected && (
               <PanelMessage>That template no longer exists.</PanelMessage>
             )}
-            {selected && (
-              <div className="flex justify-end px-5 pb-1">
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => setExtrasOpen(true)}
-                  data-testid="template-extras"
-                >
-                  Tags, wordings, versions, test…
-                </Button>
-              </div>
-            )}
             {(selection?.type === "new" || selected) && (
               <TemplateEditor
                 key={selection?.type === "new" ? `new-${selection.n}` : selected?.id}
@@ -465,7 +485,8 @@ export function TemplatesApp({ windowId }: { windowId: string }) {
                 onDirtyChange={setDirty}
                 onSave={(input) => void save(input)}
                 onDuplicate={() => selected && startNew(copyOf(selected))}
-                onDelete={() => setDeleting(true)}
+                onDelete={() => void remove()}
+                onOpenExtras={() => setExtrasOpen(true)}
               />
             )}
           </section>
@@ -481,16 +502,6 @@ export function TemplatesApp({ windowId }: { windowId: string }) {
           onChanged={() => void reload()}
         />
       )}
-      <ConfirmDialog
-        open={deleting}
-        title={`Delete “${selected?.name ?? ""}”?`}
-        description="Anything that uses it goes back to its own wording. This cannot be undone."
-        confirmLabel="Delete template"
-        busy={busy}
-        error={error}
-        onConfirm={() => void remove()}
-        onOpenChange={setDeleting}
-      />
       <ConfirmDialog
         open={switchTo !== null}
         title="Discard your changes?"

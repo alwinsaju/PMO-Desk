@@ -2211,8 +2211,14 @@ title, tone, action, key })` from anywhere; a repeated `key` replaces the earlie
   overwritten. Routes: `GET|POST /api/registers/<tool>` (`upsert`, `remove`, `config`; at most 500 records per
   call, 5000 per tool) and `GET /api/registers/summary`, behind the same-origin guard. Backups include the folder
   (it is part of the data folder); JSON and CSV export add each non-empty tool.
-- **UI.** `RegisterApp` is the generic list (search, status filter, show closed, CSV, alert chips, add and
-  edit dialog with delete confirmation, make a to-do, an unsent chaser mail to the owner). `useRegister` ignores a
+- **UI.** `RegisterApp` is the generic list (search, status filter, show closed, CSV, alert chips, status
+  chips, "—" for blank cells, hover edit and delete with an Undo toast, an empty state with "Add your first
+  ...", an add and edit dialog, make a to-do, an unsent chaser mail to the owner). The dialog marks each bad
+  field with `FormField` (`fieldErrors` in `records.ts` names every bad field; `sanitizeValues` still refuses
+  with the first), scrolls to the first one on Save, and scrolls only the fields so Save stays in view.
+  `ToolkitApp` opens a tool in its own window body with an "All tools" Back button and puts the tool's name in
+  the title (`useWindowContext`), so no second window sits half over it; the command bar, search and Dashboard
+  still open a tool as its own window. `useRegister` ignores a
   read that started before a write finished, so a refresh cannot bring older data back. Tools with more have
   a panel (`extras/`: SLA settings and import, change summary, month-end check, status report, minutes and
   governance to-dos) or their own screen (`TimesheetApp`, `CapacityGrid`). Every tool is a window registered

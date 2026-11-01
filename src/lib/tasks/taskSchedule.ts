@@ -68,6 +68,24 @@ export function latestOccurrence(
   return null;
 }
 
+/** The first occurrence after `now` (today counts while its time is still ahead), as a local
+ *  day and time, looking ahead at most `lookaheadDays`. */
+export function nextOccurrence(
+  schedule: TaskSchedule,
+  now: Date,
+  lookaheadDays = 62,
+): { day: string; time: string } | null {
+  const clock = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  for (let ahead = 0; ahead <= lookaheadDays; ahead++) {
+    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + ahead);
+    const day = isoDayOf(d);
+    if (!occursOn(schedule, day)) continue;
+    if (ahead === 0 && clock >= schedule.time) continue;
+    return { day, time: schedule.time };
+  }
+  return null;
+}
+
 export type ScheduleDue =
   | { kind: "none" }
   | { kind: "due"; day: string }

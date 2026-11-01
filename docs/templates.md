@@ -11,7 +11,10 @@ Open it from the dock (the page icon), the desktop right-click menu, or the comm
 ## What you can do
 
 - **Edit a template.** Pick one on the left. Change the name, the subject, To and Cc (email only)
-  and the message. The preview on the right shows the result with example values.
+  and the message. The preview on the right shows the result with example values. To and Cc show one
+  chip per person, so a long list wraps instead of being cut off: type or paste addresses separated by
+  a semicolon (`Name <a@x.com>; Name <b@x.com>`, or just `a@x.com, b@x.com`). A chip that is not an
+  email address turns red and stops Save until you remove it. A `{{placeholder}}` also works as an address.
 - **Insert a value.** The chips under the subject (`{{total}}`, `{{date_full}}` ...) put a
   placeholder at the cursor. Each task or app fills its own placeholders when it makes a draft.
   A placeholder it cannot fill stays as typed, so you can spot it in the draft.
@@ -21,7 +24,10 @@ Open it from the dock (the page icon), the desktop right-click menu, or the comm
   template. Each place uses **one** template: ticking a place another template has moves it to
   this one (the form says which). Delete a template, or untick a place, and that place goes back
   to its own built-in wording.
-- **New template, Duplicate, Delete.** _Duplicate_ makes an unused copy to experiment with.
+- **New template, Duplicate, Delete.** The **⋯** menu next to Save has _Duplicate_ (an unused copy to
+  experiment with), _Restore original wording_ and _Delete template_. Delete does not ask first; a
+  message at the bottom of the screen offers **Undo** for ten seconds, which puts the template back with
+  its places, tags and wordings. **Tags, wordings, versions, test…** opens the extras.
 - **Restore original wording.** The starter templates can be set back to what the task or app
   said before templates existed.
 

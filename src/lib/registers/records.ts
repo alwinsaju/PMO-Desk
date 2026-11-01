@@ -114,34 +114,65 @@ function coerce(
   }
 }
 
-/** The values for a record, each cleaned to its field's type; unknown keys are dropped. */
-export function sanitizeValues(
+interface FieldProblem {
+  key: string;
+  message: string;
+}
+
+/** Every problem with the input, in field order, each tied to the field to mark; the cleaned values alongside. */
+function checkValues(
   def: RegisterDef,
   input: unknown,
-): { ok: true; values: Record<string, FieldValue> } | { ok: false; reason: string } {
+): { values: Record<string, FieldValue>; problems: FieldProblem[] } {
   const raw =
     typeof input === "object" && input !== null && !Array.isArray(input)
       ? (input as Record<string, unknown>)
       : {};
   const values: Record<string, FieldValue> = {};
+  const problems: FieldProblem[] = [];
   for (const field of def.fields) {
     const result = coerce(field, raw[field.key]);
-    if ("error" in result) return { ok: false, reason: result.error };
+    if ("error" in result) {
+      problems.push({ key: field.key, message: result.error });
+      continue;
+    }
     values[field.key] = result.value;
     const empty =
       result.value === "" || (Array.isArray(result.value) && result.value.length === 0);
     if (field.required && empty) {
-      return { ok: false, reason: `${field.label} is required.` };
+      problems.push({ key: field.key, message: `${field.label} is required.` });
     }
   }
-  const range = crossCheck(def, values);
-  return range ? { ok: false, reason: range } : { ok: true, values };
+  const range = problems.length === 0 ? crossCheck(def, values) : null;
+  if (range) problems.push(range);
+  return { values, problems };
 }
 
-/** Rules that involve two fields. */
-function crossCheck(def: RegisterDef, values: Record<string, FieldValue>): string | null {
+/** The values for a record, each cleaned to its field's type; unknown keys are dropped. */
+export function sanitizeValues(
+  def: RegisterDef,
+  input: unknown,
+): { ok: true; values: Record<string, FieldValue> } | { ok: false; reason: string } {
+  const { values, problems } = checkValues(def, input);
+  return problems.length > 0
+    ? { ok: false, reason: problems[0].message }
+    : { ok: true, values };
+}
+
+/** What is wrong with each field, by field key, so the form can mark the field itself. */
+export function fieldErrors(def: RegisterDef, input: unknown): Record<string, string> {
+  return Object.fromEntries(
+    checkValues(def, input).problems.map((p) => [p.key, p.message]),
+  );
+}
+
+/** Rules that involve two fields; the problem is shown on the later one. */
+function crossCheck(
+  def: RegisterDef,
+  values: Record<string, FieldValue>,
+): FieldProblem | null {
   if (def.id === "capacity" && values.from && values.to && values.to < values.from) {
-    return "The end date cannot be before the start date.";
+    return { key: "to", message: "The end date cannot be before the start date." };
   }
   if (
     def.id === "sla" &&
@@ -149,7 +180,10 @@ function crossCheck(def: RegisterDef, values: Record<string, FieldValue>): strin
     values.received &&
     values.resolvedOn < values.received
   ) {
-    return "Resolved on cannot be before it was received.";
+    return {
+      key: "resolvedOn",
+      message: "Resolved on cannot be before it was received.",
+    };
   }
   return null;
 }

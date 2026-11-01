@@ -20,11 +20,14 @@ import {
   summarise,
 } from "./alerts.ts";
 import { capacityGrid, weekStarts } from "./capacity.ts";
+import { cellText, exportHint, statusTone } from "./cells.ts";
+import { formatDayMonth } from "../staff/dates.ts";
 import { REGISTERS, REGISTER_IDS, TOOL_ALIASES, registerById } from "./defs.ts";
 import {
   RECORD_ID,
   csvRows,
   defaultValues,
+  fieldErrors,
   filterRecords,
   isHttpUrl,
   isOpen,
@@ -181,6 +184,58 @@ test("records: values are cleaned to their field type, with plain refusals", () 
   });
   assert.equal(long.values.title.length, 200);
   assert.equal(long.values.description.length, 4000);
+});
+
+test("records: fieldErrors names every bad field, in the form's terms", () => {
+  const raid = def("raid");
+  assert.deepEqual(fieldErrors(raid, { kind: "Risk", title: "x", status: "Open" }), {});
+  assert.deepEqual(
+    fieldErrors(raid, {
+      kind: "Nope",
+      title: " ",
+      status: "Open",
+      dueDate: "2026-02-30",
+    }),
+    {
+      kind: "Type must be one of: Risk, Assumption, Issue, Dependency.",
+      title: "Title is required.",
+      dueDate: "Review or resolve by is not a real date (use year-month-day).",
+    },
+  );
+  assert.deepEqual(Object.keys(fieldErrors(raid, {})), ["kind", "title", "status"]);
+  const backwards = {
+    person: "A",
+    project: "P",
+    percent: 50,
+    from: TODAY,
+    to: "2026-03-01",
+  };
+  assert.deepEqual(fieldErrors(def("capacity"), backwards), {
+    to: "The end date cannot be before the start date.",
+  });
+  // The first message is still what sanitizeValues refuses with.
+  assert.equal(sanitizeValues(raid, {}).reason, "Type is required.");
+});
+
+test("cells: blank values read as empty, dates and links are shortened, closed statuses are quiet", () => {
+  const raid = def("raid");
+  const field = (key) => raid.fields.find((f) => f.key === key);
+  assert.equal(cellText(field("owner"), undefined), "");
+  assert.equal(cellText(field("owner"), ""), "");
+  assert.equal(cellText(field("dueDate"), ""), "");
+  assert.equal(cellText(field("dueDate"), "2026-03-10"), formatDayMonth("2026-03-10"));
+  assert.equal(cellText(field("title"), "x".repeat(120)).length, 88);
+  assert.equal(cellText(undefined, ["a", "b"]), "a, b");
+  assert.equal(cellText(undefined, true), "✓");
+  assert.equal(cellText(undefined, false), "");
+  const link = def("doclinks").fields.find((f) => f.key === "url");
+  assert.equal(cellText(link, "https://x.sharepoint.com/a/b"), "x.sharepoint.com");
+  assert.equal(statusTone(raid, "Open"), "accent");
+  assert.equal(statusTone(raid, "Closed"), "neutral");
+  assert.equal(statusTone(def("minutes"), "anything"), "accent");
+  assert.equal(exportHint(3, 2), null);
+  assert.match(exportHint(0, 0), /Nothing to export yet/);
+  assert.match(exportHint(4, 0), /no record matches/);
 });
 
 test("records: a record keeps its id, creation time and to-do link, and refuses a forged link", () => {

@@ -37,6 +37,8 @@ export interface RegisterDef {
   title: string;
   /** "risk or issue", for buttons: "Add risk or issue". */
   noun: string;
+  /** What "Add your first ..." says in an empty list, where the general noun is too vague ("item" -> "risk"). */
+  firstNoun?: string;
   blurb: string;
   fields: readonly FieldDef[];
   titleKey: string;
