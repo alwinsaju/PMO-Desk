@@ -68,6 +68,14 @@ export async function readPtoRecords(env: Env = process.env): Promise<PtoMailRec
   return items as PtoMailRecord[];
 }
 
+/** One log entry by its id (the sourceId of the email), or null. */
+export async function readPtoRecord(
+  id: string,
+  env: Env = process.env,
+): Promise<PtoMailRecord | null> {
+  return (await readPtoRecords(env)).find((r) => r.id === id) ?? null;
+}
+
 async function writeRecords(records: PtoMailRecord[], env: Env): Promise<void> {
   await writeJsonAtomic(recordsFile(env), { version: 1, items: trimRecords(records) });
 }
@@ -189,8 +197,9 @@ async function scan(
     const today = todayIso(new Date(now()));
     const stamp = new Date(now()).toISOString();
     let record: PtoMailRecord;
+    let reading: PtoReading | undefined;
     try {
-      const reading = await classify(message, today);
+      reading = await classify(message, today);
       const employees = await readStaff("employees", env);
       const existing = await readStaff("timeoff", env);
       const decision = decide({ message, reading, employees, existing, today });
@@ -205,15 +214,15 @@ async function scan(
           "filed",
           decision.reason || "Filed as a pending Time off request.",
           stamp,
-          { requestId: request.id },
+          { requestId: request.id, reading },
         );
         summary.filed++;
       } else if (decision.action === "set-aside") {
         await reject(dir, name, decision.reason, now());
-        record = recordFor(message, "set-aside", decision.reason, stamp);
+        record = recordFor(message, "set-aside", decision.reason, stamp, { reading });
         summary.setAside++;
       } else {
-        record = recordFor(message, "ignored", decision.reason, stamp);
+        record = recordFor(message, "ignored", decision.reason, stamp, { reading });
         summary.ignored++;
       }
     } catch (error) {
@@ -229,7 +238,7 @@ async function scan(
           ? error.message
           : `The AI could not read the email (${error instanceof Error ? error.message : "unknown error"}).`;
       await reject(dir, name, reason, now());
-      record = recordFor(message, "set-aside", reason, stamp);
+      record = recordFor(message, "set-aside", reason, stamp, { reading });
       summary.setAside++;
     }
     await withLock(env, async () => {

@@ -24,6 +24,7 @@ import {
 import { emailFromRequestFile, parseProfileFile, requestFileName } from "./exchange.ts";
 import {
   purgeExchangeFor,
+  resendAllRequests,
   resendRequest,
   resolveExchange,
   syncExchange,
@@ -278,6 +279,63 @@ describe("exchange folder", () => {
     assert.equal(resolveExchange(second).dir, path.join(od, "Staff-Exchange"));
     const none = { AI_OS_PMO_DATA_DIR: env.AI_OS_PMO_DATA_DIR };
     assert.equal(resolveExchange(none).source, "local");
+  });
+
+  it("does not flood the flow: 72 waiting people are asked for a few at a time", async () => {
+    const people = Array.from({ length: 72 }, (_, i) =>
+      employeeFromEmail(`p${String(i).padStart(2, "0")}@x.com`, NOW),
+    );
+    await save(people);
+    const dirRequests = path.join(dir, "ex", "requests");
+    const first = await syncExchange(env, now);
+    assert.equal(first.requested, 5);
+    assert.equal((await readdir(dirRequests)).length, 5);
+    assert.equal((await syncExchange(env, now)).requested, 5);
+    // Ten are out and none is answered: no more until some are answered or due again.
+    assert.equal((await syncExchange(env, now)).requested, 0);
+    assert.equal((await readdir(dirRequests)).length, 10);
+  });
+
+  it("asks again, with the try counted, for a request the flow never answered (the 429 case)", async () => {
+    await save([employeeFromEmail("stuck@x.com", NOW)]);
+    const dirRequests = path.join(dir, "ex", "requests");
+    await syncExchange(env, now);
+    const [firstFile] = await readdir(dirRequests);
+    assert.equal(
+      JSON.parse(await readFile(path.join(dirRequests, firstFile), "utf8")).attempt,
+      1,
+    );
+
+    clock += 60_000; // still waiting for the flow
+    assert.equal((await syncExchange(env, now)).requested, 0);
+
+    clock += 5 * 60_000; // past the first wait: the flow evidently dropped it
+    const again = await syncExchange(env, now);
+    assert.equal(again.requested, 1);
+    const files = await readdir(dirRequests);
+    assert.equal(files.length, 1, "the old request is replaced, not duplicated");
+    assert.notEqual(
+      files[0],
+      firstFile,
+      "a new file name, so the flow's trigger fires again",
+    );
+    assert.equal(
+      JSON.parse(await readFile(path.join(dirRequests, files[0]), "utf8")).attempt,
+      2,
+    );
+
+    clock += 5 * 60_000; // the second wait is longer than the first
+    assert.equal((await syncExchange(env, now)).requested, 0);
+    clock += 4 * 60_000;
+    assert.equal((await syncExchange(env, now)).requested, 1);
+  });
+
+  it("starts everything over for the people still waiting when asked to", async () => {
+    await save([employeeFromEmail("a@x.com", NOW), employeeFromEmail("b@x.com", NOW)]);
+    await syncExchange(env, now);
+    assert.equal(await resendAllRequests(env, now), 2);
+    assert.deepEqual(await readdir(path.join(dir, "ex", "requests")), []);
+    assert.equal((await syncExchange(env, now)).requested, 2);
   });
 
   it("asks for a profile once per waiting person and not for the others", async () => {

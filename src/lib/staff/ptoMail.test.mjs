@@ -25,6 +25,7 @@ import {
 import {
   PTO_REJECTED_DIR,
   ptoMailState,
+  readPtoRecord,
   readPtoRecords,
   resolvePtoInbox,
   syncPtoMail,
@@ -428,6 +429,33 @@ describe("a scan of the PTO inbox", () => {
     const [record] = await readPtoRecords(env);
     assert.equal(record.status, "filed");
     assert.equal(record.requestId, request.id);
+  });
+
+  it("keeps the email text and what the AI read, so the request can be explained later", async () => {
+    await drop(
+      "a.json",
+      file({ body: "I will be off from 2026-11-09 to 2026-11-11. Thanks." }),
+    );
+    await syncPtoMail(
+      fake(reading({ quote: "off from 2026-11-09", confidence: "medium" })),
+      env,
+      now,
+    );
+    const [record] = await readPtoRecords(env);
+    assert.match(record.text, /off from 2026-11-09 to 2026-11-11/);
+    assert.equal(record.reading.kind, "pto");
+    assert.equal(record.reading.confidence, "medium");
+    assert.equal(record.reading.quote, "off from 2026-11-09");
+    assert.equal(record.reading.startDate, reading().startDate);
+  });
+
+  it("finds the log entry of a request by the request's source id", async () => {
+    await drop("a.json", file());
+    await syncPtoMail(fake(reading()), env, now);
+    const [request] = await readStaff("timeoff", env);
+    const found = await readPtoRecord(request.sourceId, env);
+    assert.equal(found.requestId, request.id);
+    assert.equal(await readPtoRecord("no-such-id", env), null);
   });
 
   it("files a comp off when the email says so", async () => {

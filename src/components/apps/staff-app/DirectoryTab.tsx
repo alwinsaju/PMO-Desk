@@ -29,6 +29,7 @@ import {
   Input,
 } from "@/components/ui";
 import { cn } from "@/lib/cn";
+import { toast } from "@/lib/notifications/toastStore";
 import { easeEntrance } from "@/lib/motion";
 import { formatDate, relativeDays, todayIso } from "@/lib/staff/dates";
 import {
@@ -97,6 +98,23 @@ function downloadCsv(employees: readonly Employee[]) {
 export function DirectoryTab() {
   const employees = useStaffStore((s) => s.employees);
   const status = useStaffStore((s) => s.status);
+  const requestAllProfiles = useStaffStore((s) => s.requestAllProfiles);
+  const [askingAgain, setAskingAgain] = useState(false);
+
+  async function askAllAgain() {
+    setAskingAgain(true);
+    const result = await requestAllProfiles();
+    setAskingAgain(false);
+    toast(
+      result.ok
+        ? {
+            tone: "info",
+            title: "Asking M365 again",
+            message: "The requests go out a few at a time, so M365 is not overloaded.",
+          }
+        : { tone: "danger", message: result.reason },
+    );
+  }
 
   const [filter, setFilter] = useState<DirectoryFilter>(NO_FILTER);
   const [sort, setSort] = useState<SortState>({ key: "name", dir: "asc" });
@@ -350,8 +368,17 @@ export function DirectoryTab() {
                 </span>
               )}
               {stats.awaitingProfile > 0 && (
-                <span className="text-info font-semibold">
+                <span className="text-info inline-flex items-center gap-1.5 font-semibold">
                   {stats.awaitingProfile} waiting for M365 profile
+                  <button
+                    type="button"
+                    disabled={askingAgain}
+                    onClick={() => void askAllAgain()}
+                    title="Send the requests again, a few at a time. The app also retries by itself, a little later each time."
+                    className="text-ink-soft hover:text-ink focus-ring rounded px-1 font-semibold underline-offset-2 hover:underline disabled:opacity-50"
+                  >
+                    {askingAgain ? "Asking…" : "Ask again"}
+                  </button>
                 </span>
               )}
             </div>

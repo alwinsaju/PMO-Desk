@@ -25,6 +25,7 @@ import { noSpellcheck } from "@/lib/ui/noSpellcheck";
 import { EmptyState, TONE_DOT } from "./parts";
 import { TimeOffCard } from "./TimeOffCard";
 import { TimeOffDialog } from "./TimeOffDialog";
+import { TimeOffDetailDialog } from "./TimeOffDetailDialog";
 import { ModelChip } from "./ModelChip";
 
 const STATUS_TABS: { value: TimeOffStatus | ""; label: string }[] = [
@@ -49,6 +50,7 @@ export function TimeOffTab({
 
   const [query, setQuery] = useState("");
   const [adding, setAdding] = useState(false);
+  const [opened, setOpened] = useState<TimeOffRequest | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const today = todayIso();
@@ -236,6 +238,7 @@ export function TimeOffTab({
                 person={byId.get(request.employeeId)}
                 all={timeOff}
                 people={byId}
+                onOpen={setOpened}
                 onDecide={(r, next) => void decide(r, next)}
                 onDelete={(r) => void remove(r)}
               />
@@ -245,6 +248,14 @@ export function TimeOffTab({
       </div>
 
       <TimeOffDialog open={adding} onOpenChange={setAdding} />
+      <TimeOffDetailDialog
+        request={opened ? (timeOff.find((r) => r.id === opened.id) ?? null) : null}
+        person={opened ? byId.get(opened.employeeId) : undefined}
+        onOpenChange={(open) => {
+          if (!open) setOpened(null);
+        }}
+        onDecide={(r, next) => void decide(r, next)}
+      />
     </div>
   );
 }

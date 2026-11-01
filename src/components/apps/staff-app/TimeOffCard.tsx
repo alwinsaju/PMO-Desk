@@ -92,6 +92,7 @@ export function TimeOffCard({
   person,
   all,
   people,
+  onOpen,
   onDecide,
   onDelete,
 }: {
@@ -99,6 +100,7 @@ export function TimeOffCard({
   person: Employee | undefined;
   all: readonly TimeOffRequest[];
   people: ReadonlyMap<string, Employee>;
+  onOpen: (request: TimeOffRequest) => void;
   onDecide: (request: TimeOffRequest, status: TimeOffStatus) => void;
   onDelete: (request: TimeOffRequest) => void;
 }) {
@@ -123,7 +125,20 @@ export function TimeOffCard({
         title={status.label}
       />
       <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-4 gap-y-3 px-4 py-3">
-        <div className="flex min-w-0 flex-1 basis-[260px] flex-col gap-2">
+        <div
+          role="button"
+          tabIndex={0}
+          aria-label={`Open ${who}'s ${meta.label} request, ${formatRange(request.startDate, request.endDate)}`}
+          onClick={() => onOpen(request)}
+          onKeyDown={(e) => {
+            if (e.target !== e.currentTarget) return;
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              onOpen(request);
+            }
+          }}
+          className="focus-visible:ring-accent -m-1 flex min-w-0 flex-1 basis-[260px] cursor-pointer flex-col gap-2 rounded-md p-1 outline-none focus-visible:ring-2"
+        >
           <div className="flex min-w-0 items-center gap-2.5">
             {person ? (
               <EmployeeAvatar employee={person} size="sm" />

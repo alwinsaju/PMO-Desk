@@ -17,7 +17,9 @@ import {
   REQUESTS_DIR,
   emailFromRequestFile,
   parseProfileFile,
+  planRequests,
   requestFileName,
+  type OpenRequest,
 } from "./exchange.ts";
 import { isAwaitingProfile } from "./employees.ts";
 import { applyProfileSync, readStaff, staffDir, StaffError } from "./server.ts";
@@ -101,15 +103,56 @@ async function removeRequestsFor(dir: string, email: string): Promise<void> {
   }
 }
 
-async function writeRequest(dir: string, email: string, now: number): Promise<boolean> {
+async function writeRequest(
+  dir: string,
+  email: string,
+  now: number,
+  attempt = 1,
+): Promise<boolean> {
   const name = requestFileName(email, now.toString(36));
   if (!name) return false;
   await writeFile(
     path.join(dir, REQUESTS_DIR, name),
-    JSON.stringify({ email: email.trim(), requestedAt: new Date(now).toISOString() }),
+    JSON.stringify({
+      email: email.trim(),
+      requestedAt: new Date(now).toISOString(),
+      attempt,
+    }),
     "utf8",
   );
   return true;
+}
+
+/** The requests in the folder: whose, which try, and how long ago. Unreadable files count
+ *  as the first try, as old as the file. */
+async function readOpenRequests(dir: string, now: number): Promise<OpenRequest[]> {
+  const open: OpenRequest[] = [];
+  for (const name of await listJson(path.join(dir, REQUESTS_DIR))) {
+    const email = emailFromRequestFile(name);
+    if (!email) continue;
+    const file = path.join(dir, REQUESTS_DIR, name);
+    let attempt = 1;
+    let at = Number.NaN;
+    try {
+      const body = JSON.parse(await readFile(file, "utf8")) as {
+        attempt?: unknown;
+        requestedAt?: unknown;
+      };
+      if (typeof body.attempt === "number" && body.attempt >= 1) attempt = body.attempt;
+      if (typeof body.requestedAt === "string") at = Date.parse(body.requestedAt);
+    } catch {
+      // keep the defaults
+    }
+    if (Number.isNaN(at)) {
+      try {
+        at = (await stat(file)).mtimeMs;
+      } catch {
+        continue; // gone since the listing
+      }
+    }
+    open.push({ email, attempt, ageMs: Math.max(0, now - at) });
+  }
+  return open;
 }
 
 async function scan(env: Env, now: () => number): Promise<SyncSummary> {
@@ -171,15 +214,15 @@ async function scan(env: Env, now: () => number): Promise<SyncSummary> {
 
   const waiting = (await readStaff("employees", env)).filter((e) => isAwaitingProfile(e));
   if (waiting.length > 0) {
-    const asked = new Set(
-      (await listJson(path.join(dir, REQUESTS_DIR)))
-        .map(emailFromRequestFile)
-        .filter((e): e is string => e !== null)
-        .map((e) => e.toLowerCase()),
-    );
-    for (const person of waiting) {
-      if (asked.has(person.deloitteEmail.toLowerCase())) continue;
-      if (await writeRequest(dir, person.deloitteEmail, now())) summary.requested++;
+    const plan = planRequests({
+      waiting: waiting.map((e) => e.deloitteEmail),
+      open: await readOpenRequests(dir, now()),
+    });
+    for (const request of plan) {
+      await removeRequestsFor(dir, request.email);
+      if (await writeRequest(dir, request.email, now(), request.attempt)) {
+        summary.requested++;
+      }
     }
   }
   return summary;
@@ -237,6 +280,19 @@ export async function purgeExchangeFor(
     }
   }
   return removed;
+}
+
+/** Writes a fresh request for every person still waiting, a few at a time like a normal scan
+ *  (the next scans continue). Starts their tries over. Returns how many are waiting. */
+export async function resendAllRequests(
+  env: Env = process.env,
+  now: () => number = Date.now,
+): Promise<number> {
+  const waiting = (await readStaff("employees", env)).filter((e) => isAwaitingProfile(e));
+  const { dir } = resolveExchange(env);
+  await ensureDirs(dir);
+  for (const person of waiting) await removeRequestsFor(dir, person.deloitteEmail);
+  return waiting.length;
 }
 
 /** Writes a fresh request for one waiting person (a new file, so the flow runs again). */

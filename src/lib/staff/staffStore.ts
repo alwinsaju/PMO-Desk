@@ -61,6 +61,8 @@ export interface StaffState {
   removePhoto: (employeeId: string) => Promise<StaffResult>;
   /** Asks the M365 flow for this person's profile again. */
   requestProfile: (employeeId: string) => Promise<StaffResult>;
+  /** Starts the M365 requests over for everybody still waiting (a few at a time). */
+  requestAllProfiles: () => Promise<StaffResult>;
 }
 
 let inFlight = 0;
@@ -268,6 +270,22 @@ export const useStaffStore = create<StaffState>()((set, get) => {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ resend: employeeId }),
+          });
+          if (!response.ok) return { ok: false, reason: await readReason(response) };
+          await reloadEmployees();
+          return { ok: true };
+        } catch {
+          return { ok: false, reason: OFFLINE };
+        }
+      }),
+
+    requestAllProfiles: () =>
+      tracked(async () => {
+        try {
+          const response = await fetch("/api/staff/sync", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ resendAll: true }),
           });
           if (!response.ok) return { ok: false, reason: await readReason(response) };
           await reloadEmployees();

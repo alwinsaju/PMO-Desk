@@ -154,11 +154,28 @@ already be on the roster):
 
 You can also force a check with `POST http://localhost:<port>/api/staff/sync`.
 
+### Many people at once (HTTP 429)
+
+The M365 connector answers **429 Too Many Requests** when dozens of lookups arrive together; an
+import of 70+ people used to hit it after about 50, and the rest never got a profile because the
+app thought their request was still pending. The app now:
+
+- writes only a few requests per scan (5 every 20 seconds, never more than 10 waiting for the
+  flow at once), so a 72-person import takes a few minutes, not one burst;
+- sends **again** a request nobody answered, after 4 minutes, then 8, 16, 32 and 60 (eight tries
+  in all), with the try number inside the request file (`"attempt": 2`);
+- has an **Ask again** link in the Directory footer ("N waiting for M365 profile") that starts
+  every waiting person's request over.
+
+Keep **Concurrency control** off on the trigger (see above). In the flow, open the _Get user
+profile_ step > Settings > **Retry policy** and choose _Exponential interval_ (count 4) so a
+429 that does get through is retried inside the flow before it fails.
+
 ### If it does not fill in
 
 - **Still waiting**: look at the flow's run history. A failed _Get user profile_ means the
-  email is not a valid user in your tenant. Use **Request again** in the person's pane to send
-  a new request file.
+  email is not a valid user in your tenant, or it was throttled (429, see above: the app asks
+  again by itself). Use **Request again** in the person's pane to send a new request file.
 - **File moved to `Staff-Exchange\rejected`**: open the `.reason.txt` beside it. Typical
   reasons: the email is not on the roster, the file is over 3 MB, or the picture is not a
   JPEG/PNG/WebP under 1 MB.

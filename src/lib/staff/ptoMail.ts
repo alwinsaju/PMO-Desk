@@ -451,16 +451,23 @@ export interface PtoMailRecord {
   processedAt: string;
   /** The Time off request that was filed. */
   requestId?: string;
+  /** The email text the AI read (the new part, cut to what the model gets). Kept so the
+   *  request can be explained later; logs made before this existed do not have it. */
+  text?: string;
+  /** What the AI answered, before the app checked it (absent when the AI gave no answer). */
+  reading?: PtoReading;
 }
 
 export const MAX_PTO_RECORDS = 500;
+/** The email text kept per log entry. */
+export const MAX_PTO_RECORD_TEXT = 4000;
 
 export function recordFor(
   message: PtoMessage,
   status: PtoMailStatus,
   reason: string,
   now: string,
-  extra: Pick<PtoMailRecord, "requestId"> = {},
+  extra: Pick<PtoMailRecord, "requestId" | "reading"> = {},
 ): PtoMailRecord {
   return {
     id: message.sourceId,
@@ -471,6 +478,7 @@ export function recordFor(
     status,
     reason: reason.slice(0, 300),
     processedAt: now,
+    text: message.text.slice(0, MAX_PTO_RECORD_TEXT),
     ...extra,
   };
 }
