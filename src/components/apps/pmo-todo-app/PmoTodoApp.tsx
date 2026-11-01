@@ -62,6 +62,8 @@ export function PmoTodoApp({ windowId }: { windowId: string }) {
   const [creating, setCreating] = useState(false);
   const [pasting, setPasting] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // Setup was just saved: the wizard stays up for its "You're set" screen.
+  const [setupFinished, setSetupFinished] = useState(false);
   // View choices live here, not in the tab content, which unmounts when you
   // switch tabs: coming back finds the same filter, sort and open sections.
   const [todoView, setTodoView] = useState<TodoViewChoice>({
@@ -137,10 +139,17 @@ export function PmoTodoApp({ windowId }: { windowId: string }) {
     );
   }
 
-  if (needsFirstRun(state.config)) {
+  if (needsFirstRun(state.config) || setupFinished) {
     return (
       <div data-window-id={windowId} className="h-full w-full">
-        <FirstRunWizard windowId={windowId} onDone={refetch} />
+        <FirstRunWizard
+          windowId={windowId}
+          onSaved={() => {
+            setSetupFinished(true);
+            refetch();
+          }}
+          onDone={() => setSetupFinished(false)}
+        />
       </div>
     );
   }

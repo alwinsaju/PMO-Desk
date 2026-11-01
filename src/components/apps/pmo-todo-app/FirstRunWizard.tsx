@@ -28,7 +28,12 @@ import { createInboxFolder, fetchFirstRunSuggestions, finishFirstRun } from "./a
 import { DOMAIN_NOUN } from "./listFeedbackView";
 import { ListFeedback, SuggestionRow } from "./ListFeedback";
 import { ErrorLine, Field, FieldError, NativeSelect, Note, ScrollBody } from "./parts";
-import { WizardStepper, WizardSummary } from "./WizardParts";
+import {
+  StepIllustration,
+  WizardDone,
+  WizardStepper,
+  WizardSummary,
+} from "./WizardParts";
 import { STEP_INTRO, wizardSummary } from "@/lib/pmo/wizardView";
 
 const detectedTimeZone = () => {
@@ -68,9 +73,13 @@ interface FolderChoice {
  */
 export function FirstRunWizard({
   windowId,
+  onSaved,
   onDone,
 }: {
   windowId: string;
+  /** The answers were saved (the window refetches; the wizard stays for "You're set"). */
+  onSaved: () => void;
+  /** The person left the "You're set" screen. */
   onDone: () => void;
 }) {
   const [resumed] = useState(() =>
@@ -89,11 +98,13 @@ export function FirstRunWizard({
     { action: "create"; parent: string } | { action: "finish" } | null
   >(null);
   const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(false);
 
-  // Keep the place, so closing the window does not start the wizard over.
+  // Keep the place, so closing the window does not start the wizard over. Not
+  // once it is finished: that would bring the saved progress back.
   useEffect(() => {
-    saveProgress(browserStorage(), { step, form }, Date.now());
-  }, [step, form]);
+    if (!done) saveProgress(browserStorage(), { step, form }, Date.now());
+  }, [step, form, done]);
   useEffect(() => {
     let cancelled = false;
     fetchFirstRunSuggestions()
@@ -183,7 +194,8 @@ export function FirstRunWizard({
         // Done: forget the unfinished place, but remember who you are for the next data folder.
         saveProfile(browserStorage(), form);
         clearProgress(browserStorage());
-        return onDone();
+        setDone(true);
+        return onSaved();
       }
       setServerError(reply.reason);
       setConfirmFolder(reply.needsConfirmation ? { action: "finish" } : null);
@@ -230,247 +242,262 @@ export function FirstRunWizard({
       {/* m-auto centres the content in the window and still scrolls when it is taller. */}
       <ScrollBody className="flex px-6 py-8">
         <div className="m-auto flex w-full max-w-lg flex-col gap-6">
-          <header className="flex flex-col gap-4">
-            <WizardStepper step={step} />
-            <div className="flex flex-col gap-2">
-              <h2 className="text-ink text-[26px] leading-tight font-semibold">
-                {current.title}
-              </h2>
-              <p className="text-ink-muted text-[14px] leading-relaxed">
-                {STEP_INTRO[current.id]}
-              </p>
-              {resumed && step === resumed.step && (
-                <p className="text-ink-muted text-[13px] leading-relaxed">
-                  Welcome back: your earlier answers are filled in.
-                </p>
-              )}
-            </div>
-          </header>
-
-          {current.id === "who" && (
-            <div className="flex flex-col gap-3.5">
-              <Field label="Your full name">
-                <Input
-                  value={form.fullName}
-                  autoComplete="name"
-                  placeholder={suggestions?.nameHint || "Pat Example"}
-                  onChange={(event) => set({ fullName: event.target.value })}
-                />
-              </Field>
-              <Field label="Short names and other spellings (optional, comma separated)">
-                <Input
-                  value={form.otherNames}
-                  placeholder="Pat, P. Example"
-                  onChange={(event) => set({ otherNames: event.target.value })}
-                />
-              </Field>
-              <Field label="Your work email address">
-                <Input
-                  type="email"
-                  value={form.email}
-                  autoComplete="email"
-                  placeholder="you@company.com"
-                  aria-invalid={emailProblem ? true : undefined}
-                  onChange={(event) => set({ email: event.target.value })}
-                />
-                <FieldError message={emailProblem ?? undefined} />
-              </Field>
-            </div>
-          )}
-
-          {current.id === "timeZone" && (
-            <Field label="Time zone">
-              <NativeSelect
-                value={form.timeZone}
-                onChange={(event) => set({ timeZone: event.target.value })}
-              >
-                {!zones.includes(form.timeZone) && (
-                  <option value={form.timeZone}>{form.timeZone || "Choose..."}</option>
-                )}
-                {zones.map((zone) => (
-                  <option key={zone} value={zone}>
-                    {zone}
-                  </option>
-                ))}
-              </NativeSelect>
-              <span className="text-ink-muted text-[12px]">
-                Used for due dates and reminders. We preselected the one this computer
-                uses.
-              </span>
-            </Field>
-          )}
-
-          {current.id === "domains" && (
-            <div className="flex flex-col gap-3.5">
-              <div className="flex flex-col gap-2">
-                <Field label="Sender domains you receive work mail from (comma separated)">
-                  <Input
-                    value={form.allowedDomains}
-                    spellCheck={false}
-                    placeholder={domainSuggestion ?? "company.com"}
-                    aria-invalid={allowedParsed.invalid.length > 0 ? true : undefined}
-                    onFocus={(event) => {
-                      if (domainSuggestion && form.allowedDomains === domainSuggestion) {
-                        event.currentTarget.select();
-                      }
-                    }}
-                    onChange={(event) => set({ allowedDomains: event.target.value })}
-                  />
-                  <span className="text-ink-muted text-[12px]">
-                    Mail from any other domain is filtered and discarded. Subdomains
-                    match.
-                  </span>
-                </Field>
-                {domainSuggestion && form.allowedDomains.trim() === "" && (
-                  <SuggestionRow
-                    suggestion={domainSuggestion}
-                    onUse={() => set({ allowedDomains: domainSuggestion })}
-                  />
-                )}
-                <ListFeedback parsed={allowedParsed} noun={DOMAIN_NOUN} />
-                {form.allowedDomains.trim() === "" && (
-                  <span className="text-ink-muted text-[12px]">
-                    Enter at least one domain, for example company.com.
-                  </span>
-                )}
-              </div>
-              <div className="flex flex-col gap-2">
-                <Field label="Domains to always block (optional)">
-                  <Input
-                    value={form.blockedDomains}
-                    spellCheck={false}
-                    placeholder="other-company.example"
-                    aria-invalid={blockedParsed.invalid.length > 0 ? true : undefined}
-                    onChange={(event) => set({ blockedDomains: event.target.value })}
-                  />
-                </Field>
-                <ListFeedback parsed={blockedParsed} noun={DOMAIN_NOUN} />
-              </div>
-            </div>
-          )}
-
-          {current.id === "inbox" && (
-            <div className="flex flex-col gap-3.5">
-              {fixedInbox ? (
-                <Note tone="neutral">
-                  The inbox folder is fixed by this computer&apos;s settings:{" "}
-                  <span className="font-mono">{fixedInbox}</span>
-                </Note>
-              ) : (
-                <>
-                  {choices.map((choice) => (
-                    <FolderRow
-                      key={choice.path}
-                      choice={choice}
-                      selected={form.inboxDir === choice.path}
-                      busy={busy}
-                      onUse={() => set({ inboxDir: choice.path })}
-                      onCreate={() => void createFolder(choice.parent)}
-                    />
-                  ))}
-                  {suggestions && !suggestions.inbox.oneDriveSignedIn && (
-                    <Note tone="neutral">
-                      OneDrive is not signed in on this computer. Choose a folder below.
-                    </Note>
-                  )}
-                  {picked && (
-                    <FolderRow
-                      choice={{ path: picked, parent: picked, exists: true }}
-                      selected={form.inboxDir === picked}
-                      busy={busy}
-                      createLabel="Create PMO-Inbox here"
-                      onUse={() => set({ inboxDir: picked })}
-                      onCreate={() => void createFolder(picked)}
-                    />
-                  )}
-                  <div className="flex items-end gap-2">
-                    <Field label="Inbox folder (full path)" className="flex-1">
-                      <Input
-                        value={form.inboxDir}
-                        spellCheck={false}
-                        placeholder="C:\Users\you\OneDrive\PMO-Inbox"
-                        onChange={(event) => set({ inboxDir: event.target.value })}
-                      />
-                    </Field>
-                    {bridge?.chooseFolder && (
-                      <Button
-                        variant="outline"
-                        disabled={busy}
-                        onClick={() => void choose()}
-                      >
-                        Choose folder
-                      </Button>
+          {done ? (
+            <WizardDone form={form} onContinue={onDone} />
+          ) : (
+            <>
+              <header className="flex flex-col gap-4">
+                <WizardStepper step={step} />
+                <div className="flex items-center gap-4">
+                  <StepIllustration step={current.id} />
+                  <div className="flex min-w-0 flex-col gap-2">
+                    <h2 className="text-ink text-[26px] leading-tight font-semibold">
+                      {current.title}
+                    </h2>
+                    <p className="text-ink-muted text-[14px] leading-relaxed">
+                      {STEP_INTRO[current.id]}
+                    </p>
+                    {resumed && step === resumed.step && (
+                      <p className="text-ink-muted text-[13px] leading-relaxed">
+                        Welcome back: your earlier answers are filled in.
+                      </p>
                     )}
                   </div>
-                </>
+                </div>
+              </header>
+
+              {current.id === "who" && (
+                <div className="flex flex-col gap-3.5">
+                  <Field label="Your full name">
+                    <Input
+                      value={form.fullName}
+                      autoComplete="name"
+                      placeholder={suggestions?.nameHint || "Pat Example"}
+                      onChange={(event) => set({ fullName: event.target.value })}
+                    />
+                  </Field>
+                  <Field label="Short names and other spellings (optional, comma separated)">
+                    <Input
+                      value={form.otherNames}
+                      placeholder="Pat, P. Example"
+                      onChange={(event) => set({ otherNames: event.target.value })}
+                    />
+                  </Field>
+                  <Field label="Your work email address">
+                    <Input
+                      type="email"
+                      value={form.email}
+                      autoComplete="email"
+                      placeholder="you@company.com"
+                      aria-invalid={emailProblem ? true : undefined}
+                      onChange={(event) => set({ email: event.target.value })}
+                    />
+                    <FieldError message={emailProblem ?? undefined} />
+                  </Field>
+                </div>
               )}
-            </div>
-          )}
 
-          {last && (
-            <WizardSummary
-              rows={wizardSummary(form)}
-              disabled={busy}
-              onChange={(id) => {
-                setProblems([]);
-                setServerError(null);
-                setStep(FIRST_RUN_STEPS.findIndex((s) => s.id === id));
-              }}
-            />
-          )}
+              {current.id === "timeZone" && (
+                <Field label="Time zone">
+                  <NativeSelect
+                    value={form.timeZone}
+                    onChange={(event) => set({ timeZone: event.target.value })}
+                  >
+                    {!zones.includes(form.timeZone) && (
+                      <option value={form.timeZone}>
+                        {form.timeZone || "Choose..."}
+                      </option>
+                    )}
+                    {zones.map((zone) => (
+                      <option key={zone} value={zone}>
+                        {zone}
+                      </option>
+                    ))}
+                  </NativeSelect>
+                  <span className="text-ink-muted text-[12px]">
+                    Used for due dates and reminders. We preselected the one this computer
+                    uses.
+                  </span>
+                </Field>
+              )}
 
-          {problems.length > 0 && (
-            <div className="flex flex-col gap-1">
-              {problems.map((problem) => (
-                <ErrorLine key={problem}>{problem}</ErrorLine>
-              ))}
-            </div>
-          )}
-          {serverError && <ErrorLine>{serverError}</ErrorLine>}
-          {confirmFolder && (
-            <Button
-              variant="secondary"
-              disabled={busy}
-              className="self-start"
-              onClick={() =>
-                confirmFolder.action === "finish"
-                  ? void finish(true)
-                  : void createFolder(confirmFolder.parent, true)
-              }
-            >
-              Use this folder anyway
-            </Button>
-          )}
+              {current.id === "domains" && (
+                <div className="flex flex-col gap-3.5">
+                  <div className="flex flex-col gap-2">
+                    <Field label="Sender domains you receive work mail from (comma separated)">
+                      <Input
+                        value={form.allowedDomains}
+                        spellCheck={false}
+                        placeholder={domainSuggestion ?? "company.com"}
+                        aria-invalid={allowedParsed.invalid.length > 0 ? true : undefined}
+                        onFocus={(event) => {
+                          if (
+                            domainSuggestion &&
+                            form.allowedDomains === domainSuggestion
+                          ) {
+                            event.currentTarget.select();
+                          }
+                        }}
+                        onChange={(event) => set({ allowedDomains: event.target.value })}
+                      />
+                      <span className="text-ink-muted text-[12px]">
+                        Mail from any other domain is filtered and discarded. Subdomains
+                        match.
+                      </span>
+                    </Field>
+                    {domainSuggestion && form.allowedDomains.trim() === "" && (
+                      <SuggestionRow
+                        suggestion={domainSuggestion}
+                        onUse={() => set({ allowedDomains: domainSuggestion })}
+                      />
+                    )}
+                    <ListFeedback parsed={allowedParsed} noun={DOMAIN_NOUN} />
+                    {form.allowedDomains.trim() === "" && (
+                      <span className="text-ink-muted text-[12px]">
+                        Enter at least one domain, for example company.com.
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <Field label="Domains to always block (optional)">
+                      <Input
+                        value={form.blockedDomains}
+                        spellCheck={false}
+                        placeholder="other-company.example"
+                        aria-invalid={blockedParsed.invalid.length > 0 ? true : undefined}
+                        onChange={(event) => set({ blockedDomains: event.target.value })}
+                      />
+                    </Field>
+                    <ListFeedback parsed={blockedParsed} noun={DOMAIN_NOUN} />
+                  </div>
+                </div>
+              )}
 
-          <div className="flex items-center justify-between pt-1">
-            <Button
-              variant="ghost"
-              disabled={step === 0 || busy}
-              onClick={() => {
-                setProblems([]);
-                setServerError(null);
-                setStep(step - 1);
-              }}
-            >
-              Back
-            </Button>
-            {last ? (
-              <Button disabled={busy} onClick={() => void finish()}>
-                {busy ? "Saving..." : "Finish setup"}
-              </Button>
-            ) : (
-              <span className="flex items-center gap-2">
-                {skippedStepForm(current.id, form, detectedTimeZone()) && (
-                  <Button variant="ghost" onClick={skip}>
-                    Skip for now
-                  </Button>
-                )}
-                <Button onClick={next} disabled={entriesInvalid}>
-                  Next
+              {current.id === "inbox" && (
+                <div className="flex flex-col gap-3.5">
+                  {fixedInbox ? (
+                    <Note tone="neutral">
+                      The inbox folder is fixed by this computer&apos;s settings:{" "}
+                      <span className="font-mono">{fixedInbox}</span>
+                    </Note>
+                  ) : (
+                    <>
+                      {choices.map((choice) => (
+                        <FolderRow
+                          key={choice.path}
+                          choice={choice}
+                          selected={form.inboxDir === choice.path}
+                          busy={busy}
+                          onUse={() => set({ inboxDir: choice.path })}
+                          onCreate={() => void createFolder(choice.parent)}
+                        />
+                      ))}
+                      {suggestions && !suggestions.inbox.oneDriveSignedIn && (
+                        <Note tone="neutral">
+                          OneDrive is not signed in on this computer. Choose a folder
+                          below.
+                        </Note>
+                      )}
+                      {picked && (
+                        <FolderRow
+                          choice={{ path: picked, parent: picked, exists: true }}
+                          selected={form.inboxDir === picked}
+                          busy={busy}
+                          createLabel="Create PMO-Inbox here"
+                          onUse={() => set({ inboxDir: picked })}
+                          onCreate={() => void createFolder(picked)}
+                        />
+                      )}
+                      <div className="flex items-end gap-2">
+                        <Field label="Inbox folder (full path)" className="flex-1">
+                          <Input
+                            value={form.inboxDir}
+                            spellCheck={false}
+                            placeholder="C:\Users\you\OneDrive\PMO-Inbox"
+                            onChange={(event) => set({ inboxDir: event.target.value })}
+                          />
+                        </Field>
+                        {bridge?.chooseFolder && (
+                          <Button
+                            variant="outline"
+                            disabled={busy}
+                            onClick={() => void choose()}
+                          >
+                            Choose folder
+                          </Button>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {last && (
+                <WizardSummary
+                  rows={wizardSummary(form)}
+                  disabled={busy}
+                  onChange={(id) => {
+                    setProblems([]);
+                    setServerError(null);
+                    setStep(FIRST_RUN_STEPS.findIndex((s) => s.id === id));
+                  }}
+                />
+              )}
+
+              {problems.length > 0 && (
+                <div className="flex flex-col gap-1">
+                  {problems.map((problem) => (
+                    <ErrorLine key={problem}>{problem}</ErrorLine>
+                  ))}
+                </div>
+              )}
+              {serverError && <ErrorLine>{serverError}</ErrorLine>}
+              {confirmFolder && (
+                <Button
+                  variant="secondary"
+                  disabled={busy}
+                  className="self-start"
+                  onClick={() =>
+                    confirmFolder.action === "finish"
+                      ? void finish(true)
+                      : void createFolder(confirmFolder.parent, true)
+                  }
+                >
+                  Use this folder anyway
                 </Button>
-              </span>
-            )}
-          </div>
+              )}
+
+              <div className="flex items-center justify-between pt-1">
+                <Button
+                  variant="ghost"
+                  disabled={step === 0 || busy}
+                  onClick={() => {
+                    setProblems([]);
+                    setServerError(null);
+                    setStep(step - 1);
+                  }}
+                >
+                  Back
+                </Button>
+                {last ? (
+                  <Button disabled={busy} onClick={() => void finish()}>
+                    {busy ? "Saving..." : "Finish setup"}
+                  </Button>
+                ) : (
+                  <span className="flex items-center gap-2">
+                    {skippedStepForm(current.id, form, detectedTimeZone()) && (
+                      <Button variant="ghost" onClick={skip}>
+                        Skip for now
+                      </Button>
+                    )}
+                    <Button onClick={next} disabled={entriesInvalid}>
+                      Next
+                    </Button>
+                  </span>
+                )}
+              </div>
+            </>
+          )}
         </div>
       </ScrollBody>
     </div>

@@ -43,6 +43,53 @@ export interface SummaryRow {
 
 const orNotSet = (value: string) => value.trim() || "Not set";
 
+/** The picture on each step's header: a name the wizard maps to an icon. */
+export const STEP_ICON: Record<FirstRunStepId, "user" | "clock" | "at" | "folder"> = {
+  who: "user",
+  timeZone: "clock",
+  domains: "at",
+  inbox: "folder",
+};
+
+export interface NextStep {
+  icon: "folder" | "robot" | "review" | "bell";
+  title: string;
+  text: string;
+}
+
+/** The "You're set" screen: what the app does now, in the order it happens. */
+export function nextSteps(form: FirstRunForm): NextStep[] {
+  const allowed = parseDomainList(form.allowedDomains).valid;
+  const folder = form.inboxDir.trim();
+  return [
+    {
+      icon: "folder",
+      title: "Mail arrives in your inbox folder",
+      text: folder
+        ? `Messages your flow saves to ${folder} are picked up automatically.`
+        : "Messages your flow saves to the inbox folder are picked up automatically.",
+    },
+    {
+      icon: "robot",
+      title: "The local AI drafts a to-do",
+      text:
+        allowed.length > 0
+          ? `Mail from ${allowed.join(", ")} is read on this computer and turned into a draft. Mail from any other domain is filtered out.`
+          : "Mail from your allowed domains is read on this computer and turned into a draft.",
+    },
+    {
+      icon: "review",
+      title: "You approve it in the Review Queue",
+      text: "Nothing becomes a to-do until you approve it. You can edit the draft, or reject it.",
+    },
+    {
+      icon: "bell",
+      title: "Reminders keep you on track",
+      text: "Due and overdue to-dos remind you on this computer. Change this any time in Settings.",
+    },
+  ];
+}
+
 /** The answers in the order of the steps, shown before Finish. */
 export function wizardSummary(form: FirstRunForm): SummaryRow[] {
   const others = splitList(form.otherNames, { commasOnly: true });
