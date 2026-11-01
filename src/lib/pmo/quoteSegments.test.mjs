@@ -1,7 +1,7 @@
 // Run with `pnpm test`. How the original message is cut around the model's quote.
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { quoteSegments } from "./quote.ts";
+import { groundQuote, quoteSegments, verifyQuote } from "./quote.ts";
 
 describe("quoteSegments", () => {
   it("marks the quote between the text before and after it", () => {
@@ -26,6 +26,28 @@ describe("quoteSegments", () => {
     assert.deepEqual(
       segments.filter((s) => s.mark).map((s) => s.text),
       ["it’s   due\nnext week"],
+    );
+  });
+
+  it("ignores letter case and marks the message's own spelling", () => {
+    const body = "Priya, please send the invoice for October to the client by Friday.";
+    assert.deepEqual(
+      quoteSegments(body, "Please send the invoice for October to the client by Friday.")
+        .filter((s) => s.mark)
+        .map((s) => s.text),
+      ["please send the invoice for October to the client by Friday."],
+    );
+    assert.equal(verifyQuote(body, "PLEASE SEND THE INVOICE"), true);
+    assert.equal(verifyQuote(body, "please send the report"), false);
+  });
+
+  it("grounds a quote that differs only in case", () => {
+    assert.deepEqual(
+      groundQuote(
+        "Priya, please send the invoice by Friday.",
+        "Please send the invoice by Friday.",
+      ),
+      { quote: "Please send the invoice by Friday.", verified: true },
     );
   });
 

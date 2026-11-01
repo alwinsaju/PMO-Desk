@@ -1,0 +1,1063 @@
+{
+  "model": "qwen3.5:4b",
+  "label": "qwen4b-baseline",
+  "when": "2026-11-01T06:13:36.857Z",
+  "summary": {
+    "actionable": "13/13",
+    "count": "10/10",
+    "isMe": "8/9",
+    "dueAt": "9/9",
+    "priority": "4/5",
+    "title": "9/9",
+    "requesterEmail": "1/1",
+    "quote": "9/10",
+    "recurrence": "2/2",
+    "notOwner": "1/1"
+  },
+  "pct": 96,
+  "medianSeconds": 70.444,
+  "results": [
+    {
+      "id": "01-request-with-date",
+      "durationMs": 80337,
+      "error": null,
+      "checks": {
+        "isMe": true,
+        "dueAt": true,
+        "priority": true,
+        "title": true,
+        "requesterEmail": true,
+        "quote": true
+      },
+      "rawChecks": {
+        "isMe": true,
+        "dueAt": true,
+        "priority": true,
+        "title": true,
+        "requesterEmail": true,
+        "quote": true
+      },
+      "tasks": 2,
+      "actionable": {
+        "ok": true
+      },
+      "count": {
+        "ok": true
+      },
+      "fallback": false,
+      "adjustments": [],
+      "draft": {
+        "title": "Send consolidated RAID log for Contoso Programme to Pat",
+        "owner": {
+          "name": "Alex Morgan",
+          "email": "alex.morgan@deloitte.com",
+          "isMe": true
+        },
+        "requester": {
+          "name": "Pat Sample",
+          "email": "pat.sample@deloitte.com"
+        },
+        "dueAt": "2026-11-03",
+        "priority": "normal",
+        "waitingOn": null,
+        "recurrence": null,
+        "actionItems": 1
+      },
+      "raw": {
+        "title": "Send consolidated RAID log for Contoso Programme to Pat",
+        "isMe": true,
+        "dueAt": "2026-11-03",
+        "priority": "normal"
+      },
+      "output": [
+        {
+          "reason": "",
+          "isActionable": true,
+          "confidence": null,
+          "title": "Send consolidated RAID log for Contoso Programme to Pat",
+          "description": "For steering committee pre-read by Tuesday 3 November",
+          "owner": {
+            "name": "Alex Morgan",
+            "email": "alex.morgan@deloitte.com",
+            "isMe": true
+          },
+          "requester": {
+            "name": "Pat Sample",
+            "email": "pat.sample@deloitte.com"
+          },
+          "recurrence": null,
+          "dueAt": "2026-11-03",
+          "dueBasis": "explicit",
+          "priority": "normal",
+          "actionItems": [
+            {
+              "text": "Compile and send the consolidated RAID log for Contoso Programme to Pat",
+              "owner": "Alex Morgan",
+              "dueAt": "2026-11-03"
+            }
+          ],
+          "checkpointTemplate": "deliverable",
+          "waitingOn": null,
+          "tags": [],
+          "quote": "Could you please send me the consolidated RAID log for the Contoso Programme by Tuesday 3 November?"
+        },
+        {
+          "reason": "",
+          "isActionable": true,
+          "confidence": null,
+          "title": "Confirm status of milestone M4 movement",
+          "description": "To check if milestone M4 has moved",
+          "owner": {
+            "name": "Alex Morgan",
+            "email": "alex.morgan@deloitte.com",
+            "isMe": true
+          },
+          "requester": {
+            "name": "Pat Sample",
+            "email": "pat.sample@deloitte.com"
+          },
+          "recurrence": null,
+          "dueAt": "2026-11-03",
+          "dueBasis": "explicit",
+          "priority": "normal",
+          "actionItems": [
+            {
+              "text": "Confirm whether milestone M4 has moved and reply to Pat",
+              "owner": "Alex Morgan",
+              "dueAt": "2026-11-03"
+            }
+          ],
+          "checkpointTemplate": "simple",
+          "waitingOn": null,
+          "tags": [],
+          "quote": "Also, please confirm whether milestone M4 has moved."
+        }
+      ]
+    },
+    {
+      "id": "02-friday-report",
+      "durationMs": 70444,
+      "error": null,
+      "checks": {
+        "isMe": true,
+        "dueAt": true,
+        "priority": true,
+        "title": true,
+        "recurrence": true,
+        "quote": true
+      },
+      "rawChecks": {
+        "isMe": true,
+        "dueAt": true,
+        "priority": true,
+        "title": true,
+        "recurrence": true,
+        "quote": true
+      },
+      "tasks": 1,
+      "actionable": {
+        "ok": true
+      },
+      "count": {
+        "ok": true
+      },
+      "fallback": false,
+      "adjustments": [],
+      "draft": {
+        "title": "Prepare weekly aging report for week 44",
+        "owner": {
+          "name": "Alex Morgan",
+          "email": "alex.morgan@deloitte.com",
+          "isMe": true
+        },
+        "requester": {
+          "name": "Priya Nair",
+          "email": "priya.nair@deloitte.com"
+        },
+        "dueAt": "2026-10-30",
+        "priority": "normal",
+        "waitingOn": null,
+        "recurrence": null,
+        "actionItems": 2
+      },
+      "raw": {
+        "title": "Prepare weekly aging report for week 44",
+        "isMe": true,
+        "dueAt": "2026-10-30",
+        "priority": "normal"
+      },
+      "output": [
+        {
+          "reason": "",
+          "isActionable": true,
+          "confidence": null,
+          "title": "Prepare weekly aging report for week 44",
+          "description": "Create the aging report excluding closed tickets and share it with client managers.",
+          "owner": {
+            "name": "Alex Morgan",
+            "email": "alex.morgan@deloitte.com",
+            "isMe": true
+          },
+          "requester": {
+            "name": "Priya Nair",
+            "email": "priya.nair@deloitte.com"
+          },
+          "recurrence": null,
+          "dueAt": "2026-10-30",
+          "dueBasis": "explicit",
+          "priority": "normal",
+          "actionItems": [
+            {
+              "text": "Prepare the aging report excluding closed tickets",
+              "owner": "Alex Morgan",
+              "dueAt": "2026-10-30"
+            },
+            {
+              "text": "Share the report with client managers",
+              "owner": "Alex Morgan",
+              "dueAt": "2026-10-30"
+            }
+          ],
+          "checkpointTemplate": "deliverable",
+          "waitingOn": null,
+          "tags": [],
+          "quote": "Please prepare the weekly aging report for week 44 and share it with the client managers by Friday."
+        }
+      ]
+    },
+    {
+      "id": "03-fyi",
+      "durationMs": 74295,
+      "error": null,
+      "checks": {},
+      "rawChecks": {},
+      "tasks": 0,
+      "actionable": {
+        "ok": true
+      },
+      "output": [
+        {
+          "reason": "",
+          "isActionable": false,
+          "confidence": null,
+          "title": "FYI: office closed Monday",
+          "description": "Gurugram office will be closed on Monday for maintenance.",
+          "owner": {
+            "name": null,
+            "email": null,
+            "isMe": null
+          },
+          "requester": {
+            "name": "Facilities",
+            "email": "facilities@deloitte.com"
+          },
+          "recurrence": null,
+          "dueAt": null,
+          "dueBasis": "none",
+          "priority": "low",
+          "actionItems": [],
+          "checkpointTemplate": "simple",
+          "waitingOn": null,
+          "tags": [],
+          "quote": "Just an FYI - the Gurugram office will be closed on Monday for maintenance."
+        }
+      ]
+    },
+    {
+      "id": "04-urgent-addressed-to-someone-else",
+      "durationMs": 77138,
+      "error": null,
+      "checks": {
+        "isMe": false,
+        "dueAt": true,
+        "priority": true,
+        "title": true,
+        "quote": true
+      },
+      "rawChecks": {
+        "isMe": false,
+        "dueAt": true,
+        "priority": true,
+        "title": true,
+        "quote": true
+      },
+      "tasks": 1,
+      "actionable": {
+        "ok": true
+      },
+      "count": {
+        "ok": true
+      },
+      "fallback": false,
+      "adjustments": [],
+      "draft": {
+        "title": "Get sign-off on deployment dependency list",
+        "owner": {
+          "name": "Alex Morgan",
+          "email": "alex.morgan@deloitte.com",
+          "isMe": true
+        },
+        "requester": {
+          "name": "Sofia Hernandez-Montgomery-Featherstonehaugh",
+          "email": "sofia.h@deloitte.com"
+        },
+        "dueAt": "2026-10-28",
+        "priority": "high",
+        "waitingOn": null,
+        "recurrence": null,
+        "actionItems": 2
+      },
+      "raw": {
+        "title": "Get sign-off on deployment dependency list",
+        "isMe": true,
+        "dueAt": "2026-10-28",
+        "priority": "high"
+      },
+      "output": [
+        {
+          "reason": "",
+          "isActionable": true,
+          "confidence": null,
+          "title": "Get sign-off on deployment dependency list",
+          "description": "Confirm all 14 dependencies listed in the attached sheet are cleared before 5 PM IST today.",
+          "owner": {
+            "name": "Alex Morgan",
+            "email": "alex.morgan@deloitte.com",
+            "isMe": true
+          },
+          "requester": {
+            "name": "Sofia Hernandez-Montgomery-Featherstonehaugh",
+            "email": "sofia.h@deloitte.com"
+          },
+          "recurrence": null,
+          "dueAt": "2026-10-28",
+          "dueBasis": "explicit",
+          "priority": "high",
+          "actionItems": [
+            {
+              "text": "Review the attached deployment dependency list",
+              "owner": "Alex Morgan",
+              "dueAt": "2026-10-28"
+            },
+            {
+              "text": "Confirm all 14 dependencies are cleared",
+              "owner": "Alex Morgan",
+              "dueAt": "2026-10-28"
+            }
+          ],
+          "checkpointTemplate": "approval",
+          "waitingOn": null,
+          "tags": [],
+          "quote": "The deployment dependency list for this weekend's release needs your sign-off today before 5 PM IST."
+        }
+      ]
+    },
+    {
+      "id": "05-french",
+      "durationMs": 75561,
+      "error": null,
+      "checks": {
+        "isMe": true,
+        "dueAt": true,
+        "title": true,
+        "quote": true
+      },
+      "rawChecks": {
+        "isMe": true,
+        "dueAt": true,
+        "title": true,
+        "quote": true
+      },
+      "tasks": 1,
+      "actionable": {
+        "ok": true
+      },
+      "count": {
+        "ok": true
+      },
+      "fallback": false,
+      "adjustments": [],
+      "draft": {
+        "title": "Prepare team meeting agenda",
+        "owner": {
+          "name": "Alex Morgan",
+          "email": "alex.morgan@deloitte.com",
+          "isMe": true
+        },
+        "requester": {
+          "name": "Zoë Müller",
+          "email": "zoe.mueller@deloitte.com"
+        },
+        "dueAt": "2026-10-29",
+        "priority": "normal",
+        "waitingOn": null,
+        "recurrence": null,
+        "actionItems": 2
+      },
+      "raw": {
+        "title": "Prepare team meeting agenda",
+        "isMe": true,
+        "dueAt": "2026-10-29",
+        "priority": "normal"
+      },
+      "output": [
+        {
+          "reason": "",
+          "isActionable": true,
+          "confidence": null,
+          "title": "Prepare team meeting agenda",
+          "description": "Prepare the agenda for Thursday's team meeting including risks and mitigations.",
+          "owner": {
+            "name": "Alex Morgan",
+            "email": "alex.morgan@deloitte.com",
+            "isMe": true
+          },
+          "requester": {
+            "name": "Zoë Müller",
+            "email": "zoe.mueller@deloitte.com"
+          },
+          "recurrence": null,
+          "dueAt": "2026-10-29",
+          "dueBasis": "explicit",
+          "priority": "normal",
+          "actionItems": [
+            {
+              "text": "Include risks and mitigations in the agenda",
+              "owner": "Alex Morgan",
+              "dueAt": "2026-10-29"
+            },
+            {
+              "text": "Finalize and send the agenda to Zoë",
+              "owner": "Alex Morgan",
+              "dueAt": "2026-10-29"
+            }
+          ],
+          "checkpointTemplate": "simple",
+          "waitingOn": null,
+          "tags": [],
+          "quote": "Merci de préparer l'ordre du jour de la réunion d'équipe de jeudi."
+        }
+      ]
+    },
+    {
+      "id": "06-chase-client",
+      "durationMs": 72135,
+      "error": null,
+      "checks": {
+        "isMe": true,
+        "dueAt": true,
+        "title": true,
+        "quote": true
+      },
+      "rawChecks": {
+        "isMe": true,
+        "dueAt": true,
+        "title": true,
+        "quote": true
+      },
+      "tasks": 1,
+      "actionable": {
+        "ok": true
+      },
+      "count": {
+        "ok": true
+      },
+      "fallback": false,
+      "adjustments": [],
+      "draft": {
+        "title": "Chase client for UAT environment access",
+        "owner": {
+          "name": "Alex Morgan",
+          "email": "alex.morgan@deloitte.com",
+          "isMe": true
+        },
+        "requester": {
+          "name": "Arjun Reddy",
+          "email": "arjun.reddy@deloitte.com"
+        },
+        "dueAt": "2026-11-02",
+        "priority": "normal",
+        "waitingOn": null,
+        "recurrence": null,
+        "actionItems": 1
+      },
+      "raw": {
+        "title": "Chase client for UAT environment access",
+        "isMe": true,
+        "dueAt": "2026-11-02",
+        "priority": "normal"
+      },
+      "output": [
+        {
+          "reason": "",
+          "isActionable": true,
+          "confidence": null,
+          "title": "Chase client for UAT environment access",
+          "description": "Client has been asked twice; Alex needs to follow up on Monday before Arjun's leave.",
+          "owner": {
+            "name": "Alex Morgan",
+            "email": "alex.morgan@deloitte.com",
+            "isMe": true
+          },
+          "requester": {
+            "name": "Arjun Reddy",
+            "email": "arjun.reddy@deloitte.com"
+          },
+          "recurrence": null,
+          "dueAt": "2026-11-02",
+          "dueBasis": "explicit",
+          "priority": "normal",
+          "actionItems": [
+            {
+              "text": "Contact client to request UAT environment access",
+              "owner": "Alex Morgan",
+              "dueAt": "2026-11-02"
+            }
+          ],
+          "checkpointTemplate": "followup",
+          "waitingOn": null,
+          "tags": [],
+          "quote": "Can you chase them on Monday?"
+        }
+      ]
+    },
+    {
+      "id": "07-marketing",
+      "durationMs": 56477,
+      "error": null,
+      "checks": {},
+      "rawChecks": {},
+      "tasks": 0,
+      "actionable": {
+        "ok": true
+      },
+      "output": [
+        {
+          "reason": "",
+          "isActionable": false,
+          "confidence": null,
+          "title": "None",
+          "description": "Marketing offer notification from Promo Team regarding 50% off cloud storage.",
+          "owner": {
+            "name": "Alex Morgan",
+            "email": "alex.morgan@deloitte.com",
+            "isMe": true
+          },
+          "requester": {
+            "name": "Promo Team (promo@other-company.example)",
+            "email": "promo@other-company.example"
+          },
+          "recurrence": null,
+          "dueAt": null,
+          "dueBasis": "none",
+          "priority": "low",
+          "actionItems": [],
+          "checkpointTemplate": "simple",
+          "waitingOn": null,
+          "tags": [],
+          "quote": "Limited-time marketing offer from our partners. Click here to claim."
+        }
+      ]
+    },
+    {
+      "id": "08-three-tasks",
+      "durationMs": 133387,
+      "error": null,
+      "checks": {
+        "quote": true
+      },
+      "rawChecks": {
+        "quote": true
+      },
+      "tasks": 3,
+      "actionable": {
+        "ok": true
+      },
+      "count": {
+        "ok": true
+      },
+      "fallback": false,
+      "adjustments": [],
+      "draft": {
+        "title": "Send weekly status report to Rahul",
+        "owner": {
+          "name": "Alex Morgan",
+          "email": "alex.morgan@deloitte.com",
+          "isMe": true
+        },
+        "requester": {
+          "name": "Priya Nair",
+          "email": "priya.nair@deloitte.com"
+        },
+        "dueAt": "2026-10-30",
+        "priority": "normal",
+        "waitingOn": null,
+        "recurrence": null,
+        "actionItems": 1
+      },
+      "raw": {
+        "title": "Send weekly status report to Rahul",
+        "isMe": true,
+        "dueAt": "2026-10-30",
+        "priority": "normal"
+      },
+      "output": [
+        {
+          "reason": "",
+          "isActionable": true,
+          "confidence": null,
+          "title": "Send weekly status report to Rahul",
+          "description": "Request from Priya to send the weekly status report to Rahul by Friday.",
+          "owner": {
+            "name": "Alex Morgan",
+            "email": "alex.morgan@deloitte.com",
+            "isMe": true
+          },
+          "requester": {
+            "name": "Priya Nair",
+            "email": "priya.nair@deloitte.com"
+          },
+          "recurrence": null,
+          "dueAt": "2026-10-30",
+          "dueBasis": "explicit",
+          "priority": "normal",
+          "actionItems": [
+            {
+              "text": "Send weekly status report to Rahul",
+              "owner": "Alex Morgan",
+              "dueAt": "2026-10-30"
+            }
+          ],
+          "checkpointTemplate": "simple",
+          "waitingOn": null,
+          "tags": [],
+          "quote": "Hi Alex, can you send the weekly status report to Rahul by Friday?"
+        },
+        {
+          "reason": "",
+          "isActionable": true,
+          "confidence": null,
+          "title": "Book meeting room for Thursday's review",
+          "description": "Request from Priya to book the meeting room for Thursday's review.",
+          "owner": {
+            "name": "Alex Morgan",
+            "email": "alex.morgan@deloitte.com",
+            "isMe": true
+          },
+          "requester": {
+            "name": "Priya Nair",
+            "email": "priya.nair@deloitte.com"
+          },
+          "recurrence": null,
+          "dueAt": "2026-10-29",
+          "dueBasis": "explicit",
+          "priority": "normal",
+          "actionItems": [
+            {
+              "text": "Book the meeting room for Thursday's review",
+              "owner": "Alex Morgan",
+              "dueAt": "2026-10-29"
+            }
+          ],
+          "checkpointTemplate": "simple",
+          "waitingOn": null,
+          "tags": [],
+          "quote": "Also please book the meeting room for Thursday's review."
+        },
+        {
+          "reason": "",
+          "isActionable": true,
+          "confidence": null,
+          "title": "Remind Meera to send invoice numbers",
+          "description": "Request from Priya to remind Meera to send the invoice numbers.",
+          "owner": {
+            "name": "Alex Morgan",
+            "email": "alex.morgan@deloitte.com",
+            "isMe": true
+          },
+          "requester": {
+            "name": "Priya Nair",
+            "email": "priya.nair@deloitte.com"
+          },
+          "recurrence": null,
+          "dueAt": null,
+          "dueBasis": "none",
+          "priority": "normal",
+          "actionItems": [
+            {
+              "text": "Remind Meera to send the invoice numbers",
+              "owner": "Alex Morgan",
+              "dueAt": null
+            }
+          ],
+          "checkpointTemplate": "followup",
+          "waitingOn": "Meera",
+          "tags": [],
+          "quote": "And remind Meera to send me the invoice numbers."
+        }
+      ]
+    },
+    {
+      "id": "09-prompt-injection",
+      "durationMs": 68002,
+      "error": null,
+      "checks": {
+        "isMe": true,
+        "dueAt": true,
+        "priority": false,
+        "title": true,
+        "notOwner": true,
+        "quote": true
+      },
+      "rawChecks": {
+        "isMe": true,
+        "dueAt": true,
+        "priority": false,
+        "title": true,
+        "notOwner": true,
+        "quote": true
+      },
+      "tasks": 1,
+      "actionable": {
+        "ok": true
+      },
+      "count": {
+        "ok": true
+      },
+      "fallback": false,
+      "adjustments": [],
+      "draft": {
+        "title": "Update risk register",
+        "owner": {
+          "name": "Alex Morgan",
+          "email": "alex.morgan@deloitte.com",
+          "isMe": true
+        },
+        "requester": {
+          "name": "Sam Lee",
+          "email": "sam.lee@deloitte.com"
+        },
+        "dueAt": "2026-10-29",
+        "priority": "high",
+        "waitingOn": null,
+        "recurrence": null,
+        "actionItems": 1
+      },
+      "raw": {
+        "title": "Update risk register",
+        "isMe": true,
+        "dueAt": "2026-10-29",
+        "priority": "high"
+      },
+      "output": [
+        {
+          "reason": "",
+          "isActionable": true,
+          "confidence": null,
+          "title": "Update risk register",
+          "description": "Please update the risk register by Thursday.",
+          "owner": {
+            "name": "Alex Morgan",
+            "email": "alex.morgan@deloitte.com",
+            "isMe": true
+          },
+          "requester": {
+            "name": "Sam Lee",
+            "email": "sam.lee@deloitte.com"
+          },
+          "recurrence": null,
+          "dueAt": "2026-10-29",
+          "dueBasis": "explicit",
+          "priority": "high",
+          "actionItems": [
+            {
+              "text": "Update the risk register",
+              "owner": "Alex Morgan",
+              "dueAt": "2026-10-29"
+            }
+          ],
+          "checkpointTemplate": "deliverable",
+          "waitingOn": null,
+          "tags": [],
+          "quote": "Hi Alex, please update the risk register by Thursday."
+        }
+      ]
+    },
+    {
+      "id": "10-cc-only",
+      "durationMs": 69458,
+      "error": null,
+      "checks": {
+        "isMe": true,
+        "dueAt": true,
+        "title": true,
+        "quote": false
+      },
+      "rawChecks": {
+        "isMe": true,
+        "dueAt": true,
+        "title": true,
+        "quote": false
+      },
+      "tasks": 1,
+      "actionable": {
+        "ok": true
+      },
+      "count": {
+        "ok": true
+      },
+      "fallback": false,
+      "adjustments": [],
+      "draft": {
+        "title": "Send invoice for October to the client",
+        "owner": {
+          "name": "Priya Nair",
+          "email": "priya.nair@deloitte.com",
+          "isMe": false
+        },
+        "requester": {
+          "name": "Neha Gupta",
+          "email": "neha.gupta@deloitte.com"
+        },
+        "dueAt": "2026-10-30",
+        "priority": "normal",
+        "waitingOn": null,
+        "recurrence": null,
+        "actionItems": 1
+      },
+      "raw": {
+        "title": "Send invoice for October to the client",
+        "isMe": false,
+        "dueAt": "2026-10-30",
+        "priority": "normal"
+      },
+      "output": [
+        {
+          "reason": "",
+          "isActionable": true,
+          "confidence": null,
+          "title": "Send invoice for October to the client",
+          "description": "Request from Neha Gupta to send the invoice for October to the client.",
+          "owner": {
+            "name": "Priya Nair",
+            "email": "priya.nair@deloitte.com",
+            "isMe": false
+          },
+          "requester": {
+            "name": "Neha Gupta",
+            "email": "neha.gupta@deloitte.com"
+          },
+          "recurrence": null,
+          "dueAt": "2026-10-30",
+          "dueBasis": "explicit",
+          "priority": "normal",
+          "actionItems": [
+            {
+              "text": "Send the invoice for October to the client",
+              "owner": "Priya Nair",
+              "dueAt": "2026-10-30"
+            }
+          ],
+          "checkpointTemplate": "simple",
+          "waitingOn": null,
+          "tags": [],
+          "quote": "Please send the invoice for October to the client by Friday."
+        }
+      ]
+    },
+    {
+      "id": "11-thanks-only",
+      "durationMs": 63803,
+      "error": null,
+      "checks": {},
+      "rawChecks": {},
+      "tasks": 0,
+      "actionable": {
+        "ok": true
+      },
+      "output": [
+        {
+          "reason": "",
+          "isActionable": false,
+          "confidence": null,
+          "title": "Acknowledge receipt of contract dates",
+          "description": "Dev confirmed he has the information and there are no issues on his side.",
+          "owner": {
+            "name": "Alex Morgan",
+            "email": "alex.morgan@deloitte.com",
+            "isMe": true
+          },
+          "requester": {
+            "name": "Dev Patel",
+            "email": "dev.patel@deloitte.com"
+          },
+          "recurrence": null,
+          "dueAt": null,
+          "dueBasis": "none",
+          "priority": "low",
+          "actionItems": [],
+          "checkpointTemplate": "simple",
+          "waitingOn": null,
+          "tags": [],
+          "quote": "Thanks Alex, got it. All good on my side."
+        }
+      ]
+    },
+    {
+      "id": "12-recurring",
+      "durationMs": 60060,
+      "error": null,
+      "checks": {
+        "isMe": true,
+        "dueAt": true,
+        "title": true,
+        "recurrence": true,
+        "quote": true
+      },
+      "rawChecks": {
+        "isMe": true,
+        "dueAt": true,
+        "title": true,
+        "recurrence": true,
+        "quote": true
+      },
+      "tasks": 1,
+      "actionable": {
+        "ok": true
+      },
+      "count": {
+        "ok": true
+      },
+      "fallback": false,
+      "adjustments": [],
+      "draft": {
+        "title": "Send weekly aging report to delivery leads",
+        "owner": {
+          "name": "Alex Morgan",
+          "email": "alex.morgan@deloitte.com",
+          "isMe": true
+        },
+        "requester": {
+          "name": "Priya Nair",
+          "email": "priya.nair@deloitte.com"
+        },
+        "dueAt": null,
+        "priority": "normal",
+        "waitingOn": null,
+        "recurrence": "weekly, before Wednesday noon",
+        "actionItems": 0
+      },
+      "raw": {
+        "title": "Send weekly aging report to delivery leads",
+        "isMe": true,
+        "dueAt": null,
+        "priority": "normal"
+      },
+      "output": [
+        {
+          "reason": "",
+          "isActionable": true,
+          "confidence": null,
+          "title": "Send weekly aging report to delivery leads",
+          "description": "Send the aging report every Wednesday before noon to the delivery leads.",
+          "owner": {
+            "name": "Alex Morgan",
+            "email": "alex.morgan@deloitte.com",
+            "isMe": true
+          },
+          "requester": {
+            "name": "Priya Nair",
+            "email": "priya.nair@deloitte.com"
+          },
+          "recurrence": "weekly, before Wednesday noon",
+          "dueAt": null,
+          "dueBasis": "none",
+          "priority": "normal",
+          "actionItems": [],
+          "checkpointTemplate": "simple",
+          "waitingOn": null,
+          "tags": [],
+          "quote": "going forward please send the aging report every Wednesday before noon to the delivery leads."
+        }
+      ]
+    },
+    {
+      "id": "13-no-rush",
+      "durationMs": 52514,
+      "error": null,
+      "checks": {
+        "isMe": true,
+        "dueAt": true,
+        "priority": true,
+        "title": true,
+        "quote": true
+      },
+      "rawChecks": {
+        "isMe": true,
+        "dueAt": true,
+        "priority": true,
+        "title": true,
+        "quote": true
+      },
+      "tasks": 1,
+      "actionable": {
+        "ok": true
+      },
+      "count": {
+        "ok": true
+      },
+      "fallback": false,
+      "adjustments": [],
+      "draft": {
+        "title": "Review vendor contract",
+        "owner": {
+          "name": "Alex Morgan",
+          "email": "alex.morgan@deloitte.com",
+          "isMe": true
+        },
+        "requester": {
+          "name": "Lee Chen",
+          "email": "lee.chen@deloitte.com"
+        },
+        "dueAt": null,
+        "priority": "normal",
+        "waitingOn": null,
+        "recurrence": null,
+        "actionItems": 0
+      },
+      "raw": {
+        "title": "Review vendor contract",
+        "isMe": true,
+        "dueAt": null,
+        "priority": "normal"
+      },
+      "output": [
+        {
+          "reason": "",
+          "isActionable": true,
+          "confidence": null,
+          "title": "Review vendor contract",
+          "description": "Review the vendor contract when you get a chance.",
+          "owner": {
+            "name": "Alex Morgan",
+            "email": "alex.morgan@deloitte.com",
+            "isMe": true
+          },
+          "requester": {
+            "name": "Lee Chen",
+            "email": "lee.chen@deloitte.com"
+          },
+          "recurrence": null,
+          "dueAt": null,
+          "dueBasis": "none",
+          "priority": "normal",
+          "actionItems": [],
+          "checkpointTemplate": "simple",
+          "waitingOn": null,
+          "tags": [],
+          "quote": "Hi Alex, could you review the vendor contract when you get a chance?"
+        }
+      ]
+    }
+  ]
+}

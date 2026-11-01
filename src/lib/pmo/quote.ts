@@ -1,7 +1,9 @@
 // Hallucination guard for the model's `quote` field: is it really in the
-// message? Whitespace is normalised (and curly quotes straightened, which
-// mail clients do to text); nothing else is forgiven. Also used by the UI to
-// highlight the quote inside the original message.
+// message? Whitespace is normalised, curly quotes are straightened (mail clients
+// do that to text) and letter case is ignored (a model often capitalises the
+// first word after a greeting: "Priya, please..." -> "Please..."); nothing else
+// is forgiven. Also used by the UI to highlight the quote inside the original
+// message.
 interface Normalised {
   text: string;
   /** map[i] = index in the source string of normalised char i. */
@@ -22,6 +24,9 @@ function normalise(source: string): Normalised {
     }
     if (ch === "\u2018" || ch === "\u2019") ch = "'";
     else if (ch === "\u201c" || ch === "\u201d") ch = '"';
+    // Only a one-for-one lower-casing keeps the index map aligned.
+    const folded = ch.toLowerCase();
+    if (folded.length === ch.length) ch = folded;
     text += ch;
     map.push(i);
   }

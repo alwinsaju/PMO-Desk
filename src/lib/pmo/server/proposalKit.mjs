@@ -72,6 +72,9 @@ export function proposalKit() {
       const base = JSON.parse(
         await readFile(path.join(examplesDir, "outlook-task.json"), "utf8"),
       );
+      // The example opens "Hi Alwin,"; these tests set the user up under other names, and a
+      // greeting that names somebody else would (rightly) make the draft that person's.
+      base.body.text = base.body.text.replace(/^Hi Alwin,/, "Hi,");
       kit.counter++;
       const file = path.join(kit.inboxDir, `m${kit.counter}.json`);
       await mkdir(kit.inboxDir, { recursive: true });
