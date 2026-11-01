@@ -6,7 +6,7 @@ import { displayText } from "@/lib/pmo/preprocess";
 import { locateQuote } from "@/lib/pmo/quote";
 import type { Intake } from "@/lib/pmo/types";
 import { fetchRaw } from "./api";
-import { ScrollBody, SourceBadge } from "./parts";
+import { ScrollBody, SourceBadge, Spinner } from "./parts";
 
 interface OriginalMessageProps {
   intakeId: string;
@@ -61,9 +61,17 @@ export function OriginalMessage({ intakeId, quote, className }: OriginalMessageP
     );
   if (!intake)
     return (
-      <p role="status" className="text-ink-muted p-3 text-[13px]">
-        Loading original…
-      </p>
+      <div role="status" aria-live="polite" className="flex flex-col gap-4 p-3">
+        <p className="text-ink-soft flex items-center gap-2 text-[13px] font-semibold">
+          <Spinner />
+          Loading original message…
+        </p>
+        <div aria-hidden className="flex flex-col gap-2.5 motion-safe:animate-pulse">
+          {["w-3/4", "w-full", "w-5/6", "w-2/3"].map((width) => (
+            <span key={width} className={`bg-chip h-3 rounded-full ${width}`} />
+          ))}
+        </div>
+      </div>
     );
 
   const text = displayText(intake);

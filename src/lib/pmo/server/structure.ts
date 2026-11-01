@@ -367,14 +367,17 @@ export class StructuringWorker {
           // over-assigned priority, duplicate steps, a misread "waiting on").
           // The review form starts from `draft`; `rawDraft` keeps what the
           // model said.
-          const { draft, adjustments } = sanitizeDraft(rawDraft, {
+          const { draft, adjustments, fallback } = sanitizeDraft(rawDraft, {
             now: this.now(),
             timeZone: config.reminders.timeZone,
             text: `${intake.subject}
 ${bodyText}`,
             me: config.me,
+            subject: intake.subject,
+            bodyText,
+            sender: { name: intake.sender.name, address: intake.sender.address },
           });
-          return { task, grounded, rawDraft, draft, adjustments };
+          return { task, grounded, rawDraft, draft, adjustments, fallback };
         });
         // One message can hold several independent tasks: drop duplicates,
         // FYIs and over-split sub-steps, cap the count.
@@ -390,6 +393,7 @@ ${bodyText}`,
             rawDraft: c.rawDraft,
             isActionable: c.task.isActionable,
             confidence: c.task.confidence,
+            structuring: c.fallback ? "fallback" : "ok",
             quoteVerified: c.grounded.verified,
             replyBelowQuote: replyBelowQuote || undefined,
             part: total > 1 ? { index, total } : null,
@@ -575,6 +579,7 @@ ${bodyText}`,
       rawDraft: null,
       isActionable: null,
       quoteVerified: null,
+      structuring: undefined,
       ai: { model: null, durationMs: null, attempts: 0, error: null },
     }));
     if (next) await this.store.audit("update-separate", { proposalId: id, why });
@@ -617,6 +622,7 @@ ${bodyText}`,
       rawDraft: null,
       isActionable: null,
       quoteVerified: null,
+      structuring: undefined,
       ai: { model: null, durationMs: null, attempts: 0, error: null },
     }));
     if (!next) return { ok: false, reason: "That item changed. Try again." };

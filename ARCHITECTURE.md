@@ -1090,7 +1090,8 @@ The whole app in one place (the sections below are the detail, phase by phase).
   or matched; a filtered message's body is dropped.
 - **Identity and time come from the server.** `approvedBy`, every audit line and every
   sign-off stamp use the OS user of the machine running the server and the server's clock; a
-  request that tries to send either is refused.
+  request that tries to send either is refused. That is who *pressed the button*; who *owns*
+  a to-do is a separate field, defaulted from the names given at setup (`config.me`).
 - **Data stays on this computer.** Records are JSON files in the data folder (outside the
   repo), with a retention purge for logs and message text and an `audit.jsonl` of every
   change.
@@ -1163,7 +1164,9 @@ src/lib/pmo/            Pure logic, one co-located *.test.mjs per area
                           received day, urgency is judged against today.
   sanitizeDraft.ts        The deterministic clean-up of the model's answer (see
                           "Structuring: prompt v3 and the app's clean-up" below).
-                          Pure, client-safe, unit-tested.
+                          Pure, client-safe, unit-tested. Uses fallbackTitle.ts
+                          (subject / first-sentence fallback titles, greeting detection)
+                          and ownerDefault.ts ("mine" = the names given at setup).
   splitTasks.ts           Prompt v4: one message may hold several tasks. The model
                           answers a list; `asTaskList` normalises a bare answer,
                           `selectTasks` drops near-duplicates and over-split
@@ -1390,13 +1393,32 @@ the worker's clock:
    name for a person's name; never the first word of a group such as "Finance team") and no
    waiting wording (asked, waiting for/on, awaiting, chase, follow up, reminder, pending from,
    get back, revert) appears within about 100 characters of that name in the message.
-5. Tags are trimmed, de-duplicated and capped at 4 (not reported in `adjustments`).
+5. A title that is no title (empty, only a greeting such as "Hi," / "Bonjour,", a bare name
+   such as "Rohan,", or only the sender's or the user's name) is replaced by
+   `deriveFallbackTitle` (`fallbackTitle.ts`): the subject with `RE:`/`FW:`/`Fwd:`/`[External]`
+   prefixes removed, else the first meaningful sentence of the sender's own words (English and
+   French greetings, pleasantries, signature and quoted reply skipped), at most 90 characters
+   (200 by default in the helper). A description that is only a greeting is replaced by that
+   sentence. Either replacement sets `proposal.structuring = "fallback"` (absent or "ok" = the
+   model's answer was usable; old records have no field and read as "ok"). The queue row then
+   shows "AI could not structure" instead of "ready", and the review dialog opens with a warning
+   notice. A failed model call is the separate `failed` status, as before.
+6. A draft that is mine (`owner.isMe`, or the owner is one of `config.me`) is owned by the first
+   configured name and email (`ownerDefault.ts`), unless it already carries one of mine; a blank
+   is filled silently, a different name the model made up is replaced and noted. With nothing
+   configured the owner is left as the model gave it (never the Windows account name). Identity
+   rule: `approvedBy`, the audit `user` and every sign-off stamp record who pressed the button
+   (the OS user); the owner of the work is a different thing and comes from `config.me`.
+7. Tags are trimmed, de-duplicated and capped at 4 (not reported in `adjustments`).
 
 Nothing from the draft or the adjustments is written to `logs/ai-calls.jsonl` or `audit.jsonl`
-(a source-scan test checks `structure.ts`). Tests: `sanitizeDraft.test.mjs`, the prompt and
+(a source-scan test checks `structure.ts`). Tests: `sanitizeDraft.test.mjs`,
+`fallbackTitle.test.mjs`, `ownerDefault.test.mjs`, `server/proposalTitle.server.test.mjs`,
+`server/ownerDefault.server.test.mjs`, the prompt and
 schema blocks of `pmo.test.mjs`, the "prompt v3" block of `server/pmo.server.test.mjs`.
 `PMO_AI_STUB=1`: the stub reads "every week", "weekly", "every Monday" ... as a recurrence and
-then proposes no one-off date.
+then proposes no one-off date; it titles a proposal with the message subject, not the
+greeting, and answers owner "me" with no name, like the real model.
 
 ### Phase 3: editing, reminders, badge
 

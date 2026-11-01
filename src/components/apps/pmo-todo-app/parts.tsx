@@ -7,10 +7,16 @@ import {
   type ComponentProps,
   type ReactNode,
 } from "react";
+import { CircleNotchIcon } from "@phosphor-icons/react";
 import { Badge, type BadgeProps, type BadgeVariant } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import type { Proposal, StructuringInfo } from "@/lib/pmo/types";
-import { SOURCE_LABEL, statusLabel } from "./queueView";
+import {
+  FALLBACK_HINT,
+  SOURCE_LABEL,
+  statusLabel,
+  structuringFellBack,
+} from "./queueView";
 
 /** Thin themed scrollbar for native scroll regions (the `scroll-thin` utility,
  *  tinted from the line tokens so it follows the theme and brand). */
@@ -121,6 +127,19 @@ export const STICKY_BAR =
 
 /** A pane that holds an original message (or any quoted text). */
 export const MESSAGE_PANE = "border-line bg-card rounded-card flex flex-col border p-4";
+
+/** A small spinning ring for a pending state. Decorative: the text beside it says
+ *  what is happening. */
+export function Spinner({ size = 14, className }: { size?: number; className?: string }) {
+  return (
+    <CircleNotchIcon
+      size={size}
+      weight="bold"
+      aria-hidden
+      className={cn("shrink-0 motion-safe:animate-spin", className)}
+    />
+  );
+}
 
 /** A centred "nothing here" / loading message that fills a tab or panel. */
 export function PanelMessage({
@@ -406,17 +425,26 @@ export function ProposalStatusBadge({
   structuring: StructuringInfo;
 }) {
   const label = statusLabel(proposal, structuring);
+  const fellBack = structuringFellBack(proposal) && proposal.isActionable !== false;
   const active = proposal.status === "structuring" && !structuring.paused;
   const variant: BadgeVariant =
     proposal.status === "failed"
       ? "danger"
-      : proposal.status === "ready" && proposal.isActionable !== false
-        ? "accent"
-        : active
+      : fellBack
+        ? "warning"
+        : proposal.status === "ready" && proposal.isActionable !== false
           ? "accent"
-          : "neutral";
+          : active
+            ? "accent"
+            : "neutral";
   return (
-    <Badge variant={variant} dot={active} pulse={active} fixedWidth={96}>
+    <Badge
+      variant={variant}
+      dot={active}
+      pulse={active}
+      fixedWidth={96}
+      title={fellBack ? FALLBACK_HINT : undefined}
+    >
       {label}
     </Badge>
   );

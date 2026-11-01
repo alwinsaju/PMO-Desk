@@ -99,6 +99,16 @@ export function undoRejectText(title: string): string {
   return name ? `Rejected "${name}".` : "Rejected.";
 }
 
+/** The AI's title or description was unusable and the app's own was put in
+ *  (a proposal from before the field existed counts as fine). */
+export function structuringFellBack(proposal: Proposal): boolean {
+  return proposal.status === "ready" && proposal.structuring === "fallback";
+}
+
+export const FALLBACK_LABEL = "AI could not structure";
+export const FALLBACK_HINT =
+  "The AI's draft was unusable (for example only a greeting), so the title comes from the subject line. Read the original and check every field.";
+
 /** What the badge on a queue row says. */
 export function statusLabel(proposal: Proposal, structuring: StructuringInfo): string {
   // While the model is down, an item flips between pending and structuring on
@@ -117,7 +127,8 @@ export function statusLabel(proposal: Proposal, structuring: StructuringInfo): s
     case "pending":
       return structuring.paused ? "waiting for model" : "pending";
     case "ready":
-      return proposal.isActionable === false ? "probably not a task" : "ready";
+      if (proposal.isActionable === false) return "probably not a task";
+      return structuringFellBack(proposal) ? FALLBACK_LABEL : "ready";
     case "failed":
       return "failed";
     default:

@@ -640,6 +640,9 @@ export type ProposalStatus = (typeof PROPOSAL_STATUSES)[number];
 
 export const MAX_AI_ATTEMPTS = 3;
 
+export const STRUCTURING_OUTCOMES = ["ok", "fallback"] as const;
+export type StructuringOutcome = (typeof STRUCTURING_OUTCOMES)[number];
+
 export const ProposalSchema = z.object({
   id: z.string(),
   intakeId: z.string(),
@@ -694,6 +697,11 @@ export const ProposalSchema = z.object({
       result: AiUpdateSchema.nullable(),
     })
     .nullish(),
+  /** Was the model's answer usable as it came? "fallback" = its title or
+   *  description was unusable (a greeting, a bare name) and the app put its own in
+   *  (sanitizeDraft.ts): the card says "AI could not structure this". Absent on a
+   *  proposal from before this field = "ok". */
+  structuring: z.enum(STRUCTURING_OUTCOMES).optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
