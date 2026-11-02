@@ -12,9 +12,14 @@ feature existed.
 """
 import argparse
 import json
+import sys
+from collections import Counter
 from pathlib import Path
 
 import openpyxl
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from labels import LabelCanonicalizer  # noqa: E402
 
 SUBCATEGORY2_HEADER = "Subcategory2"
 
@@ -53,11 +58,20 @@ def apply_to_staging(staging_path, resolutions):
     }
 
     applied = 0
+    # A label typed in another spelling ("softgood issue") is saved as the category the
+    # workbook already uses ("Soft Goods Issue"), so one category never shows up twice.
+    in_use = Counter(
+        incidents.cell(row, sub_col).value
+        for row in range(2, incidents.max_row + 1)
+        if incidents.cell(row, sub_col).value
+    )
+    in_use.update(resolutions.values())  # spellings typed this run also fold into each other
+    canonical = LabelCanonicalizer(in_use)
     for number, subcategory2 in resolutions.items():
         row = by_number.get(number)
         if row is None:
             continue
-        incidents.cell(row, sub_col).value = subcategory2
+        incidents.cell(row, sub_col).value = canonical(subcategory2)
         applied += 1
 
     if review is not None:

@@ -163,8 +163,27 @@ export interface ActionResult {
  *  GET /tasks/{id}/review-incidents. `resolved_subcategory2` is non-null
  *  once the human has picked a value this run (still editable until the
  *  gate is approved). */
+export interface AiSuggestion {
+  label: string;
+  confidence: "high" | "medium" | "low";
+  /** Evidence from past months (the closest similar ticket that used this label). */
+  reason?: string;
+  /** What the model understood the incident to be about, in its own words. */
+  issue?: string;
+  /** The label is not in the known vocabulary (the model proposed a new category). */
+  is_new?: boolean;
+  /** What the team usually chose for the most similar past tickets (when it differs). */
+  vote_label?: string | null;
+  vote_share?: number;
+  model?: string;
+}
+
 export interface ReviewIncident {
   number: string;
+  /** Incidents sharing this id have (almost) the same resolution notes. */
+  notes_group?: string | null;
+  /** The local AI model's suggested Subcategory2 (absent when AI was off or unavailable). */
+  ai_suggestion?: AiSuggestion | null;
   short_description: string | null;
   resolution_notes: string | null;
   category: string | null;

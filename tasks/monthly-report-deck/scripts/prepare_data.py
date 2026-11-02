@@ -1,8 +1,9 @@
 import json
+import os
 import re
 import sys
 from collections import Counter, defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
 
@@ -59,7 +60,10 @@ WORKSPACE_DIR = AGENT_DIR.parent
 ROSTER_PATH = WORKSPACE_DIR / "shared" / "roster" / "Names.xlsx"
 
 sys.path.insert(0, str(WORKSPACE_DIR / "shared" / "roster"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from name_matching import match_roster_to_raw  # noqa: E402
+import ai_classify  # noqa: E402
+from labels import LabelCanonicalizer, label_key  # noqa: E402
 
 
 @dataclass
@@ -68,6 +72,11 @@ class PreparedIncidents:
     rows: list[list[object]]
     review_reasons: dict[str, list[str]]
     subcategory_options: list[str]
+    # Previously classified tickets (short description, notes, label) the local AI
+    # model learns from; empty when there is no history to learn from.
+    examples: list[dict] = field(default_factory=list)
+    # Folds any spelling of a category into its canonical spelling (None: aliases only).
+    canonicalize: object = None
 
     @property
     def review_incident_numbers(self):
@@ -285,9 +294,65 @@ class LearnedHistory:
     subcategory_by_text: dict
     subcategory_by_short_description: dict
     subcategory_options: list
+    examples: list = field(default_factory=list)
+    # Folds any spelling of a category into its canonical (most used) spelling.
+    canonicalize: object = None
 
 
-def learn_from_history(history_paths):
+def repository_tables(knowledge_dir, before_month, covered_months):
+    """Previous months from the incident knowledge repository (see build_knowledge.py)
+    as (month, headers, rows) tables shaped like the monthly workbooks' Incidents sheet,
+    for the months no workbook covers. Only the fields classification learns from are
+    filled in (AG2 stays empty: the repository does not record it)."""
+    tables = []
+    if not knowledge_dir or not Path(knowledge_dir).is_dir():
+        return tables
+    for path in sorted(Path(knowledge_dir).glob("incidents-*.jsonl")):
+        try:
+            month = datetime.strptime(path.stem.split("-", 1)[1], "%Y-%m").date()
+        except ValueError:
+            continue
+        if month in covered_months or (before_month and month >= before_month):
+            continue
+        rows = []
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            rec = json.loads(line)
+            row = dict.fromkeys(OUTPUT_HEADERS)
+            row.update(
+                {
+                    "Number": rec["number"],
+                    "Short description": rec["short_description"],
+                    "Resolution notes": rec["resolution_notes"],
+                    "Configuration item": rec.get("configuration_item"),
+                    "Assignment group": rec.get("assignment_group"),
+                    "State": rec.get("state"),
+                    "Subcategory2": rec.get("label_canonical") or rec["label"],
+                }
+            )
+            rows.append([row[header] for header in OUTPUT_HEADERS])
+        tables.append((month, list(OUTPUT_HEADERS), rows))
+    return tables
+
+
+def history_tables(history_paths, knowledge_dir=None, before_month=None):
+    """(name, headers, rows) for every previous month, newest first: the monthly
+    workbooks plus any repository months they don't cover, interleaved by month."""
+    workbooks = [(workbook_month(path), path) for path in history_paths]
+    covered = {month for month, _ in workbooks if month}
+    extra = sorted(repository_tables(knowledge_dir, before_month, covered), key=lambda t: t[0], reverse=True)
+    for month, path in workbooks:
+        while extra and month and extra[0][0] > month:
+            table_month, headers, rows = extra.pop(0)
+            yield f"knowledge {table_month:%Y-%m}", headers, rows
+        headers, rows = load_rows(path, "Incidents")
+        yield Path(path).name, headers, rows
+    for table_month, headers, rows in extra:
+        yield f"knowledge {table_month:%Y-%m}", headers, rows
+
+
+def learn_from_history(history_paths, knowledge_dir=None, before_month=None):
     """Merge classification knowledge from previous monthly workbooks, newest first.
 
     The task runs monthly; when a new month's export cannot be classified from the
@@ -296,6 +361,8 @@ def learn_from_history(history_paths):
     the newest proven value wins. WIP/Cancelled placeholders carry no category
     information, so they are never learned as Subcategory2 values; an incident whose
     newest known label is a placeholder keeps looking backwards, then re-infers.
+    Months that have no workbook (January to June) are filled in from the incident
+    knowledge repository when `knowledge_dir` is given.
     """
     known_by_number = {}
     ag2_group_maps = []
@@ -304,12 +371,12 @@ def learn_from_history(history_paths):
     sub_sd_maps = []
     subcategory_options = []
     seen_option_keys = set()
-
-    for path in history_paths:
-        template_headers, template_rows = load_rows(path, "Incidents")
+    example_index = {}
+    label_counts = Counter()
+    for source_name, template_headers, template_rows in history_tables(history_paths, knowledge_dir, before_month):
         missing_headers = [header for header in OUTPUT_HEADERS if header not in template_headers]
         if missing_headers:
-            raise ValueError(f"{Path(path).name} is missing required columns: {', '.join(missing_headers)}")
+            raise ValueError(f"{source_name} is missing required columns: {', '.join(missing_headers)}")
         template_indexes = {header: template_headers.index(header) for header in OUTPUT_HEADERS}
 
         ag2_choices = defaultdict(Counter)
@@ -334,6 +401,7 @@ def learn_from_history(history_paths):
             add_choice(ci_choices, normalize(row[template_indexes["Configuration item"]]), ag2)
             if not is_real_label:
                 continue
+            label_counts[canonicalize_subcategory(subcategory2)] += 1
             add_choice(subcategory_choices, normalize(subcategory2), subcategory2)
             extracted = extract_subcategory(row[template_indexes["Resolution notes"]])
             if normalize(extracted) not in PLACEHOLDER_KEYS:
@@ -343,6 +411,15 @@ def learn_from_history(history_paths):
                 normalize(row[template_indexes["Short description"]]),
                 subcategory2,
             )
+            example_key = (normalize(row[template_indexes["Short description"]]), normalize(subcategory2))
+            if example_key in example_index:
+                example_index[example_key]["n"] += 1
+            else:
+                example_index[example_key] = ai_classify.make_example(
+                    row[template_indexes["Short description"]],
+                    row[template_indexes["Resolution notes"]],
+                    subcategory2,
+                )
             key = normalize(subcategory2)
             if key not in seen_option_keys:
                 seen_option_keys.add(key)
@@ -361,26 +438,56 @@ def learn_from_history(history_paths):
         return merged
 
     # The dropdown vocabulary offered for manual classification in the review UI:
-    # every real Subcategory2 any previous month has proven (deduped
-    # case-insensitively, normalize-keyed, newest month's spelling wins), plus the
-    # placeholder/keyword labels the trend notes define.
+    # every real Subcategory2 any previous month has proven, plus the placeholder/keyword
+    # labels the trend notes define. Spelling variants of one category (case, spaces,
+    # plurals, typos) are folded into its most used spelling so each category is listed once.
     for label in sorted({*STATE_SUBCATEGORY_RULES.values(), *(label for _, label in SUBCATEGORY_KEYWORD_RULES)}):
         key = normalize(label)
         if key and key not in seen_option_keys:
             seen_option_keys.add(key)
             subcategory_options.append(label)
 
+    label_canon = LabelCanonicalizer(label_counts)
+
+    def canonicalize(label):
+        return label_canon(canonicalize_subcategory(label))
+
+    def canonical_map(mapping):
+        return {key: canonicalize(value) for key, value in mapping.items()}
+
+    options, seen_canonical = [], set()
+    for label in subcategory_options:
+        canonical = canonicalize(label)
+        if canonical and label_key(canonical) not in seen_canonical:
+            seen_canonical.add(label_key(canonical))
+            options.append(canonical)
+
+    merged_examples = {}
+    for example in example_index.values():
+        example["label"] = canonicalize(example["label"])
+        key = (normalize(example["sd"]), normalize(example["label"]))
+        if key in merged_examples:
+            merged_examples[key]["n"] += example["n"]
+        else:
+            merged_examples[key] = example
+
     return LearnedHistory(
-        known_by_number=known_by_number,
+        known_by_number={
+            number: (ag2, canonicalize(label) if label else None)
+            for number, (ag2, label) in known_by_number.items()
+        },
         ag2_by_group=merge_newest_first(ag2_group_maps),
         ag2_by_ci=merge_newest_first(ag2_ci_maps),
-        subcategory_by_text=merge_newest_first(sub_text_maps),
-        subcategory_by_short_description=merge_newest_first(sub_sd_maps),
-        subcategory_options=subcategory_options,
+        subcategory_by_text=canonical_map(merge_newest_first(sub_text_maps)),
+        subcategory_by_short_description=canonical_map(merge_newest_first(sub_sd_maps)),
+        subcategory_options=options,
+        examples=list(merged_examples.values()),
+        canonicalize=canonicalize,
     )
 
 
-def prepare_incidents(raw_path, template_path, roster_path=ROSTER_PATH, history_paths=None):
+def prepare_incidents(raw_path, template_path, roster_path=ROSTER_PATH, history_paths=None,
+                      knowledge_dir=None, report_month=None):
     raw_headers, raw_rows = load_rows(raw_path, "Page 1")
     missing_headers = [header for header in RAW_HEADERS if header not in raw_headers]
     if missing_headers:
@@ -392,14 +499,16 @@ def prepare_incidents(raw_path, template_path, roster_path=ROSTER_PATH, history_
     if duplicates:
         raise ValueError(f"Raw export contains duplicate incident number(s): {', '.join(duplicates)}")
 
-    history = learn_from_history(list(history_paths) if history_paths else [template_path])
+    history = learn_from_history(
+        list(history_paths) if history_paths else [template_path], knowledge_dir, report_month
+    )
     known_by_number = history.known_by_number
     ag2_by_group = history.ag2_by_group
     ag2_by_ci = history.ag2_by_ci
     subcategory_by_text = history.subcategory_by_text
     subcategory_by_short_description = history.subcategory_by_short_description
     subcategory_options = history.subcategory_options
-
+    canonicalize = history.canonicalize or canonicalize_subcategory
     assigned_names = {
         str(row[raw_indexes["Assigned to"]]).strip()
         for row in raw_rows
@@ -442,7 +551,9 @@ def prepare_incidents(raw_path, template_path, roster_path=ROSTER_PATH, history_
                 subcategory2 = "Alert"
             else:
                 extracted = extract_subcategory(notes)
-                subcategory2 = subcategory_by_text.get(normalize(extracted))
+                subcategory2 = subcategory_by_text.get(normalize(extracted)) or subcategory_by_text.get(
+                    normalize(canonicalize(extracted))
+                )
                 if not subcategory2:
                     subcategory2 = subcategory_by_short_description.get(normalize(raw["Short description"]))
                 if not subcategory2:
@@ -456,7 +567,7 @@ def prepare_incidents(raw_path, template_path, roster_path=ROSTER_PATH, history_
             subcategory2 = None
 
         if subcategory2:
-            subcategory2 = canonicalize_subcategory(subcategory2)
+            subcategory2 = canonicalize(subcategory2)
         else:
             subcategory2 = NEEDS_REVIEW
 
@@ -491,7 +602,9 @@ def prepare_incidents(raw_path, template_path, roster_path=ROSTER_PATH, history_
         if reasons:
             review_reasons[number] = reasons
 
-    return PreparedIncidents(OUTPUT_HEADERS, prepared_rows, review_reasons, subcategory_options)
+    return PreparedIncidents(
+        OUTPUT_HEADERS, prepared_rows, review_reasons, subcategory_options, history.examples, canonicalize
+    )
 
 
 def build_review_queue(prepared):
@@ -519,7 +632,54 @@ def build_review_queue(prepared):
                 "review_reasons": reasons,
             }
         )
+    ai_classify.assign_notes_groups(queue)
     return {"count": len(queue), "options": prepared.subcategory_options, "incidents": queue}
+
+
+def ai_suggestions_enabled(env=None):
+    env = os.environ if env is None else env
+    return str(env.get("MONTHLY_AI_SUGGEST", "1")).strip().lower() not in ("0", "false", "off", "no")
+
+
+def add_ai_suggestions(prepared, queue, cache_path, log=print, knowledge_dir=None):
+    """Ask the local model to suggest a Subcategory2 for incidents the rules left as
+    "Needs Review". Never fatal: with AI off/unavailable the queue is returned as is
+    and the human classifies everything exactly as before."""
+    pending = [i for i in queue["incidents"] if i.get("current_subcategory2") == NEEDS_REVIEW]
+    if not pending or not prepared.examples:
+        return queue
+    if not ai_suggestions_enabled():
+        log("AI suggestions are switched off (MONTHLY_AI_SUGGEST=0).")
+        return queue
+    try:
+        client = ai_classify.OllamaClient()
+        model = ai_classify.choose_model(client.installed_models())
+        if not model:
+            raise ai_classify.AiUnavailable("no local AI model is installed")
+        log(f"Asking the local AI ({model}) to suggest Subcategory2 for {len(pending)} incident(s)...")
+        classifier = ai_classify.Classifier(
+            client,
+            model,
+            prepared.examples,
+            SUBCATEGORY_KEYWORD_RULES,
+            STATE_SUBCATEGORY_RULES,
+            canonicalize=prepared.canonicalize or canonicalize_subcategory,
+            extra_labels=[label for _, label in SUBCATEGORY_KEYWORD_RULES],
+            guide=ai_classify.load_guide(knowledge_dir),
+        )
+        budget = float(os.environ.get("MONTHLY_AI_BUDGET_SECONDS", "1200"))
+        suggested, failed = ai_classify.suggest_for_queue(
+            queue,
+            classifier,
+            cache_path,
+            budget_seconds=budget,
+            log=log,
+            eligible=lambda incident: incident.get("current_subcategory2") == NEEDS_REVIEW,
+        )
+        log(f"AI suggested a Subcategory2 for {suggested} incident(s); {failed} left for manual review.")
+    except ai_classify.AiUnavailable as exc:
+        log(f"AI suggestions skipped: {exc}. The review works as usual without them.")
+    return queue
 
 
 def get_report_month(rows):
@@ -714,7 +874,10 @@ def main():
         )
     template_path = history_paths[0]
 
-    prepared = prepare_incidents(raw_path, template_path, ROSTER_PATH, history_paths=history_paths)
+    prepared = prepare_incidents(
+        raw_path, template_path, ROSTER_PATH, history_paths=history_paths,
+        knowledge_dir=reference_dir / "knowledge", report_month=report_month,
+    )
     staging_path = output_dir / "prepared-incidents.xlsx"
     final_path = output_dir / f"Monthly Incidents Trend Analysis - {report_month.strftime('%B %Y')}.xlsx"
     sidecar_path = output_dir / "report-data.json"
@@ -735,9 +898,14 @@ def main():
     }
     output_dir.mkdir(parents=True, exist_ok=True)
     sidecar_path.write_text(json.dumps(sidecar, indent=2), encoding="utf-8")
-    review_queue_path.write_text(
-        json.dumps(build_review_queue(prepared), indent=2, default=str), encoding="utf-8"
+    review_queue = build_review_queue(prepared)
+    # Written first so the review works even if the AI step below is slow or fails.
+    review_queue_path.write_text(json.dumps(review_queue, indent=2, default=str), encoding="utf-8")
+    add_ai_suggestions(
+        prepared, review_queue, output_dir / "ai-suggestions-cache.json",
+        knowledge_dir=reference_dir / "knowledge",
     )
+    review_queue_path.write_text(json.dumps(review_queue, indent=2, default=str), encoding="utf-8")
 
     print(f"Raw export: {raw_path}")
     print(f"Reporting month: {sidecar['report_month_display']}")

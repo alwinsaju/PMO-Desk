@@ -1238,6 +1238,20 @@ def test_legacy_review_incidents_gate_behaves_as_before(tmp_path):
     assert backend.tasks["legacy"].approvals == []
 
 
+def test_review_incidents_endpoint_passes_ai_suggestions_through(tmp_path):
+    folder = make_legacy_task(tmp_path, steps=[{"id": "review_incidents", "type": "review"}])
+    suggestion = {"label": "A", "confidence": "high", "reason": "same as last month", "is_new": False}
+    write(folder, "output/review-incidents.json",
+          {"incidents": [{"number": "INC1", "ai_suggestion": suggestion}, {"number": "INC2"}], "options": ["A"]})
+    write(folder, "output/review-resolutions.json", {"resolutions": [{"number": "INC2", "subcategory2": "A"}]})
+
+    body = asyncio.run(backend.review_incidents("legacy"))
+
+    assert body["pending"] == 1
+    assert body["incidents"][0]["ai_suggestion"] == suggestion
+    assert body["incidents"][1]["resolved_subcategory2"] == "A"
+
+
 # --- diff / flags gates ---------------------------------------------------------
 
 def diff_task(tmp_path, diff=None, state="awaiting_send"):

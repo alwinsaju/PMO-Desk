@@ -339,6 +339,20 @@ describe("withResolvedLabels", () => {
     ]);
   });
 
+  it("folds spelling variants of one category into the first spelling", () => {
+    const options = ["Soft Goods Issue", "Hardware Issue", "softgoods issue"];
+    const incidents = [
+      incident("INC1", "Soft Good Isse"),
+      incident("INC2", "Drive Mapping"),
+      incident("INC3", "drive mapping"),
+    ];
+    assert.deepEqual(withResolvedLabels(options, incidents), [
+      "Soft Goods Issue",
+      "Hardware Issue",
+      "Drive Mapping",
+    ]);
+  });
+
   it("returns the same array when nothing is new", () => {
     assert.equal(withResolvedLabels(OPTIONS, [incident("INC1", "Other")]), OPTIONS);
   });

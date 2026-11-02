@@ -13,6 +13,7 @@
  * before saving. Near-duplicates inside one import ("Server Related" /
  * "server related") collapse to the first spelling seen.
  */
+import { findSimilarLabel } from "./labelMatch.ts";
 import type { ReviewIncident } from "./types";
 
 /** One (incident number, Subcategory2) pair read from a paste or a sheet. */
@@ -300,7 +301,6 @@ export function planImport(
     duplicates,
   };
   const supplied = new Set<string>();
-  const newByKey = new Map<string, { label: string; count: number }>();
 
   for (const [key, row] of chosen) {
     const incident = incidentByKey.get(key);
@@ -311,17 +311,25 @@ export function planImport(
     }
     supplied.add(key);
     const valueKey = normalizeKey(row.value);
-    let canonical = optionByKey.get(valueKey);
+    let canonical =
+      optionByKey.get(valueKey) ?? findSimilarLabel(row.value, options) ?? undefined;
     if (!canonical) {
-      // New label: the first spelling seen in this import wins for all.
-      const existing = newByKey.get(valueKey);
+      // New label: the first spelling seen in this import wins for all, including
+      // later spellings of it that only differ by a typo ("softgood" / "soft goods").
+      const spelling =
+        findSimilarLabel(
+          row.value,
+          plan.newLabels.map((entry) => entry.label),
+        ) ?? null;
+      const existing = spelling
+        ? plan.newLabels.find((entry) => entry.label === spelling)
+        : undefined;
       if (existing) {
         existing.count++;
         canonical = existing.label;
       } else {
         canonical = row.value.replace(/\s+/g, " ").trim();
         const entry = { label: canonical, count: 1 };
-        newByKey.set(valueKey, entry);
         plan.newLabels.push(entry);
       }
     }
@@ -374,25 +382,27 @@ export function toResolutionPayload(
 }
 
 /**
- * The option list plus any label already resolved on an incident that the
- * list doesn't contain (a new label staged this session, or one saved
- * earlier and handed back by the engine), so those show up in the picker
- * for reuse. Case/whitespace-insensitive; the list's own spelling wins.
+ * The option list with spelling variants of one category folded into its
+ * first spelling ("softgood issue" next to "Soft Goods Issue" is listed once),
+ * plus any label already resolved on an incident that the list doesn't
+ * contain (a new label staged this session, or one saved earlier and handed
+ * back by the engine), so those show up in the picker for reuse. The list's
+ * own spelling wins.
  */
 export function withResolvedLabels(
   options: string[],
   incidents: ReviewIncident[],
 ): string[] {
-  const seen = new Set(options.map(normalizeKey));
-  const extra: string[] = [];
+  const result: string[] = [];
+  const add = (label: string) => {
+    if (!findSimilarLabel(label, result)) result.push(label);
+  };
+  options.forEach(add);
   for (const incident of incidents) {
-    const label = incident.resolved_subcategory2;
-    if (!label) continue;
-    const key = normalizeKey(label);
-    if (!seen.has(key)) {
-      seen.add(key);
-      extra.push(label);
-    }
+    if (incident.resolved_subcategory2) add(incident.resolved_subcategory2);
   }
-  return extra.length > 0 ? [...options, ...extra] : options;
+  const unchanged =
+    result.length === options.length &&
+    result.every((label, index) => label === options[index]);
+  return unchanged ? options : result;
 }

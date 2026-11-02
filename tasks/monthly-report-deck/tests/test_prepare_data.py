@@ -536,6 +536,75 @@ def test_history_lookback_uses_all_previous_months_newest_wins(tmp_path):
     assert "Application Issue" in result.subcategory_options
 
 
+def test_history_examples_for_the_ai_are_real_labels_deduplicated_newest_first(tmp_path):
+    raw_path = tmp_path / "incident.xlsx"
+    older_path = tmp_path / "July.xlsx"
+    newer_path = tmp_path / "August.xlsx"
+    roster_path = tmp_path / "Names.xlsx"
+    write_workbook(raw_path, "Page 1", RAW_HEADERS, [raw_row("INC1", "Closed", "x", "AppSrvc-DIS-PDT-IT-GLBL", "n")])
+    write_workbook(
+        older_path,
+        "Incidents",
+        OUTPUT_HEADERS,
+        [
+            template_row("INC800", "Access Related", short_description="Login trouble", resolution_notes="old note"),
+            template_row("INC801", "WIP", short_description="Still open", state="On Hold"),
+        ],
+    )
+    write_workbook(
+        newer_path,
+        "Incidents",
+        OUTPUT_HEADERS,
+        [
+            template_row("INC900", "Access Related", short_description="login  TROUBLE", resolution_notes="new note"),
+            template_row("INC901", "Access Related", short_description="Login trouble", resolution_notes="newer still"),
+        ],
+    )
+    write_roster(roster_path, ["Known Analyst"])
+
+    result = prepare_incidents(raw_path, newer_path, roster_path, history_paths=[newer_path, older_path])
+
+    assert len(result.examples) == 1  # WIP is not an example; same text + label collapses
+    only = result.examples[0]
+    assert only["label"] == "Access Related" and only["n"] == 3
+    assert only["notes"] == "new note"  # the newest month's wording is kept
+
+
+def test_spelling_variants_of_one_category_are_listed_once_and_typos_resolve(tmp_path):
+    raw_path = tmp_path / "incident.xlsx"
+    template_path = tmp_path / "July.xlsx"
+    roster_path = tmp_path / "Names.xlsx"
+    write_workbook(
+        raw_path,
+        "Page 1",
+        RAW_HEADERS,
+        [raw_row("INC100", "Closed", "Unseen", "AppSrvc-DIS-PDT-IT-GLBL", "Sub-Category: soft good isse")],
+    )
+    write_workbook(
+        template_path,
+        "Incidents",
+        OUTPUT_HEADERS,
+        [
+            template_row("INC1", "Soft Goods Issue"),
+            template_row("INC2", "Soft Goods Issue"),
+            template_row("INC3", "softgoods issue"),
+            template_row("INC4", "softgood issue"),
+            template_row("INC5", "Hardware Issue"),
+            template_row("INC6", "CMS 1.0 issues"),
+            template_row("INC7", "CMS 2.0 Issues"),
+        ],
+    )
+    write_roster(roster_path, ["Known Analyst"])
+
+    result = prepare_incidents(raw_path, template_path, roster_path)
+
+    soft = [o for o in result.subcategory_options if "soft" in o.lower()]
+    assert soft == ["Soft Goods Issue"]
+    assert {"CMS 1.0 issues", "CMS 2.0 Issues"} <= set(result.subcategory_options)  # different digits stay apart
+    assert result.rows[0][19] == "Soft Goods Issue"  # the typo'd tag still finds its category
+    assert result.canonicalize("softgood  issues") == "Soft Goods Issue"
+
+
 def test_find_history_workbooks_orders_newest_first_and_skips_current_month(tmp_path):
     reference_dir = tmp_path / "reference"
     output_dir = tmp_path / "output"

@@ -65,6 +65,20 @@ def test_apply_to_staging_updates_incidents_and_review(tmp_path):
     workbook.close()
 
 
+def test_apply_to_staging_folds_spelling_variants_into_the_category_in_use(tmp_path):
+    staging = tmp_path / "prepared-incidents.xlsx"
+    write_staging(staging)
+
+    apply_to_staging(staging, {"INC100": "edq  issues", "INC200": "Drive Mapping"})
+    apply_to_staging(staging, {"INC200": "drive mapping"})  # same new category, typed again
+
+    workbook = openpyxl.load_workbook(staging)
+    incidents = workbook["Incidents"]
+    assert incidents.cell(2, 3).value == "EDQ issue"  # not a second "edq issues" option
+    assert incidents.cell(3, 3).value == "Drive Mapping"
+    workbook.close()
+
+
 def test_apply_to_staging_no_resolutions_is_noop(tmp_path):
     staging = tmp_path / "prepared-incidents.xlsx"
     write_staging(staging)

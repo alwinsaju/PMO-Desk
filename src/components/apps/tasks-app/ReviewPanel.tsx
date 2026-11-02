@@ -1,10 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type RefObject } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { Badge, Button, ScrollArea } from "@/components/ui";
 import { fetchReviewIncidents, postReviewResolutions } from "./api";
 import { ReviewImportDialog } from "./ReviewImportDialog";
 import { ReviewIncidentDialog } from "./ReviewIncidentDialog";
+import {
+  acceptableSuggestions,
+  neighbourNumber,
+  nextPendingNumber,
+  similarPending,
+} from "./reviewFlow";
 import {
   applyResolutions,
   toResolutionPayload,
@@ -96,12 +102,17 @@ export function ReviewPanel({
       Number(Boolean(a.resolved_subcategory2)) - Number(Boolean(b.resolved_subcategory2)),
   );
 
-  // The one staging path — single picks and bulk imports both go through
-  // applyResolutions so `pending` and `dirty` can't diverge between them.
-  const handleResolve = useCallback(
-    (number: string, subcategory2: string) => {
+  // The one staging path — single picks, "apply to similar", AI acceptance and
+  // bulk imports all go through applyResolutions so `pending` and `dirty` can't
+  // diverge between them. `version` counts staged changes so an autosave that
+  // finishes after a newer pick doesn't mark that pick as saved.
+  const version = useRef(0);
+  const stage = useCallback(
+    (resolutions: { number: string; subcategory2: string }[]) => {
+      version.current += 1;
+      setSaveError(null);
       setQueue((current) => {
-        const next = applyResolutions(current.incidents, [{ number, subcategory2 }]);
+        const next = applyResolutions(current.incidents, resolutions);
         onPendingChange?.(next.pending);
         return { ...current, incidents: next.incidents, pending: next.pending };
       });
@@ -110,11 +121,29 @@ export function ReviewPanel({
     [onPendingChange],
   );
 
+  const handleResolve = useCallback(
+    (number: string, subcategory2: string, applyToSimilar: boolean) => {
+      const current = queue.incidents.find((i) => i.number === number);
+      const resolutions = [{ number, subcategory2 }];
+      if (current && applyToSimilar) {
+        for (const other of similarPending(queue.incidents, current)) {
+          resolutions.push({ number: other.number, subcategory2 });
+        }
+      }
+      stage(resolutions);
+      // Straight on to the next incident that still needs an answer.
+      const after = applyResolutions(queue.incidents, resolutions).incidents;
+      setSelectedNumber(nextPendingNumber(after, number));
+    },
+    [queue.incidents, stage],
+  );
+
   // POSTs the FULL set of resolved incidents (the engine overwrites its
-  // file with whatever is sent), then re-reads the queue so what's shown is
-  // what the engine will actually gate Approve on.
+  // file with whatever is sent). The local queue stays as it is: re-reading
+  // it here could drop a pick made while the save was in flight.
   const persist = useCallback(
     async (incidents: ReviewIncident[]): Promise<boolean> => {
+      const savedVersion = version.current;
       setSaving(true);
       setSaveError(null);
       try {
@@ -126,8 +155,7 @@ export function ReviewPanel({
           setSaveError(result.reason ?? "the engine rejected the save");
           return false;
         }
-        setDirty(false);
-        await load();
+        if (version.current === savedVersion) setDirty(false);
         return true;
       } catch {
         setSaveError("couldn't reach the engine — your choices are still staged here.");
@@ -136,7 +164,7 @@ export function ReviewPanel({
         setSaving(false);
       }
     },
-    [taskId, load],
+    [taskId],
   );
 
   const handleSave = useCallback(
@@ -144,16 +172,31 @@ export function ReviewPanel({
     [persist, queue.incidents],
   );
 
+  // Autosave shortly after the last pick, so there is no separate Save step.
+  // A failed save is not retried automatically; the Save button stays enabled.
+  useEffect(() => {
+    if (!dirty || saving || saveError) return;
+    const timer = setTimeout(() => void persist(queue.incidents), 600);
+    return () => clearTimeout(timer);
+  }, [dirty, saving, saveError, queue.incidents, persist]);
+
   const handleImport = useCallback(
     async (resolutions: { number: string; subcategory2: string }[], save: boolean) => {
       // Import wins over anything already staged for the same incident.
       const next = applyResolutions(queue.incidents, resolutions);
-      setQueue({ ...queue, incidents: next.incidents, pending: next.pending });
-      onPendingChange?.(next.pending);
-      setDirty(true);
+      stage(resolutions);
       if (save) await persist(next.incidents);
     },
-    [queue, onPendingChange, persist],
+    [queue.incidents, stage, persist],
+  );
+
+  const aiSuggested = useMemo(
+    () => acceptableSuggestions(queue.incidents, "low", options),
+    [queue.incidents, options],
+  );
+  const aiHigh = useMemo(
+    () => acceptableSuggestions(queue.incidents, "high", options),
+    [queue.incidents, options],
   );
 
   useEffect(() => {
@@ -182,12 +225,44 @@ export function ReviewPanel({
           <span className="text-ink font-semibold">{queue.pending}</span> of {queue.count}{" "}
           still need a Subcategory2
         </p>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+          {aiSuggested.length > 0 && (
+            <Button
+              variant="outline"
+              disabled={saving}
+              title="Fill in the local AI model's suggestion for every pending incident. You can still change any of them."
+              onClick={() => stage(aiSuggested)}
+            >
+              Accept AI suggestions ({aiSuggested.length})
+            </Button>
+          )}
+          {aiHigh.length > 0 && aiHigh.length < aiSuggested.length && (
+            <Button variant="outline" disabled={saving} onClick={() => stage(aiHigh)}>
+              High confidence only ({aiHigh.length})
+            </Button>
+          )}
           <Button variant="outline" onClick={() => setImportOpen(true)} disabled={saving}>
             Import…
           </Button>
-          <Button onClick={handleSave} disabled={!dirty || saving}>
-            {saving ? "Saving…" : dirty ? "Save resolutions" : "Saved"}
+          {queue.pending > 0 && (
+            <Button
+              onClick={() => setSelectedNumber(nextPendingNumber(queue.incidents, null))}
+            >
+              Review next
+            </Button>
+          )}
+          <Button
+            variant={queue.pending > 0 ? "outline" : "solid"}
+            onClick={handleSave}
+            disabled={!dirty || saving}
+          >
+            {saving
+              ? "Saving…"
+              : dirty
+                ? saveError
+                  ? "Retry save"
+                  : "Save now"
+                : "Saved"}
           </Button>
         </div>
       </div>
@@ -219,7 +294,18 @@ export function ReviewPanel({
       <ReviewIncidentDialog
         incident={selectedIncident}
         options={options}
+        pendingCount={queue.pending}
+        similarCount={
+          selectedIncident ? similarPending(queue.incidents, selectedIncident).length : 0
+        }
         onResolve={handleResolve}
+        onNavigate={(direction) =>
+          setSelectedNumber((current) =>
+            current
+              ? (neighbourNumber(queue.incidents, current, direction) ?? current)
+              : current,
+          )
+        }
         onOpenChange={(open) => {
           if (!open) setSelectedNumber(null);
         }}
@@ -236,6 +322,7 @@ function IncidentRow({
   onClick: () => void;
 }) {
   const resolved = Boolean(incident.resolved_subcategory2);
+  const suggestion = incident.ai_suggestion;
   return (
     <button
       type="button"
@@ -253,6 +340,10 @@ function IncidentRow({
       {resolved ? (
         <Badge variant="accent" className="shrink-0">
           {incident.resolved_subcategory2}
+        </Badge>
+      ) : suggestion ? (
+        <Badge variant="warning" className="shrink-0" title={suggestion.reason}>
+          AI: {suggestion.label}
         </Badge>
       ) : (
         <Badge variant="warning" className="shrink-0">
