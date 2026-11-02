@@ -66,25 +66,16 @@ export interface StepperItem {
   status: StepStatus;
 }
 
-/** Per-step statuses for the card timeline and the Details stepper. A live or paused task uses
- *  its own position; an idle one shows how its last run went (finished steps, and the step a
- *  failed run stopped at), so the picture survives between runs. */
-export function stepperItems(task: Task, lastRun: HistoryRun | null): StepperItem[] {
+/** Per-step statuses for the card timeline and the Details stepper. Progress only reflects the
+ *  current run: a live or paused task uses its own position, and an idle task is reset to
+ *  all-pending so a finished run's progress doesn't linger (past runs live in the run history). */
+export function stepperItems(task: Task): StepperItem[] {
   const live = computeStepStatuses(task);
-  const fromLastRun = task.state === "resting" ? lastRun : null;
-  return task.steps.map((step, index) => {
-    let status: StepStatus = live[index];
-    if (fromLastRun) {
-      if (fromLastRun.steps_completed.includes(step.id)) status = "done";
-      else if (
-        fromLastRun.outcome === "failed" &&
-        fromLastRun.current_step_at_end === step.id
-      )
-        status = "failed";
-      else status = "pending";
-    }
-    return { id: step.id, label: stepLabel(task, step.id), status };
-  });
+  return task.steps.map((step, index) => ({
+    id: step.id,
+    label: stepLabel(task, step.id),
+    status: task.state === "resting" ? "pending" : live[index],
+  }));
 }
 
 /** Totals for the stepper header: "3 of 8 steps done". */

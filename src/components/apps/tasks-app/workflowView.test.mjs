@@ -104,29 +104,12 @@ describe("stepperItems", () => {
     const t = task({ state: "working", currentStep: "b" });
     assert.deepEqual(statuses(stepperItems(t, null)), ["done", "gate", "pending"]);
   });
-  it("shows the last run when idle", () => {
-    assert.deepEqual(statuses(stepperItems(task(), run())), ["done", "done", "done"]);
-    const failed = run({
-      outcome: "failed",
-      steps_completed: ["a"],
-      current_step_at_end: "b",
-    });
-    assert.deepEqual(statuses(stepperItems(task(), failed)), [
-      "done",
-      "failed",
-      "pending",
-    ]);
-  });
-  it("is all pending when idle and never run", () => {
-    assert.deepEqual(statuses(stepperItems(task(), null)), [
-      "pending",
-      "pending",
-      "pending",
-    ]);
+  it("is reset to all pending when idle, even after a completed or failed run", () => {
+    assert.deepEqual(statuses(stepperItems(task())), ["pending", "pending", "pending"]);
   });
   it("labels steps and counts the finished ones", () => {
-    const items = stepperItems(task(), run({ steps_completed: ["a"] }));
+    const items = stepperItems(task({ state: "working", currentStep: "c" }));
     assert.equal(items[0].label, "A");
-    assert.equal(stepperSummary(items), "1 of 3 steps done");
+    assert.equal(stepperSummary(items), "2 of 3 steps done");
   });
 });

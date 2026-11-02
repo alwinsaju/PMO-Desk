@@ -17,7 +17,7 @@ import { plainStepName, stepPosition, timeLeftText } from "@/lib/tasks/runHistor
 import { useGateData, type GateData } from "./useGateData";
 import { useTaskRuns } from "./useTaskRuns";
 import { WorkflowIcon } from "./WorkflowIcon";
-import { lastRunInfo, stepperItems, latestRun } from "./workflowView";
+import { lastRunInfo, stepperItems } from "./workflowView";
 import type { Task } from "./types";
 
 interface TaskCardProps {
@@ -106,7 +106,7 @@ export const TaskCard = memo(function TaskCard({
       </header>
 
       <div className="mt-4 mb-3.5">
-        <StepDots items={stepperItems(task, latestRun(runs))} />
+        <StepDots items={stepperItems(task)} />
       </div>
 
       {task.state === "error" && task.error ? (

@@ -38,7 +38,7 @@ import {
 } from "./taskPresenter";
 import { useGateData } from "./useGateData";
 import { useTaskRuns } from "./useTaskRuns";
-import { lastRunInfo, latestRun, stepperItems, stepperSummary } from "./workflowView";
+import { lastRunInfo, stepperItems, stepperSummary } from "./workflowView";
 import type { HistoryRun, LogEntry, Task } from "./types";
 
 /** Matches the log tab's live-refresh cadence to the rest of the app's poll
@@ -308,7 +308,7 @@ export const TaskDetailDialog = memo(function TaskDetailDialog({
  *  records only a whole run's start and end, so there is no per-step duration to show). */
 function StepsSection({ task }: { task: Task }) {
   const runs = useTaskRuns(task.id, task.state);
-  const items = stepperItems(task, latestRun(runs));
+  const items = stepperItems(task);
   if (items.length === 0) return null;
   return (
     <section
