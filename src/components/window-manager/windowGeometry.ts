@@ -53,6 +53,12 @@ function clamp(n: number, lo: number, hi: number): number {
   return Math.min(Math.max(n, lo), Math.max(lo, hi));
 }
 
+/** The CSS `transform` that places a window. One definition for the render in
+ *  Window.tsx and for the drag hook, which writes it straight onto the node. */
+export function windowTransform(position: { x: number; y: number }): string {
+  return `translate3d(${position.x}px, ${position.y}px, 0)`;
+}
+
 /** Keeps the title bar reachable: top >= 0, >= `minVisibleX` px of it on
  *  screen horizontally, and its bottom above the command bar. Position only. */
 export function clampToViewport(

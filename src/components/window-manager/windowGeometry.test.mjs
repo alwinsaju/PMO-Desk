@@ -5,7 +5,13 @@ import {
   defaultWindowGeometry,
   fitRectToViewport,
   maximizedRect,
+  windowTransform,
 } from "./windowGeometry.ts";
+
+test("windowTransform places a window with a GPU translate", () => {
+  assert.equal(windowTransform({ x: 12, y: 88 }), "translate3d(12px, 88px, 0)");
+  assert.equal(windowTransform({ x: -385, y: 0 }), "translate3d(-385px, 0px, 0)");
+});
 
 const config = {
   size: { width: 1120, height: 680 },

@@ -17,7 +17,7 @@ import { WindowTitleBar } from "./WindowTitleBar";
 import { ResizeHandles } from "./ResizeHandles";
 import { AIGlowBorder } from "./AIGlowBorder";
 import { sizes } from "@/lib/tokens";
-import { maximizedRect } from "./windowGeometry";
+import { maximizedRect, windowTransform } from "./windowGeometry";
 import type { WindowState } from "./types";
 
 interface WindowProps {
@@ -337,7 +337,7 @@ export function Window({ id }: WindowProps) {
         zIndex: stackIndex,
         width: transitionRect.width,
         height: transitionRect.height,
-        transform: `translate3d(${transitionRect.x}px, ${transitionRect.y}px, 0)`,
+        transform: windowTransform(transitionRect),
       }
     : data.isMaximized
       ? {
@@ -351,7 +351,7 @@ export function Window({ id }: WindowProps) {
           zIndex: stackIndex,
           width: data.size.width,
           height: data.size.height,
-          transform: `translate3d(${data.position.x}px, ${data.position.y}px, 0)`,
+          transform: windowTransform(data.position),
         };
 
   const barSuffix = joinSuffixes(titleContext, titleSuffix);

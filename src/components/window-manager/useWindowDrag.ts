@@ -2,7 +2,7 @@
 
 import { useDrag } from "@use-gesture/react";
 import { useWindowStore, windowClampConfig } from "./windowStore";
-import { clampToViewport } from "./windowGeometry";
+import { clampToViewport, windowTransform } from "./windowGeometry";
 import { edgeZone } from "./windowSnap";
 
 /** `data-gesture` on the window node while a drag/resize is live: tokens.css
@@ -59,7 +59,7 @@ export function useWindowDrag(
       const el = elementRef.current;
       if (el) {
         if (first) markGesture(el, true);
-        el.style.transform = `translate3d(${x}px, ${y}px, 0)`;
+        el.style.transform = windowTransform({ x, y });
         if (last) markGesture(el, false);
       }
       if (last) {
@@ -70,6 +70,11 @@ export function useWindowDrag(
         );
         if (zone) useWindowStore.getState().snapWindow(id, zone);
         else useWindowStore.getState().moveWindow(id, { x, y });
+        // The node still holds the raw drag position. React only rewrites `transform`
+        // when the stored position changed, so a snap onto the position the window
+        // already had (or a plain drop) would leave it where the pointer let go.
+        const placed = useWindowStore.getState().windows[id]?.position;
+        if (el && placed) el.style.transform = windowTransform(placed);
       }
     },
     {
