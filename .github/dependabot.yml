@@ -8,16 +8,19 @@ updates:
     groups:
       minor-and-patch:
         update-types: [minor, patch]
+  # One PR for both requirement files: the installer's Python runtime lock
+  # (scripts/python-runtime/requirements.lock.txt) must be re-resolved with them, and
+  # a test fails when the pins differ, so separate per-package PRs can never pass.
   - package-ecosystem: pip
-    directory: /tasks-engine
+    directories:
+      - /tasks-engine
+      - /tasks
     schedule:
       interval: weekly
-    open-pull-requests-limit: 3
-  - package-ecosystem: pip
-    directory: /tasks
-    schedule:
-      interval: weekly
-    open-pull-requests-limit: 3
+    open-pull-requests-limit: 2
+    groups:
+      python-runtime:
+        patterns: ["*"]
   - package-ecosystem: github-actions
     directory: /
     schedule:
