@@ -70,6 +70,7 @@ const eslintConfig = [
       "tasks-engine/.venv/**",
       "docs/qa/evidence/**",
       "docs/qa/harness/**",
+      "docs/marketing/**",
       "public/sw.js",
       "next-env.d.ts",
     ],
