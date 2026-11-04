@@ -1,9 +1,21 @@
 // The fourteen PMO tools as register definitions, in the order they were built. Each is a list
 // of records; a few add a panel (extras) or have their own screen (custom).
-import type { RegisterDef } from "./types.ts";
+import type { FieldDef, RegisterDef } from "./types.ts";
 
 const RAG = ["Green", "Amber", "Red"] as const;
 const LMH = ["Low", "Medium", "High"] as const;
+
+/** The optional Project on RAID, changes and SLA. It must stay optional plain text: records are
+ *  re-validated on every read and a register is rewritten with only the records that passed, so a
+ *  required or select field would delete every existing record. Names are suggested from the
+ *  status-report register, but any text is accepted. */
+const PROJECT_FIELD: FieldDef = {
+  key: "project",
+  label: "Project",
+  type: "text",
+  suggest: "projects",
+  placeholder: "Optional",
+};
 
 export const REGISTERS: readonly RegisterDef[] = [
   {
@@ -23,6 +35,7 @@ export const REGISTERS: readonly RegisterDef[] = [
         default: "Risk",
       },
       { key: "title", label: "Title", type: "text", required: true },
+      PROJECT_FIELD,
       { key: "description", label: "Description", type: "longtext" },
       { key: "owner", label: "Owner", type: "person" },
       {
@@ -50,7 +63,7 @@ export const REGISTERS: readonly RegisterDef[] = [
     closed: ["Closed"],
     dueKey: "dueDate",
     ownerKey: "owner",
-    columns: ["kind", "title", "owner", "impact", "status", "dueDate"],
+    columns: ["kind", "title", "project", "owner", "impact", "status", "dueDate"],
     sortKey: "dueDate",
     sortDir: "asc",
     rule: "raid",
@@ -58,7 +71,15 @@ export const REGISTERS: readonly RegisterDef[] = [
     formGroups: [
       {
         title: "What",
-        keys: ["kind", "title", "description", "status", "impact", "likelihood"],
+        keys: [
+          "kind",
+          "title",
+          "project",
+          "description",
+          "status",
+          "impact",
+          "likelihood",
+        ],
       },
       { title: "Who", keys: ["owner"] },
       { title: "When", keys: ["raisedOn", "dueDate"] },
@@ -167,6 +188,7 @@ export const REGISTERS: readonly RegisterDef[] = [
     fields: [
       { key: "ref", label: "Reference", type: "text", placeholder: "INC0012345" },
       { key: "title", label: "Title", type: "text", required: true },
+      PROJECT_FIELD,
       {
         key: "priority",
         label: "Priority",
@@ -197,7 +219,7 @@ export const REGISTERS: readonly RegisterDef[] = [
     statusKey: "status",
     closed: ["Resolved"],
     ownerKey: "owner",
-    columns: ["ref", "title", "priority", "received", "owner", "status"],
+    columns: ["ref", "title", "project", "priority", "received", "owner", "status"],
     sortKey: "received",
     sortDir: "asc",
     rule: "sla",
@@ -213,6 +235,7 @@ export const REGISTERS: readonly RegisterDef[] = [
     fields: [
       { key: "ref", label: "Reference", type: "text", placeholder: "CR-014" },
       { key: "title", label: "Title", type: "text", required: true },
+      PROJECT_FIELD,
       { key: "requester", label: "Requested by", type: "person" },
       {
         key: "status",
@@ -233,7 +256,7 @@ export const REGISTERS: readonly RegisterDef[] = [
     closed: ["Rejected", "Implemented"],
     dueKey: "targetDate",
     ownerKey: "requester",
-    columns: ["ref", "title", "requester", "impact", "status", "targetDate"],
+    columns: ["ref", "title", "project", "requester", "impact", "status", "targetDate"],
     sortKey: "targetDate",
     sortDir: "asc",
     rule: "due",

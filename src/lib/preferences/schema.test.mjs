@@ -9,6 +9,7 @@ import {
   MAX_REMEMBERED_WINDOWS,
   MAX_SAVED_VIEWS,
   recentPrompts,
+  recentSuccessfulPrompts,
   removeView,
   rememberWindowRect,
   saveView,
@@ -88,6 +89,29 @@ describe("command log, history and favourites", () => {
     ];
     assert.deepEqual(recentPrompts(log), ["c", "A", "b"]);
     assert.deepEqual(recentPrompts(log, 2), ["c", "A"]);
+  });
+
+  it("offers only prompts that worked as recent chips, newest first", () => {
+    const log = [
+      entry({ prompt: "old answer", outcome: "answered" }),
+      entry({ prompt: "broke", outcome: "failed" }),
+      entry({ prompt: "Open Notes", outcome: "done" }),
+      entry({ prompt: "stopped", outcome: "cancelled" }),
+      entry({ prompt: "open notes", outcome: "done" }),
+      entry({ prompt: "retry me", outcome: "failed" }),
+    ];
+    assert.deepEqual(recentSuccessfulPrompts(log), ["open notes", "old answer"]);
+    assert.deepEqual(recentSuccessfulPrompts(log, 1), ["open notes"]);
+    assert.deepEqual(recentSuccessfulPrompts([]), []);
+    assert.deepEqual(
+      recentSuccessfulPrompts([
+        entry({ outcome: "failed" }),
+        entry({ outcome: "cancelled" }),
+      ]),
+      [],
+    );
+    // Up-arrow recall is unchanged: it still includes failed and cancelled prompts.
+    assert.equal(recentPrompts(log).includes("broke"), true);
   });
 
   it("pins and unpins a favourite, ignoring case, with a cap", () => {

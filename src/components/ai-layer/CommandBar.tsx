@@ -13,6 +13,7 @@ import { motion } from "motion/react";
 import {
   ArrowUpIcon,
   CircleNotchIcon,
+  ClockCounterClockwiseIcon,
   SparkleIcon,
   StarIcon,
   StopIcon,
@@ -31,8 +32,12 @@ import { prepareTaskSummary } from "@/lib/ai-runtime/pmoReply";
 import { resolveLocalIntent, type LocalIntent } from "@/lib/ai-runtime/localIntent";
 import { planText, splitSteps } from "@/lib/ai-runtime/steps";
 import { logCommand, usePreferences } from "@/lib/preferences/preferencesStore";
-import { recentPrompts, type CommandLogEntry } from "@/lib/preferences/schema";
-import { completeFrom, suggestionsFor } from "./barSuggestions";
+import {
+  recentPrompts,
+  recentSuccessfulPrompts,
+  type CommandLogEntry,
+} from "@/lib/preferences/schema";
+import { MAX_RECENT_CHIPS, completeFrom, suggestionsFor } from "./barSuggestions";
 import { BarActionCard } from "./BarActionCard";
 import { showMeFor } from "./barLinks";
 import { openOrFocusBuiltInApp } from "@/components/taskbar/launchBuiltInApp";
@@ -710,6 +715,8 @@ export function CommandBar() {
 
   const canSend = Boolean(value.trim()) && !isBusy;
   const recent = recentPrompts(commandLog);
+  // Only prompts that worked become chips; Up-arrow recall (`recent`) keeps all of them.
+  const recentChips = recentSuccessfulPrompts(commandLog, MAX_RECENT_CHIPS);
   const completions =
     value === ""
       ? []
@@ -718,10 +725,23 @@ export function CommandBar() {
           ...recent,
           ...suggestionsFor(focusedAppId, []).map((s) => s.text),
         ]);
-  const chips: { text: string; favourite: boolean; complete: boolean }[] =
+  const chips: {
+    text: string;
+    favourite: boolean;
+    recent: boolean;
+    complete: boolean;
+  }[] =
     value === ""
-      ? suggestionsFor(focusedAppId, favourites).map((s) => ({ ...s, complete: false }))
-      : completions.map((text) => ({ text, favourite: false, complete: true }));
+      ? suggestionsFor(focusedAppId, favourites, 6, recentChips).map((s) => ({
+          ...s,
+          complete: false,
+        }))
+      : completions.map((text) => ({
+          text,
+          favourite: false,
+          recent: false,
+          complete: true,
+        }));
   const showSuggestions = focusWithin && !isBusy && chips.length > 0;
   const typedIsFavourite = favourites.some(
     (f) => f.toLowerCase() === value.trim().toLowerCase(),
@@ -806,7 +826,7 @@ export function CommandBar() {
             : "pointer-events-none translate-y-2.5 opacity-0",
         )}
       >
-        {chips.map(({ text, favourite, complete }) => (
+        {chips.map(({ text, favourite, recent: isRecent, complete }) => (
           <span key={text} className="inline-flex items-center">
             <button
               type="button"
@@ -826,6 +846,13 @@ export function CommandBar() {
               )}
             >
               {favourite && <StarIcon size={14} weight="fill" className="text-amber" />}
+              {isRecent && (
+                <ClockCounterClockwiseIcon
+                  size={14}
+                  aria-hidden
+                  className="text-ink-muted"
+                />
+              )}
               {text}
             </button>
             {favourite && (

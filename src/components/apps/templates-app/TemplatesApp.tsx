@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowLeftIcon, FileTextIcon, PlusIcon } from "@phosphor-icons/react";
-import { Badge, Button } from "@/components/ui";
+import { Badge, Button, Tooltip } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { toast } from "@/lib/notifications/toastStore";
 import {
@@ -392,9 +392,16 @@ export function TemplatesApp({ windowId }: { windowId: string }) {
                         <TemplateKindIcon kind={template.kind} />
                         <span className="flex min-w-0 flex-1 flex-col gap-1">
                           <span className="flex items-center gap-2">
-                            <span className="text-ink min-w-0 flex-1 truncate text-[13.5px] font-semibold">
-                              {template.name}
-                            </span>
+                            {/* The list cuts long names off, so the full name shows on hover and focus. */}
+                            <Tooltip
+                              label={template.name}
+                              side="right"
+                              className="max-w-72 break-words"
+                            >
+                              <span className="text-ink min-w-0 flex-1 truncate text-[13.5px] font-semibold">
+                                {template.name}
+                              </span>
+                            </Tooltip>
                             <Badge
                               variant={badge.tone}
                               className="h-5 shrink-0 px-2 text-[11px]"

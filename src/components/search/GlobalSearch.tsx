@@ -5,6 +5,7 @@ import { create } from "zustand";
 import { MagnifyingGlassIcon } from "@phosphor-icons/react";
 import { useRemindersStore } from "@/components/apps/pmo-todo-app/remindersStore";
 import { useStaffNav } from "@/components/apps/staff-app/staffNavStore";
+import { useNotesNav } from "@/components/apps/notes-app/notesNavStore";
 import { getNotes, noteTitle } from "@/components/apps/notes-app/notesStore";
 import { builtInApps, toolApps } from "@/components/taskbar/pinnedApps";
 import { openOrFocusBuiltInApp } from "@/components/taskbar/launchBuiltInApp";
@@ -48,6 +49,8 @@ function choose(item: SearchItem): void {
   openOrFocusBuiltInApp(target.app);
   if ("todoId" in target) {
     useRemindersStore.getState().requestOpen(target.todoId);
+  } else if ("noteId" in target) {
+    useNotesNav.getState().requestOpen(target.noteId);
   } else if ("tab" in target) {
     useStaffNav.getState().requestOpen({
       tab: target.tab,

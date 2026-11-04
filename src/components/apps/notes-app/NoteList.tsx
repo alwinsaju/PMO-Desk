@@ -1,10 +1,11 @@
 "use client";
 
 import { PushPinIcon, TrashIcon } from "@phosphor-icons/react";
-import { IconButton, ScrollArea } from "@/components/ui";
+import { IconButton, Input, ScrollArea } from "@/components/ui";
+import { noSpellcheck } from "@/lib/ui/noSpellcheck";
 import { cn } from "@/lib/cn";
 import {
-  filterByTag,
+  filterNotes,
   noteDateLabel,
   noteListEntry,
   noteTags,
@@ -12,6 +13,37 @@ import {
   orderNotes,
   type Note,
 } from "./notesLogic";
+
+/** The text filter box above the list: narrows the notes to those whose title or body has the words typed. */
+export function NoteSearch({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className="px-4 pb-2">
+      <Input
+        {...noSpellcheck}
+        type="search"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Escape" && value) {
+            event.preventDefault();
+            event.stopPropagation();
+            onChange("");
+          }
+        }}
+        placeholder="Filter notes"
+        aria-label="Filter notes"
+        data-testid="notes-text-filter"
+        className="h-8 text-[13px]"
+      />
+    </div>
+  );
+}
 
 /** The tag filter chips: All, then every #tag in use with how many notes carry it. */
 export function TagFilter({
@@ -156,11 +188,12 @@ function NoteRow({
   );
 }
 
-/** The sidebar list: pinned notes first, then the rest, narrowed by the active tag. */
+/** The sidebar list: pinned notes first, then the rest, narrowed by the active tag and the text filter. */
 export function NoteList({
   notes,
   selectedId,
   tag,
+  query,
   onSelect,
   onDelete,
   onTogglePin,
@@ -168,11 +201,13 @@ export function NoteList({
   notes: Note[];
   selectedId: string | null;
   tag: string | null;
+  /** Text typed in the filter box; blank shows every note. */
+  query: string;
   onSelect: (id: string) => void;
   onDelete: (id: string) => void;
   onTogglePin: (id: string) => void;
 }) {
-  const { pinned, others } = orderNotes(filterByTag(notes, tag));
+  const { pinned, others } = orderNotes(filterNotes(notes, tag, query));
   const row = (note: Note) => (
     <NoteRow
       key={note.id}
@@ -205,7 +240,7 @@ export function NoteList({
         )}
         {notes.length > 0 && pinned.length + others.length === 0 && (
           <li className="text-ink-faint px-3 py-8 text-center text-[13px]">
-            No note has this tag.
+            No note matches this filter.
           </li>
         )}
       </ul>

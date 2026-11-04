@@ -177,6 +177,24 @@ export function filterByTag(notes: readonly Note[], tag: string | null): Note[] 
   return tag ? notes.filter((n) => noteTags(n.content).includes(tag)) : [...notes];
 }
 
+/** True when every word typed is in the note's title or body, ignoring case and formatting
+ *  markers. A blank query matches every note. */
+export function noteMatchesText(note: Pick<Note, "content">, query: string): boolean {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return true;
+  const text = withoutMarkers(note.content).toLowerCase();
+  return words.every((word) => text.includes(word));
+}
+
+/** Notes carrying `tag` (when set) whose text matches `query` (when not blank); both must hold. */
+export function filterNotes(
+  notes: readonly Note[],
+  tag: string | null,
+  query: string,
+): Note[] {
+  return filterByTag(notes, tag).filter((n) => noteMatchesText(n, query));
+}
+
 export function wordCount(content: string): number {
   const words = withoutMarkers(content)
     .replace(/^[ \t]*[-•][ \t]+/gm, "")

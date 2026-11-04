@@ -203,6 +203,20 @@ export function recentPrompts(log: readonly CommandLogEntry[], limit = 20): stri
   return out;
 }
 
+/** Distinct prompts that worked (answered or done), newest first: what the empty command
+ *  bar offers as "recent" chips. Failed and cancelled ones are left out, so a chip never
+ *  re-asks something that did not give an answer. Up-arrow recall keeps using
+ *  `recentPrompts`, which includes them. */
+export function recentSuccessfulPrompts(
+  log: readonly CommandLogEntry[],
+  limit = 3,
+): string[] {
+  return recentPrompts(
+    log.filter((e) => e.outcome === "answered" || e.outcome === "done"),
+    limit,
+  );
+}
+
 export function toggleFavourite(favourites: readonly string[], prompt: string): string[] {
   const text = prompt.trim().slice(0, MAX_PROMPT);
   if (!text) return [...favourites];

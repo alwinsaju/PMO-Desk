@@ -32,6 +32,7 @@ import {
   isHttpUrl,
   isOpen,
   newRecordId,
+  projectSuggestions,
   sanitizeConfig,
   sanitizeRecord,
   sanitizeValues,
@@ -1063,6 +1064,171 @@ test("export: register records go into the JSON and a CSV per tool", async () =>
       false,
       "empty tools are left out",
     );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("project field: optional free text on RAID, changes and SLA, suggested from status reports", () => {
+  for (const id of ["raid", "changes", "sla"]) {
+    const d = def(id);
+    const field = d.fields.find((f) => f.key === "project");
+    assert.equal(field.type, "text", `${id}: plain text, not a select`);
+    assert.ok(!field.required, `${id}: must stay optional`);
+    assert.equal(field.options, undefined);
+    assert.equal(field.suggest, "projects");
+    assert.ok(d.columns.includes("project"), `${id}: shown as a column`);
+    assert.equal(defaultValues(d, TODAY).project, "");
+  }
+  // Only the three registers that gained the field ask for suggestions.
+  assert.deepEqual(
+    REGISTERS.filter((d) => d.fields.some((f) => f.suggest)).map((d) => d.id),
+    ["raid", "sla", "changes"],
+  );
+  // Any text is accepted, whether or not it is a known project; it is trimmed and capped.
+  const raid = def("raid");
+  const base = { kind: "Risk", title: "x", status: "Open" };
+  assert.equal(sanitizeValues(raid, base).ok, true, "empty project is fine");
+  assert.equal(sanitizeValues(raid, base).values.project, "");
+  assert.equal(
+    sanitizeValues(raid, { ...base, project: "  Brand New Thing " }).values.project,
+    "Brand New Thing",
+  );
+  assert.equal(
+    sanitizeValues(raid, { ...base, project: "p".repeat(500) }).values.project.length,
+    200,
+  );
+  assert.deepEqual(fieldErrors(raid, base), {});
+  // The search box finds a record by its project, case-insensitively.
+  const items = [
+    rec("1", { ...base, project: "Alpha" }),
+    rec("2", { ...base, project: "Beta" }),
+  ];
+  assert.deepEqual(
+    filterRecords(raid, items, { query: "ALPHA" }).map((i) => i.id.slice(-1)),
+    ["1"],
+  );
+  assert.equal(csvRows(raid, items)[0].includes("Project"), true);
+});
+
+test("project field: suggestions are the status-report project names, each once, any case", () => {
+  const sr = (id, project) => rec(id, { project, status: "Active" });
+  assert.deepEqual(
+    projectSuggestions([
+      sr("1", "Zeta"),
+      sr("2", "alpha"),
+      sr("3", "Alpha"),
+      sr("4", "  ALPHA  "),
+      sr("5", ""),
+      sr("6", "Beta"),
+      rec("7", {}),
+    ]),
+    ["alpha", "Beta", "Zeta"],
+    "first spelling wins, sorted, blanks dropped",
+  );
+  assert.deepEqual(projectSuggestions([]), []);
+});
+
+test("project field: records saved before it existed load, save and round-trip unchanged", async () => {
+  const { root, env } = await tempRoot();
+  try {
+    await mkdir(path.join(root, "registers"), { recursive: true });
+    const OLD = {
+      raid: {
+        kind: "Issue",
+        title: "Old issue",
+        description: "d",
+        owner: "Ana",
+        status: "Mitigating",
+        impact: "High",
+        likelihood: "Low",
+        raisedOn: "2026-01-04",
+        dueDate: "2026-03-20",
+        mitigation: "m",
+      },
+      sla: {
+        ref: "INC1",
+        title: "Old ticket",
+        priority: "P2",
+        received: "2026-03-01",
+        resolvedOn: "",
+        status: "Open",
+        owner: "Ben",
+      },
+      changes: {
+        ref: "CR-1",
+        title: "Old change",
+        requester: "Cy",
+        status: "Approved",
+        impact: "Low",
+        cost: "2 days",
+        targetDate: "2026-04-01",
+        description: "x",
+        decisionNote: "y",
+      },
+    };
+    const SEEN = {
+      raid: "2026-02-01T08:00:00.000Z",
+      sla: "2026-02-02T08:00:00.000Z",
+      changes: "2026-02-03T08:00:00.000Z",
+    };
+    for (const [id, values] of Object.entries(OLD)) {
+      const d = def(id);
+      const stored = {
+        id: "rg_0000000000a1",
+        createdAt: SEEN[id],
+        updatedAt: SEEN[id],
+        values,
+        todoId: "td_0123456789ab",
+      };
+      // 1. The sanitiser keeps every old value and just adds an empty project.
+      const parsed = sanitizeRecord(d, stored, SEEN[id]);
+      assert.equal(parsed.ok, true, `${id}: an old record still validates`);
+      assert.deepEqual(parsed.record.values, { ...values, project: "" });
+      assert.equal(parsed.record.todoId, "td_0123456789ab");
+
+      // 2. Reading an old file returns the record, not an empty register.
+      await writeFile(
+        path.join(root, "registers", `${id}.json`),
+        JSON.stringify({ version: 1, items: [stored] }),
+      );
+      const read = await readRegister(d, env);
+      assert.equal(read.items.length, 1, `${id}: not dropped on read`);
+      assert.deepEqual(read.items[0].values, { ...values, project: "" });
+      assert.equal(read.items[0].createdAt, SEEN[id]);
+      assert.equal(read.items[0].todoId, "td_0123456789ab");
+
+      // 3. Saving a different record rereads and rewrites the file; the old one must survive.
+      const saved = await applyRegisterChanges(
+        d,
+        { upsert: [{ values: { ...values, title: "Brand new", project: "Alpha" } }] },
+        env,
+      );
+      assert.equal(saved.items.length, 2, `${id}: old record kept after a save`);
+      const onDisk = JSON.parse(
+        await readFile(path.join(root, "registers", `${id}.json`), "utf8"),
+      );
+      assert.equal(onDisk.items.length, 2);
+      const kept = onDisk.items.find((i) => i.id === "rg_0000000000a1");
+      assert.deepEqual(kept.values, { ...values, project: "" });
+      assert.equal(kept.createdAt, SEEN[id]);
+      assert.equal(kept.todoId, "td_0123456789ab");
+      assert.equal(
+        onDisk.items.find((i) => i.id !== "rg_0000000000a1").values.project,
+        "Alpha",
+        `${id}: the new field is saved`,
+      );
+
+      // 4. Editing an old record to add a project works and keeps its identity.
+      const edited = await applyRegisterChanges(
+        d,
+        { upsert: [{ id: "rg_0000000000a1", values: { ...values, project: "Beta" } }] },
+        env,
+      );
+      const again = edited.items.find((i) => i.id === "rg_0000000000a1");
+      assert.equal(again.values.project, "Beta");
+      assert.equal(again.createdAt, SEEN[id]);
+    }
   } finally {
     await rm(root, { recursive: true, force: true });
   }

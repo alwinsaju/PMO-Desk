@@ -122,3 +122,9 @@ export function clearDraft(storage: DraftStorage | null, templateId: string): vo
     // Nothing to do.
   }
 }
+
+/** Whether the editor can say "Draft kept": there are unsaved edits and the template
+ *  is a saved one (autosave runs only for those, not for a new template). */
+export function isDraftKept(hasSavedTemplate: boolean, dirty: boolean): boolean {
+  return hasSavedTemplate && dirty;
+}

@@ -27,9 +27,10 @@ export interface ModelStatus {
   busy: boolean;
   /** "Structuring 1 of 3" while the queue is being worked through, else null. */
   progress: string | null;
-  /** What the chip shows: the label, plus "· 1 of 3" while the queue is worked
-   *  through, or "· 1:32" (time until it unloads) while the model is loaded and
-   *  idle. Short on purpose: the chip shares a narrow row with the actions. */
+  /** What the chip shows: the label, the model name ("Model ready · gemma4:12b"),
+   *  plus "· 1 of 3" while the queue is worked through, or "· 1:32" (time until it
+   *  unloads) while the model is loaded and idle. Short on purpose: the chip shares
+   *  a narrow row with the actions. */
   chip: string;
   /** ISO time the loaded model unloads, while it is idle in memory; the toolbar
    *  ticks the countdown itself between polls. */
@@ -80,6 +81,9 @@ export function modelStatus(
       ? unloadCountdown(runtime.unloadsAt, nowMs)
       : null;
   const working = !paused && (runtime.state === "loading" || runtime.state === "working");
+  // The model's name goes on the chip too, so you can see which one is in use. Not for the
+  // test stub, whose "model" is just the word "stub".
+  const chipModel = runtime.state === "stub" ? "" : (runtime.model?.trim() ?? "");
 
   const parts: string[] = [];
   parts.push(
@@ -108,12 +112,15 @@ export function modelStatus(
     detail: parts.join(" · "),
     busy: working,
     progress,
-    chip:
+    chip: [
+      label,
+      chipModel,
       working && structuring.total > 1
-        ? `${label} · ${structuring.position} of ${structuring.total}`
-        : countdown
-          ? `${label} · ${countdown}`
-          : label,
+        ? `${structuring.position} of ${structuring.total}`
+        : countdown,
+    ]
+      .filter(Boolean)
+      .join(" · "),
     unloadsAt: !paused && runtime.state === "ready" ? (runtime.unloadsAt ?? null) : null,
   };
 }

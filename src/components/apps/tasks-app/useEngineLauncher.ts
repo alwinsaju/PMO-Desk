@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { setEngineUrl } from "./engineUrl";
-import { abortableSleep, runEngineLaunch } from "./launchRetry";
+import { abortableSleep, runEngineLaunch, type FailureExtras } from "./launchRetry";
 
 export type LaunchPhase = "launching" | "ready" | "failed";
 
@@ -10,6 +10,8 @@ export interface EngineLauncherState {
   phase: LaunchPhase;
   /** Set only when phase === "failed" — what to show the user. */
   reason: string | null;
+  /** Set only when phase === "failed" and the failure was recognised: what to try, and the raw text for "Copy details". */
+  failure: FailureExtras | null;
   /** When the current launch began (ms since epoch), for an elapsed-time readout. */
   startedAt: number | null;
   /** While launching: why the last attempt was retried (e.g. "HTTP 404"). */
@@ -36,6 +38,7 @@ export interface EngineLauncherState {
 export function useEngineLauncher(): EngineLauncherState {
   const [phase, setPhase] = useState<LaunchPhase>("launching");
   const [reason, setReason] = useState<string | null>(null);
+  const [failure, setFailure] = useState<FailureExtras | null>(null);
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [retrying, setRetrying] = useState<string | null>(null);
 
@@ -49,6 +52,7 @@ export function useEngineLauncher(): EngineLauncherState {
     controllerRef.current = controller;
     setPhase("launching");
     setReason(null);
+    setFailure(null);
     setRetrying(null);
     setStartedAt(Date.now());
 
@@ -66,6 +70,7 @@ export function useEngineLauncher(): EngineLauncherState {
       } else {
         setPhase("failed");
         setReason(outcome.reason);
+        setFailure({ steps: outcome.steps, detail: outcome.detail });
       }
     });
   }, []);
@@ -75,5 +80,5 @@ export function useEngineLauncher(): EngineLauncherState {
     return () => controllerRef.current?.abort();
   }, [attempt]);
 
-  return { phase, reason, startedAt, retrying, retry: attempt };
+  return { phase, reason, failure, startedAt, retrying, retry: attempt };
 }

@@ -203,14 +203,15 @@ export const isSnoozed = (todo: Pick<Todo, "reminders">, now: Date): boolean => 
   return until !== null && Date.parse(until) > now.getTime();
 };
 
-export type SnoozeChoice = "1h" | "after-lunch" | "tomorrow" | "monday";
+export type SnoozeChoice = "1h" | "after-lunch" | "tomorrow" | "3d" | "monday";
 
 /** "After lunch" is 14:00 in the zone; once that has passed today it is tomorrow's start of day. */
 export const AFTER_LUNCH = "14:00";
 
-/** When a quick-snooze button wakes the to-do up. "Tomorrow" and "Monday" are
- *  at the start of the working day (09:00 by default) in the prefs' zone;
- *  "Monday" is the next Monday after today (a Monday snoozes a full week). */
+/** When a quick-snooze button wakes the to-do up. "Tomorrow", "3 days" and "Monday"
+ *  are at the start of the working day (09:00 by default) in the prefs' zone;
+ *  "3 days" is three calendar days after today (like "tomorrow", it does not skip
+ *  weekends); "Monday" is the next Monday after today (a Monday snoozes a full week). */
 export function snoozeUntil(
   choice: SnoozeChoice,
   now: Date,
@@ -224,7 +225,12 @@ export function snoozeUntil(
       ? lunch
       : zonedInstant(addDays(today, 1), prefs.workStart, prefs.timeZone);
   }
-  const day = choice === "tomorrow" ? addDays(today, 1) : nextMondayAfter(today);
+  const day =
+    choice === "tomorrow"
+      ? addDays(today, 1)
+      : choice === "3d"
+        ? addDays(today, 3)
+        : nextMondayAfter(today);
   return zonedInstant(day, prefs.workStart, prefs.timeZone);
 }
 

@@ -5,13 +5,14 @@ import { FormField, Input } from "@/components/ui";
 import type { FieldDef, FieldValue } from "@/lib/registers/types";
 import { NativeSelect, TextArea } from "../pmo-todo-app/parts";
 
-/** One field of a record, drawn for its type. People are suggested from the Staff directory.
+/** One field of a record, drawn for its type. People are suggested from the Staff directory, project names from the status-report register.
  *  A field's problem shows under it once it has been left, or at once after a Save attempt. */
 export function FieldInput({
   field,
   value,
   onChange,
   people,
+  projects = [],
   error,
   showErrorNow,
 }: {
@@ -19,6 +20,8 @@ export function FieldInput({
   value: FieldValue | undefined;
   onChange: (value: FieldValue) => void;
   people: readonly string[];
+  /** Project names suggested for a field with `suggest: "projects"`. */
+  projects?: readonly string[];
   error?: string;
   showErrorNow?: boolean;
 }) {
@@ -36,6 +39,9 @@ export function FieldInput({
     </>
   );
   const frame = { label, error, showErrorNow };
+  // A suggestion list is only a hint: the box still takes any text.
+  const suggestions =
+    field.type === "person" ? people : field.suggest === "projects" ? projects : null;
 
   if (field.type === "longtext") {
     return (
@@ -119,11 +125,11 @@ export function FieldInput({
               )
             }
             placeholder={field.placeholder}
-            list={field.type === "person" ? listId : undefined}
+            list={suggestions ? listId : undefined}
           />
-          {field.type === "person" && (
+          {suggestions && (
             <datalist id={listId}>
-              {people.map((p) => (
+              {suggestions.map((p) => (
                 <option key={p} value={p} />
               ))}
             </datalist>

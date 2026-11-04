@@ -13,8 +13,14 @@ export type StartFetch = (
 
 export type LaunchOutcome =
   | { status: "ready"; url: string }
-  | { status: "failed"; reason: string }
+  | ({ status: "failed"; reason: string } & FailureExtras)
   | { status: "aborted" };
+
+/** Set when the route recognised the failure: what to try, and the raw text for "Copy details". */
+export interface FailureExtras {
+  steps?: string[];
+  detail?: string;
+}
 
 export interface LaunchRetryInfo {
   attempt: number;
@@ -45,7 +51,7 @@ const TRANSIENT_STATUSES: ReadonlySet<number> = new Set([404, 502, 503]);
 
 type AttemptResult =
   | { kind: "ready"; url: string }
-  | { kind: "definitive"; reason: string }
+  | ({ kind: "definitive"; reason: string } & FailureExtras)
   | { kind: "transient"; detail: string };
 
 function isHttpUrl(value: unknown): value is string {
@@ -62,7 +68,13 @@ async function readReply(res: Awaited<ReturnType<StartFetch>>): Promise<AttemptR
   if (TRANSIENT_STATUSES.has(res.status)) {
     return { kind: "transient", detail: `HTTP ${res.status}` };
   }
-  let body: { ok?: unknown; url?: unknown; reason?: unknown };
+  let body: {
+    ok?: unknown;
+    url?: unknown;
+    reason?: unknown;
+    steps?: unknown;
+    detail?: unknown;
+  };
   try {
     body = (await res.json()) as typeof body;
   } catch {
@@ -77,7 +89,15 @@ async function readReply(res: Awaited<ReturnType<StartFetch>>): Promise<AttemptR
         };
   }
   const reason = typeof body.reason === "string" && body.reason ? body.reason : null;
-  return { kind: "definitive", reason: reason ?? "The engine failed to start." };
+  const steps = Array.isArray(body.steps)
+    ? body.steps.filter((s): s is string => typeof s === "string" && s !== "")
+    : [];
+  return {
+    kind: "definitive",
+    reason: reason ?? "The engine failed to start.",
+    ...(steps.length > 0 ? { steps } : {}),
+    ...(typeof body.detail === "string" && body.detail ? { detail: body.detail } : {}),
+  };
 }
 
 async function attemptOnce({
@@ -112,7 +132,10 @@ export async function runEngineLaunch(deps: LaunchDeps): Promise<LaunchOutcome> 
     const result = await attemptOnce(deps);
     if (result === "aborted") return { status: "aborted" };
     if (result.kind === "ready") return { status: "ready", url: result.url };
-    if (result.kind === "definitive") return { status: "failed", reason: result.reason };
+    if (result.kind === "definitive") {
+      const { kind: _kind, ...failure } = result;
+      return { status: "failed", ...failure };
+    }
 
     const elapsedMs = now() - startedAt;
     if (elapsedMs >= budgetMs) {

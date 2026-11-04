@@ -28,6 +28,7 @@ import { CopyDetailsButton } from "@/components/platform/CopyDetailsButton";
 import { FieldInput } from "./FieldInput";
 import { removeWithUndo } from "./removeWithUndo";
 import { createTodoFrom } from "./todoBridge";
+import { useProjectNames } from "./useProjectNames";
 import { emailOf } from "./usePeople";
 import type { RegisterState } from "./useRegister";
 
@@ -93,6 +94,7 @@ export function RecordDialog({
   const [attempted, setAttempted] = useState(false);
   const bodyRef = useRef<HTMLDivElement>(null);
   const me = useMyFirstName();
+  const projects = useProjectNames(def.fields.some((f) => f.suggest === "projects"));
   const problems = useMemo(() => fieldErrors(def, values), [def, values]);
   const problemCount = Object.keys(problems).length;
   const sections = useMemo(() => formSections(def), [def]);
@@ -215,6 +217,7 @@ export function RecordDialog({
                     value={values[field.key]}
                     onChange={(v) => setValues((cur) => ({ ...cur, [field.key]: v }))}
                     people={names}
+                    projects={projects}
                     error={problems[field.key]}
                     showErrorNow={attempted}
                   />

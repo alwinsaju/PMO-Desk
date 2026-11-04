@@ -7,8 +7,10 @@ import {
   canRestoreRevision,
   clearSamples,
   filterByTag,
+  filterNotes,
   isUndoActive,
   migrateNotesState,
+  noteMatchesText,
   noteTags,
   noteTitle,
   noteListEntry,
@@ -287,5 +289,49 @@ describe("formatting markers in titles, previews and word counts", () => {
     assert.equal(wordCount(""), 0);
     assert.equal(wordCount("  \n "), 0);
     assert.equal(wordCount("# Plan\n- one two\n- [ ] three **four**"), 5);
+  });
+});
+
+describe("text filter", () => {
+  const notes = [
+    note("a", "# Weekly Plan\nCall Priya about the budget #work"),
+    note("b", "Shopping list\nmilk, eggs #home"),
+    note("c", "**Budget** review notes #work"),
+  ];
+  it("matches the title and the body, ignoring case", () => {
+    assert.equal(noteMatchesText(notes[0], "weekly"), true);
+    assert.equal(noteMatchesText(notes[0], "PRIYA"), true);
+    assert.equal(noteMatchesText(notes[1], "priya"), false);
+  });
+  it("needs every word, in any order", () => {
+    assert.equal(noteMatchesText(notes[0], "budget call"), true);
+    assert.equal(noteMatchesText(notes[0], "budget milk"), false);
+  });
+  it("sees through formatting markers", () => {
+    assert.equal(noteMatchesText(notes[0], "weekly plan"), true);
+    assert.equal(noteMatchesText(notes[2], "budget review"), true);
+  });
+  it("matches everything for a blank query", () => {
+    assert.equal(noteMatchesText(notes[1], ""), true);
+    assert.equal(noteMatchesText(notes[1], "   "), true);
+    assert.equal(filterNotes(notes, null, "").length, 3);
+  });
+  it("combines with the tag filter: both must hold", () => {
+    assert.deepEqual(
+      filterNotes(notes, null, "budget").map((n) => n.id),
+      ["a", "c"],
+    );
+    assert.deepEqual(
+      filterNotes(notes, "work", "review").map((n) => n.id),
+      ["c"],
+    );
+    assert.deepEqual(
+      filterNotes(notes, "home", "budget").map((n) => n.id),
+      [],
+    );
+    assert.deepEqual(
+      filterNotes(notes, "home", "").map((n) => n.id),
+      ["b"],
+    );
   });
 });

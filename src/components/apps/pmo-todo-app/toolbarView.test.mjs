@@ -100,7 +100,7 @@ describe("modelStatus", () => {
     assert.match(status.detail, /structuring 1 of 3/);
     assert.equal(status.busy, true);
     assert.equal(status.progress, "Structuring 1 of 3");
-    assert.equal(status.chip, "Loading model… · 1 of 3");
+    assert.equal(status.chip, "Loading model… · qwen · 1 of 3");
     // One message in the queue: no "1 of 1".
     assert.equal(
       modelStatus(
@@ -109,9 +109,40 @@ describe("modelStatus", () => {
           structuring: { ...idle, active: "pr_1", position: 1, total: 1 },
         }),
       ).chip,
-      "Working on a message",
+      "Working on a message · m",
     );
     assert.equal(modelStatus(state()).progress, null);
+  });
+
+  it("puts the model name on the chip, after the label", () => {
+    assert.equal(modelStatus(state()).chip, "Model ready · qwen2.5:7b");
+    const of = (runtime) =>
+      modelStatus(state({ runtime: { message: null, ...runtime } })).chip;
+    assert.equal(
+      of({ state: "asleep", model: "gemma4:12b" }),
+      "Model asleep · gemma4:12b",
+    );
+    assert.equal(
+      of({ state: "model-missing", model: "gemma4:12b" }),
+      "Model missing · gemma4:12b",
+    );
+    assert.equal(
+      of({ state: "down", model: "qwen3.5:4b" }),
+      "Model not running · qwen3.5:4b",
+    );
+    // The label itself is unchanged, and the tooltip detail still names the model.
+    assert.equal(modelStatus(state()).label, "Model ready");
+    assert.match(modelStatus(state()).detail, /qwen2\.5:7b/);
+  });
+
+  it("leaves the model off the chip when there is none to name", () => {
+    const of = (runtime) =>
+      modelStatus(state({ runtime: { message: null, ...runtime } })).chip;
+    assert.equal(of({ state: "unknown", model: null }), "Model status unknown");
+    assert.equal(of({ state: "asleep", model: "  " }), "Model asleep");
+    assert.equal(of({ state: "asleep" }), "Model asleep");
+    // The test stub's "model" is just the word stub.
+    assert.equal(of({ state: "stub", model: "stub" }), "Test stub");
   });
 
   it("an asleep model says it loads on demand, with no warning wording", () => {
@@ -119,7 +150,7 @@ describe("modelStatus", () => {
       state({ runtime: { state: "asleep", model: "gemma4:12b", message: "Asleep." } }),
     );
     assert.equal(status.label, "Model asleep");
-    assert.equal(status.chip, "Model asleep");
+    assert.equal(status.chip, "Model asleep · gemma4:12b");
     assert.match(status.detail, /loads when a message needs it/);
     assert.match(status.detail, /first message takes 1-2 minutes longer/);
     assert.doesNotMatch(status.detail + status.label, /cold|not loaded|warning/i);
@@ -133,12 +164,12 @@ describe("modelStatus", () => {
         now,
       );
     const status = ready("2026-10-24T10:01:32Z");
-    assert.equal(status.chip, "Model ready · 1:32");
+    assert.equal(status.chip, "Model ready · m · 1:32");
     assert.equal(status.unloadsAt, "2026-10-24T10:01:32Z");
     assert.match(status.detail, /unloads in 1:32/);
     // No deadline, or one that has passed: just the label.
-    assert.equal(ready(null).chip, "Model ready");
-    assert.equal(ready("2026-10-24T09:59:00Z").chip, "Model ready");
+    assert.equal(ready(null).chip, "Model ready · m");
+    assert.equal(ready("2026-10-24T09:59:00Z").chip, "Model ready · m");
     // Only a ready model counts down.
     const working = modelStatus(
       state({

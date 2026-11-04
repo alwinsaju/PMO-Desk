@@ -25,24 +25,38 @@ export const DEFAULT_SUGGESTIONS: readonly string[] = [
 
 const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 
+/** At most this many recent prompts appear as chips, so the starters still have room. */
+export const MAX_RECENT_CHIPS = 3;
+
 export interface Suggestion {
   text: string;
   /** Pinned by the person. */
   favourite: boolean;
+  /** One of the person's own recent prompts. */
+  recent: boolean;
 }
 
-/** Favourites first, then the focused app's chips, then the defaults; no repeats; at most `limit`. */
+/** Favourites first, then recent prompts (at most `MAX_RECENT_CHIPS`), then the focused
+ *  app's chips, then the defaults; no repeats; at most `limit`. `recent` is expected
+ *  newest first and already limited to prompts that worked (see recentSuccessfulPrompts). */
 export function suggestionsFor(
   appId: string | null,
   favourites: readonly string[],
   limit = 6,
+  recent: readonly string[] = [],
 ): Suggestion[] {
   const out: Suggestion[] = [];
-  const add = (text: string, favourite: boolean) => {
-    if (out.length < limit && !out.some((s) => same(s.text, text)))
-      out.push({ text, favourite });
+  const add = (text: string, favourite: boolean, isRecent = false) => {
+    if (out.length >= limit || out.some((s) => same(s.text, text))) return false;
+    out.push({ text, favourite, recent: isRecent });
+    return true;
   };
   for (const f of favourites) add(f, true);
+  let recents = 0;
+  for (const r of recent) {
+    if (recents >= MAX_RECENT_CHIPS) break;
+    if (add(r, false, true)) recents += 1;
+  }
   for (const s of (appId && CONTEXT_SUGGESTIONS[appId]) || []) add(s, false);
   for (const s of DEFAULT_SUGGESTIONS) add(s, false);
   return out;

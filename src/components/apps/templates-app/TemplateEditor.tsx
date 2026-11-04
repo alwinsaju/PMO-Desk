@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowCounterClockwiseIcon,
   CaretDownIcon,
+  CheckIcon,
   ClockCounterClockwiseIcon,
   CopyIcon,
   DotsThreeIcon,
@@ -51,7 +52,13 @@ import {
   Segmented,
   TextArea,
 } from "../pmo-todo-app/parts";
-import { clearDraft, loadDraft, saveDraft, type DraftStorage } from "./draftAutosave";
+import {
+  clearDraft,
+  isDraftKept,
+  loadDraft,
+  saveDraft,
+  type DraftStorage,
+} from "./draftAutosave";
 import { PlaceholderPalette } from "./PlaceholderPalette";
 import {
   holderOf,
@@ -241,6 +248,19 @@ export function TemplateEditor({
             <CaretDownIcon size={12} weight="bold" />
           </Button>
         )}
+        {/* Always rendered so the live region exists before the text appears. */}
+        <span
+          role="status"
+          data-testid="template-draft-kept"
+          className="text-ink-muted flex items-center gap-1 text-[12px]"
+        >
+          {isDraftKept(template !== null, dirty) && (
+            <>
+              <CheckIcon size={12} weight="bold" aria-hidden />
+              Draft kept
+            </>
+          )}
+        </span>
         <Button
           size="sm"
           onClick={save}

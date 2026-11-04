@@ -306,6 +306,17 @@ export function sortRecords(
   });
 }
 
+/** The project names to suggest, from the status-report register's records: each name once
+ *  (compared case-insensitively, the first spelling wins), sorted, blanks left out. */
+export function projectSuggestions(items: readonly RegisterRecord[]): string[] {
+  const seen = new Map<string, string>();
+  for (const item of items) {
+    const name = textOf(item, "project").trim();
+    if (name && !seen.has(name.toLowerCase())) seen.set(name.toLowerCase(), name);
+  }
+  return [...seen.values()].sort((a, b) => a.localeCompare(b));
+}
+
 /** Rows for a CSV: a header, then every record's fields in definition order. */
 export function csvRows(def: RegisterDef, items: readonly RegisterRecord[]): string[][] {
   return [

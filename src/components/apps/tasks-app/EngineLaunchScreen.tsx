@@ -3,11 +3,18 @@
 import { useEffect, useState } from "react";
 import { CircleNotchIcon, WarningIcon } from "@phosphor-icons/react";
 import { Button } from "@/components/ui";
+import { CopyDetailsButton } from "@/components/platform/CopyDetailsButton";
+import { cn } from "@/lib/cn";
+import { redact } from "@/lib/platform/redact";
 
 interface EngineLaunchScreenProps {
   state: "launching" | "failed";
   /** Only meaningful for state === "failed". */
   reason?: string | null;
+  /** Only meaningful for state === "failed": what to try, in order, when the failure was recognised. */
+  steps?: string[];
+  /** Only meaningful for state === "failed": the raw technical text, kept behind "Copy details". */
+  detail?: string;
   /** Only meaningful for state === "launching": when this launch began. */
   startedAt?: number | null;
   /** Only meaningful for state === "launching": why the last attempt was retried. */
@@ -51,13 +58,20 @@ function launchingHint(elapsed: number, retrying: string | null | undefined): st
 export function EngineLaunchScreen({
   state,
   reason,
+  steps,
+  detail,
   startedAt,
   retrying,
   onRetry,
 }: EngineLaunchScreenProps) {
   const elapsed = useElapsedSeconds(startedAt, state === "launching");
   return (
-    <div className="glass-pop rounded-surface shadow-pop flex w-full max-w-sm flex-col items-center gap-4 p-8 text-center">
+    <div
+      className={cn(
+        "glass-pop rounded-surface shadow-pop flex w-full flex-col items-center gap-4 p-8 text-center",
+        state === "failed" && steps?.length ? "max-w-md" : "max-w-sm",
+      )}
+    >
       {state === "launching" ? (
         <span className="relative flex h-12 w-12 shrink-0 items-center justify-center">
           <span className="bg-accent-soft absolute inset-0 rounded-full motion-safe:animate-ping" />
@@ -91,7 +105,24 @@ export function EngineLaunchScreen({
         </p>
       </div>
 
-      {state === "failed" && <Button onClick={onRetry}>Retry</Button>}
+      {state === "failed" && steps && steps.length > 0 && (
+        <ol className="text-ink-muted flex list-decimal flex-col gap-1.5 pl-5 text-left text-[13px]">
+          {steps.map((step) => (
+            <li key={step}>{step}</li>
+          ))}
+        </ol>
+      )}
+
+      {state === "failed" && (
+        <div className="flex items-center">
+          <Button onClick={onRetry}>Retry</Button>
+          <CopyDetailsButton
+            message={reason || "Couldn’t start the Tasks engine"}
+            detail={redact(detail ?? reason ?? "")}
+            where="Tasks engine launch"
+          />
+        </div>
+      )}
     </div>
   );
 }

@@ -28,11 +28,12 @@ const CHOICES: { id: SnoozeChoice; label: string }[] = [
   { id: "1h", label: "In 1 hour" },
   { id: "after-lunch", label: "After lunch" },
   { id: "tomorrow", label: "Tomorrow" },
+  { id: "3d", label: "In 3 days" },
   { id: "monday", label: "Next Monday" },
 ];
 
-/** Snooze presets (1 h, tomorrow at the start of the working day, next
- *  Monday) plus a custom date and time, all read in the reminder time zone.
+/** Snooze presets (1 h, tomorrow or in 3 days at the start of the working day,
+ *  next Monday) plus a custom date and time, all read in the reminder time zone.
  *  Snoozing only silences this to-do's reminders; nothing else changes. */
 export function SnoozeMenu({
   todo,

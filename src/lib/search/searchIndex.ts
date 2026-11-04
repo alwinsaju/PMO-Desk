@@ -11,6 +11,7 @@ export type SearchKind =
 export type SearchTarget =
   | { app: string }
   | { app: "pmo-todo"; todoId: string }
+  | { app: "notes"; noteId: string }
   | { app: "staff"; tab: "directory" | "timeoff" };
 
 export interface SearchItem {
@@ -151,7 +152,7 @@ export const noteItems = (
     title: n.title || "Untitled note",
     subtitle: "Note",
     keywords: n.content.slice(0, MAX_KEYWORDS),
-    target: { app: "notes" },
+    target: { app: "notes", noteId: n.id },
   }));
 
 export const templateItems = (

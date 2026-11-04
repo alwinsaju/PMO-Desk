@@ -2316,6 +2316,11 @@ title, tone, action, key })` from anywhere; a repeated `key` replaces the earlie
   cadence, governance prep, invoice blockers, RAG) and `summarise` counts open, late and soon.
   `timesheets.ts`, `capacity.ts`, `reports.ts` (status report, change summary, month-end check, to-do seed)
   and `slaImport.ts` (pasted incidents) are pure. Tests: `registers.test.mjs`.
+- **Optional Project field** (RAID, changes, SLA). A plain optional text field with `suggest: "projects"`, a
+  form-only hint: the dialog fills a suggestion list from the status-report register's Project values
+  (`useProjectNames`, `projectSuggestions`), and free text is still accepted. It must stay optional text:
+  a required field or a select would make stored records fail the re-validation done on every read, and the
+  next save would write back only the records that passed, deleting the rest.
 - **Storage and routes.** One file per tool in `<data>/registers/<tool>.json`, written atomically under the
   data-folder mutex through the same definition (`server.ts`); a damaged file is reported and never
   overwritten. Routes: `GET|POST /api/registers/<tool>` (`upsert`, `remove`, `config`; at most 500 records per

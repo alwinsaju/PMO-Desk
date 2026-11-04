@@ -27,6 +27,8 @@ export interface FieldDef {
   /** For numbers: the smallest and largest allowed. */
   min?: number;
   max?: number;
+  /** For text fields: where the form's name suggestions come from. Suggestions only; any text is still accepted and nothing is checked against them. */
+  suggest?: "projects";
 }
 
 export type RuleId =

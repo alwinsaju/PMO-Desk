@@ -1,7 +1,9 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { cn } from "@/lib/cn";
 import { useAgentStore } from "./agentStore";
+import { activeModelName } from "./modelName";
 import type { AgentTaskStatus } from "./types";
 
 type BadgeStatus = AgentTaskStatus | "idle";
@@ -19,6 +21,32 @@ const STATUS_LABEL: Record<BadgeStatus, string> = {
  *  doc comment for what actually distinguishes the two phases. */
 const IN_PROGRESS: ReadonlySet<BadgeStatus> = new Set(["thinking", "working"]);
 
+/** The model in use, from GET /api/ai/model (read-only, never loads anything). Read when
+ *  the pill mounts and again whenever the status changes, so a switch made in Settings
+ *  shows up by the next question. No polling; null until known, or if it can't be read. */
+function useActiveModel(status: BadgeStatus): string | null {
+  const [model, setModel] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch("/api/ai/model", {
+          cache: "no-store",
+          signal: AbortSignal.timeout(10_000),
+        });
+        const name = activeModelName(await res.json());
+        if (!cancelled && name) setModel(name);
+      } catch {
+        // Keep whatever was shown: the pill works without a name.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [status]);
+  return model;
+}
+
 /**
  * Idle / Thinking / Working / Completed status pill for the AI agent: a
  * frosted-glass pill (`glass`) with a status dot — grey while idle, accent and
@@ -31,6 +59,7 @@ const IN_PROGRESS: ReadonlySet<BadgeStatus> = new Set(["thinking", "working"]);
 export function AgentStatusBadge() {
   const status: BadgeStatus = useAgentStore((s) => s.currentTask?.status ?? "idle");
   const inProgress = IN_PROGRESS.has(status);
+  const model = useActiveModel(status);
 
   return (
     <span
@@ -47,6 +76,19 @@ export function AgentStatusBadge() {
         )}
       />
       {STATUS_LABEL[status]}
+      {model && (
+        <>
+          <span aria-hidden className="text-ink-muted -mx-0.5">
+            ·
+          </span>
+          <span
+            title="Local AI model"
+            className="text-ink-muted max-w-[10rem] truncate font-medium"
+          >
+            {model}
+          </span>
+        </>
+      )}
     </span>
   );
 }

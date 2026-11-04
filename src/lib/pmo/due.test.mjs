@@ -610,6 +610,41 @@ describe("snooze", () => {
     );
   });
 
+  it("offers 3 days as the start of the working day three calendar days on, weekends included", () => {
+    // Wed 21 Oct -> Sat 24 Oct; Fri 23 Oct (evening) -> Mon 26 Oct; Sat 24 Oct -> Tue 27 Oct.
+    assert.equal(
+      snoozeUntil("3d", ist("2026-10-21T10:00"), p).toISOString(),
+      ist("2026-10-24T09:00").toISOString(),
+    );
+    assert.equal(
+      snoozeUntil("3d", ist("2026-10-23T20:15"), p).toISOString(),
+      ist("2026-10-26T09:00").toISOString(),
+    );
+    assert.equal(
+      snoozeUntil("3d", ist("2026-10-24T08:00"), p).toISOString(),
+      ist("2026-10-27T09:00").toISOString(),
+    );
+  });
+
+  it("3 days crosses a year end, reads the date in the zone and uses the start of day", () => {
+    assert.equal(
+      snoozeUntil("3d", ist("2026-12-30T22:00"), p).toISOString(),
+      ist("2027-01-02T09:00").toISOString(),
+    );
+    // 20:00 UTC Thursday is 01:30 IST Friday: three days on is Monday.
+    assert.equal(
+      snoozeUntil("3d", new Date("2026-10-22T20:00:00Z"), p).toISOString(),
+      ist("2026-10-26T09:00").toISOString(),
+    );
+    assert.equal(
+      snoozeUntil("3d", ist("2026-10-21T10:00"), {
+        ...p,
+        workStart: "08:30",
+      }).toISOString(),
+      ist("2026-10-24T08:30").toISOString(),
+    );
+  });
+
   it("takes next Monday from every weekday, a full week from a Monday, across a month end", () => {
     assert.equal(
       snoozeUntil("monday", ist("2026-10-26T08:00"), p).toISOString(),

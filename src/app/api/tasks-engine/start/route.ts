@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { NextResponse } from "next/server";
 import { getEngineAuth } from "../../../../lib/tasks-engine/engineAuth.ts";
+import { explainEngineExit, type EngineStartFailure } from "../../../../lib/tasks-engine/startFailure.ts";
 import { resolvePython } from "../python";
 import {
   configuredEngineUrl,
@@ -54,7 +55,8 @@ const LOG_PATH = path.join(tmpdir(), "ai-os-tasks-engine.log");
 const LOG_TAIL_CHARS = 800;
 
 type StartResult =
-  { ok: true; alreadyRunning: boolean; url: string } | { ok: false; reason: string };
+  | { ok: true; alreadyRunning: boolean; url: string }
+  | ({ ok: false } & EngineStartFailure);
 
 // Module-scoped: concurrent/rapid POSTs to this route while the dev server
 // is up (React StrictMode's dev-only double-effect, two Tasks windows
@@ -234,10 +236,7 @@ async function attemptStart(): Promise<StartResult> {
     // first so an exit that merely follows a successful boot is not.
     if (exitCode !== null && exitCode !== 0) {
       console.error(`[tasks-engine] process exited with code ${exitCode}`);
-      return {
-        ok: false,
-        reason: `The engine process exited (code ${exitCode}) before it came up.${readLogTail()}`,
-      };
+      return { ok: false, ...explainEngineExit(exitCode, readLogTail()) };
     }
     await sleep(POLL_INTERVAL_MS);
   }

@@ -3,6 +3,7 @@
 import { useMemo, useRef, useState } from "react";
 import { FileXlsIcon, WarningCircleIcon } from "@phosphor-icons/react";
 import { Button, Dialog, DialogContent } from "@/components/ui";
+import { cn } from "@/lib/cn";
 import { parseRosterRows, planImport, type ImportResult } from "@/lib/staff/employees";
 import { employeeTemplate } from "@/lib/staff/importTemplates";
 import { useStaffStore } from "@/lib/staff/staffStore";
@@ -38,6 +39,7 @@ function ImportBody({ onClose }: { onClose: () => void }) {
   const [result, setResult] = useState<ImportResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [dragging, setDragging] = useState(false);
 
   const plan = useMemo(
     () => (result ? planImport(employees, result.rows) : null),
@@ -70,6 +72,12 @@ function ImportBody({ onClose }: { onClose: () => void }) {
     }
   }
 
+  /** Same reader as the picker (and so the same 10 MB cap); only the first dropped file is used. */
+  const take = (list: FileList | null | undefined) => {
+    void read(list?.[0]);
+    if (fileRef.current) fileRef.current.value = "";
+  };
+
   async function run() {
     if (!plan) return;
     setBusy(true);
@@ -94,7 +102,23 @@ function ImportBody({ onClose }: { onClose: () => void }) {
               <button
                 type="button"
                 onClick={() => fileRef.current?.click()}
-                className="border-line-strong hover:bg-chip transition-ui rounded-card focus-ring flex items-center gap-3 border border-dashed px-4 py-4 text-left"
+                onDragOver={(event) => {
+                  if (busy) return;
+                  event.preventDefault();
+                  setDragging(true);
+                }}
+                onDragLeave={() => setDragging(false)}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  setDragging(false);
+                  if (!busy) take(event.dataTransfer.files);
+                }}
+                className={cn(
+                  "transition-ui rounded-card focus-ring flex items-center gap-3 border px-4 py-4 text-left",
+                  dragging
+                    ? "border-focus bg-accent-soft border-solid"
+                    : "border-line-strong hover:bg-chip border-dashed",
+                )}
               >
                 <FileXlsIcon size={28} className="text-accent-ink shrink-0" />
                 <span className="min-w-0">
@@ -104,7 +128,7 @@ function ImportBody({ onClose }: { onClose: () => void }) {
                   <span className="text-ink-muted text-[12.5px]">
                     {busy && !result
                       ? "Reading…"
-                      : "Read on this computer; it is not uploaded anywhere."}
+                      : "Drop a file here, or click to choose. Read on this computer; it is not uploaded anywhere."}
                   </span>
                 </span>
               </button>
@@ -113,10 +137,7 @@ function ImportBody({ onClose }: { onClose: () => void }) {
                 type="file"
                 accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 className="hidden"
-                onChange={(e) => {
-                  void read(e.target.files?.[0]);
-                  e.target.value = "";
-                }}
+                onChange={(e) => take(e.target.files)}
               />
               <TemplateDownloadButton
                 fileName="staff-roster-template.xlsx"

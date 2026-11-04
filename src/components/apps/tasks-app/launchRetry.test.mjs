@@ -99,6 +99,25 @@ describe("runEngineLaunch", () => {
     assert.equal(h.calls(), 1);
   });
 
+  it("passes on the steps and raw detail of a failure the route recognised", async () => {
+    const h = harness([
+      reply(200, {
+        ok: false,
+        reason: "No Python",
+        steps: ["Install it", 3, ""],
+        detail: "raw",
+      }),
+      ready,
+    ]);
+    assert.deepEqual(await runEngineLaunch(h.deps), {
+      status: "failed",
+      reason: "No Python",
+      steps: ["Install it"],
+      detail: "raw",
+    });
+    assert.equal(h.calls(), 1);
+  });
+
   it("does not retry a failure without a reason, and says so plainly", async () => {
     const h = harness([reply(200, { ok: false })]);
     const out = await runEngineLaunch(h.deps);

@@ -8,7 +8,7 @@ import { easeStandard } from "@/lib/motion";
 import {
   UNDO_WINDOW_MS,
   canRestoreRevision,
-  filterByTag,
+  filterNotes,
   hasSamples,
   noteDateLabel,
   orderNotes,
@@ -16,7 +16,8 @@ import {
   undoNoticeText,
 } from "./notesLogic";
 import { NoteEditor } from "./NoteEditor";
-import { NoteList, TagFilter } from "./NoteList";
+import { NoteList, NoteSearch, TagFilter } from "./NoteList";
+import { useNotesNav } from "./notesNavStore";
 import { useNotesStore } from "./notesStore";
 
 /**
@@ -47,13 +48,14 @@ export function NotesApp({ windowId }: { windowId: string }) {
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [tag, setTag] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
   const editorRef = useRef<HTMLTextAreaElement>(null);
   const focusEditorForRef = useRef<string | null>(null);
 
   const tags = tagCounts(notes);
   // A tag nobody uses any more filters nothing out.
   const activeTag = tags.some((t) => t.tag === tag) ? tag : null;
-  const { pinned, others } = orderNotes(filterByTag(notes, activeTag));
+  const { pinned, others } = orderNotes(filterNotes(notes, activeTag, query));
 
   // Falls back to the first listed note when nothing (or a vanished note) is
   // selected, which also covers notes that arrive after async hydration.
@@ -67,6 +69,17 @@ export function NotesApp({ windowId }: { windowId: string }) {
       editorRef.current?.focus();
     }
   }, [selectedNoteId]);
+
+  // Ctrl+K chose a note: show it, and drop the filters so it is not hidden from the list.
+  const openRequest = useNotesNav((s) => s.openRequest);
+  const clearOpenRequest = useNotesNav((s) => s.clearOpenRequest);
+  useEffect(() => {
+    if (!openRequest) return;
+    setTag(null);
+    setQuery("");
+    setSelectedId(openRequest.noteId);
+    clearOpenRequest(openRequest.id);
+  }, [openRequest, clearOpenRequest]);
 
   useEffect(() => {
     if (!lastDeleted) return;
@@ -83,6 +96,7 @@ export function NotesApp({ windowId }: { windowId: string }) {
     const note = createNote("");
     focusEditorForRef.current = note.id;
     setTag(null);
+    setQuery("");
     setSelectedId(note.id);
   }
 
@@ -117,11 +131,13 @@ export function NotesApp({ windowId }: { windowId: string }) {
             </Button>
           </div>
         </div>
+        <NoteSearch value={query} onChange={setQuery} />
         <TagFilter tags={tags} active={activeTag} onChange={setTag} />
         <NoteList
           notes={notes}
           selectedId={selectedNoteId}
           tag={activeTag}
+          query={query}
           onSelect={setSelectedId}
           onDelete={deleteNote}
           onTogglePin={togglePin}

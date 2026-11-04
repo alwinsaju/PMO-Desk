@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   clearDraft,
   DRAFT_MAX_AGE_MS,
+  isDraftKept,
   loadDraft,
   parseDraft,
   saveDraft,
@@ -97,5 +98,14 @@ describe("draft autosave", () => {
     assert.equal(parseDraft(draft({ name: "x".repeat(81) })), null);
     assert.equal(parseDraft(draft({ usedBy: [1] })), null);
     assert.equal(parseDraft(null), null);
+  });
+});
+
+describe("isDraftKept", () => {
+  it("is true only for unsaved edits to a saved template", () => {
+    assert.equal(isDraftKept(true, true), true);
+    assert.equal(isDraftKept(true, false), false);
+    assert.equal(isDraftKept(false, true), false);
+    assert.equal(isDraftKept(false, false), false);
   });
 });

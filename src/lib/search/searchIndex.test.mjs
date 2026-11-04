@@ -107,3 +107,17 @@ describe("searchItems", () => {
     assert.deepEqual(titles("  RELEASE-plan!! "), ["Release plan v2"]);
   });
 });
+
+describe("noteItems", () => {
+  it("points a note result at that note", () => {
+    const note = searchItems(items, "release notes").find((i) => i.kind === "note");
+    assert.deepEqual(note.target, { app: "notes", noteId: "n1" });
+    assert.equal(note.id, "note:n1");
+  });
+
+  it("keeps the note id for a note with no title", () => {
+    const [untitled] = noteItems([{ id: "n9", title: "", content: "" }]);
+    assert.equal(untitled.title, "Untitled note");
+    assert.deepEqual(untitled.target, { app: "notes", noteId: "n9" });
+  });
+});
