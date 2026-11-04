@@ -388,6 +388,21 @@ export const REGISTERS: readonly RegisterDef[] = [
         max: 730,
       },
       { key: "value", label: "Value", type: "text" },
+      // Milestone and payment dates (ops-4). All OPTIONAL and never required: stored vendor records
+      // were written before these existed, so a missing value must stay valid or every old record would
+      // fail re-validation on read and be deleted by the next save. A blank date is valid (`coerce`
+      // turns an absent or empty date into ""). Clear a date once it is met, as the alert has no done flag.
+      { key: "milestone1", label: "Milestone 1", type: "text", placeholder: "Optional" },
+      { key: "milestone1Date", label: "Milestone 1 date (clear once met)", type: "date" },
+      { key: "milestone2", label: "Milestone 2", type: "text", placeholder: "Optional" },
+      { key: "milestone2Date", label: "Milestone 2 date (clear once met)", type: "date" },
+      {
+        key: "paymentNote",
+        label: "Next payment",
+        type: "text",
+        placeholder: "Optional, e.g. quarterly invoice",
+      },
+      { key: "paymentDate", label: "Next payment due (clear once paid)", type: "date" },
       { key: "notes", label: "Notes", type: "longtext" },
     ],
     titleKey: "vendor",
@@ -398,6 +413,23 @@ export const REGISTERS: readonly RegisterDef[] = [
     sortKey: "renewalDate",
     sortDir: "asc",
     rule: "renewal",
+    formGroups: [
+      { title: "What", keys: ["vendor", "contract", "status", "value"] },
+      { title: "Who", keys: ["owner"] },
+      { title: "When", keys: ["startDate", "renewalDate", "noticeDays"] },
+      {
+        title: "Milestones and payments",
+        keys: [
+          "milestone1",
+          "milestone1Date",
+          "milestone2",
+          "milestone2Date",
+          "paymentNote",
+          "paymentDate",
+        ],
+      },
+      { title: "Details", keys: ["notes"] },
+    ],
   },
   {
     id: "capacity",

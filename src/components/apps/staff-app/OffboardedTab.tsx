@@ -288,7 +288,7 @@ export function OffboardedTab() {
       <ConfirmDialog
         open={deleting !== null}
         title={deleting ? `Delete ${displayName(deleting)} for good?` : "Delete?"}
-        description="Their profile and photo are removed permanently and cannot be recovered."
+        description="Their profile, photo, shift roster entry and shifts are removed permanently and cannot be recovered."
         confirmLabel="Delete permanently"
         busy={busy}
         error={error}

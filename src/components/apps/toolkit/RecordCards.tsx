@@ -15,6 +15,7 @@ export function RecordCards({
   onEdit,
   onDelete,
   onStamp,
+  selection,
 }: {
   def: RegisterDef;
   records: readonly RegisterRecord[];
@@ -22,6 +23,8 @@ export function RecordCards({
   onEdit: (record: RegisterRecord) => void;
   onDelete: (record: RegisterRecord) => void;
   onStamp: (record: RegisterRecord) => void;
+  /** Tick boxes on the cards (bulk to-dos); without it the cards have none. */
+  selection?: { selected: ReadonlySet<string>; onToggle: (id: string) => void };
 }) {
   const [titleKey, ...rest] = def.columns;
   const titleField = def.fields.find((f) => f.key === titleKey);
@@ -38,14 +41,26 @@ export function RecordCards({
             data-testid="register-card"
             className={`border-line bg-card rounded-card group flex flex-col gap-2 border px-4 py-3 ${isOpen(def, record) ? "" : "opacity-60"}`}
           >
-            <button
-              type="button"
-              className="text-ink focus-ring text-left text-[14px] font-semibold underline-offset-2 hover:underline"
-              onClick={() => onEdit(record)}
-              aria-label={`Open ${recordTitle(def, record)}`}
-            >
-              {cellText(titleField, record.values[titleKey]) || recordTitle(def, record)}
-            </button>
+            <div className="flex items-start gap-2">
+              {selection && (
+                <input
+                  type="checkbox"
+                  className="mt-1 shrink-0"
+                  checked={selection.selected.has(record.id)}
+                  onChange={() => selection.onToggle(record.id)}
+                  aria-label={`Select ${recordTitle(def, record)}`}
+                />
+              )}
+              <button
+                type="button"
+                className="text-ink focus-ring text-left text-[14px] font-semibold underline-offset-2 hover:underline"
+                onClick={() => onEdit(record)}
+                aria-label={`Open ${recordTitle(def, record)}`}
+              >
+                {cellText(titleField, record.values[titleKey]) ||
+                  recordTitle(def, record)}
+              </button>
+            </div>
             {alert && (
               <span>
                 <AlertChip level={alert.level} text={alert.text} />

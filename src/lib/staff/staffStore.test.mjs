@@ -188,7 +188,11 @@ describe("staff store", () => {
     server.employees = [a, b];
     server.timeoff = [{ id: "to_000000000001", employeeId: a.id }];
     await useStaffStore.getState().load();
-    assert.deepEqual(await useStaffStore.getState().offboard([a.id]), { ok: true });
+    const result = await useStaffStore.getState().offboard([a.id]);
+    assert.equal(result.ok, true);
+    // The reply carries what was dropped so the caller can offer Undo. This test's fake server
+    // does not report any, so both lists come back empty.
+    assert.deepEqual(result.undo, { timeOff: [], unlinked: [] });
     const state = useStaffStore.getState();
     assert.deepEqual(
       state.employees.map((e) => e.id),

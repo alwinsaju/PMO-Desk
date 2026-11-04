@@ -2,14 +2,19 @@
 // which to keep. Hidden apps stay reachable from the App Menu ("more apps").
 
 const TILE = 46;
+/** An app tile's width with "Show dock labels" on (a fixed column; DockTile.tsx uses `w-[60px]`). */
+export const DOCK_LABELLED_TILE_WIDTH = 60;
 const GAP = 6;
-/** Pill padding and screen margin, the trailing divider and the launcher group. */
+/** Pill padding and screen margin, the trailing divider and the launcher group. The launchers
+ *  stay 46px wide either way. */
 const RESERVED = 32 + 20 + 10 + 2 * TILE + GAP + 14;
 
-/** How many app tiles fit next to the launcher group in a viewport this wide. */
-export function dockCapacity(viewportWidth: number): number {
+/** How many app tiles fit next to the launcher group in a viewport this wide. With labels on
+ *  each tile is wider, so fewer fit and more of the tail moves into the App Menu. */
+export function dockCapacity(viewportWidth: number, labelled = false): number {
   if (!Number.isFinite(viewportWidth)) return Number.POSITIVE_INFINITY;
-  return Math.max(3, Math.floor((viewportWidth - RESERVED + GAP) / (TILE + GAP)));
+  const tile = labelled ? DOCK_LABELLED_TILE_WIDTH : TILE;
+  return Math.max(3, Math.floor((viewportWidth - RESERVED + GAP) / (tile + GAP)));
 }
 
 export interface SplitResult<T> {

@@ -410,6 +410,7 @@ export function Window({ id }: WindowProps) {
       >
         <WindowTitleBar
           id={id}
+          appId={data.appId}
           title={data.title}
           suffix={barSuffix}
           icon={data.icon}

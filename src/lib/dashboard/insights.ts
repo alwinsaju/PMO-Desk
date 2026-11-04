@@ -5,6 +5,11 @@ import { addDays, daysBetween, mondayOf } from "../staff/dates.ts";
 import { localParts } from "../pmo/due.ts";
 import { signoffSummary } from "../pmo/signoffView.ts";
 import type { ReminderPrefs, Todo } from "../pmo/types.ts";
+import { overallRag, recordAlert } from "../registers/alerts.ts";
+import type { RegisterSummary } from "../registers/alerts.ts";
+import { REGISTERS, registerById } from "../registers/defs.ts";
+import { isOpen, textOf } from "../registers/records.ts";
+import type { FieldValue, RegisterDef, RegisterRecord } from "../registers/types.ts";
 import type { ReportStatusRow, RunLike } from "./summary.ts";
 
 type Prefs = Pick<ReminderPrefs, "timeZone" | "workDays" | "chaserDays">;
@@ -15,13 +20,53 @@ const owner = (t: Pick<Todo, "owner">) =>
 // --- Today ----------------------------------------------------------------------------------
 
 export type TodayKind =
-  "overdue" | "task" | "leave" | "signoff" | "due-today" | "review" | "away";
+  | "overdue"
+  | "task"
+  | "leave"
+  | "signoff"
+  | "due-today"
+  | "review"
+  | "away"
+  | "contract-late"
+  | "contract-soon";
 
 export interface TodayItem {
   kind: TodayKind;
   text: string;
   /** Which app to open for it. */
-  appId: "pmo-todo" | "tasks" | "staff";
+  appId: "pmo-todo" | "tasks" | "staff" | "vendors";
+}
+
+/** A contract that is late or due soon: a milestone, a payment, or the renewal and notice date. */
+export interface TodayContract {
+  /** The vendor's name. */
+  vendor: string;
+  level: "late" | "soon";
+  /** What the register's alert says ("Go-live: late by 3 days"). */
+  text: string;
+}
+
+/** The late and soon alerts of the vendor register's open contracts, for the Today list. Uses the
+ *  register's own alert rule, so the list and the register always agree. */
+export function contractTodayAlerts(
+  records: readonly RegisterRecord[],
+  today: string,
+  config: Record<string, FieldValue> = {},
+): TodayContract[] {
+  const def = registerById("vendors");
+  if (!def) return [];
+  const out: TodayContract[] = [];
+  for (const record of records) {
+    const alert = recordAlert(def, record, { today, config });
+    if (alert && (alert.level === "late" || alert.level === "soon")) {
+      out.push({
+        vendor: textOf(record, def.titleKey) || "(untitled)",
+        level: alert.level,
+        text: alert.text,
+      });
+    }
+  }
+  return out;
 }
 
 export interface TodayInput {
@@ -36,14 +81,19 @@ export interface TodayInput {
   tasksNeedingYou: readonly string[];
   /** People out today, by name. */
   awayToday: readonly string[];
+  /** Late or soon contracts from the vendor register (`contractTodayAlerts`). Optional: a caller that
+   *  has not read the register simply shows none. */
+  contracts?: readonly TodayContract[];
 }
 
 const RANK: Record<TodayKind, number> = {
   overdue: 0,
   task: 1,
   signoff: 2,
+  "contract-late": 2.5,
   leave: 3,
   "due-today": 4,
+  "contract-soon": 4.5,
   review: 5,
   away: 6,
 };
@@ -70,6 +120,12 @@ export function todayList(input: TodayInput, limit = 10): TodayItem[] {
   }
   for (const name of input.tasksNeedingYou)
     out.push({ kind: "task", text: `${name} needs you`, appId: "tasks" });
+  for (const c of input.contracts ?? [])
+    out.push({
+      kind: c.level === "late" ? "contract-late" : "contract-soon",
+      text: `${c.vendor} contract: ${c.text}`,
+      appId: "vendors",
+    });
   if (input.pendingLeave > 0)
     out.push({
       kind: "leave",
@@ -224,6 +280,128 @@ export function reportHealth(
       ? Math.round(scored.reduce((s, t) => s + t.percent, 0) / scored.length)
       : null,
     tasks,
+  };
+}
+
+// --- portfolio RAG --------------------------------------------------------------------------
+
+export interface RagProject {
+  id: string;
+  project: string;
+  owner: string;
+  rag: "Red" | "Amber" | "Green";
+  /** Which of schedule, budget and scope carry that colour (empty for Green). */
+  which: string[];
+}
+
+export interface PortfolioRag {
+  red: number;
+  amber: number;
+  green: number;
+  /** Projects counted. */
+  total: number;
+  /** Extra rows dropped because the same project name appeared on another open row (the newest wins). */
+  collapsed: number;
+  /** Red first, then Amber, then Green; by name within a colour. */
+  projects: RagProject[];
+}
+
+const RAG_RANK = { Red: 0, Amber: 1, Green: 2 } as const;
+
+/** Red, Amber and Green counts over the open rows of the status-report register. A project is its
+ *  worst of schedule, budget and scope (`overallRag`, the rule the register's own alerts use). The
+ *  register is one row per project by convention only, so rows with the same project name (ignoring
+ *  case) count once, the one with the latest "as of" date (then the latest edit). Closed rows are left
+ *  out. A row with no project name is always counted on its own. */
+export function portfolioRag(records: readonly RegisterRecord[]): PortfolioRag {
+  const def = registerById("status-report");
+  const open = def ? records.filter((r) => isOpen(def, r)) : [];
+  const isNewer = (a: RegisterRecord, b: RegisterRecord): boolean => {
+    const byDate = textOf(a, "asOf").localeCompare(textOf(b, "asOf"));
+    return byDate !== 0 ? byDate > 0 : a.updatedAt.localeCompare(b.updatedAt) > 0;
+  };
+  const byName = new Map<string, RegisterRecord>();
+  for (const r of open) {
+    const name = textOf(r, "project").trim().toLowerCase();
+    const key = name || `id:${r.id}`;
+    const have = byName.get(key);
+    if (!have || isNewer(r, have)) byName.set(key, r);
+  }
+  const projects: RagProject[] = [...byName.values()].map((r) => {
+    const rag = overallRag(r);
+    return {
+      id: r.id,
+      project: textOf(r, "project").trim() || "(untitled)",
+      owner: textOf(r, "owner"),
+      rag,
+      which:
+        rag === "Green"
+          ? []
+          : ["schedule", "budget", "scope"].filter((k) => textOf(r, k) === rag),
+    };
+  });
+  projects.sort(
+    (a, b) => RAG_RANK[a.rag] - RAG_RANK[b.rag] || a.project.localeCompare(b.project),
+  );
+  return {
+    red: projects.filter((p) => p.rag === "Red").length,
+    amber: projects.filter((p) => p.rag === "Amber").length,
+    green: projects.filter((p) => p.rag === "Green").length,
+    total: projects.length,
+    collapsed: open.length - projects.length,
+    projects,
+  };
+}
+
+// --- PMO health scorecard -------------------------------------------------------------------
+
+export interface ScorecardRow {
+  id: string;
+  title: string;
+  open: number;
+  late: number;
+  soon: number;
+  /** late beats soon beats clear. */
+  state: "late" | "soon" | "clear";
+}
+
+export interface Scorecard {
+  rows: ScorecardRow[];
+  late: number;
+  soon: number;
+  /** Registers with nothing late or due soon. */
+  clear: number;
+}
+
+/** Late and soon per register, for ONLY the registers that have an alert rule (`def.rule`): RAID, SLA,
+ *  changes, governance, stakeholders, vendors, invoices and the status report. The other registers have
+ *  no rule, so nothing can be late in them and they are not scored. A register the summaries do not
+ *  mention counts as zero. Not a percentage on purpose: there is no agreed weighting. Unrelated to the
+ *  "Report health" card, which scores Tasks-engine report runs. */
+export function pmoScorecard(
+  summaries: Readonly<Record<string, RegisterSummary | undefined>>,
+  defs: readonly RegisterDef[] = REGISTERS,
+): Scorecard {
+  const rows = defs
+    .filter((def) => def.rule !== undefined)
+    .map((def): ScorecardRow => {
+      const s = summaries[def.id];
+      const late = s?.late ?? 0;
+      const soon = s?.soon ?? 0;
+      return {
+        id: def.id,
+        title: def.title,
+        open: s?.open ?? 0,
+        late,
+        soon,
+        state: late > 0 ? "late" : soon > 0 ? "soon" : "clear",
+      };
+    });
+  return {
+    rows,
+    late: rows.reduce((n, r) => n + r.late, 0),
+    soon: rows.reduce((n, r) => n + r.soon, 0),
+    clear: rows.filter((r) => r.state === "clear").length,
   };
 }
 

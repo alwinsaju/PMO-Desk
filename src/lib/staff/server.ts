@@ -31,6 +31,7 @@ import {
   shiftChangesSchema,
   timeOffChangesSchema,
 } from "./schema.ts";
+import type { OffboardUndo, RosterLink } from "./offboardUndo.ts";
 import { defaultRosterConfig } from "./rosterCatalog.ts";
 import type {
   Employee,
@@ -223,12 +224,14 @@ async function removePhotos(ids: readonly string[], env: Env): Promise<void> {
 
 /** Drops the time off of people who have left the roster and unlinks their shift
  *  roster entries (the entries and their shifts stay, under the name they had).
- *  Caller holds the lock. */
-async function dropSchedules(ids: readonly string[], env: Env): Promise<void> {
-  if (!ids.length) return;
+ *  Returns exactly what it took away, so an undo can put it back. Caller holds the lock. */
+async function dropSchedules(ids: readonly string[], env: Env): Promise<OffboardUndo> {
+  const undo: OffboardUndo = { timeOff: [], unlinked: [] };
+  if (!ids.length) return undo;
   const gone = new Set(ids);
   const leave = await readCollection("timeoff", env);
-  if (leave.some((r) => gone.has(r.employeeId))) {
+  undo.timeOff = leave.filter((r) => gone.has(r.employeeId));
+  if (undo.timeOff.length > 0) {
     await writeCollection(
       "timeoff",
       leave.filter((r) => !gone.has(r.employeeId)),
@@ -236,7 +239,12 @@ async function dropSchedules(ids: readonly string[], env: Env): Promise<void> {
     );
   }
   const config = await readRosterConfig(env);
-  if (config.members.some((m) => m.employeeId && gone.has(m.employeeId))) {
+  undo.unlinked = config.members.flatMap((m) =>
+    m.employeeId && gone.has(m.employeeId)
+      ? [{ memberId: m.id, employeeId: m.employeeId }]
+      : [],
+  );
+  if (undo.unlinked.length > 0) {
     await writeRosterConfig(
       {
         ...config,
@@ -246,6 +254,43 @@ async function dropSchedules(ids: readonly string[], env: Env): Promise<void> {
       },
       env,
     );
+  }
+  return undo;
+}
+
+/** Links shift roster entries back to the people just restored. Only an entry that is still
+ *  unlinked, and a person nobody else is linked to, is touched. Best effort: the person is
+ *  already back, and opening the roster links an exact name match anyway. Caller holds the lock. */
+async function relinkRosterEntries(
+  links: readonly RosterLink[],
+  env: Env,
+): Promise<void> {
+  if (!links.length) return;
+  try {
+    const config = await readRosterConfig(env);
+    const taken = new Set(
+      config.members.map((m) => m.employeeId).filter((id): id is string => !!id),
+    );
+    const target = new Map<string, string>();
+    for (const link of links) {
+      if (taken.has(link.employeeId) || target.has(link.memberId)) continue;
+      taken.add(link.employeeId);
+      target.set(link.memberId, link.employeeId);
+    }
+    if (!config.members.some((m) => !m.employeeId && target.has(m.id))) return;
+    await writeRosterConfig(
+      {
+        ...config,
+        members: config.members.map((m) =>
+          !m.employeeId && target.has(m.id)
+            ? { ...m, employeeId: target.get(m.id) ?? null }
+            : m,
+        ),
+      },
+      env,
+    );
+  } catch {
+    // Leave the roster as it is.
   }
 }
 
@@ -412,12 +457,17 @@ export function applyChanges<K extends StaffKind>(
 /** Moves people off the roster into the offboarded list, or back. Their time off
  *  is dropped when they leave and their shift roster entry is unlinked; their
  *  profile and photo are kept.
- *  Returns both lists as saved. */
+ *  Returns both lists as saved; an offboard also returns `undo`, the time off it dropped and
+ *  the roster links it cleared, and a restore may be given those links to put back. */
 export async function moveEmployees(
   body: unknown,
   env: Env = process.env,
   now: () => string = () => new Date().toISOString(),
-): Promise<{ employees: Employee[]; offboarded: OffboardedEmployee[] }> {
+): Promise<{
+  employees: Employee[];
+  offboarded: OffboardedEmployee[];
+  undo?: OffboardUndo;
+}> {
   const parsed = moveSchema.safeParse(body);
   if (!parsed.success) throw new StaffError(firstIssue(parsed.error));
   const { action, ids } = parsed.data;
@@ -441,8 +491,8 @@ export async function moveEmployees(
       const nextEmployees = employees.filter((e) => !wanted.has(e.id));
       await writeCollection("offboarded", nextOffboarded, env);
       await writeCollection("employees", nextEmployees, env);
-      await dropSchedules(ids, env);
-      return { employees: nextEmployees, offboarded: nextOffboarded };
+      const undo = await dropSchedules(ids, env);
+      return { employees: nextEmployees, offboarded: nextOffboarded, undo };
     }
 
     const returning = offboarded.filter((o) => wanted.has(o.id));
@@ -468,6 +518,10 @@ export async function moveEmployees(
     const nextOffboarded = offboarded.filter((o) => !wanted.has(o.id));
     await writeCollection("employees", nextEmployees, env);
     await writeCollection("offboarded", nextOffboarded, env);
+    await relinkRosterEntries(
+      (parsed.data.relink ?? []).filter((l) => wanted.has(l.employeeId)),
+      env,
+    );
     return { employees: nextEmployees, offboarded: nextOffboarded };
   });
 }

@@ -1,5 +1,6 @@
 // In-app help: for each app, what it is for and its three most common tasks. Static on
 // purpose, so it is the same offline and reviewable. Pure.
+import { REGISTER_IDS } from "../registers/defs.ts";
 
 export interface HelpTask {
   title: string;
@@ -157,6 +158,38 @@ export const APP_HELP: readonly AppHelp[] = [
     ],
   },
   {
+    // One shared entry for the launcher and all 14 tools: they open inside this window.
+    appId: "pmo-toolkit",
+    title: "PMO Toolkit",
+    summary:
+      "Small tools for the PMO routine, such as the RAID log, decisions and vendors. Each keeps its records on this computer and tells you what is late. Nothing is sent without you.",
+    tasks: [
+      {
+        title: "Open a tool",
+        steps: [
+          "Pick a card, or type in Filter tools to narrow the list.",
+          "Press All tools to come back to the cards.",
+        ],
+      },
+      {
+        title: "Add or change a record",
+        steps: [
+          "Press the add button in the tool, or click a record to open it.",
+          "Fill in the form and save.",
+          "Delete asks nothing first; use Undo in the message that appears.",
+        ],
+      },
+      {
+        title: "Turn a record into a to-do",
+        steps: [
+          "Open the record.",
+          "Press Make a to-do.",
+          "The to-do appears in PMO To-Do.",
+        ],
+      },
+    ],
+  },
+  {
     appId: "files",
     title: "Files",
     summary: "Browse the files in the PMO Desk folders on this computer.",
@@ -236,8 +269,11 @@ export const APP_HELP: readonly AppHelp[] = [
   },
 ];
 
+/** Each toolkit tool (raid, decisions, ...) can open in a window of its own; all of them share
+ *  the PMO Toolkit entry. */
 export function helpFor(appId: string | null | undefined): AppHelp | null {
-  return APP_HELP.find((h) => h.appId === appId) ?? null;
+  const id = appId && REGISTER_IDS.includes(appId) ? "pmo-toolkit" : appId;
+  return APP_HELP.find((h) => h.appId === id) ?? null;
 }
 
 export const GENERAL_HELP: readonly string[] = [

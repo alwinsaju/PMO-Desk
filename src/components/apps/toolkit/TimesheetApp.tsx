@@ -4,12 +4,18 @@ import { useMemo, useState } from "react";
 import { Button, Input } from "@/components/ui";
 import { toast } from "@/lib/notifications/toastStore";
 import { addDays, formatDayMonth, mondayOf, todayIso } from "@/lib/staff/dates";
-import { matchSubmitted, seedWeek, timesheetChaser } from "@/lib/registers/timesheets";
+import {
+  matchSubmitted,
+  personChasers,
+  seedWeek,
+  timesheetChaser,
+} from "@/lib/registers/timesheets";
 import { textOf } from "@/lib/registers/records";
 import type { RegisterRecord } from "@/lib/registers/types";
 import { useMyFirstName } from "@/components/people/useMyFirstName";
 import { CopyDetailsButton } from "@/components/platform/CopyDetailsButton";
 import { NativeSelect, TextArea } from "../pmo-todo-app/parts";
+import { PersonChasersDialog } from "./PersonChasersDialog";
 import { ReportDialog } from "./ReportDialog";
 import { usePeople } from "./usePeople";
 import { useRegister } from "./useRegister";
@@ -26,6 +32,7 @@ export function TimesheetApp({ windowId }: { windowId: string }) {
   const [note, setNote] = useState<{ text: string; detail?: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [chaserOpen, setChaserOpen] = useState(false);
+  const [perPersonOpen, setPerPersonOpen] = useState(false);
 
   const rows = useMemo(
     () =>
@@ -39,6 +46,12 @@ export function TimesheetApp({ windowId }: { windowId: string }) {
   const missing = rows.filter((r) => textOf(r, "status") === "Missing");
   const absent = people.filter((p) => !rows.some((r) => textOf(r, "person") === p.name));
   const chaser = timesheetChaser(
+    week,
+    missing.map((r) => ({ person: textOf(r, "person"), email: textOf(r, "email") })),
+    me,
+  );
+
+  const perPerson = personChasers(
     week,
     missing.map((r) => ({ person: textOf(r, "person"), email: textOf(r, "email") })),
     me,
@@ -187,6 +200,14 @@ export function TimesheetApp({ windowId }: { windowId: string }) {
             <Button
               variant="outline"
               size="sm"
+              disabled={missing.length === 0}
+              onClick={() => setPerPersonOpen(true)}
+            >
+              One draft per person
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
               disabled={missing.length === 0 || busy}
               onClick={() => void markChased()}
             >
@@ -271,6 +292,12 @@ export function TimesheetApp({ windowId }: { windowId: string }) {
         <p role="alert" className="text-red px-6 pb-3 text-[12.5px]">
           {state.error.reason}
         </p>
+      )}
+      {perPersonOpen && (
+        <PersonChasersDialog
+          chasers={perPerson}
+          onClose={() => setPerPersonOpen(false)}
+        />
       )}
       {chaserOpen && (
         <ReportDialog

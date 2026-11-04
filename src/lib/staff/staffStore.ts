@@ -11,6 +11,7 @@
 import { useEffect } from "react";
 import { create } from "zustand";
 import { mergeChanges } from "./changes.ts";
+import { readOffboardUndo, type OffboardUndo, type RosterLink } from "./offboardUndo.ts";
 import type {
   Employee,
   OffboardedEmployee,
@@ -53,10 +54,12 @@ export interface StaffState {
     kind: K,
     changes: StaffChanges<Collections[K]>,
   ) => Promise<StaffResult>;
-  /** Moves people off the roster into the offboarded list (dropping their time off). */
-  offboard: (ids: string[]) => Promise<StaffResult>;
-  /** Moves offboarded people back onto the roster. */
-  restore: (ids: string[]) => Promise<StaffResult>;
+  /** Moves people off the roster into the offboarded list (dropping their time off).
+   *  On success `undo` holds what was dropped, for `undoOffboard`. */
+  offboard: (ids: string[]) => Promise<StaffResult & { undo?: OffboardUndo }>;
+  /** Moves offboarded people back onto the roster, and links the given shift roster
+   *  entries back to them. */
+  restore: (ids: string[], relink?: RosterLink[]) => Promise<StaffResult>;
   uploadPhoto: (employeeId: string, image: Blob) => Promise<StaffResult>;
   removePhoto: (employeeId: string) => Promise<StaffResult>;
   /** Asks the M365 flow for this person's profile again. */
@@ -145,19 +148,22 @@ export const useStaffStore = create<StaffState>()((set, get) => {
   };
 
   // Runs after every earlier write to either list, and before any later one.
-  const move = (action: "offboard" | "restore", ids: string[]) => {
+  const move = (action: "offboard" | "restore", ids: string[], relink?: RosterLink[]) => {
     inFlight++;
-    const run = async (): Promise<StaffResult> => {
+    const run = async (): Promise<StaffResult & { undo?: OffboardUndo }> => {
       try {
         const response = await fetch("/api/staff/offboard", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action, ids }),
+          body: JSON.stringify(
+            relink?.length ? { action, ids, relink } : { action, ids },
+          ),
         });
         if (!response.ok) return { ok: false, reason: await readReason(response) };
         const body = (await response.json()) as {
           employees?: Employee[];
           offboarded?: OffboardedEmployee[];
+          undo?: unknown;
         };
         if (!Array.isArray(body.employees) || !Array.isArray(body.offboarded)) {
           throw new Error("Bad reply");
@@ -168,6 +174,7 @@ export const useStaffStore = create<StaffState>()((set, get) => {
           // Their time off went with them on the server.
           const gone = new Set(ids);
           confirmed.timeoff = confirmed.timeoff.filter((r) => !gone.has(r.employeeId));
+          return { ok: true, undo: readOffboardUndo(body.undo) };
         }
         return { ok: true };
       } catch {
@@ -261,7 +268,7 @@ export const useStaffStore = create<StaffState>()((set, get) => {
     },
 
     offboard: (ids) => move("offboard", ids),
-    restore: (ids) => move("restore", ids),
+    restore: (ids, relink) => move("restore", ids, relink),
 
     requestProfile: (employeeId) =>
       tracked(async () => {

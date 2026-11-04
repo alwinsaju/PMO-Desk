@@ -1,17 +1,28 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { ArrowLeftIcon } from "@phosphor-icons/react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { ArrowLeftIcon, PushPinIcon } from "@phosphor-icons/react";
 import { useWindowContext } from "@/components/window-manager";
 import { toolApps } from "@/components/taskbar/pinnedApps";
-import { Badge, Button } from "@/components/ui";
+import { Badge, Button, IconButton, Input } from "@/components/ui";
 import type { RegisterSummary } from "@/lib/registers/alerts";
 import { registerById } from "@/lib/registers/defs";
 import { groupTools } from "@/lib/registers/layout";
+import { noSpellcheck } from "@/lib/ui/noSpellcheck";
 import { fetchSummaries } from "./registersApi";
 import { toolComponent } from "./tools";
+import {
+  arrangeGroups,
+  browserStorage,
+  filterTools,
+  loadToolkitMemory,
+  saveLastTool,
+  savePinned,
+  togglePin,
+} from "./toolkitView";
 
 const REFRESH_MS = 30_000;
+const TOOL_IDS = toolApps.map((tool) => tool.id);
 
 /** The PMO Toolkit: one card per tool with how many items are open and late. A tool opens
  *  in this same window, with a Back button, so it never sits half over its parent. */
@@ -19,8 +30,39 @@ export function ToolkitApp({ windowId }: { windowId: string }) {
   const [summaries, setSummaries] = useState<Record<string, RegisterSummary>>({});
   const [error, setError] = useState<string | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  // Pins and the last-opened tool are per-viewer conveniences kept in this browser's
+  // localStorage. They are read after mount so the first render matches the server's.
+  const [pinned, setPinned] = useState<string[]>([]);
+  const [lastId, setLastId] = useState<string | null>(null);
   const open = toolApps.find((tool) => tool.id === openId) ?? null;
   useWindowContext(windowId, open?.title ?? null);
+
+  useEffect(() => {
+    const memory = loadToolkitMemory(browserStorage(), TOOL_IDS);
+    setPinned(memory.pinned);
+    setLastId(memory.last);
+  }, []);
+
+  const openTool = (id: string) => {
+    setOpenId(id);
+    setLastId(id);
+    saveLastTool(browserStorage(), id);
+  };
+  const pinTool = (id: string) => {
+    const next = togglePin(pinned, id);
+    setPinned(next);
+    savePinned(browserStorage(), next);
+  };
+
+  const groups = useMemo(() => {
+    const entries = toolApps.map((tool) => ({
+      ...tool,
+      blurb: registerById(tool.id)?.blurb,
+    }));
+    return arrangeGroups(groupTools(filterTools(entries, query)), pinned);
+  }, [query, pinned]);
+  const lastTool = toolApps.find((tool) => tool.id === lastId) ?? null;
 
   const load = useCallback(async () => {
     const reply = await fetchSummaries();
@@ -76,8 +118,47 @@ export function ToolkitApp({ windowId }: { windowId: string }) {
           {error}
         </p>
       )}
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <Input
+          {...noSpellcheck}
+          type="search"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Escape" && query) {
+              event.preventDefault();
+              event.stopPropagation();
+              setQuery("");
+            }
+          }}
+          placeholder="Filter tools"
+          aria-label="Filter tools"
+          data-testid="toolkit-filter"
+          className="h-8 max-w-xs text-[13px]"
+        />
+        {lastTool && !query && (
+          <Button
+            variant="ghost"
+            size="sm"
+            data-testid="toolkit-resume"
+            onClick={() => openTool(lastTool.id)}
+          >
+            Last opened: {lastTool.title}
+          </Button>
+        )}
+      </div>
+      {groups.length === 0 && (
+        <p
+          role="status"
+          data-testid="toolkit-empty"
+          className="text-ink-muted text-[13px]"
+        >
+          No tools match &ldquo;{query.trim()}&rdquo;. Clear the filter to see all{" "}
+          {toolApps.length} tools.
+        </p>
+      )}
       <div className="flex flex-col gap-6">
-        {groupTools(toolApps).map((group) => (
+        {groups.map((group) => (
           <section key={group.title} aria-labelledby={`toolkit-group-${group.title}`}>
             <h2
               id={`toolkit-group-${group.title}`}
@@ -90,12 +171,28 @@ export function ToolkitApp({ windowId }: { windowId: string }) {
                 const Glyph = tool.icon;
                 const summary = summaries[tool.id];
                 return (
-                  <li key={tool.id}>
+                  <li key={tool.id} className="relative">
+                    <IconButton
+                      size="sm"
+                      aria-label={
+                        pinned.includes(tool.id)
+                          ? `Unpin ${tool.title}`
+                          : `Pin ${tool.title} to the top`
+                      }
+                      aria-pressed={pinned.includes(tool.id)}
+                      data-testid={`tool-pin-${tool.id}`}
+                      onClick={() => pinTool(tool.id)}
+                      className="absolute top-1.5 right-1.5"
+                    >
+                      <PushPinIcon
+                        weight={pinned.includes(tool.id) ? "fill" : "regular"}
+                      />
+                    </IconButton>
                     <button
                       type="button"
                       data-testid={`tool-card-${tool.id}`}
-                      onClick={() => setOpenId(tool.id)}
-                      className="border-line bg-card hover:bg-chip focus-ring rounded-card flex h-full w-full items-start gap-3 border px-4 py-3 text-left transition-colors"
+                      onClick={() => openTool(tool.id)}
+                      className="border-line bg-card hover:bg-chip focus-ring rounded-card flex h-full w-full items-start gap-3 border py-3 pr-11 pl-4 text-left transition-colors"
                     >
                       <span
                         aria-hidden

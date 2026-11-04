@@ -6,9 +6,12 @@ import { cn } from "@/lib/cn";
 import { AiWorkingChip } from "./AiWorkingChip";
 import { useWindowDrag } from "./useWindowDrag";
 import { WindowControls } from "./WindowControls";
+import { WindowHelpButton } from "./WindowHelpButton";
 
 interface WindowTitleBarProps {
   id: string;
+  /** The app in this window; when it has help text, a Help button shows in the bar. */
+  appId?: string;
   /** The app name. */
   title: string;
   /** Optional context after the name: where the user is in the window, and the app's
@@ -47,6 +50,7 @@ interface WindowTitleBarProps {
  */
 export function WindowTitleBar({
   id,
+  appId,
   title,
   suffix,
   icon,
@@ -96,6 +100,7 @@ export function WindowTitleBar({
         ) : null}
       </span>
       {aiControlled && <AiWorkingChip />}
+      {appId && <WindowHelpButton appId={appId} />}
       <WindowControls
         isMaximized={isMaximized}
         isPinned={isPinned}

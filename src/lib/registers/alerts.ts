@@ -87,6 +87,59 @@ function renewalAlert(record: RegisterRecord, ctx: AlertContext): RecordAlert | 
     : null;
 }
 
+/** The optional milestone and payment dates on a contract: the date key, the label key beside it and
+ *  the name to use when that label is blank. */
+const CONTRACT_DATES: readonly [dateKey: string, labelKey: string, fallback: string][] = [
+  ["milestone1Date", "milestone1", "Milestone 1"],
+  ["milestone2Date", "milestone2", "Milestone 2"],
+  ["paymentDate", "paymentNote", "Payment"],
+];
+
+/** The most pressing of a contract's milestone and payment dates: late once the day has passed, soon
+ *  from a week out. A blank date (the field is optional, and clearing it is how a milestone is marked
+ *  met) never alerts. The earliest date wins within a level. */
+export function contractDateAlert(
+  record: RegisterRecord,
+  ctx: AlertContext,
+): RecordAlert | null {
+  let best: { alert: RecordAlert; date: string } | null = null;
+  for (const [dateKey, labelKey, fallback] of CONTRACT_DATES) {
+    const date = textOf(record, dateKey);
+    if (!date) continue;
+    const name = textOf(record, labelKey) || fallback;
+    const left = daysBetween(ctx.today, date);
+    let alert: RecordAlert | null = null;
+    if (left < 0) {
+      alert = { level: "late", text: `${name}: late by ${plural(-left, "day")}` };
+    } else if (left === 0) {
+      alert = { level: "soon", text: `${name}: due today` };
+    } else if (left <= 7) {
+      alert = { level: "soon", text: `${name}: due in ${plural(left, "day")}` };
+    }
+    if (
+      alert &&
+      (!best ||
+        LEVEL_RANK[alert.level] > LEVEL_RANK[best.alert.level] ||
+        (alert.level === best.alert.level && date < best.date))
+    ) {
+      best = { alert, date };
+    }
+  }
+  return best?.alert ?? null;
+}
+
+const LEVEL_RANK: Record<RecordAlert["level"], number> = { late: 3, soon: 2, info: 1 };
+
+/** A contract's alert: the renewal and notice rule or a milestone or payment date, whichever is more
+ *  pressing (the renewal one on a tie). */
+function contractAlert(record: RegisterRecord, ctx: AlertContext): RecordAlert | null {
+  const renewal = renewalAlert(record, ctx);
+  const dates = contractDateAlert(record, ctx);
+  if (!dates) return renewal;
+  if (!renewal) return dates;
+  return LEVEL_RANK[dates.level] > LEVEL_RANK[renewal.level] ? dates : renewal;
+}
+
 function contactAlert(record: RegisterRecord, ctx: AlertContext): RecordAlert | null {
   const last = textOf(record, "lastContact");
   if (!last) return { level: "soon", text: "No contact logged yet" };
@@ -204,7 +257,7 @@ export function recordAlert(
     case "sla":
       return slaAlert(record, ctx);
     case "renewal":
-      return renewalAlert(record, ctx);
+      return contractAlert(record, ctx);
     case "contact":
       return contactAlert(record, ctx);
     case "event":

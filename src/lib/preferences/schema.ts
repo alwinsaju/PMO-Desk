@@ -52,6 +52,12 @@ export interface Preferences {
   commandLog: CommandLogEntry[];
   /** Prompts pinned as quick commands. */
   favourites: string[];
+  /** Settings: a name under each dock tile. Off by default (the dock is narrow). */
+  showDockLabels: boolean;
+  /** Settings: open the apps that were open last time when PMO Desk starts. Off by default. */
+  reopenLastApps: boolean;
+  /** App ids that had a window open, bottom to top. Only kept while `reopenLastApps` is on. */
+  lastOpenApps: string[];
 }
 
 export const DEFAULT_CONFIRM_ACTIONS: Record<ConfirmKey, boolean> = {
@@ -73,9 +79,15 @@ export const DEFAULT_PREFERENCES: Preferences = {
   savedViews: [],
   commandLog: [],
   favourites: [],
+  showDockLabels: false,
+  reopenLastApps: false,
+  lastOpenApps: [],
 };
 
 export const MAX_COMMAND_LOG = 100;
+/** More than any one session opens, while a damaged file cannot make launch open dozens of windows. */
+export const MAX_LAST_OPEN_APPS = 16;
+const MAX_APP_ID = 60;
 export const MAX_FAVOURITES = 12;
 const MAX_PROMPT = 300;
 const MAX_DETAIL = 200;
@@ -237,6 +249,20 @@ function sanitizeFavourites(value: unknown): string[] {
   return out;
 }
 
+/** A stored list of app ids -> distinct non-empty strings in order, at most MAX_LAST_OPEN_APPS.
+ *  Anything that is not an array gives an empty list; a bad entry is skipped, not fatal. */
+export function sanitizeAppIds(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const out: string[] = [];
+  for (const item of value) {
+    if (out.length >= MAX_LAST_OPEN_APPS) break;
+    if (typeof item !== "string") continue;
+    const id = item.trim();
+    if (id && id.length <= MAX_APP_ID && !out.includes(id)) out.push(id);
+  }
+  return out;
+}
+
 export const MAX_SAVED_VIEWS = 12;
 
 /** A named combination of the To-Do list's filter, sort, tag and search text. */
@@ -311,5 +337,14 @@ export function sanitizePreferences(value: unknown): Preferences {
           .slice(-MAX_COMMAND_LOG)
       : [],
     favourites: sanitizeFavourites(raw.favourites),
+    showDockLabels:
+      typeof raw.showDockLabels === "boolean"
+        ? raw.showDockLabels
+        : DEFAULT_PREFERENCES.showDockLabels,
+    reopenLastApps:
+      typeof raw.reopenLastApps === "boolean"
+        ? raw.reopenLastApps
+        : DEFAULT_PREFERENCES.reopenLastApps,
+    lastOpenApps: sanitizeAppIds(raw.lastOpenApps),
   };
 }

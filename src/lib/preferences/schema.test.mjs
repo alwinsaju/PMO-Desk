@@ -6,6 +6,7 @@ import {
   DEFAULT_PREFERENCES,
   MAX_COMMAND_LOG,
   MAX_FAVOURITES,
+  MAX_LAST_OPEN_APPS,
   MAX_REMEMBERED_WINDOWS,
   MAX_SAVED_VIEWS,
   recentPrompts,
@@ -13,6 +14,7 @@ import {
   removeView,
   rememberWindowRect,
   saveView,
+  sanitizeAppIds,
   sanitizePreferences,
   sanitizeWindowRect,
   toggleFavourite,
@@ -205,6 +207,9 @@ describe("sanitizePreferences", () => {
         },
       ],
       favourites: ["who's off today?"],
+      showDockLabels: true,
+      reopenLastApps: true,
+      lastOpenApps: ["notes", "tasks"],
     };
     assert.deepEqual(sanitizePreferences(stored), stored);
   });
@@ -255,5 +260,58 @@ describe("sanitizePreferences", () => {
       Object.keys(sanitizePreferences({ windowRects: many }).windowRects).length,
       MAX_REMEMBERED_WINDOWS,
     );
+  });
+});
+
+describe("dock labels and reopening last session's apps", () => {
+  it("are off by default, with nothing remembered", () => {
+    assert.equal(DEFAULT_PREFERENCES.showDockLabels, false);
+    assert.equal(DEFAULT_PREFERENCES.reopenLastApps, false);
+    assert.deepEqual(DEFAULT_PREFERENCES.lastOpenApps, []);
+  });
+
+  it("falls back to off for a value that is not a boolean", () => {
+    for (const bad of ["yes", 1, null, {}, []]) {
+      const result = sanitizePreferences({ showDockLabels: bad, reopenLastApps: bad });
+      assert.equal(result.showDockLabels, false);
+      assert.equal(result.reopenLastApps, false);
+    }
+    const on = sanitizePreferences({ showDockLabels: true, reopenLastApps: true });
+    assert.equal(on.showDockLabels, true);
+    assert.equal(on.reopenLastApps, true);
+  });
+
+  it("one bad field does not disturb the others", () => {
+    const result = sanitizePreferences({
+      showDockLabels: "maybe",
+      reopenLastApps: true,
+      lastOpenApps: "notes",
+      instantUnlock: true,
+    });
+    assert.equal(result.showDockLabels, false);
+    assert.equal(result.reopenLastApps, true);
+    assert.deepEqual(result.lastOpenApps, []);
+    assert.equal(result.instantUnlock, true);
+  });
+
+  it("sanitizeAppIds keeps distinct, non-empty text ids in order", () => {
+    assert.deepEqual(
+      sanitizeAppIds(["notes", " files ", "notes", "", "  ", 4, null, {}]),
+      ["notes", "files"],
+    );
+  });
+
+  it("sanitizeAppIds gives an empty list for anything that is not an array", () => {
+    for (const bad of [undefined, null, "notes", 3, { 0: "notes" }]) {
+      assert.deepEqual(sanitizeAppIds(bad), []);
+    }
+  });
+
+  it("sanitizeAppIds drops an absurdly long id and caps the list", () => {
+    assert.deepEqual(sanitizeAppIds(["x".repeat(500), "ok"]), ["ok"]);
+    const many = Array.from({ length: 100 }, (_, i) => `app${i}`);
+    const out = sanitizeAppIds(many);
+    assert.equal(out.length, MAX_LAST_OPEN_APPS);
+    assert.equal(out[0], "app0");
   });
 });

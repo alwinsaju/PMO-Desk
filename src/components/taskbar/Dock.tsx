@@ -13,6 +13,7 @@ import { titleWithSuffix } from "@/components/window-manager/windowTitles";
 import { Tooltip } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { springSnappy } from "@/lib/motion";
+import { usePreferences } from "@/lib/preferences/preferencesStore";
 import { AppMenu } from "./AppMenu";
 import { createDockAutoHide } from "./dockAutoHide";
 import { dockCapacity, splitDockItems } from "./dockOverflow";
@@ -20,6 +21,7 @@ import { DockTile, dockTileClassName, type TileRunState } from "./DockTile";
 import { builtInAppIds, builtInApps } from "./pinnedApps";
 import { launchBuiltInApp } from "./launchBuiltInApp";
 import { useDockBadgeStore } from "./dockBadgeStore";
+import { startSessionRestore } from "./sessionRestore";
 import { APP_DRAG_MIME_TYPE, usePinnedAppsStore } from "./pinnedAppsStore";
 import {
   appIdForWindow,
@@ -94,6 +96,11 @@ function clickPinnedTile(appId: string) {
   else if (action.type === "restore") restoreWindow(action.windowId);
   else taskbarApps.get(appId)?.launch();
 }
+
+/** Dock menu: minimise every window (one store update, so nothing is refocused). */
+const showDesktop = () => useWindowStore.getState().minimizeAllWindows();
+/** Dock menu: put every visible window back on a fresh cascade (one store update). */
+const tidyWindows = () => useWindowStore.getState().tidyWindows();
 
 const subscribeNever = () => () => {};
 const WIDE_SCREEN = 1920;
@@ -204,6 +211,18 @@ export function Dock() {
   useEffect(() => {
     settled.current = hydrated;
   }, [hydrated]);
+  // "Reopen last session's apps" (q-8): once per page load, after the saved preferences arrive.
+  useEffect(() => {
+    startSessionRestore();
+  }, []);
+
+  // Settings > "Show dock labels". Like the pinned layout it only applies after hydration,
+  // so the first client render matches the server-rendered dock.
+  const showLabelsPref = usePreferences((s) => s.showDockLabels);
+  const showLabels = hydrated && showLabelsPref;
+  const hasVisibleWindows = useWindowStore((s) =>
+    Object.values(s.windows).some((w) => !w.isMinimized),
+  );
 
   // Auto-hide, like the macOS dock: it slides away when the pointer is not on it and
   // returns when the pointer reaches the top edge (see dockAutoHide.ts).
@@ -243,7 +262,7 @@ export function Dock() {
   // On a narrow screen the tail of the dock moves into the App Menu ("more apps").
   const { shown: items, hidden: hiddenItems } = splitDockItems(
     allItems,
-    dockCapacity(viewportWidth),
+    dockCapacity(viewportWidth, showLabels),
     new Set(openAppIds),
   );
   const canReset = !isDefaultPinnedIds(effectivePinnedIds, builtInAppIds);
@@ -342,7 +361,10 @@ export function Dock() {
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
         className={cn(
-          "glass rounded-surface h-dock flex items-center gap-1.5 px-2.5",
+          // With labels the pill is a little taller (still clear of the window insets) so
+          // the name fits under the 46px tile.
+          "glass rounded-surface flex items-center gap-1.5 px-2.5",
+          showLabels ? "h-[68px]" : "h-dock",
           "ease-standard transition-[box-shadow,transform,opacity] duration-300",
           shown
             ? "pointer-events-auto translate-y-0 opacity-100"
@@ -389,6 +411,10 @@ export function Dock() {
                   onTogglePinned={() => (pinned ? unpinApp(id) : pinApp(id))}
                   onResetTaskbar={resetPinnedApps}
                   canReset={canReset}
+                  onShowDesktop={showDesktop}
+                  onTidyWindows={tidyWindows}
+                  hasVisibleWindows={hasVisibleWindows}
+                  showLabel={showLabels}
                   badge={badges[id]}
                   badgeMeaning={meanings[id]}
                   windowTitles={titlesOf(id)}

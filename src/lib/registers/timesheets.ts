@@ -117,3 +117,35 @@ export function timesheetChaser(
     withoutEmail: missing.filter((m) => !m.email).map((m) => m.person),
   };
 }
+
+export interface PersonChaser {
+  person: string;
+  /** Empty when there is no email on file. */
+  email: string;
+  subject: string;
+  body: string;
+}
+
+/** One chaser per person who is missing a timesheet: the same wording, addressed to them alone
+ *  (a person is listed once, in the order given). Text only; nothing here sends it. */
+export function personChasers(
+  monday: string,
+  missing: readonly { person: string; email: string }[],
+  me: string,
+): PersonChaser[] {
+  const seen = new Set<string>();
+  const out: PersonChaser[] = [];
+  for (const m of missing) {
+    const key = m.person.toLowerCase().trim();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const one = timesheetChaser(monday, [m], me);
+    out.push({
+      person: m.person,
+      email: m.email.trim(),
+      subject: one.subject,
+      body: one.body,
+    });
+  }
+  return out;
+}

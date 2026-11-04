@@ -6,6 +6,7 @@ import { Button, EmptyState, IconButton, Input } from "@/components/ui";
 import { toolApps } from "@/components/taskbar/pinnedApps";
 import { toast } from "@/lib/notifications/toastStore";
 import { recordAlert, summarise } from "@/lib/registers/alerts";
+import { canBulkTodos, lateWithoutTodo, splitSelection } from "@/lib/registers/bulkTodos";
 import { cellText, exportHint } from "@/lib/registers/cells";
 import { registerById } from "@/lib/registers/defs";
 import {
@@ -23,7 +24,8 @@ import { noSpellcheck } from "@/lib/ui/noSpellcheck";
 import { NativeSelect } from "../pmo-todo-app/parts";
 import { readSetting, writeSetting } from "../staff-app/localSetting";
 import { HeatMap, type HeatSelection } from "./HeatMap";
-import { AlertChip, RecordDialog, type ExtrasContext } from "./RecordDialog";
+import { BulkTodoDialog } from "./BulkTodoDialog";
+import { AlertChip, RecordDialog, type ExtrasContext, type Values } from "./RecordDialog";
 import { RecordCards } from "./RecordCards";
 import { RecordActions, RecordCell } from "./RecordParts";
 import { ChangesPanel } from "./extras/ChangesPanel";
@@ -78,6 +80,11 @@ export function RegisterApp({
   const [showClosed, setShowClosed] = useState(false);
   const [editing, setEditing] = useState<RegisterRecord | "new" | null>(null);
   const [heat, setHeat] = useState<HeatSelection | null>(null);
+  /** The values of a record being duplicated: opens an unsaved new record with them. */
+  const [copyOf, setCopyOf] = useState<Values | null>(null);
+  /** Ticked records (only tools with bulk to-dos have the boxes) and the open confirmation. */
+  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
+  const [confirmingTodos, setConfirmingTodos] = useState(false);
   const [view, setView] = useState<"table" | "cards">("table");
   useEffect(() => {
     if (readSetting(`register-view:${defId}`) === "cards") setView("cards");
@@ -109,6 +116,34 @@ export function RegisterApp({
     [def, state.items, ctx],
   );
   const counts = useMemo(() => statusCounts(def, state.items), [def, state.items]);
+  const selectable = canBulkTodos(def);
+  const lateShown = useMemo(
+    () => (selectable ? lateWithoutTodo(def, shown, ctx) : []),
+    [selectable, def, shown, ctx],
+  );
+  // Only records that still exist count (a refresh or a delete can remove a ticked one).
+  const split = useMemo(
+    () => splitSelection(def, state.items, selected),
+    [def, state.items, selected],
+  );
+  const selectedCount = split.eligible.length + split.skipped;
+  const toggleSelected = (id: string) =>
+    setSelected((cur) => {
+      const next = new Set(cur);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
+  const allShownSelected = shown.length > 0 && shown.every((r) => selected.has(r.id));
+  const toggleAllShown = () =>
+    setSelected((cur) => {
+      const next = new Set(cur);
+      for (const r of shown) {
+        if (allShownSelected) next.delete(r.id);
+        else next.add(r.id);
+      }
+      return next;
+    });
+  const selection = selectable ? { selected, onToggle: toggleSelected } : undefined;
   const fieldOf = (key: string) => def.fields.find((f) => f.key === key);
   const ToolGlyph = toolApps.find((tool) => tool.id === def.id)?.icon;
   const noExport = exportHint(state.items.length, shown.length);
@@ -251,6 +286,42 @@ export function RegisterApp({
         </Button>
       </div>
 
+      {selectable && (lateShown.length > 0 || selectedCount > 0) && (
+        <div
+          data-testid="bulk-bar"
+          className="flex flex-wrap items-center gap-2 px-6 pb-2 text-[12.5px]"
+        >
+          {lateShown.length > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                setSelected((cur) => new Set([...cur, ...lateShown.map((r) => r.id)]))
+              }
+            >
+              Select {lateShown.length} late without a to-do
+            </Button>
+          )}
+          {selectedCount > 0 && (
+            <>
+              <span className="text-ink-soft" aria-live="polite">
+                {selectedCount} selected
+              </span>
+              <Button
+                size="sm"
+                disabled={split.eligible.length === 0}
+                onClick={() => setConfirmingTodos(true)}
+              >
+                Make {split.eligible.length} to-do{split.eligible.length === 1 ? "" : "s"}
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setSelected(new Set())}>
+                Clear selection
+              </Button>
+            </>
+          )}
+        </div>
+      )}
+
       <div className="scroll-thin min-h-0 flex-1 overflow-auto px-6 pb-6">
         {state.error && (
           <p role="alert" className="text-red text-[13px]">
@@ -291,6 +362,16 @@ export function RegisterApp({
           >
             <thead>
               <tr className="text-ink-muted text-[11.5px] font-bold tracking-[0.06em] uppercase">
+                {selectable && (
+                  <th className="border-line w-8 border-b px-2 py-2">
+                    <input
+                      type="checkbox"
+                      checked={allShownSelected}
+                      onChange={toggleAllShown}
+                      aria-label="Select all shown"
+                    />
+                  </th>
+                )}
                 {def.columns.map((key) => (
                   <th key={key} className="border-line border-b px-2 py-2">
                     {fieldOf(key)?.label}
@@ -311,6 +392,16 @@ export function RegisterApp({
                     data-testid="register-row"
                     className={`border-line hover:bg-chip group border-b ${isOpen(def, record) ? "" : "opacity-60"}`}
                   >
+                    {selectable && (
+                      <td className="px-2 py-2 align-top">
+                        <input
+                          type="checkbox"
+                          checked={selected.has(record.id)}
+                          onChange={() => toggleSelected(record.id)}
+                          aria-label={`Select ${recordTitle(def, record)}`}
+                        />
+                      </td>
+                    )}
                     {def.columns.map((key, index) => (
                       <td key={key} className="px-2 py-2 align-top">
                         {index === 0 ? (
@@ -354,6 +445,7 @@ export function RegisterApp({
             onEdit={setEditing}
             onDelete={(record) => void removeRecord(record)}
             onStamp={(record) => void stamp(record)}
+            selection={selection}
           />
         )}
       </div>
@@ -367,6 +459,35 @@ export function RegisterApp({
           names={names}
           onClose={() => setEditing(null)}
           renderExtras={renderExtras}
+          onDuplicate={(values) => {
+            setEditing(null);
+            setCopyOf(values);
+          }}
+        />
+      )}
+      {copyOf && (
+        <RecordDialog
+          def={def}
+          record={null}
+          initialValues={copyOf}
+          state={state}
+          people={people}
+          names={names}
+          onClose={() => setCopyOf(null)}
+          renderExtras={renderExtras}
+        />
+      )}
+      {confirmingTodos && (
+        <BulkTodoDialog
+          def={def}
+          records={split.eligible}
+          skipped={split.skipped}
+          state={state}
+          people={people}
+          onMade={(ids) =>
+            setSelected((cur) => new Set([...cur].filter((id) => !ids.includes(id))))
+          }
+          onClose={() => setConfirmingTodos(false)}
         />
       )}
     </div>

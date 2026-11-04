@@ -218,10 +218,20 @@ export const timeOffChangesSchema = changes(timeOffSchema);
 
 const optionalText = (max = 200) => z.string().trim().max(max).optional();
 
-/** Which people to move between the roster and the offboarded list. */
+/** Which people to move between the roster and the offboarded list. A restore may also say
+ *  which shift roster entries to link back to the people it returns (the undo of an offboard). */
 export const moveSchema = z.object({
   action: z.enum(["offboard", "restore"]),
   ids: z.array(z.string().regex(EMPLOYEE_ID)).min(1).max(2000),
+  relink: z
+    .array(
+      z.object({
+        memberId: z.string().max(80),
+        employeeId: z.string().regex(EMPLOYEE_ID),
+      }),
+    )
+    .max(2000)
+    .optional(),
 });
 
 /** What the M365 profile flow posts. */

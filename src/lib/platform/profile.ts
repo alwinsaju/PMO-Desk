@@ -48,6 +48,8 @@ const MEMBER_HIDDEN = [
   "health",
   "week",
   "registers",
+  "rag",
+  "scorecard",
 ] as const;
 
 /** The Dashboard cards a profile starts with. */

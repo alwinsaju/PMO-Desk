@@ -15,6 +15,7 @@ import {
   type Rect,
   type Viewport,
 } from "./windowGeometry";
+import { applyTidy, minimizeAll, tidyUpdates } from "./windowArrange";
 import { pristineUpdates, rectsToRemember, startingGeometry } from "./windowPlacement";
 import { snapRect, type SnapZone } from "./windowSnap";
 
@@ -49,6 +50,12 @@ export interface WindowStoreState {
   clampAllToViewport: (viewport: Viewport) => void;
   minimizeWindow: (id: string) => void;
   restoreWindow: (id: string) => void;
+  /** "Show desktop": minimises every window in ONE update and focuses none. (Looping
+   *  `minimizeWindow` would refocus another window after each call.) */
+  minimizeAllWindows: () => void;
+  /** "Tidy windows": every visible window back on a fresh default cascade (default
+   *  geometry once per window), in ONE update. Focus and stacking are unchanged. */
+  tidyWindows: () => void;
   /** Toggles maximize on/off, restoring the pre-maximize bounds on toggle-off. */
   maximizeWindow: (id: string) => void;
   /** Put the window on half or a quarter of the screen (leaves maximised). */
@@ -283,6 +290,32 @@ export const useWindowStore = create<WindowStoreState>()((set) => ({
         windows: withExclusiveFocus(withRestored, id, zIndex),
         nextZIndex: zIndex + 1,
       };
+    });
+  },
+
+  minimizeAllWindows: () => {
+    set((state) => {
+      const windows = minimizeAll(state.windows);
+      return windows === state.windows
+        ? state
+        : { windows: windows as typeof state.windows };
+    });
+  },
+
+  tidyWindows: () => {
+    set((state) => {
+      const updates = tidyUpdates(
+        state.windows,
+        typeof window !== "undefined"
+          ? { width: window.innerWidth, height: window.innerHeight }
+          : null,
+        windowDefaults,
+        windowClampConfig,
+      );
+      const windows = applyTidy(state.windows, updates);
+      return windows === state.windows
+        ? state
+        : { windows: windows as typeof state.windows };
     });
   },
 

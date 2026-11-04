@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { buildPtoAlert } from "./ptoAlert.ts";
-import { describePtoAlert, unseenIds } from "./ptoNudge.ts";
+import { describePtoAlert, keepReadingDismissed, unseenIds } from "./ptoNudge.ts";
 import {
   DEFAULT_PTO_SCAN_MS,
   MIN_PTO_SCAN_MS,
@@ -114,6 +114,19 @@ describe("unseenIds and describePtoAlert", () => {
     assert.deepEqual(copy.lines, ["2 more waiting"]);
     assert.equal(describePtoAlert(alert, [], range), null);
     assert.equal(describePtoAlert(reading, ["a"], range).kind, "approve");
+  });
+
+  it("lets the reading card be dismissed, but never the approval card", () => {
+    const reading = { ...alert, reading: true, waiting: 3 };
+    assert.equal(describePtoAlert(reading, [], range, true), null);
+    assert.equal(describePtoAlert(reading, ["a"], range, true).kind, "approve");
+    assert.equal(describePtoAlert(reading, [], range, false).kind, "reading");
+  });
+
+  it("keeps a dismissal only until the reader goes idle", () => {
+    assert.equal(keepReadingDismissed(true, { ...alert, reading: true }), true);
+    assert.equal(keepReadingDismissed(true, { ...alert, reading: false }), false);
+    assert.equal(keepReadingDismissed(false, { ...alert, reading: true }), false);
   });
 });
 

@@ -8,7 +8,12 @@ import { openOrFocusBuiltInApp } from "@/components/taskbar/launchBuiltInApp";
 import { useStaffNav } from "@/components/apps/staff-app/staffNavStore";
 import { easeEntrance, easeExit } from "@/lib/motion";
 import { formatRange } from "@/lib/staff/dates";
-import { describePtoAlert, unseenIds, type PtoAlertView } from "@/lib/staff/ptoNudge";
+import {
+  describePtoAlert,
+  keepReadingDismissed,
+  unseenIds,
+  type PtoAlertView,
+} from "@/lib/staff/ptoNudge";
 
 const POLL_MS = 20_000;
 const SEEN_KEY = "ai-os:pto-seen";
@@ -37,6 +42,7 @@ function writeSeen(ids: string[]): void {
 export function usePtoNudge() {
   const [alert, setAlert] = useState<PtoAlertView | null>(null);
   const [seen, setSeen] = useState<string[]>([]);
+  const [readingDismissed, setReadingDismissed] = useState(false);
 
   useEffect(() => {
     setSeen(readSeen());
@@ -47,7 +53,10 @@ export function usePtoNudge() {
         try {
           const response = await fetch("/api/staff/pto-alert", { cache: "no-store" });
           const body = (await response.json()) as PtoAlertView & { ok?: boolean };
-          if (!stopped && body.ok) setAlert(body);
+          if (!stopped && body.ok) {
+            setAlert(body);
+            setReadingDismissed((dismissed) => keepReadingDismissed(dismissed, body));
+          }
         } catch {
           // The server is restarting or offline: keep what is shown.
         }
@@ -77,11 +86,21 @@ export function usePtoNudge() {
     writeSeen(next);
   }, [alert, seen]);
 
-  return { alert, unseen, acknowledge };
+  const dismissReading = useCallback(() => setReadingDismissed(true), []);
+
+  return { alert, unseen, acknowledge, readingDismissed, dismissReading };
 }
 
-export function AiNudge({ alert, unseen, acknowledge }: ReturnType<typeof usePtoNudge>) {
-  const copy = alert ? describePtoAlert(alert, unseen, formatRange) : null;
+export function AiNudge({
+  alert,
+  unseen,
+  acknowledge,
+  readingDismissed,
+  dismissReading,
+}: ReturnType<typeof usePtoNudge>) {
+  const copy = alert
+    ? describePtoAlert(alert, unseen, formatRange, readingDismissed)
+    : null;
 
   const review = () => {
     openOrFocusBuiltInApp("staff");
@@ -134,11 +153,13 @@ export function AiNudge({ alert, unseen, acknowledge }: ReturnType<typeof usePto
               </div>
             )}
           </div>
-          {copy.kind === "approve" && (
-            <IconButton aria-label="Dismiss" size="sm" onClick={acknowledge}>
-              <XIcon size={14} />
-            </IconButton>
-          )}
+          <IconButton
+            aria-label="Dismiss"
+            size="sm"
+            onClick={copy.kind === "approve" ? acknowledge : dismissReading}
+          >
+            <XIcon size={14} />
+          </IconButton>
         </motion.div>
       )}
     </AnimatePresence>

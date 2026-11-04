@@ -19,6 +19,8 @@ import {
   sanitizeValues,
   textOf,
 } from "@/lib/registers/records";
+import { duplicateValues } from "@/lib/registers/duplicate";
+import { recordText } from "@/lib/registers/recordText";
 import { todoSeed } from "@/lib/registers/reports";
 import type { FieldValue, RegisterDef, RegisterRecord } from "@/lib/registers/types";
 import { todayIso } from "@/lib/staff/dates";
@@ -75,6 +77,8 @@ export function RecordDialog({
   names,
   onClose,
   renderExtras,
+  initialValues,
+  onDuplicate,
 }: {
   def: RegisterDef;
   record: RegisterRecord | null;
@@ -83,11 +87,15 @@ export function RecordDialog({
   names: readonly string[];
   onClose: () => void;
   renderExtras?: (ctx: ExtrasContext) => ReactNode;
+  /** Field values a new record starts with (a duplicate); ignored when editing a record. */
+  initialValues?: Values;
+  /** Duplicate: the parent opens a new, unsaved record with these values. */
+  onDuplicate?: (values: Values) => void;
 }) {
   const today = todayIso();
   const [values, setValues] = useState<Values>(() => ({
     ...defaultValues(def, today),
-    ...(record?.values ?? {}),
+    ...(record?.values ?? initialValues ?? {}),
   }));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<{ reason: string; detail?: string } | null>(null);
@@ -171,6 +179,16 @@ export function RecordDialog({
     else {
       toast({ tone: "success", message: "Made a to-do in PMO To-Do." });
       onClose();
+    }
+  };
+
+  /** Copy the record as it is in the form now, as plain text for an email or minutes. */
+  const copyText = async () => {
+    try {
+      await navigator.clipboard.writeText(recordText(def, draftRecord, alert?.text).text);
+      toast({ tone: "success", message: "Copied." });
+    } catch {
+      toast({ tone: "danger", message: "Could not copy to the clipboard." });
     }
   };
 
@@ -269,6 +287,24 @@ export function RecordDialog({
             <span className="text-ink-muted text-[12.5px]" data-testid="todo-made">
               A to-do was made
             </span>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={busy}
+            onClick={() => void copyText()}
+          >
+            Copy as text
+          </Button>
+          {record && onDuplicate && (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={busy}
+              onClick={() => onDuplicate(duplicateValues(def, { values }))}
+            >
+              Duplicate
+            </Button>
           )}
           {canChase && chaser?.ok && (
             <Button variant="outline" size="sm" asChild>

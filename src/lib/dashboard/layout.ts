@@ -13,6 +13,8 @@ export const WIDGET_IDS = [
   "health",
   "week",
   "registers",
+  "rag",
+  "scorecard",
 ] as const;
 export type WidgetId = (typeof WIDGET_IDS)[number];
 
@@ -29,6 +31,8 @@ export const WIDGET_TITLE: Record<WidgetId, string> = {
   health: "Report health",
   week: "This week vs last",
   registers: "PMO toolkit",
+  rag: "Portfolio RAG",
+  scorecard: "PMO health scorecard",
 };
 
 export interface Layout {
@@ -46,9 +50,26 @@ export interface SavedLayout {
 /** The cards people see until they change anything: the originals first, the new ones after. */
 export const DEFAULT_LAYOUT: Layout = {
   order: [...WIDGET_IDS],
-  hidden: ["workload", "aging", "signoff", "health", "week", "registers"],
+  hidden: [
+    "workload",
+    "aging",
+    "signoff",
+    "health",
+    "week",
+    "registers",
+    "rag",
+    "scorecard",
+  ],
   wide: ["today"],
 };
+
+/** Cards that start hidden even for a layout saved before they existed. A stored layout only lists the
+ *  cards it knew about, and a card it does not list is added last and shown, which would change a Dashboard
+ *  the person had already arranged. A card named here is added hidden instead. They are shown from
+ *  Customise, and once saved the layout lists them, so this applies only the first time. Append new ids,
+ *  in the same order as `DEFAULT_LAYOUT.hidden`: a layout saved as the old default then still equals the
+ *  new default (`layoutAfterSwitch` relies on that to tell a customised Dashboard from an untouched one). */
+const HIDDEN_WHEN_NEW: readonly WidgetId[] = ["rag", "scorecard"];
 
 const isId = (v: unknown): v is WidgetId => WIDGET_IDS.includes(v as WidgetId);
 
@@ -58,9 +79,14 @@ export function sanitizeLayout(value: unknown): Layout {
   const list = (v: unknown): WidgetId[] =>
     Array.isArray(v) ? [...new Set(v.filter(isId))] : [];
   const order = list(raw.order);
+  const hidden = list(raw.hidden);
   // A card missing from a stored order (added in a later version) goes last.
-  for (const id of WIDGET_IDS) if (!order.includes(id)) order.push(id);
-  return { order, hidden: list(raw.hidden), wide: list(raw.wide) };
+  for (const id of WIDGET_IDS) {
+    if (order.includes(id)) continue;
+    order.push(id);
+    if (HIDDEN_WHEN_NEW.includes(id) && !hidden.includes(id)) hidden.push(id);
+  }
+  return { order, hidden, wide: list(raw.wide) };
 }
 
 /** The cards to draw, in order. */

@@ -19,6 +19,8 @@ export const TODAY_TONE: Readonly<Record<TodayKind, RowTone>> = {
   leave: "info",
   review: "info",
   away: "neutral",
+  "contract-late": "danger",
+  "contract-soon": "warning",
 };
 
 /** The app a Today row's Open button goes to, in words. */
@@ -26,6 +28,7 @@ export const TODAY_APP_LABEL: Readonly<Record<TodayItem["appId"], string>> = {
   "pmo-todo": "PMO To-Do",
   tasks: "Tasks",
   staff: "Staff",
+  vendors: "Vendor and contract tracker",
 };
 
 // --- workload bars --------------------------------------------------------------------------

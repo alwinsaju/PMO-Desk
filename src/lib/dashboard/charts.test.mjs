@@ -25,9 +25,12 @@ describe("Today rows", () => {
       "due-today",
       "review",
       "away",
+      "contract-late",
+      "contract-soon",
     ]) {
       assert.ok(TODAY_TONE[kind], kind);
     }
+    assert.equal(TODAY_APP_LABEL.vendors, "Vendor and contract tracker");
     assert.equal(TODAY_APP_LABEL["pmo-todo"], "PMO To-Do");
     assert.equal(TODAY_APP_LABEL.staff, "Staff");
   });

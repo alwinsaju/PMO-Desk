@@ -17,6 +17,7 @@ import {
 } from "@/components/ui";
 import { addDays, describeInstant, isSnoozed, nextMondayAfter } from "@/lib/pmo/due";
 import { nextTodoDraft } from "@/lib/pmo/recurrence";
+import { duplicateTodoDraft } from "@/lib/pmo/todoDuplicate";
 import {
   allCheckpointsComplete,
   checkpointProgress,
@@ -195,6 +196,34 @@ export function TodoDetailDialog({
         run: () => void patchTodo(shown.id, undo).then(() => onSettled()),
       },
     });
+  };
+
+  /** Duplicate: a new to-do through the ordinary create action, with an Undo that cancels the copy. */
+  const duplicate = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const reply = await createTodo(duplicateTodoDraft(shown));
+      if (!reply.ok) {
+        setError(reply.reason);
+        return;
+      }
+      const created = reply.todo;
+      toast({
+        key: `duplicate-${created.id}`,
+        message: `Duplicated "${shown.title}".`,
+        action: {
+          label: "Undo",
+          run: () =>
+            void patchTodo(created.id, { status: "cancelled" }).then(() => onSettled()),
+        },
+      });
+      onSettled();
+    } catch {
+      setError("Could not reach the app server.");
+    } finally {
+      setBusy(false);
+    }
   };
 
   /** Delete a cancelled to-do for good, then close the dialog. */
@@ -645,6 +674,9 @@ export function TodoDetailDialog({
               </Button>
             </>
           )}
+          <Button variant="ghost" disabled={busy} onClick={() => void duplicate()}>
+            Duplicate
+          </Button>
           <Button disabled={busy || !dirty} onClick={() => void save()}>
             Save changes
           </Button>

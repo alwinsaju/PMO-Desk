@@ -2,6 +2,14 @@
 // month-end invoice check, and the to-do a record can become. Pure; nothing here sends anything.
 import { daysBetween, formatDate, formatDayMonth } from "../staff/dates.ts";
 import { invoiceBlockers, overallRag } from "./alerts.ts";
+import {
+  NO_PROJECT_LABEL,
+  OTHER_PROJECT_LABEL,
+  buildProjectDigest,
+  digestLines,
+  hasDigest,
+  projectKey,
+} from "./projectDigest.ts";
 import { isOpen, recordTitle, textOf } from "./records.ts";
 import type { RegisterDef, RegisterRecord } from "./types.ts";
 
@@ -15,11 +23,22 @@ export interface StatusReport {
   counts: Record<Rag, number>;
 }
 
-/** The weekly report: the overall status (the worst project's), then each active project. */
+/** The RAID and change records (with their definitions) a report can add under each project. */
+export interface ReportRegisters {
+  raid: readonly RegisterRecord[];
+  raidDef: RegisterDef;
+  changes: readonly RegisterRecord[];
+  changesDef: RegisterDef;
+}
+
+/** The weekly report: the overall status (the worst project's), then each active project.
+ *  With `registers`, each project also lists its top open risks and late changes, followed by
+ *  a "No project" group and an "Other projects" group for records that match no active project. */
 export function statusReport(
   projects: readonly RegisterRecord[],
   def: RegisterDef,
   today: string,
+  registers?: ReportRegisters,
 ): StatusReport {
   const active = projects.filter((p) => isOpen(def, p));
   const counts: Record<Rag, number> = { Green: 0, Amber: 0, Red: 0 };
@@ -30,6 +49,16 @@ export function statusReport(
       RAG_ORDER.indexOf(overallRag(b)) - RAG_ORDER.indexOf(overallRag(a)) ||
       recordTitle(def, a).localeCompare(recordTitle(def, b)),
   );
+  const digest = registers
+    ? buildProjectDigest(
+        active.map((p) => recordTitle(def, p)),
+        registers.raid,
+        registers.raidDef,
+        registers.changes,
+        registers.changesDef,
+        today,
+      )
+    : null;
   const lines = [
     `Weekly status report: ${formatDate(today)}`,
     "",
@@ -46,9 +75,20 @@ export function statusReport(
     const next = textOf(p, "nextSteps");
     if (note) lines.push(`  This week: ${note.replace(/\s*\n\s*/g, " ")}`);
     if (next) lines.push(`  Next: ${next.replace(/\s*\n\s*/g, " ")}`);
+    if (digest) {
+      lines.push(...digestLines(digest.byProject.get(projectKey(recordTitle(def, p)))));
+    }
     lines.push("");
   }
   if (active.length === 0) lines.push("No active projects.", "");
+  if (digest) {
+    for (const [label, group] of [
+      [NO_PROJECT_LABEL, digest.noProject],
+      [OTHER_PROJECT_LABEL, digest.other],
+    ] as const) {
+      if (hasDigest(group)) lines.push(label, ...digestLines(group), "");
+    }
+  }
   return {
     overall,
     subject: `Weekly status report: ${formatDayMonth(today)} (${overall})`,

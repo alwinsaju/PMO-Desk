@@ -1,7 +1,11 @@
 // Run with `pnpm test`. How many dock tiles fit, and which are kept when they do not all fit.
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { dockCapacity, splitDockItems } from "./dockOverflow.ts";
+import {
+  DOCK_LABELLED_TILE_WIDTH,
+  dockCapacity,
+  splitDockItems,
+} from "./dockOverflow.ts";
 
 const ids = (list) => list.map((i) => i.id);
 const items = (...names) => names.map((id) => ({ id }));
@@ -19,6 +23,21 @@ describe("dockCapacity", () => {
 
   it("has no limit for a junk width", () => {
     assert.equal(dockCapacity(Number.NaN), Number.POSITIVE_INFINITY);
+    assert.equal(dockCapacity(Number.NaN, true), Number.POSITIVE_INFINITY);
+  });
+
+  it("is unchanged when labels are off", () => {
+    for (const width of [600, 1024, 1366, 1920, 2560]) {
+      assert.equal(dockCapacity(width, false), dockCapacity(width));
+    }
+  });
+
+  it("fits fewer tiles when labels widen them, so more of the tail goes to the App Menu", () => {
+    assert.ok(DOCK_LABELLED_TILE_WIDTH > 46);
+    for (const width of [1024, 1366, 1920]) {
+      assert.ok(dockCapacity(width, true) < dockCapacity(width, false));
+    }
+    assert.equal(dockCapacity(100, true), 3);
   });
 });
 

@@ -20,8 +20,13 @@ import {
 import { emailBreakParts } from "@/lib/staff/emailBreaks";
 import { birthdayLabel } from "@/lib/staff/people";
 import { TIME_OFF_META, upcomingLeave } from "@/lib/staff/timeoff";
+import { progressOf } from "@/lib/staff/checklists";
+import { undoOffboard, type OffboardUndo } from "@/lib/staff/offboardUndo";
+import { useRosterStore } from "@/lib/staff/rosterStore";
+import { useStaffPrefs } from "@/lib/staff/staffPrefsStore";
 import { useStaffStore } from "@/lib/staff/staffStore";
 import type { Employee } from "@/lib/staff/types";
+import { toast } from "@/lib/notifications/toastStore";
 import { ConfirmDialog, DASH, EmployeeAvatar, LocationChip, TonePill } from "./parts";
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
@@ -103,6 +108,30 @@ function RollOff({ date }: { date: string }) {
   );
 }
 
+/** The Undo of "Remove from roster": the profile, the deleted time off and the shift roster
+ *  link all come back. Uses the stores directly because the pane may be gone by then. */
+async function undoRemove(id: string, name: string, undo: OffboardUndo) {
+  const store = useStaffStore.getState();
+  const result = await undoOffboard(id, undo, {
+    restore: (ids, relink) => store.restore(ids, relink),
+    addTimeOff: (requests) => store.commit("timeoff", { upsert: requests }),
+  });
+  void useRosterStore.getState().load();
+  if (!result.ok) {
+    toast({ tone: "danger", message: result.reason });
+    return;
+  }
+  // Offboarding started a checklist for them; drop it if nothing on it was ticked.
+  useStaffPrefs.getState().update((p) => ({
+    ...p,
+    checklists: p.checklists.filter(
+      (c) =>
+        !(c.employeeId === id && c.kind === "offboarding" && progressOf(c).done === 0),
+    ),
+  }));
+  toast({ tone: "success", message: `${name} is back on the roster.` });
+}
+
 export function EmployeePane({
   employee,
   onEdit,
@@ -154,6 +183,13 @@ export function EmployeePane({
     if (result.ok) {
       setConfirming(false);
       onDeleted();
+      const undo = result.undo ?? { timeOff: [], unlinked: [] };
+      const name = displayName(employee);
+      toast({
+        title: "Removed from roster",
+        message: `${name} is on the Offboarded tab.`,
+        action: { label: "Undo", run: () => void undoRemove(employee.id, name, undo) },
+      });
     } else {
       setError(result.reason);
     }
@@ -383,7 +419,7 @@ export function EmployeePane({
       <ConfirmDialog
         open={confirming}
         title={`Remove ${displayName(employee)} from the roster?`}
-        description="They will move to the Offboarded tab, where you can still edit their profile, restore them or delete them for good. Their shifts and time-off requests are dropped, and other apps will no longer see them."
+        description="They will move to the Offboarded tab, where you can still edit their profile, restore them or delete them for good. Their time-off requests are deleted, and their entry on the shift roster is kept with its shifts but no longer linked to their profile. Other apps will no longer see them. Undo in the message that follows puts it all back."
         confirmLabel="Remove from roster"
         busy={busy}
         error={error}

@@ -17,11 +17,19 @@ export type PtoNudgeCopy =
 
 const MAX_LINES = 3;
 
-/** What the AI says, or null when there is nothing to say. New requests win over "reading". */
+/** A "dismiss the reading card" choice lasts only for the current reading run: once the
+ *  reader goes idle the flag clears, so the next run shows the card again. */
+export function keepReadingDismissed(dismissed: boolean, alert: PtoAlert): boolean {
+  return dismissed && alert.reading;
+}
+
+/** What the AI says, or null when there is nothing to say. New requests win over "reading".
+ *  `readingDismissed` hides only the "reading" card; new requests always show. */
 export function describePtoAlert(
   alert: PtoAlert,
   unseen: readonly string[],
   formatRange: (start: string, end: string) => string,
+  readingDismissed = false,
 ): PtoNudgeCopy | null {
   if (unseen.length > 0) {
     const fresh = new Set(unseen);
@@ -42,7 +50,7 @@ export function describePtoAlert(
       lines,
     };
   }
-  if (alert.reading) {
+  if (alert.reading && !readingDismissed) {
     return {
       kind: "reading",
       title: "Reading a leave email...",

@@ -396,6 +396,75 @@ describe("offboarding", () => {
     assert.deepEqual(await readStaff("offboarded", env), []);
   });
 
+  it("offboarding reports exactly what it dropped, and restoring with it puts it back", async () => {
+    const [a, b] = [person("a@x.com"), person("b@x.com")];
+    await save([a, b]);
+    const [ma, mb] = [memberOf(1, a.id), memberOf(2, b.id)];
+    await saveMembers([ma, mb]);
+    await applyChanges("shifts", { upsert: [day(ma, "2026-03-02")] }, env);
+    const [leaveA, leaveB] = [
+      createTimeOff({ employeeId: a.id, startDate: "2026-03-03", endDate: "2026-03-04" }),
+      createTimeOff({ employeeId: b.id, startDate: "2026-03-05", endDate: "2026-03-05" }),
+    ];
+    await applyChanges("timeoff", { upsert: [leaveA, leaveB] }, env);
+
+    const { undo } = await move("offboard", [a.id]);
+    assert.deepEqual(undo.timeOff, [leaveA]);
+    assert.deepEqual(undo.unlinked, [{ memberId: ma.id, employeeId: a.id }]);
+    // Only the leaver's leave went; the other person's stayed.
+    assert.deepEqual(await readStaff("timeoff", env), [leaveB]);
+    assert.equal((await readRoster(env)).members[0].employeeId, null);
+
+    await moveEmployees(
+      { action: "restore", ids: [a.id], relink: undo.unlinked },
+      env,
+      NOW,
+    );
+    assert.deepEqual(
+      (await readRoster(env)).members.map((m) => [m.id, m.employeeId]),
+      [
+        [ma.id, a.id],
+        [mb.id, b.id],
+      ],
+    );
+    assert.equal((await readStaff("shifts", env)).length, 1);
+    // The time off goes back through the normal time-off write, now the person is on the roster.
+    await applyChanges("timeoff", { upsert: undo.timeOff }, env);
+    assert.equal((await readStaff("timeoff", env)).length, 2);
+  });
+
+  it("restoring relinks only free entries for the people being restored", async () => {
+    const [a, b, c] = [person("a@x.com"), person("b@x.com"), person("c@x.com")];
+    await save([a, b, c]);
+    const [ma, mb, mc] = [memberOf(1, a.id), memberOf(2, b.id), memberOf(3, c.id)];
+    await saveMembers([ma, mb, mc]);
+    await move("offboard", [a.id]);
+    await move("offboard", [b.id]);
+    await moveEmployees(
+      {
+        action: "restore",
+        ids: [a.id],
+        relink: [
+          { memberId: ma.id, employeeId: a.id },
+          // b is still offboarded, so this link is ignored.
+          { memberId: mb.id, employeeId: b.id },
+          // an entry that does not exist is ignored
+          { memberId: "mem_999999999999", employeeId: a.id },
+        ],
+      },
+      env,
+      NOW,
+    );
+    assert.deepEqual(
+      (await readRoster(env)).members.map((m) => [m.id, m.employeeId]),
+      [
+        [ma.id, a.id],
+        [mb.id, null],
+        [mc.id, c.id],
+      ],
+    );
+  });
+
   it("refuses to restore someone whose email is back on the roster", async () => {
     const a = person("a@x.com");
     await save([a]);

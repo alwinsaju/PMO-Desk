@@ -302,7 +302,8 @@ describe("layouts", () => {
     const l = sanitizeLayout({ order: ["week", "nope", "week"], hidden: "x" });
     assert.equal(l.order[0], "week");
     assert.equal(l.order.length, WIDGET_IDS.length);
-    assert.deepEqual(l.hidden, []);
+    // "x" is not a list so nothing the person hid survives; only the cards that start hidden when new.
+    assert.deepEqual(l.hidden, ["rag", "scorecard"]);
     let saved = saveLayout([], "Focus", DEFAULT_LAYOUT);
     saved = saveLayout(saved, "focus", toggleHidden(DEFAULT_LAYOUT, "todos"));
     assert.equal(saved.length, 1);

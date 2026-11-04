@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import {
+  ArrowCounterClockwiseIcon,
   ArrowsClockwiseIcon,
   CircleNotchIcon,
   GearSixIcon,
@@ -19,6 +20,7 @@ import {
   RobotIcon,
   SlidersHorizontalIcon,
   SunIcon,
+  TagIcon,
   TargetIcon,
 } from "@phosphor-icons/react";
 import {
@@ -391,6 +393,47 @@ function LockSummaryRow() {
   );
 }
 
+/** "Show dock labels" - the app's name under each dock tile. Off by default: the dock is a
+ *  narrow pill that already moves its tail into the App Menu on a small screen, and labels
+ *  make each tile wider (so fewer fit before that happens). */
+function DockLabelsRow() {
+  const showDockLabels = usePreferences((s) => s.showDockLabels);
+  const setShowDockLabels = usePreferences((s) => s.setShowDockLabels);
+  return (
+    <DropdownMenuSwitchItem
+      checked={showDockLabels}
+      onCheckedChange={setShowDockLabels}
+      className="group py-2.5"
+    >
+      <RowBody
+        icon={<TagIcon size={18} weight="regular" aria-hidden />}
+        title="Show dock labels"
+        hint="A name under each dock icon"
+      />
+    </DropdownMenuSwitchItem>
+  );
+}
+
+/** "Reopen my apps at launch" - opens the apps that were open last time when PMO Desk
+ *  starts (one window per app; each in the place it was last left). */
+function ReopenAppsRow() {
+  const reopenLastApps = usePreferences((s) => s.reopenLastApps);
+  const setReopenLastApps = usePreferences((s) => s.setReopenLastApps);
+  return (
+    <DropdownMenuSwitchItem
+      checked={reopenLastApps}
+      onCheckedChange={setReopenLastApps}
+      className="group py-2.5"
+    >
+      <RowBody
+        icon={<ArrowCounterClockwiseIcon size={18} weight="regular" aria-hidden />}
+        title="Reopen my apps at launch"
+        hint="Start with the apps you had open"
+      />
+    </DropdownMenuSwitchItem>
+  );
+}
+
 /** "Focus mode" - hides the dock and holds back notices for 25 minutes (or say "focus for 40
  *  minutes" in the command bar). Errors still show; everything held is in the notification list. */
 function FocusModeRow() {
@@ -440,6 +483,8 @@ const settingsRows: { id: string; Row: ComponentType }[] = [
   { id: "instant-unlock", Row: InstantUnlockRow },
   { id: "lock-summary", Row: LockSummaryRow },
   { id: "focus-mode", Row: FocusModeRow },
+  { id: "dock-labels", Row: DockLabelsRow },
+  { id: "reopen-apps", Row: ReopenAppsRow },
   { id: "all-settings", Row: AllSettingsRow },
   { id: "hardware-acceleration", Row: HardwareAccelerationRow },
   { id: "fast-model", Row: FastModelRow },

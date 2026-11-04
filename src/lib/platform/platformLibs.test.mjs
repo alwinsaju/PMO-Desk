@@ -294,6 +294,7 @@ test("help: every app has a summary and three tasks with steps", () => {
     "tasks",
     "staff",
     "templates",
+    "pmo-toolkit",
     "files",
     "notes",
     "browser",
@@ -303,6 +304,10 @@ test("help: every app has a summary and three tasks with steps", () => {
     assert.ok(ids.has(id), `missing help for ${id}`);
   }
   assert.equal(helpFor("tasks").title, "Tasks");
+  // The Toolkit has one shared entry; its launcher and every tool window resolve to it.
+  assert.equal(helpFor("pmo-toolkit").title, "PMO Toolkit");
+  assert.equal(helpFor("raid"), helpFor("pmo-toolkit"));
+  assert.equal(helpFor("doclinks"), helpFor("pmo-toolkit"));
   assert.equal(helpFor("nope"), null);
   assert.equal(helpFor(null), null);
   assert.ok(GENERAL_HELP.length >= 3);

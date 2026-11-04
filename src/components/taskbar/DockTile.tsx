@@ -44,6 +44,16 @@ interface DockTileProps {
   /** Disables "Reset taskbar to default" when the taskbar already IS the
    *  default (nothing to reset). */
   canReset: boolean;
+  /** "Show desktop" (minimise every window) and "Tidy windows" (re-cascade the visible ones),
+   *  offered in every tile's menu. `hasVisibleWindows` greys both out when there is nothing
+   *  on screen to act on. */
+  onShowDesktop?: () => void;
+  onTidyWindows?: () => void;
+  hasVisibleWindows?: boolean;
+  /** Settings > "Show dock labels": the app's name under the icon. The tile then takes
+   *  `DOCK_LABELLED_TILE_WIDTH` px (a fixed column, so the overflow maths in dockOverflow.ts
+   *  can count on it) and the name is cut with an ellipsis rather than widening it. */
+  showLabel?: boolean;
   /** Drives the little dot under the icon: open = accent dot, minimized =
    *  grey dot, none = no dot. */
   running?: TileRunState;
@@ -83,6 +93,10 @@ export function DockTile({
   onTogglePinned,
   onResetTaskbar,
   canReset,
+  onShowDesktop,
+  onTidyWindows,
+  hasVisibleWindows = false,
+  showLabel = false,
   running = "none",
   badge = 0,
   badgeMeaning,
@@ -94,58 +108,76 @@ export function DockTile({
   return (
     <ContextMenu>
       <ContextMenuTrigger className="contents">
-        <span className="relative inline-flex">
-          <Tooltip
-            label={
-              <span className="flex max-w-64 flex-col gap-0.5">
-                <span>{hover.title}</span>
-                {hover.lines.map((line) => (
-                  <span
-                    key={line}
-                    className="text-ink-inverse/75 text-[12px] font-normal"
-                  >
-                    {line}
-                  </span>
-                ))}
-              </span>
-            }
-            side="bottom"
-            sideOffset={16}
-          >
-            <button
-              type="button"
-              aria-label={badgedLabel(label, badge)}
-              data-running={running}
-              data-dock-app={appId}
-              onClick={onClick}
-              className={cn(dockTileClassName, "data-[running=open]:text-accent-ink")}
-              {...dragProps}
+        <span
+          className={cn(
+            "inline-flex",
+            // Must match DOCK_LABELLED_TILE_WIDTH in dockOverflow.ts (Tailwind needs the literal).
+            showLabel && "w-[60px] flex-col items-center gap-[3px]",
+          )}
+        >
+          <span className="relative inline-flex">
+            <Tooltip
+              label={
+                <span className="flex max-w-64 flex-col gap-0.5">
+                  <span>{hover.title}</span>
+                  {hover.lines.map((line) => (
+                    <span
+                      key={line}
+                      className="text-ink-inverse/75 text-[12px] font-normal"
+                    >
+                      {line}
+                    </span>
+                  ))}
+                </span>
+              }
+              side="bottom"
+              sideOffset={16}
             >
-              <IconGlyph size={23} weight={running === "open" ? "fill" : "regular"} />
-            </button>
-          </Tooltip>
-          <i
-            aria-hidden
-            data-dock-dot={running}
-            className={cn(
-              "pointer-events-none absolute bottom-[3px] left-1/2 -ml-[3px] h-1.5 w-1.5 rounded-full not-italic",
-              "ease-spring transition-[opacity,transform,background-color] duration-300",
-              running === "none" ? "scale-0 opacity-0" : "scale-100 opacity-100",
-              running === "minimized"
-                ? "border-ink-faint border bg-transparent"
-                : "bg-accent-ink ring-surface-elevated ring-1",
+              <button
+                type="button"
+                aria-label={badgedLabel(label, badge)}
+                data-running={running}
+                data-dock-app={appId}
+                onClick={onClick}
+                className={cn(dockTileClassName, "data-[running=open]:text-accent-ink")}
+                {...dragProps}
+              >
+                <IconGlyph size={23} weight={running === "open" ? "fill" : "regular"} />
+              </button>
+            </Tooltip>
+            <i
+              aria-hidden
+              data-dock-dot={running}
+              className={cn(
+                "pointer-events-none absolute bottom-[3px] left-1/2 -ml-[3px] h-1.5 w-1.5 rounded-full not-italic",
+                "ease-spring transition-[opacity,transform,background-color] duration-300",
+                running === "none" ? "scale-0 opacity-0" : "scale-100 opacity-100",
+                running === "minimized"
+                  ? "border-ink-faint border bg-transparent"
+                  : "bg-accent-ink ring-surface-elevated ring-1",
+              )}
+            />
+            {badgeLabel && (
+              <span
+                aria-hidden
+                data-dock-badge
+                className={cn(
+                  "bg-accent text-accent-contrast pointer-events-none absolute -top-1 -right-1 z-[1] flex h-[18px] min-w-[18px] items-center justify-center",
+                  "rounded-pill border-surface-elevated border-2 px-1 text-[10px] leading-none font-semibold",
+                )}
+              >
+                {badgeLabel}
+              </span>
             )}
-          />
-          {badgeLabel && (
+          </span>
+          {showLabel && (
+            // The button already carries the name (aria-label), so this is for the eye only.
             <span
               aria-hidden
-              data-dock-badge
-              className={cn(
-                "bg-accent text-accent-contrast pointer-events-none absolute -top-1 -right-1 z-[1] flex h-[18px] min-w-[18px] items-center justify-center",
-                "rounded-pill border-surface-elevated border-2 px-1 text-[10px] leading-none font-semibold",
-              )}
+              data-dock-label
+              className="text-ink-muted w-full truncate text-center text-[10.5px] leading-none font-medium"
             >
-              {badgeLabel}
+              {label}
             </span>
           )}
         </span>
@@ -157,6 +189,17 @@ export function DockTile({
             <ContextMenuSeparator />
           </>
         )}
+        {onShowDesktop && (
+          <ContextMenuItem disabled={!hasVisibleWindows} onSelect={onShowDesktop}>
+            Show desktop
+          </ContextMenuItem>
+        )}
+        {onTidyWindows && (
+          <ContextMenuItem disabled={!hasVisibleWindows} onSelect={onTidyWindows}>
+            Tidy windows
+          </ContextMenuItem>
+        )}
+        {(onShowDesktop || onTidyWindows) && <ContextMenuSeparator />}
         <ContextMenuItem onSelect={onTogglePinned}>
           {pinned ? "Unpin from taskbar" : "Pin to taskbar"}
         </ContextMenuItem>

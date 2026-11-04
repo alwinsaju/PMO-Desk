@@ -8,6 +8,7 @@ import {
   appendCommandLog,
   rememberWindowRect,
   removeView,
+  sanitizeAppIds,
   saveView,
   sanitizePreferences,
   toggleFavourite,
@@ -34,6 +35,10 @@ interface PreferencesState extends Preferences {
   logCommand: (entry: CommandLogEntry) => void;
   clearCommandLog: () => void;
   toggleFavourite: (prompt: string) => void;
+  setShowDockLabels: (on: boolean) => void;
+  setReopenLastApps: (on: boolean) => void;
+  /** Replace the remembered list of open apps (cleaned; same array back if unchanged). */
+  rememberOpenApps: (appIds: string[]) => void;
 }
 
 /**
@@ -68,6 +73,21 @@ export const usePreferences = create<PreferencesState>()(
       clearCommandLog: () => set({ commandLog: [] }),
       toggleFavourite: (prompt) =>
         set((state) => ({ favourites: toggleFavourite(state.favourites, prompt) })),
+      setShowDockLabels: (showDockLabels) => set({ showDockLabels }),
+      // Turning it off also forgets the list, so an old session is not reopened by surprise later.
+      setReopenLastApps: (reopenLastApps) =>
+        set((state) => ({
+          reopenLastApps,
+          lastOpenApps: reopenLastApps ? state.lastOpenApps : [],
+        })),
+      rememberOpenApps: (appIds) =>
+        set((state) => {
+          const clean = sanitizeAppIds(appIds);
+          const same =
+            clean.length === state.lastOpenApps.length &&
+            clean.every((id, i) => id === state.lastOpenApps[i]);
+          return same ? state : { lastOpenApps: clean };
+        }),
     }),
     {
       name: "preferences",
@@ -86,6 +106,9 @@ export const usePreferences = create<PreferencesState>()(
         savedViews: state.savedViews,
         commandLog: state.commandLog,
         favourites: state.favourites,
+        showDockLabels: state.showDockLabels,
+        reopenLastApps: state.reopenLastApps,
+        lastOpenApps: state.lastOpenApps,
       }),
       merge: (persisted, current) => ({ ...current, ...sanitizePreferences(persisted) }),
     },

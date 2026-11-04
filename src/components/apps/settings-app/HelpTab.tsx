@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { openOrFocusBuiltInApp } from "@/components/taskbar/launchBuiltInApp";
 import { Button } from "@/components/ui";
+import { AppHelpContent } from "@/components/window-manager/AppHelpContent";
 import { toast } from "@/lib/notifications/toastStore";
 import { APP_HELP, GENERAL_HELP } from "@/lib/platform/appHelp";
 import { usePlatformPrefs } from "@/lib/platform/platformPrefsStore";
@@ -94,19 +95,9 @@ export function HelpTab() {
               <summary className="text-ink cursor-pointer text-[14px] font-semibold">
                 {help.title}
               </summary>
-              <p className="text-ink-muted mt-2 text-[13px]">{help.summary}</p>
-              <ol className="mt-3 space-y-3">
-                {help.tasks.map((task) => (
-                  <li key={task.title}>
-                    <p className="text-ink text-[13px] font-semibold">{task.title}</p>
-                    <ol className="text-ink-soft mt-1 list-decimal pl-5 text-[13px]">
-                      {task.steps.map((step) => (
-                        <li key={step}>{step}</li>
-                      ))}
-                    </ol>
-                  </li>
-                ))}
-              </ol>
+              <div className="mt-2">
+                <AppHelpContent help={help} />
+              </div>
               {help.appId !== "settings" && (
                 <Button
                   variant="outline"

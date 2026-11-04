@@ -12,11 +12,15 @@ import { useDashboardPrefs } from "@/lib/dashboard/dashboardPrefsStore";
 import { exportElement } from "@/lib/dashboard/exportView";
 import {
   agingBuckets,
+  contractTodayAlerts,
+  pmoScorecard,
+  portfolioRag,
   reportHealth,
   signoffPipeline,
   todayList,
   workloadByOwner,
 } from "@/lib/dashboard/insights";
+import { useRegisterSummaries } from "@/components/apps/toolkit/summariesStore";
 import { weekMetrics } from "@/lib/dashboard/charts";
 import {
   DEFAULT_LAYOUT,
@@ -57,7 +61,9 @@ import {
 import { CustomiseList } from "./CustomiseList";
 import { StaffAttentionWidget } from "./StaffAttentionWidget";
 import { RegistersWidget } from "./RegistersWidget";
+import { PortfolioRagWidget, ScorecardWidget } from "./PortfolioWidgets";
 import { useNow, useReportStatuses, useRoster } from "./useDashboardData";
+import { useRegisterRecords } from "./useRegisterRecords";
 import { ChasersWidget, OpenTodosWidget, ReportsWidget, WhosOutWidget } from "./widgets";
 
 /**
@@ -89,6 +95,14 @@ export function DashboardApp({ windowId }: { windowId: string }) {
   const [editing, setEditing] = useState(false);
   const [layoutName, setLayoutName] = useState("");
   const captureRef = useRef<HTMLDivElement>(null);
+  const [registerRefresh, setRegisterRefresh] = useState(0);
+  const summaries = useRegisterSummaries((s) => s.summaries);
+  const summariesLoaded = useRegisterSummaries((s) => s.loaded);
+  // The vendor contracts feed the Today card, which is on by default, so they are always read. The
+  // status reports are read only while the Portfolio RAG card is showing.
+  const vendors = useRegisterRecords("vendors", true, registerRefresh);
+  const ragShowing = visibleWidgets(shownLayout).includes("rag");
+  const statusReports = useRegisterRecords("status-report", ragShowing, registerRefresh);
 
   const prefs = state?.config.reminders;
   const timeZone = prefs?.timeZone ?? "Asia/Kolkata";
@@ -144,6 +158,9 @@ export function DashboardApp({ windowId }: { windowId: string }) {
         reviewCount: reviewCount(state.queue),
         tasksNeedingYou: needing,
         awayToday,
+        contracts: vendors.data
+          ? contractTodayAlerts(vendors.data.items, today, vendors.data.config)
+          : [],
       }),
       workload: workloadByOwner(state.todos, today),
       aging: agingBuckets(state.todos, now),
@@ -157,13 +174,20 @@ export function DashboardApp({ windowId }: { windowId: string }) {
         timeZone,
       }),
     };
-  }, [state, prefs, today, now, timeOff, awayToday, reports, timeZone]);
+  }, [state, prefs, today, now, timeOff, awayToday, reports, timeZone, vendors.data]);
+
+  const rag = useMemo(
+    () => (statusReports.data ? portfolioRag(statusReports.data.items) : null),
+    [statusReports.data],
+  );
+  const scorecard = useMemo(() => pmoScorecard(summaries), [summaries]);
 
   const openApp = (appId: string) => () => {
     openOrFocusBuiltInApp(appId);
   };
   const refresh = () => {
     refetch();
+    setRegisterRefresh((n) => n + 1);
     setUpdatedAt(new Date());
   };
   const openStaffTimeOff = () => {
@@ -235,6 +259,20 @@ export function DashboardApp({ windowId }: { windowId: string }) {
     health: insights && <HealthWidget health={insights.health} />,
     week: insights && <WeekWidget metrics={insights.week} />,
     registers: <RegistersWidget onOpen={(toolId) => openOrFocusBuiltInApp(toolId)} />,
+    rag: (
+      <PortfolioRagWidget
+        rag={rag}
+        failed={statusReports.failed}
+        onOpen={() => openOrFocusBuiltInApp("status-report")}
+      />
+    ),
+    scorecard: (
+      <ScorecardWidget
+        card={scorecard}
+        loaded={summariesLoaded}
+        onOpen={(toolId) => openOrFocusBuiltInApp(toolId)}
+      />
+    ),
   };
 
   const shown = visibleWidgets(shownLayout).filter((id) => cards[id]);
