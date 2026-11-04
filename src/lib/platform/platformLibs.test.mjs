@@ -396,3 +396,25 @@ test("platform prefs: lastOpenedAt is kept only when it is a real time", () => {
   assert.equal(sanitizePlatformPrefs({ lastOpenedAt: "last week" }).lastOpenedAt, "");
   assert.equal(sanitizePlatformPrefs({ lastOpenedAt: 12345 }).lastOpenedAt, "");
 });
+
+test("prefs: 'My holiday location' is empty by default and sanitised", () => {
+  assert.equal(DEFAULT_PLATFORM_PREFS.holidayLocation, "");
+  assert.equal(sanitizePlatformPrefs(undefined).holidayLocation, "");
+  assert.equal(sanitizePlatformPrefs({ holidayLocation: 5 }).holidayLocation, "");
+  assert.equal(
+    sanitizePlatformPrefs({ holidayLocation: "  Pune " }).holidayLocation,
+    "Pune",
+  );
+  assert.equal(
+    sanitizePlatformPrefs({ holidayLocation: "Bangalore" }).holidayLocation,
+    "Bengaluru",
+  );
+  assert.equal(
+    sanitizePlatformPrefs({ holidayLocation: "x".repeat(300) }).holidayLocation.length,
+    60,
+  );
+  // One bad field does not disturb the others.
+  const p = sanitizePlatformPrefs({ holidayLocation: {}, tourDone: true });
+  assert.equal(p.tourDone, true);
+  assert.equal(p.holidayLocation, "");
+});

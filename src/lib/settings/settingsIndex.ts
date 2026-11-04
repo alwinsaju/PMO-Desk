@@ -85,6 +85,14 @@ export const SETTINGS_INDEX: readonly SettingEntry[] = [
     "recurring repeat todo",
   ),
   entry(
+    "holiday-location",
+    "general",
+    "To-dos",
+    "My holiday location",
+    "Due dates and snoozes skip this Staff location’s holidays.",
+    "holiday public bank leave due date working day city office",
+  ),
+  entry(
     "focus-mode",
     "general",
     "Focus",

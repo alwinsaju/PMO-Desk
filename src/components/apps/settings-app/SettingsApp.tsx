@@ -24,6 +24,7 @@ import { ActivityTab } from "./ActivityTab";
 import { AboutTab } from "./AboutTab";
 import { DataTab } from "./DataTab";
 import { HelpTab } from "./HelpTab";
+import { HolidayLocationRow } from "./HolidayLocationRow";
 import { Row, Section, when } from "./SettingsParts";
 import { SettingsSearchBox, SettingsSearchResults } from "./SettingsSearch";
 import { useDashboardPrefs } from "@/lib/dashboard/dashboardPrefsStore";
@@ -144,6 +145,7 @@ function General() {
             aria-label="Repeating to-dos create the next one"
           />
         </Row>
+        <HolidayLocationRow />
       </Section>
       <Section title="Focus">
         <Row

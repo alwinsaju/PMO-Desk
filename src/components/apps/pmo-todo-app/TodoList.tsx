@@ -27,6 +27,7 @@ import { cn } from "@/lib/cn";
 import { toast } from "@/lib/notifications/toastStore";
 import { describeInstant } from "@/lib/pmo/due";
 import { parseDate } from "@/lib/ui/dates";
+import { useHolidayDates } from "@/lib/staff/holidayDatesStore";
 import { MAX_QUICK_ADD_LENGTH, parseQuickAdd } from "@/lib/pmo/quickAdd";
 import { emptyDraft } from "@/lib/pmo/todoLogic";
 import { actionItemsView } from "@/lib/pmo/cardView";
@@ -281,7 +282,12 @@ export function TodoList({
         onViewChange={onViewChange}
         visible={visible}
         quickAdd={
-          <QuickAddBar today={state.today} todos={state.todos} onSettled={onSettled} />
+          <QuickAddBar
+            today={state.today}
+            todos={state.todos}
+            workDays={state.config.reminders.workDays}
+            onSettled={onSettled}
+          />
         }
       />
       {selectedTodos.length > 0 && (
@@ -349,16 +355,20 @@ export function TodoList({
 function QuickAddBar({
   today,
   todos,
+  workDays,
   onSettled,
 }: {
   today: string;
   todos: readonly Todo[];
+  workDays: readonly number[];
   onSettled: () => void;
 }) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const parsed = parseQuickAdd(text, today);
+  // With a "My holiday location" set, a day that is a holiday moves to the next working day.
+  const holidays = useHolidayDates(today);
+  const parsed = parseQuickAdd(text, today, { holidays, workDays });
   const lookAlike = parsed ? similarTodos(parsed.title, todos, 1)[0] : undefined;
 
   const add = async () => {
@@ -415,6 +425,14 @@ function QuickAddBar({
         parsed && (
           <p className="text-ink-muted mt-1.5 text-[12px]" aria-live="polite">
             {parsed.dueAt ? `Due ${formatDay(parsed.dueAt, today)}` : "No due date"}
+            {parsed.movedFrom && (
+              <span
+                title={`${formatDay(parsed.movedFrom, today)} is one of your holidays.`}
+              >
+                {" "}
+                (skipped a holiday)
+              </span>
+            )}
             {lookAlike && (
               <span className="text-amber ml-2 font-semibold">
                 Looks like an existing to-do: “{lookAlike.title}”

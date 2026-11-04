@@ -8,16 +8,17 @@ import {
   useState,
   type KeyboardEvent,
 } from "react";
-import { ArrowLeftIcon, PushPinIcon } from "@phosphor-icons/react";
+import { ArrowLeftIcon, PlusIcon, PushPinIcon } from "@phosphor-icons/react";
 import { useWindowContext } from "@/components/window-manager";
 import { toolApps } from "@/components/taskbar/pinnedApps";
 import { Badge, Button, IconButton, Input } from "@/components/ui";
 import type { RegisterSummary } from "@/lib/registers/alerts";
-import { registerById } from "@/lib/registers/defs";
+import { REGISTER_IDS, registerById } from "@/lib/registers/defs";
 import { groupTools } from "@/lib/registers/layout";
 import { noSpellcheck } from "@/lib/ui/noSpellcheck";
 import { handleRowKey } from "../rowNav";
 import { fetchSummaries } from "./registersApi";
+import { quickAddLabel, supportsQuickAdd } from "./toolkitQuickAdd";
 import { toolComponent } from "./tools";
 import {
   arrangeGroups,
@@ -38,6 +39,9 @@ export function ToolkitApp({ windowId }: { windowId: string }) {
   const [summaries, setSummaries] = useState<Record<string, RegisterSummary>>({});
   const [error, setError] = useState<string | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
+  /** Set when the open tool was reached through a tile's plus button. Read once, by the tool
+   *  as it mounts; the Back button clears it so the next open starts clean. */
+  const [addOnOpen, setAddOnOpen] = useState(false);
   const [query, setQuery] = useState("");
   // Pins and the last-opened tool are per-viewer conveniences kept in this browser's
   // localStorage. They are read after mount so the first render matches the server's.
@@ -52,8 +56,10 @@ export function ToolkitApp({ windowId }: { windowId: string }) {
     setLastId(memory.last);
   }, []);
 
-  const openTool = (id: string) => {
+  /** `adding`: open the tool with its Add dialog already showing (the tile's plus button). */
+  const openTool = (id: string, adding = false) => {
     setOpenId(id);
+    setAddOnOpen(adding && supportsQuickAdd(id, REGISTER_IDS));
     setLastId(id);
     saveLastTool(browserStorage(), id);
   };
@@ -108,6 +114,7 @@ export function ToolkitApp({ windowId }: { windowId: string }) {
             data-testid="toolkit-back"
             onClick={() => {
               setOpenId(null);
+              setAddOnOpen(false);
               void load();
             }}
           >
@@ -116,7 +123,7 @@ export function ToolkitApp({ windowId }: { windowId: string }) {
           </Button>
         </div>
         <div className="min-h-0 flex-1">
-          <Tool windowId={windowId} />
+          <Tool windowId={windowId} startAdding={addOnOpen} />
         </div>
       </div>
     );
@@ -246,6 +253,17 @@ export function ToolkitApp({ windowId }: { windowId: string }) {
                         </span>
                       </span>
                     </button>
+                    {supportsQuickAdd(tool.id, REGISTER_IDS) && (
+                      <IconButton
+                        size="sm"
+                        aria-label={quickAddLabel(tool.title)}
+                        data-testid={`tool-add-${tool.id}`}
+                        onClick={() => openTool(tool.id, true)}
+                        className="absolute right-1.5 bottom-1.5"
+                      >
+                        <PlusIcon weight="bold" />
+                      </IconButton>
+                    )}
                   </li>
                 );
               })}

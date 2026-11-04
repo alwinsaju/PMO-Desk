@@ -124,3 +124,64 @@ describe("planLocalIntent", () => {
     assert.match(many.text, /• Vendor invoice March/);
   });
 });
+
+describe("planLocalIntent with holidays", () => {
+  // today is Fri 30 Oct 2026; Mon 2 Nov is a holiday in these cases.
+  const withHolidays = (intent, ...days) =>
+    planLocalIntent(intent, { ...ctx, holidays: new Set(days) });
+
+  it("with no holidays, nothing changes (missing or empty)", () => {
+    const intent = { kind: "create_todo", text: "send the invoice Monday" };
+    assert.deepEqual(
+      planLocalIntent(intent, { ...ctx, holidays: new Set() }),
+      plan(intent),
+    );
+    assert.doesNotMatch(plan(intent).detail, /holiday/);
+  });
+
+  it("a new to-do due on a holiday moves to the next working day and says so", () => {
+    const p = withHolidays(
+      { kind: "create_todo", text: "send the invoice Monday" },
+      "2026-11-02",
+    );
+    assert.deepEqual(p.effect, {
+      op: "create",
+      title: "send the invoice",
+      dueAt: "2026-11-03",
+    });
+    assert.match(p.detail, /Due Tue 3 Nov 2026 \(skipped a holiday\)/);
+    assert.match(p.doneText, /due Tue 3 Nov 2026 \(skipped a holiday\)/);
+  });
+
+  it("a snooze to a named holiday wakes on the next working day", () => {
+    const p = withHolidays(
+      {
+        kind: "todo_action",
+        action: "snooze",
+        query: "vendor invoice",
+        until: "Monday",
+      },
+      "2026-11-02",
+    );
+    // Tue 3 Nov 09:00 in Kolkata = 03:30 UTC.
+    assert.equal(p.effect.patch.snoozedUntil, "2026-11-03T03:30:00.000Z");
+    assert.match(p.detail, /Tue 3 Nov 2026 \(skipped a holiday\)/);
+  });
+
+  it("a snooze with no day (tomorrow) skips a holiday tomorrow", () => {
+    const p = withHolidays(
+      { kind: "todo_action", action: "snooze", query: "release plan", until: "" },
+      "2026-10-31", // Saturday is a holiday too: Monday 2 Nov is next
+    );
+    assert.equal(p.effect.patch.snoozedUntil, "2026-11-02T03:30:00.000Z");
+  });
+
+  it("still refuses today when today is a holiday", () => {
+    const p = withHolidays(
+      { kind: "todo_action", action: "snooze", query: "release plan", until: "today" },
+      "2026-10-30",
+    );
+    assert.equal(p.type, "say");
+    assert.match(p.text, /later day than today/);
+  });
+});

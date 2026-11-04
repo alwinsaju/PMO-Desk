@@ -12,6 +12,7 @@ import {
   mondayOf,
   weekdayIndex,
 } from "../staff/dates.ts";
+import { rollPastHoliday, type HolidayDates } from "../pmo/due.ts";
 
 export interface DateRange {
   from: string;
@@ -161,4 +162,37 @@ export function resolveWhen(phrase: string, today: string): DateRange | null {
 
   const day = parseDate(text, today);
   return day ? single(day) : null;
+}
+
+/** What a due date needs to know about days off. Both parts are optional: with no
+ *  holidays a phrase means exactly what `resolveWhen` says. */
+export interface DueOptions {
+  /** The person's holidays (yyyy-mm-dd). */
+  holidays?: HolidayDates;
+  /** The work-days list (0 = Sunday); Monday to Friday when left out. */
+  workDays?: readonly number[];
+}
+
+/** A day (or period) a phrase means, as a due date. */
+export type DueRange = DateRange & {
+  /** Set only when the day written is a holiday and the date moved on: the holiday. */
+  movedFrom?: string;
+};
+
+/**
+ * `resolveWhen` for a DUE date: a single day that lands on a holiday moves to the next
+ * working day ("Fri" on a Friday holiday gives Monday, or Tuesday if Monday is one too),
+ * and `movedFrom` names the holiday so the screen can say why. Periods ("next week") and
+ * phrases that are not a day come back untouched. "Who's off Friday?" must keep using
+ * `resolveWhen`: that question is about the day itself.
+ */
+export function resolveDueWhen(
+  phrase: string,
+  today: string,
+  options: DueOptions = {},
+): DueRange | null {
+  const range = resolveWhen(phrase, today);
+  if (!range || range.from !== range.to || !options.holidays) return range;
+  const moved = rollPastHoliday(range.from, options.holidays, options.workDays);
+  return moved === range.from ? range : { ...single(moved), movedFrom: range.from };
 }

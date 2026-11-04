@@ -59,6 +59,16 @@ export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [
     ],
   },
   {
+    title: "Notes",
+    shortcuts: [
+      { keys: "Ctrl+B", action: "Bold the selected text" },
+      {
+        keys: "Ctrl+Enter",
+        action: "Tick or untick the checklist item under the cursor",
+      },
+    ],
+  },
+  {
     title: "PMO To-Do list",
     shortcuts: [
       { keys: "J / K", action: "Move down / up" },

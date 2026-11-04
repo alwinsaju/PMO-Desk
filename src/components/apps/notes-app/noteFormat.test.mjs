@@ -68,3 +68,90 @@ describe("toggleCheck", () => {
     assert.equal(toggleCheck("plain"), null);
   });
 });
+
+describe("applyFormat: link", () => {
+  it("puts a link skeleton at the cursor with its text selected", () => {
+    const edit = applyFormat("see ", 4, 4, "link");
+    assert.equal(edit.text, "see [link text](https://)");
+    assert.equal(edit.text.slice(edit.start, edit.end), "link text");
+  });
+  it("makes the selected words the link text and selects the address to type", () => {
+    const edit = applyFormat("read the spec now", 5, 13, "link");
+    assert.equal(edit.text, "read [the spec](https://) now");
+    assert.equal(edit.text.slice(edit.start, edit.end), "https://");
+  });
+  it("makes a selected address the link's address and selects the text to type", () => {
+    const edit = applyFormat("go https://example.com/a now", 3, 24, "link");
+    assert.equal(edit.text, "go [link text](https://example.com/a) now");
+    assert.equal(edit.text.slice(edit.start, edit.end), "link text");
+  });
+  it("does not treat a javascript: selection as an address", () => {
+    const edit = applyFormat("javascript:alert(1)", 0, 19, "link");
+    assert.equal(edit.text, "[javascript:alert(1)](https://)");
+    assert.equal(edit.text.slice(edit.start, edit.end), "https://");
+  });
+  it("takes the link off again when the whole link is selected", () => {
+    const text = "a [b](https://x.example) c";
+    const edit = applyFormat(text, 2, 24, "link");
+    assert.equal(edit.text, "a b c");
+    assert.equal(edit.text.slice(edit.start, edit.end), "b");
+  });
+  it("puts the skeleton after a selection that spans lines instead of wrapping it", () => {
+    const edit = applyFormat("a\nb", 0, 3, "link");
+    assert.equal(edit.text, "a\nb[link text](https://)");
+  });
+  it("copes with an empty note and a selection outside the text", () => {
+    assert.equal(applyFormat("", 0, 0, "link").text, "[link text](https://)");
+    assert.equal(applyFormat("ab", 5, 9, "link").text, "ab[link text](https://)");
+  });
+});
+
+describe("applyFormat: code block", () => {
+  it("inserts an empty fenced block with the cursor inside it", () => {
+    const edit = applyFormat("", 0, 0, "code");
+    assert.equal(edit.text, "```\n\n```");
+    assert.deepEqual([edit.start, edit.end], [4, 4]);
+  });
+  it("starts the block on its own line when the cursor is mid-line", () => {
+    const edit = applyFormat("abc", 3, 3, "code");
+    assert.equal(edit.text, "abc\n```\n\n```");
+    assert.deepEqual([edit.start, edit.end], [8, 8]);
+  });
+  it("wraps the selected text in a fence and keeps it selected", () => {
+    const edit = applyFormat("x = 1\ny = 2", 0, 11, "code");
+    assert.equal(edit.text, "```\nx = 1\ny = 2\n```");
+    assert.equal(edit.text.slice(edit.start, edit.end), "x = 1\ny = 2");
+  });
+  it("keeps the text after the selection on its own line", () => {
+    const edit = applyFormat("a b c", 2, 3, "code");
+    assert.equal(edit.text, "a \n```\nb\n```\n c");
+  });
+  it("does not leave a stray blank line when the selection ends with a line break", () => {
+    const edit = applyFormat("one\ntwo\nthree", 4, 8, "code");
+    assert.equal(edit.text, "one\n```\ntwo\n```\nthree");
+  });
+});
+
+describe("applyFormat: table", () => {
+  const skeleton =
+    "| Column 1 | Column 2 | Column 3 |\n| --- | --- | --- |\n|  |  |  |\n|  |  |  |";
+  it("inserts a table skeleton with the first heading selected", () => {
+    const edit = applyFormat("", 0, 0, "table");
+    assert.equal(edit.text, skeleton);
+    assert.equal(edit.text.slice(edit.start, edit.end), "Column 1");
+  });
+  it("puts the table on its own lines after the cursor's line text", () => {
+    const edit = applyFormat("intro", 5, 5, "table");
+    assert.equal(edit.text, `intro\n${skeleton}`);
+    assert.equal(edit.text.slice(edit.start, edit.end), "Column 1");
+  });
+  it("keeps the rest of the line after the table", () => {
+    const edit = applyFormat("ab", 1, 1, "table");
+    assert.equal(edit.text, `a\n${skeleton}\nb`);
+  });
+  it("leaves a selection as it is and inserts after it", () => {
+    const edit = applyFormat("keep this", 0, 4, "table");
+    assert.ok(edit.text.startsWith("keep\n| Column 1"));
+    assert.ok(edit.text.endsWith(" this"));
+  });
+});

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   ArrowsClockwiseIcon,
   BellRingingIcon,
+  BookmarkSimpleIcon,
   ClipboardTextIcon,
   DotsThreeIcon,
   GearIcon,
@@ -27,6 +28,7 @@ import { cn } from "@/lib/cn";
 import type { PmoState } from "@/lib/pmo/types";
 import { scanNow } from "./api";
 import { GUTTER_X } from "./parts";
+import { SavedExamplesDialog } from "./SavedExamplesDialog";
 import { relativeTime } from "./queueView";
 import { enableReminders, useRemindersStore } from "./remindersStore";
 import {
@@ -99,6 +101,7 @@ export function PmoToolbar({
   const desktop = useRemindersStore((s) => s.desktop);
   const { ingest } = state;
   const [logOpen, setLogOpen] = useState(false);
+  const [examplesOpen, setExamplesOpen] = useState(false);
   const counting = state.runtime.state === "ready" && Boolean(state.runtime.unloadsAt);
   const status = modelStatus(state, useNow(counting));
   const remindersOffered = offersReminderPrompt(permission, desktop);
@@ -224,6 +227,14 @@ export function PmoToolbar({
               <BellRingingIcon size={18} />
             </IconButton>
           )}
+          <IconButton
+            aria-label="Saved examples"
+            tooltip="Saved examples for the model"
+            variant="ghost"
+            onClick={() => setExamplesOpen(true)}
+          >
+            <BookmarkSimpleIcon size={18} />
+          </IconButton>
           <IconButton aria-label="PMO settings" variant="ghost" onClick={onSettings}>
             <GearIcon size={18} />
           </IconButton>
@@ -260,6 +271,10 @@ export function PmoToolbar({
                   Enable reminders
                 </DropdownMenuItem>
               )}
+              <DropdownMenuItem onSelect={() => setExamplesOpen(true)}>
+                <BookmarkSimpleIcon size={14} />
+                Saved examples
+              </DropdownMenuItem>
               <DropdownMenuItem onSelect={onSettings}>
                 <GearIcon size={14} />
                 PMO settings
@@ -271,6 +286,7 @@ export function PmoToolbar({
         <i aria-hidden className="scan-bar" />
       </div>
       <ModelLogDialog open={logOpen} onOpenChange={setLogOpen} />
+      <SavedExamplesDialog open={examplesOpen} onOpenChange={setExamplesOpen} />
     </div>
   );
 }

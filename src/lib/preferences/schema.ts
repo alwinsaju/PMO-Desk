@@ -58,6 +58,8 @@ export interface Preferences {
   reopenLastApps: boolean;
   /** App ids that had a window open, bottom to top. Only kept while `reopenLastApps` is on. */
   lastOpenApps: string[];
+  /** Named workspace layouts: open apps and where their windows are (ux-6). */
+  workspaceLayouts: WorkspaceLayout[];
 }
 
 export const DEFAULT_CONFIRM_ACTIONS: Record<ConfirmKey, boolean> = {
@@ -82,6 +84,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   showDockLabels: false,
   reopenLastApps: false,
   lastOpenApps: [],
+  workspaceLayouts: [],
 };
 
 export const MAX_COMMAND_LOG = 100;
@@ -302,6 +305,57 @@ export function saveView(views: readonly SavedView[], view: SavedView): SavedVie
 export const removeView = (views: readonly SavedView[], id: string): SavedView[] =>
   views.filter((v) => v.id !== id);
 
+// --- Named workspace layouts (ux-6): a saved set of open apps and where their windows were. ---
+
+export const MAX_WORKSPACE_LAYOUTS = 8;
+export const MAX_LAYOUT_WINDOWS = 16;
+export const MAX_LAYOUT_NAME = 40;
+
+/** One app's window in a saved layout. */
+export interface WorkspaceLayoutWindow {
+  appId: string;
+  rect: WindowRect;
+}
+
+/** A named layout. `windows` run bottom to top, so reopening in order restores the stacking. */
+export interface WorkspaceLayout {
+  name: string;
+  windows: WorkspaceLayoutWindow[];
+}
+
+/** A stored list of layout windows -> valid, distinct apps in order, at most MAX_LAYOUT_WINDOWS.
+ *  Anything that is not an array gives an empty list; a bad entry is skipped, not fatal. */
+export function sanitizeLayoutWindows(value: unknown): WorkspaceLayoutWindow[] {
+  if (!Array.isArray(value)) return [];
+  const out: WorkspaceLayoutWindow[] = [];
+  for (const item of value) {
+    if (out.length >= MAX_LAYOUT_WINDOWS) break;
+    if (!isObject(item) || typeof item.appId !== "string") continue;
+    const appId = item.appId.trim();
+    const rect = sanitizeWindowRect(item.rect);
+    if (!appId || appId.length > MAX_APP_ID || !rect) continue;
+    if (out.some((w) => w.appId === appId)) continue;
+    out.push({ appId, rect });
+  }
+  return out;
+}
+
+/** A stored list of layouts -> usable ones only (a name, at least one window), names distinct
+ *  ignoring case, at most MAX_WORKSPACE_LAYOUTS. Anything that is not an array gives an empty list. */
+export function sanitizeWorkspaceLayouts(value: unknown): WorkspaceLayout[] {
+  if (!Array.isArray(value)) return [];
+  const out: WorkspaceLayout[] = [];
+  for (const item of value) {
+    if (out.length >= MAX_WORKSPACE_LAYOUTS) break;
+    if (!isObject(item) || typeof item.name !== "string") continue;
+    const name = item.name.trim().slice(0, MAX_LAYOUT_NAME);
+    if (!name || out.some((l) => l.name.toLowerCase() === name.toLowerCase())) continue;
+    const windows = sanitizeLayoutWindows(item.windows);
+    if (windows.length > 0) out.push({ name, windows });
+  }
+  return out;
+}
+
 /** Whatever was stored (or nothing) -> a complete, valid Preferences. */
 export function sanitizePreferences(value: unknown): Preferences {
   const raw = isObject(value) ? value : {};
@@ -346,5 +400,6 @@ export function sanitizePreferences(value: unknown): Preferences {
         ? raw.reopenLastApps
         : DEFAULT_PREFERENCES.reopenLastApps,
     lastOpenApps: sanitizeAppIds(raw.lastOpenApps),
+    workspaceLayouts: sanitizeWorkspaceLayouts(raw.workspaceLayouts),
   };
 }

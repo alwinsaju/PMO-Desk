@@ -7,14 +7,17 @@ import {
   describeInstant,
   instantFromLocalInput,
   isSnoozed,
+  localParts,
   snoozeUntil,
   type SnoozeChoice,
 } from "@/lib/pmo/due";
+import { useHolidayDates } from "@/lib/staff/holidayDatesStore";
 import type { ReminderPrefs, Todo } from "@/lib/pmo/types";
 
 interface SnoozeMenuProps {
   todo: Pick<Todo, "reminders">;
-  prefs: Pick<ReminderPrefs, "timeZone" | "workStart">;
+  prefs: Pick<ReminderPrefs, "timeZone" | "workStart"> &
+    Partial<Pick<ReminderPrefs, "workDays">>;
   /** The server's "now", so presets agree with the reminder engine. */
   nowIso: string;
   disabled?: boolean;
@@ -34,6 +37,8 @@ const CHOICES: { id: SnoozeChoice; label: string }[] = [
 
 /** Snooze presets (1 h, tomorrow or in 3 days at the start of the working day,
  *  next Monday) plus a custom date and time, all read in the reminder time zone.
+ *  With a "My holiday location" set, Tomorrow and Next Monday move past a holiday;
+ *  In 3 days is a calendar count and never does.
  *  Snoozing only silences this to-do's reminders; nothing else changes. */
 export function SnoozeMenu({
   todo,
@@ -46,6 +51,7 @@ export function SnoozeMenu({
   const [open, setOpen] = useState(false);
   const [custom, setCustom] = useState("");
   const now = new Date(nowIso);
+  const holidays = useHolidayDates(localParts(now, prefs.timeZone).day);
   const snoozed = isSnoozed(todo, now);
 
   const pick = (until: Date | null) => {
@@ -80,7 +86,7 @@ export function SnoozeMenu({
         </p>
         <ul className="flex flex-col">
           {CHOICES.map((choice) => {
-            const until = snoozeUntil(choice.id, now, prefs);
+            const until = snoozeUntil(choice.id, now, prefs, holidays);
             return (
               <li key={choice.id}>
                 <button

@@ -5,6 +5,7 @@ import { createTodo, fetchState, patchTodo } from "@/components/apps/pmo-todo-ap
 import { useRemindersStore } from "@/components/apps/pmo-todo-app/remindersStore";
 import { continueRecurrence } from "@/components/apps/pmo-todo-app/recurHelper";
 import { todayIso } from "@/lib/staff/dates";
+import { loadHolidayDates } from "@/lib/staff/holidayDatesStore";
 import { openOrFocusBuiltInApp } from "@/components/taskbar/launchBuiltInApp";
 import type { AiCommandResult } from "@/app/api/ai/command/types";
 import { REPORT_TASKS, type RunLike } from "@/lib/dashboard/summary";
@@ -118,6 +119,7 @@ async function runTodoCommand(
       today: state.today,
       now: new Date(state.serverTime),
       prefs: state.config.reminders,
+      holidays: await loadHolidayDates(state.today),
     });
   } catch {
     return offline(tool);

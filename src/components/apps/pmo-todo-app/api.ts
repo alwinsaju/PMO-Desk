@@ -13,6 +13,7 @@ import type {
   TodoDraft,
 } from "@/lib/pmo/types";
 import type { PeriodRequest, SavedReportSummary } from "@/lib/pmo/report";
+import type { SavedExample } from "@/lib/pmo/savedExamples";
 import type { FirstRunPayload } from "@/lib/pmo/firstRun";
 import type { FirstRunSuggestions } from "@/lib/pmo/server/firstRun";
 import type { ManualPasteInput } from "@/lib/pmo/manualIntake";
@@ -156,6 +157,26 @@ export const saveReport = (id: string, body: ReturnType<typeof saveBody>) =>
 
 export const updateConfig = (patch: PmoConfigPatch) =>
   call<{ config: PmoConfig }>("/config", "PUT", patch);
+
+// --- saved examples (server/savedExamples.ts): local file, used only if the switch is on ---
+
+export interface ExamplesState {
+  enabled: boolean;
+  examples: SavedExample[];
+  max: number;
+}
+export const fetchSavedExamples = () => call<ExamplesState>("/examples");
+export const setSavedExamplesEnabled = (enabled: boolean) =>
+  call<ExamplesState>("/examples", "PUT", { enabled });
+export const deleteSavedExample = (id: string) =>
+  call<ExamplesState>(`/examples/${id}`, "DELETE");
+/** Save the draft as the reviewer has it (plus the message it came from). */
+export const saveProposalExample = (id: string, draft: TodoDraft) =>
+  call<{ replaced: boolean; count: number; max: number }>(
+    `/queue/${id}/example`,
+    "POST",
+    { draft },
+  );
 
 // --- first run (server/firstRun.ts): nothing is created or saved before the person clicks ---
 

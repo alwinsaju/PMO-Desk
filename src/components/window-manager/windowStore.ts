@@ -14,8 +14,9 @@ import {
   type FitConfig,
   type Rect,
   type Viewport,
+  type WindowGeometry,
 } from "./windowGeometry";
-import { applyTidy, minimizeAll, tidyUpdates } from "./windowArrange";
+import { applyPlacements, applyTidy, minimizeAll, tidyUpdates } from "./windowArrange";
 import { pristineUpdates, rectsToRemember, startingGeometry } from "./windowPlacement";
 import { snapRect, type SnapZone } from "./windowSnap";
 
@@ -56,6 +57,12 @@ export interface WindowStoreState {
   /** "Tidy windows": every visible window back on a fresh default cascade (default
    *  geometry once per window), in ONE update. Focus and stacking are unchanged. */
   tidyWindows: () => void;
+  /** Restoring a saved layout: put each window at its rectangle, shown and stacked in the order
+   *  given (last in front), in ONE update. `minimizeOthers` minimises the rest; nothing is closed. */
+  placeWindows: (
+    placements: readonly { id: string; geometry: WindowGeometry }[],
+    minimizeOthers?: boolean,
+  ) => void;
   /** Toggles maximize on/off, restoring the pre-maximize bounds on toggle-off. */
   maximizeWindow: (id: string) => void;
   /** Put the window on half or a quarter of the screen (leaves maximised). */
@@ -316,6 +323,23 @@ export const useWindowStore = create<WindowStoreState>()((set) => ({
       return windows === state.windows
         ? state
         : { windows: windows as typeof state.windows };
+    });
+  },
+
+  placeWindows: (placements, minimizeOthers = false) => {
+    set((state) => {
+      const result = applyPlacements(
+        state.windows,
+        state.nextZIndex,
+        placements,
+        minimizeOthers,
+      );
+      return result.windows === state.windows
+        ? state
+        : {
+            windows: result.windows as typeof state.windows,
+            nextZIndex: result.nextZIndex,
+          };
     });
   },
 

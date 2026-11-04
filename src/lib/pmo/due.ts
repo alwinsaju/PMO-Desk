@@ -136,24 +136,61 @@ const weekdayOf = (day: string) => {
   return new Date(Date.UTC(year, month - 1, date)).getUTCDay();
 };
 
-/** The first Monday after `day` (a Monday gives the one a week later). */
-export const nextMondayAfter = (day: string): string =>
-  addDays(day, (8 - weekdayOf(day)) % 7 || 7);
+/** Holidays of the person's location, as YYYY-MM-DD days. Every function below that
+ *  takes one treats it as optional: leave it out (or pass an empty set) and the
+ *  behaviour is exactly the days-of-the-week rule, so nothing changes for a person
+ *  who has not set a holiday location. Days are plain calendar days, so the set
+ *  needs no time zone: the zone only decides which day "today" is. */
+export type HolidayDates = ReadonlySet<string>;
 
-export const isWorkingDay = (day: string, prefs: Pick<ReminderPrefs, "workDays">) =>
-  prefs.workDays.includes(weekdayOf(day));
+/** Monday to Friday, used when a caller has no work-days list (0 = Sunday). */
+const DEFAULT_WORK_WEEK: readonly number[] = [1, 2, 3, 4, 5];
+
+/** `day` itself, unless it is a holiday: then the next day that is a work day and not
+ *  a holiday (so a run of holidays, with or without a weekend inside it, is crossed
+ *  in one go). Only holidays move a day: with no holidays a Saturday stays a
+ *  Saturday, exactly as before. With no work day at all it gives `day` back. */
+export function rollPastHoliday(
+  day: string,
+  holidays?: HolidayDates,
+  workDays: readonly number[] = DEFAULT_WORK_WEEK,
+): string {
+  if (!holidays || !holidays.has(day)) return day;
+  let next = day;
+  for (let guard = 0; guard < 400; guard++) {
+    next = addDays(next, 1);
+    if (workDays.includes(weekdayOf(next)) && !holidays.has(next)) return next;
+  }
+  return day;
+}
+
+/** The first Monday after `day` (a Monday gives the one a week later); with
+ *  `holidays`, a holiday Monday gives the next working day after it. */
+export const nextMondayAfter = (
+  day: string,
+  holidays?: HolidayDates,
+  workDays?: readonly number[],
+): string =>
+  rollPastHoliday(addDays(day, (8 - weekdayOf(day)) % 7 || 7), holidays, workDays);
+
+export const isWorkingDay = (
+  day: string,
+  prefs: Pick<ReminderPrefs, "workDays">,
+  holidays?: HolidayDates,
+) => prefs.workDays.includes(weekdayOf(day)) && !holidays?.has(day);
 
 /** Working days in the half-open range (from, to]: 0 when `to` is not later. */
 export function workingDaysBetween(
   from: string,
   to: string,
   prefs: Pick<ReminderPrefs, "workDays">,
+  holidays?: HolidayDates,
 ): number {
   let count = 0;
   let day = from;
   for (let guard = 0; day < to && guard < 800; guard++) {
     day = addDays(day, 1);
-    if (isWorkingDay(day, prefs)) count++;
+    if (isWorkingDay(day, prefs, holidays)) count++;
   }
   return count;
 }
@@ -164,13 +201,14 @@ export function workingDaysBetween(
 export function advanceReminderDay(
   dueAt: string,
   prefs: Pick<ReminderPrefs, "workDays" | "leadWorkingDays">,
+  holidays?: HolidayDates,
 ): string | null {
   let remaining = prefs.leadWorkingDays;
   if (remaining <= 0) return null;
   let day = dueAt;
   for (let guard = 0; remaining > 0 && guard < 60; guard++) {
     day = addDays(day, -1);
-    if (isWorkingDay(day, prefs)) remaining--;
+    if (isWorkingDay(day, prefs, holidays)) remaining--;
   }
   return day;
 }
@@ -211,11 +249,16 @@ export const AFTER_LUNCH = "14:00";
 /** When a quick-snooze button wakes the to-do up. "Tomorrow", "3 days" and "Monday"
  *  are at the start of the working day (09:00 by default) in the prefs' zone;
  *  "3 days" is three calendar days after today (like "tomorrow", it does not skip
- *  weekends); "Monday" is the next Monday after today (a Monday snoozes a full week). */
+ *  weekends); "Monday" is the next Monday after today (a Monday snoozes a full week).
+ *  With `holidays`, the presets that mean a working-day start ("tomorrow", "Monday",
+ *  and the next morning of "after lunch") move past a holiday to the next working
+ *  day. "3 days" is calendar based and never moves. */
 export function snoozeUntil(
   choice: SnoozeChoice,
   now: Date,
-  prefs: Pick<ReminderPrefs, "timeZone" | "workStart">,
+  prefs: Pick<ReminderPrefs, "timeZone" | "workStart"> &
+    Partial<Pick<ReminderPrefs, "workDays">>,
+  holidays?: HolidayDates,
 ): Date {
   if (choice === "1h") return new Date(now.getTime() + HOUR_MS);
   const today = localParts(now, prefs.timeZone).day;
@@ -223,14 +266,18 @@ export function snoozeUntil(
     const lunch = zonedInstant(today, AFTER_LUNCH, prefs.timeZone);
     return lunch.getTime() > now.getTime()
       ? lunch
-      : zonedInstant(addDays(today, 1), prefs.workStart, prefs.timeZone);
+      : zonedInstant(
+          rollPastHoliday(addDays(today, 1), holidays, prefs.workDays),
+          prefs.workStart,
+          prefs.timeZone,
+        );
   }
   const day =
     choice === "tomorrow"
-      ? addDays(today, 1)
+      ? rollPastHoliday(addDays(today, 1), holidays, prefs.workDays)
       : choice === "3d"
         ? addDays(today, 3)
-        : nextMondayAfter(today);
+        : nextMondayAfter(today, holidays, prefs.workDays);
   return zonedInstant(day, prefs.workStart, prefs.timeZone);
 }
 
@@ -290,13 +337,14 @@ export function waitingState(
   todo: Pick<Todo, "waitingOn" | "waitingSince" | "updatedAt" | "chaserDays" | "status">,
   now: Date,
   prefs: Pick<ReminderPrefs, "timeZone" | "workDays" | "chaserDays">,
+  holidays?: HolidayDates,
 ): WaitingState | null {
   if (todo.status !== "open" || !todo.waitingOn?.trim()) return null;
   const start = chaserClockStart(todo);
   if (!start) return null;
   const sinceDay = localParts(start, prefs.timeZone).day;
   const today = localParts(now, prefs.timeZone).day;
-  const quietDays = workingDaysBetween(sinceDay, today, prefs);
+  const quietDays = workingDaysBetween(sinceDay, today, prefs, holidays);
   const everyDays = chaserDaysFor(todo, prefs);
   return {
     quietDays,
@@ -325,6 +373,7 @@ export function computeDue(
   todos: readonly Todo[],
   now: Date,
   prefs: ReminderPrefs,
+  holidays?: HolidayDates,
 ): DueNotification[] {
   if (!prefs.enabled) return [];
 
@@ -333,7 +382,7 @@ export function computeDue(
   const today = local.day;
   const start = clockMinutes(prefs.workStart);
   const end = clockMinutes(prefs.workEnd);
-  const workingToday = isWorkingDay(today, prefs);
+  const workingToday = isWorkingDay(today, prefs, holidays);
   const afterStart = local.minutes >= start;
   const inWindow = workingToday && afterStart && local.minutes < end;
   // The day-bound kinds (overdue, chaser, digest) never fire before the day's
@@ -350,7 +399,7 @@ export function computeDue(
     if (todo.dueAt) {
       // Not yet due, and past the start of the reminder day: a reminder held
       // back by quiet hours stays eligible until the due day takes over.
-      const reminderDay = advanceReminderDay(todo.dueAt, prefs);
+      const reminderDay = advanceReminderDay(todo.dueAt, prefs, holidays);
       const advanceOpen =
         reminderDay !== null &&
         today < todo.dueAt &&
@@ -381,7 +430,7 @@ export function computeDue(
       }
     }
 
-    const waiting = waitingState(todo, now, prefs);
+    const waiting = waitingState(todo, now, prefs, holidays);
     if (dayKindsOpen && waiting?.chaseDue) {
       // A sign-off request is a kind of waiting: same clock, same cadence, same
       // notification kind; only the wording says what is pending.
@@ -492,6 +541,7 @@ export function attentionSummary(
   todos: readonly Todo[],
   now: Date,
   prefs: ReminderPrefs,
+  holidays?: HolidayDates,
 ): Attention {
   const today = localParts(now, prefs.timeZone).day;
   const ids = new Set<string>();
@@ -507,7 +557,7 @@ export function attentionSummary(
       dueSoon++;
       ids.add(todo.id);
     }
-    if (waitingState(todo, now, prefs)?.chaseDue) {
+    if (waitingState(todo, now, prefs, holidays)?.chaseDue) {
       waiting++;
       ids.add(todo.id);
     }

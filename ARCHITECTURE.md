@@ -1419,9 +1419,11 @@ last call, so the idle state is **Model asleep**, which is normal.
 
 ### Structuring: prompt v3 and the app's clean-up
 
-`PROMPT_VERSION` is now 4: the model may return several tasks for one message
-(`splitTasks.ts` normalises and caps them; each becomes its own proposal). Everything
-below describes v3, which v4 keeps. `PROMPT_VERSION` 3 (logged with every call;
+`PROMPT_VERSION` is now 5: the model may return several tasks for one message
+(`splitTasks.ts` normalises and caps them; each becomes its own proposal). v5 adds the
+**saved-examples library** (roadmap `ai-6`, below); with the switch off or nothing saved the
+system prompt is byte-for-byte v4's. Everything below describes v3, which v4 and v5 keep.
+`PROMPT_VERSION` 3 (logged with every call;
 `structurePrompt.ts`) changed from 2:
 
 - **Today and age.** The date hints now carry today (IST) and its tomorrow, and the received
@@ -1494,6 +1496,30 @@ schema blocks of `pmo.test.mjs`, the "prompt v3" block of `server/pmo.server.tes
 `PMO_AI_STUB=1`: the stub reads "every week", "weekly", "every Monday" ... as a recurrence and
 then proposes no one-off date; it titles a proposal with the message subject, not the
 greeting, and answers owner "me" with no name, like the real model.
+
+**Saved examples (prompt v5, roadmap `ai-6`).** No training: fine-tuning a 12 GB model on a CPU-only
+laptop is impractical, so a good result can be saved and quoted back to the model. In the Review
+Queue, **Save as an example** (`ProposalReview.tsx`, `POST /api/pmo/queue/[id]/example`) keeps the
+message text the model was shown plus the draft as the reviewer has it; the bookmark button in the
+toolbar opens `SavedExamplesDialog` (the switch **Use my saved examples in prompts**, default OFF, and
+the list with delete; `GET/PUT /api/pmo/examples`, `DELETE /api/pmo/examples/[id]`). Storage is
+`state/saved-examples.json` in the PMO data folder (`server/savedExamples.ts`): written with
+`writeJsonAtomic` under the same `store.withLock` mutex as every other PMO store, at most 20
+examples (a 21st is refused; the same message saved again replaces its example), every field
+length-capped, sanitised on every read so a damaged or hand-edited file reads as an empty library
+with the switch off (an unparsable file is moved to `corrupt/saved-examples/` before a save
+replaces it). The switch lives in this file, not in the preferences or config schema. Pure logic
+is in `savedExamples.ts`: `selectExamples` picks at most 2 by word overlap with the new message
+(at least 2 shared words, ties to the newer; deterministic), `savedExamplesBlock` renders them as
+quoted examples after the four fixed ones, capped at 2000 characters in total, with angle brackets
+and quotes removed and a header that says they are data and that the real message follows inside
+`<message>`. A saved due date is shown as "had a due date", never as a date to copy. With the switch
+off, nothing saved or nothing similar the system prompt is byte-for-byte the version 4 text (a test
+holds its sha-256). `ai-calls.jsonl` gets `savedExamples: <count>` only when examples were used; no
+example text is written to any log or the audit trail, and the model log (which never holds
+prompts) is unchanged. Only the To-Do structuring prompt uses them: the update, chaser, sign-off and
+report prompts and the Tasks engine's own retrieval (`ai_classify.py`) are untouched. Tests:
+`savedExamples.test.mjs`, `server/savedExamples.server.test.mjs`.
 
 ### Phase 3: editing, reminders, badge
 

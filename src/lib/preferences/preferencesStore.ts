@@ -9,6 +9,7 @@ import {
   rememberWindowRect,
   removeView,
   sanitizeAppIds,
+  sanitizeWorkspaceLayouts,
   saveView,
   sanitizePreferences,
   toggleFavourite,
@@ -18,6 +19,7 @@ import {
   type Preferences,
   type SavedView,
   type WindowRect,
+  type WorkspaceLayout,
 } from "./schema";
 
 interface PreferencesState extends Preferences {
@@ -39,6 +41,8 @@ interface PreferencesState extends Preferences {
   setReopenLastApps: (on: boolean) => void;
   /** Replace the remembered list of open apps (cleaned; same array back if unchanged). */
   rememberOpenApps: (appIds: string[]) => void;
+  /** Replace the named workspace layouts (cleaned and capped). One write, from a click. */
+  setWorkspaceLayouts: (layouts: WorkspaceLayout[]) => void;
 }
 
 /**
@@ -88,6 +92,8 @@ export const usePreferences = create<PreferencesState>()(
             clean.every((id, i) => id === state.lastOpenApps[i]);
           return same ? state : { lastOpenApps: clean };
         }),
+      setWorkspaceLayouts: (layouts) =>
+        set({ workspaceLayouts: sanitizeWorkspaceLayouts(layouts) }),
     }),
     {
       name: "preferences",
@@ -109,6 +115,7 @@ export const usePreferences = create<PreferencesState>()(
         showDockLabels: state.showDockLabels,
         reopenLastApps: state.reopenLastApps,
         lastOpenApps: state.lastOpenApps,
+        workspaceLayouts: state.workspaceLayouts,
       }),
       merge: (persisted, current) => ({ ...current, ...sanitizePreferences(persisted) }),
     },

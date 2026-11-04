@@ -23,6 +23,7 @@ import { cn } from "@/lib/cn";
 import { toast } from "@/lib/notifications/toastStore";
 import { usePreferences } from "@/lib/preferences/preferencesStore";
 import { snoozeUntil } from "@/lib/pmo/due";
+import { useHolidayDates } from "@/lib/staff/holidayDatesStore";
 import { noSpellcheck } from "@/lib/ui/noSpellcheck";
 import { downloadFile } from "@/lib/ui/downloadFile";
 import { buildXlsx, XLSX_MIME } from "@/lib/xlsx/writeXlsx";
@@ -317,6 +318,7 @@ export function BulkBar({
 }) {
   const [tag, setTag] = useState("");
   const [busy, setBusy] = useState(false);
+  const holidays = useHolidayDates(state.today);
 
   const run = async (action: BulkAction) => {
     const patches = bulkPatches(action, selected);
@@ -354,6 +356,7 @@ export function BulkBar({
       "tomorrow",
       new Date(state.serverTime),
       state.config.reminders,
+      holidays,
     ).toISOString();
 
   return (

@@ -1,5 +1,6 @@
 // Saved platform settings: profile, what's-new, the guided tour, sample data and the
 // opt-in update check. Pure. Kept on this computer like every other setting.
+import { sanitizeHolidayLocation } from "../staff/holidayDates.ts";
 import { sanitizeProfile, type ProfileId } from "./profile.ts";
 
 export interface UpdatePrefs {
@@ -24,6 +25,9 @@ export interface PlatformPrefs {
   lastBackupAt: string;
   /** When the app was last opened, for the "Since you last opened" recap (ISO; "" = never). */
   lastOpenedAt: string;
+  /** "My holiday location" (Settings > General): the Staff location whose holidays to-do due
+   *  dates and snoozes skip. Empty (the default) = no holidays, weekends only. */
+  holidayLocation: string;
 }
 
 export const DEFAULT_UPDATE_PREFS: UpdatePrefs = {
@@ -41,6 +45,7 @@ export const DEFAULT_PLATFORM_PREFS: PlatformPrefs = {
   updates: DEFAULT_UPDATE_PREFS,
   lastBackupAt: "",
   lastOpenedAt: "",
+  holidayLocation: "",
 };
 
 const str = (v: unknown, max: number): string =>
@@ -72,5 +77,6 @@ export function sanitizePlatformPrefs(value: unknown): PlatformPrefs {
     lastOpenedAt: Number.isNaN(Date.parse(str(raw.lastOpenedAt, 40)))
       ? ""
       : str(raw.lastOpenedAt, 40),
+    holidayLocation: sanitizeHolidayLocation(raw.holidayLocation),
   };
 }

@@ -1,13 +1,13 @@
 // Turns a recognised command ("snooze the vendor invoice to Monday", "mark release plan
 // done", "remind me to send the deck Friday") into a plan the command bar can show and then
 // carry out. Pure: it reads the to-do list it is given and decides; the bar does the work.
-import { localParts, snoozeUntil, zonedInstant } from "../pmo/due.ts";
+import { localParts, snoozeUntil, zonedInstant, type HolidayDates } from "../pmo/due.ts";
 import { parseQuickAdd } from "../pmo/quickAdd.ts";
 import type { ReminderPrefs, Todo } from "../pmo/types.ts";
 import { dayName, formatDate } from "../staff/dates.ts";
 import type { ConfirmKey } from "../preferences/schema.ts";
 import type { LocalIntent } from "./localIntent.ts";
-import { resolveWhen } from "./whenPhrase.ts";
+import { resolveDueWhen } from "./whenPhrase.ts";
 
 export type { ConfirmKey };
 
@@ -73,8 +73,13 @@ export interface PlanContext {
   todos: readonly TodoLite[];
   today: string;
   now: Date;
-  prefs: Pick<ReminderPrefs, "timeZone" | "workStart">;
+  prefs: Pick<ReminderPrefs, "timeZone" | "workStart"> &
+    Partial<Pick<ReminderPrefs, "workDays">>;
+  /** The person's holidays (optional): a day that is one moves on to the next working day. */
+  holidays?: HolidayDates;
 }
+
+const SKIPPED = " (skipped a holiday)";
 
 const quote = (title: string) =>
   `"${title.length > 70 ? `${title.slice(0, 69)}…` : title}"`;
@@ -97,17 +102,20 @@ export function planLocalIntent(
   ctx: PlanContext,
 ): ActionPlan {
   if (intent.kind === "create_todo") {
-    const parsed = parseQuickAdd(intent.text, ctx.today);
+    const parsed = parseQuickAdd(intent.text, ctx.today, {
+      holidays: ctx.holidays,
+      workDays: ctx.prefs.workDays,
+    });
     if (!parsed) return { type: "say", text: "What should the to-do say?" };
     return {
       type: "do",
       confirmKey: "create_todo",
       title: "Create this to-do?",
       detail: parsed.dueAt
-        ? `${parsed.title}\nDue ${dayLabel(parsed.dueAt)}`
+        ? `${parsed.title}\nDue ${dayLabel(parsed.dueAt)}${parsed.movedFrom ? SKIPPED : ""}`
         : `${parsed.title}\nNo due date`,
       confirmLabel: "Create to-do",
-      doneText: `Added ${quote(parsed.title)}${parsed.dueAt ? `, due ${dayLabel(parsed.dueAt)}` : ""}.`,
+      doneText: `Added ${quote(parsed.title)}${parsed.dueAt ? `, due ${dayLabel(parsed.dueAt)}${parsed.movedFrom ? SKIPPED : ""}` : ""}.`,
       effect: { op: "create", title: parsed.title, dueAt: parsed.dueAt },
     };
   }
@@ -145,20 +153,23 @@ export function planLocalIntent(
   let until: Date;
   let label: string;
   if (intent.until) {
-    const range = resolveWhen(intent.until, ctx.today);
+    const range = resolveDueWhen(intent.until, ctx.today, {
+      holidays: ctx.holidays,
+      workDays: ctx.prefs.workDays,
+    });
     if (!range || range.from !== range.to) {
       return {
         type: "say",
         text: `I couldn't tell which day "${intent.until}" means. Try "tomorrow", "Monday" or "5 Nov".`,
       };
     }
-    if (range.from <= ctx.today) {
+    if ((range.movedFrom ?? range.from) <= ctx.today) {
       return { type: "say", text: "A snooze has to end on a later day than today." };
     }
     until = zonedInstant(range.from, ctx.prefs.workStart, ctx.prefs.timeZone);
-    label = dayLabel(range.from);
+    label = dayLabel(range.from) + (range.movedFrom ? SKIPPED : "");
   } else {
-    until = snoozeUntil("tomorrow", ctx.now, ctx.prefs);
+    until = snoozeUntil("tomorrow", ctx.now, ctx.prefs, ctx.holidays);
     label = dayLabel(localParts(until, ctx.prefs.timeZone).day);
   }
   return {

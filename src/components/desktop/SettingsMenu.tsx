@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import {
+  AppWindowIcon,
   ArrowCounterClockwiseIcon,
   ArrowsClockwiseIcon,
   CircleNotchIcon,
@@ -42,6 +43,8 @@ import { remainingText } from "@/lib/focusMode";
 import { useBrand } from "@/lib/useBrand";
 import { restoreAppearanceFromServer } from "@/lib/theme";
 import { useTheme } from "@/lib/useTheme";
+import { WorkspaceLayoutsDialog } from "@/components/taskbar/WorkspaceLayoutsDialog";
+import { useWorkspaceLayoutsUi } from "@/components/taskbar/workspaceLayoutsUi";
 import { useEngineRestart, type EngineRestartStatus } from "./useEngineRestart";
 import { useHardwareAcceleration } from "./useHardwareAcceleration";
 import { useQuickCaptureSetting } from "./useQuickCaptureSetting";
@@ -467,6 +470,21 @@ function ReopenAppsRow() {
   );
 }
 
+/** "Workspace layouts" - opens the dialog that saves the open apps and window positions under
+ *  a name and brings one back (the dialog is mounted by `SettingsMenu` below). */
+function WorkspaceLayoutsRow() {
+  const openLayouts = useWorkspaceLayoutsUi((s) => s.openLayouts);
+  return (
+    <DropdownMenuItem onSelect={() => openLayouts()} className="group gap-3 py-2.5">
+      <RowBody
+        icon={<AppWindowIcon size={18} weight="regular" aria-hidden />}
+        title="Workspace layouts"
+        hint="Save and restore open apps and windows"
+      />
+    </DropdownMenuItem>
+  );
+}
+
 /** "Focus mode" - hides the dock and holds back notices for 25 minutes (or say "focus for 40
  *  minutes" in the command bar). Errors still show; everything held is in the notification list. */
 function FocusModeRow() {
@@ -518,6 +536,7 @@ const settingsRows: { id: string; Row: ComponentType }[] = [
   { id: "focus-mode", Row: FocusModeRow },
   { id: "dock-labels", Row: DockLabelsRow },
   { id: "reopen-apps", Row: ReopenAppsRow },
+  { id: "workspace-layouts", Row: WorkspaceLayoutsRow },
   { id: "all-settings", Row: AllSettingsRow },
   { id: "hardware-acceleration", Row: HardwareAccelerationRow },
   { id: "quick-capture", Row: QuickCaptureRow },
@@ -532,7 +551,7 @@ export function SettingsMenu() {
   useEffect(() => {
     void restoreAppearanceFromServer();
   }, []);
-  return null;
+  return <WorkspaceLayoutsDialog />;
 }
 
 /**

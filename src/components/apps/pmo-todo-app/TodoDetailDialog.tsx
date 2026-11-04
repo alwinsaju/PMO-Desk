@@ -15,7 +15,14 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui";
-import { addDays, describeInstant, isSnoozed, nextMondayAfter } from "@/lib/pmo/due";
+import {
+  addDays,
+  describeInstant,
+  isSnoozed,
+  nextMondayAfter,
+  rollPastHoliday,
+} from "@/lib/pmo/due";
+import { useHolidayDates } from "@/lib/staff/holidayDatesStore";
 import { nextTodoDraft } from "@/lib/pmo/recurrence";
 import { duplicateTodoDraft } from "@/lib/pmo/todoDuplicate";
 import {
@@ -134,6 +141,7 @@ export function TodoDetailDialog({
   onSettled,
   onOpenChange,
 }: TodoDetailDialogProps) {
+  const holidays = useHolidayDates(today);
   const [last, setLast] = useState<Todo | null>(todo);
   const [fields, setFields] = useState<Fields | null>(null);
   const [fieldsFor, setFieldsFor] = useState<string | null>(null);
@@ -324,8 +332,11 @@ export function TodoDetailDialog({
 
   const dueChips: { label: string; value: string }[] = [
     { label: "Today", value: today },
-    { label: "Tomorrow", value: addDays(today, 1) },
-    { label: "Next Monday", value: nextMondayAfter(today) },
+    {
+      label: "Tomorrow",
+      value: rollPastHoliday(addDays(today, 1), holidays, reminders.workDays),
+    },
+    { label: "Next Monday", value: nextMondayAfter(today, holidays, reminders.workDays) },
     { label: "Clear", value: "" },
   ];
 

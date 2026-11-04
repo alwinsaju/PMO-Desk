@@ -87,6 +87,51 @@ export function tidyUpdates(
   });
 }
 
+/**
+ * The windows record after restoring a saved layout, in ONE pass (the store commits it in one
+ * update, so nothing refocuses between steps): each placed window at its rectangle, shown (not
+ * minimised, not maximised) and stacked in the order given, the last one in front and focused.
+ * Other windows keep everything but focus, unless `minimizeOthers`, which minimises the visible
+ * ones (it never closes anything). Unknown ids and repeats are skipped; the same record comes
+ * back if nothing is placed.
+ */
+export function applyPlacements<T extends Placed>(
+  windows: Readonly<Record<string, T>>,
+  nextZIndex: number,
+  placements: readonly { id: string; geometry: WindowGeometry }[],
+  minimizeOthers: boolean,
+): { windows: Readonly<Record<string, T>>; nextZIndex: number } {
+  const ordered: { id: string; geometry: WindowGeometry }[] = [];
+  const placed = new Set<string>();
+  for (const p of placements) {
+    if (!windows[p.id] || placed.has(p.id)) continue;
+    placed.add(p.id);
+    ordered.push(p);
+  }
+  if (ordered.length === 0) return { windows, nextZIndex };
+  const next: Record<string, T> = { ...windows };
+  let z = nextZIndex;
+  ordered.forEach((p, index) => {
+    next[p.id] = {
+      ...windows[p.id],
+      position: { ...p.geometry.position },
+      size: { ...p.geometry.size },
+      isMinimized: false,
+      isMaximized: false,
+      restoreBounds: undefined,
+      isFocused: index === ordered.length - 1,
+      zIndex: z++,
+    };
+  });
+  for (const [id, w] of Object.entries(windows)) {
+    if (placed.has(id)) continue;
+    const minimise = minimizeOthers && !w.isMinimized;
+    if (!minimise && !w.isFocused) continue;
+    next[id] = { ...w, isFocused: false, isMinimized: minimise ? true : w.isMinimized };
+  }
+  return { windows: next, nextZIndex: z };
+}
+
 /** The windows record after tidying: each visible window at its new rectangle and no longer
  *  maximised. Focus and stacking stay as they were. Same record back when nothing changes. */
 export function applyTidy<T extends Placed>(

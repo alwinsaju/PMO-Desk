@@ -5,7 +5,8 @@ import { CapacityGrid } from "./CapacityGrid";
 import { RegisterApp } from "./RegisterApp";
 import { TimesheetApp } from "./TimesheetApp";
 
-type ToolProps = { windowId: string };
+/** `startAdding` opens the tool's Add dialog on mount. Timesheets has no Add dialog and ignores it. */
+type ToolProps = { windowId: string; startAdding?: boolean };
 
 const cache = new Map<string, ComponentType<ToolProps>>();
 
@@ -15,10 +16,11 @@ export function toolComponent(id: string): ComponentType<ToolProps> {
   if (!component) {
     if (id === "timesheets") component = TimesheetApp;
     else {
-      const Tool = ({ windowId }: ToolProps) => (
+      const Tool = ({ windowId, startAdding }: ToolProps) => (
         <RegisterApp
           defId={id}
           windowId={windowId}
+          startAdding={startAdding}
           renderTop={id === "capacity" ? CapacityGrid : undefined}
         />
       );

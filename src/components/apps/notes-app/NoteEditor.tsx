@@ -10,13 +10,17 @@ import {
 } from "react";
 import {
   CheckIcon,
+  CodeBlockIcon,
+  LinkIcon,
   ListBulletsIcon,
   ListChecksIcon,
+  TableIcon,
   TextBIcon,
   TextHIcon,
 } from "@phosphor-icons/react";
-import { IconButton } from "@/components/ui";
+import { Button, IconButton } from "@/components/ui";
 import { applyFormat, toggleCheck, type NoteFormat } from "./noteFormat";
+import { NotePreview } from "./NotePreview";
 import { wordCount } from "./notesLogic";
 
 const SAVING_MS = 700;
@@ -26,10 +30,14 @@ const FORMATS: { kind: NoteFormat; label: string; Glyph: typeof TextBIcon }[] = 
   { kind: "bold", label: "Bold (Ctrl+B)", Glyph: TextBIcon },
   { kind: "bullet", label: "Bullet list", Glyph: ListBulletsIcon },
   { kind: "check", label: "Checklist", Glyph: ListChecksIcon },
+  { kind: "link", label: "Link", Glyph: LinkIcon },
+  { kind: "code", label: "Code block", Glyph: CodeBlockIcon },
+  { kind: "table", label: "Table", Glyph: TableIcon },
 ];
 
 /** The note's text area with a formatting toolbar, a word count and a Saved indicator.
- *  The note stays plain text; the toolbar only inserts simple markers (see noteFormat.ts). */
+ *  The note stays plain text; the toolbar only inserts simple markdown markers (see noteFormat.ts).
+ *  Preview shows the same text rendered (noteMarkdown.ts), read-only; Edit goes back to the box. */
 export function NoteEditor({
   content,
   editorRef,
@@ -40,6 +48,8 @@ export function NoteEditor({
   onChange: (content: string) => void;
 }) {
   const [saving, setSaving] = useState(false);
+  const [mode, setMode] = useState<"edit" | "preview">("edit");
+  const previewing = mode === "preview";
   const timer = useRef<number | undefined>(undefined);
   const selection = useRef<{ start: number; end: number } | null>(null);
   useEffect(() => () => window.clearTimeout(timer.current), []);
@@ -53,6 +63,13 @@ export function NoteEditor({
     el.focus();
     el.setSelectionRange(wanted.start, wanted.end);
   }, [content, editorRef]);
+
+  // Back in Edit the box is new, so put the cursor in it.
+  const wasPreviewing = useRef(false);
+  useEffect(() => {
+    if (wasPreviewing.current && !previewing) editorRef.current?.focus();
+    wasPreviewing.current = previewing;
+  }, [previewing, editorRef]);
 
   const change = (next: string) => {
     onChange(next);
@@ -90,37 +107,60 @@ export function NoteEditor({
   const words = wordCount(content);
   return (
     <>
-      <div
-        role="toolbar"
-        aria-label="Formatting"
-        className="px-gutter flex items-center gap-0.5 pb-1"
-      >
-        {FORMATS.map(({ kind, label, Glyph }) => (
-          <IconButton
-            key={kind}
-            size="sm"
-            aria-label={label}
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={() => format(kind)}
-          >
-            <Glyph />
-          </IconButton>
-        ))}
+      <div className="px-gutter flex flex-wrap items-center gap-x-3 gap-y-1 pb-1">
+        <div role="toolbar" aria-label="Formatting" className="flex items-center gap-0.5">
+          {FORMATS.map(({ kind, label, Glyph }) => (
+            <IconButton
+              key={kind}
+              size="sm"
+              aria-label={label}
+              disabled={previewing}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => format(kind)}
+            >
+              <Glyph />
+            </IconButton>
+          ))}
+        </div>
+        <div
+          role="group"
+          aria-label="Note view"
+          className="ml-auto flex items-center gap-0.5"
+        >
+          {(["edit", "preview"] as const).map((view) => (
+            <Button
+              key={view}
+              type="button"
+              size="sm"
+              variant={mode === view ? "secondary" : "ghost"}
+              aria-pressed={mode === view}
+              onClick={() => setMode(view)}
+            >
+              {view === "edit" ? "Edit" : "Preview"}
+            </Button>
+          ))}
+        </div>
       </div>
-      <textarea
-        ref={editorRef}
-        value={content}
-        onChange={(event) => change(event.target.value)}
-        onKeyDown={onKeyDown}
-        placeholder="Start typing…"
-        aria-label="Note content"
-        className="text-ink placeholder:text-ink-faint px-gutter min-h-0 flex-1 resize-none bg-transparent pt-1.5 pb-3 text-[16px] leading-[1.7] outline-none"
-      />
+      {previewing ? (
+        <NotePreview content={content} />
+      ) : (
+        <textarea
+          ref={editorRef}
+          value={content}
+          onChange={(event) => change(event.target.value)}
+          onKeyDown={onKeyDown}
+          placeholder="Start typing…"
+          aria-label="Note content"
+          className="text-ink placeholder:text-ink-faint px-gutter min-h-0 flex-1 resize-none bg-transparent pt-1.5 pb-3 text-[16px] leading-[1.7] outline-none"
+        />
+      )}
       <div className="text-ink-muted px-gutter border-line flex items-center justify-between gap-3 border-t py-1.5 text-[12px]">
         <span data-testid="note-word-count">
           {words} {words === 1 ? "word" : "words"}
         </span>
-        <span className="hidden sm:inline">Ctrl+Enter ticks a checklist item</span>
+        {!previewing && (
+          <span className="hidden sm:inline">Ctrl+Enter ticks a checklist item</span>
+        )}
         <span role="status" data-testid="note-saved" className="flex items-center gap-1">
           {saving ? (
             "Saving…"

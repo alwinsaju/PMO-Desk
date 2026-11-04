@@ -7,6 +7,9 @@ import {
   MAX_COMMAND_LOG,
   MAX_FAVOURITES,
   MAX_LAST_OPEN_APPS,
+  MAX_LAYOUT_NAME,
+  MAX_LAYOUT_WINDOWS,
+  MAX_WORKSPACE_LAYOUTS,
   MAX_REMEMBERED_WINDOWS,
   MAX_SAVED_VIEWS,
   recentPrompts,
@@ -15,7 +18,9 @@ import {
   rememberWindowRect,
   saveView,
   sanitizeAppIds,
+  sanitizeLayoutWindows,
   sanitizePreferences,
+  sanitizeWorkspaceLayouts,
   sanitizeWindowRect,
   toggleFavourite,
 } from "./schema.ts";
@@ -210,6 +215,12 @@ describe("sanitizePreferences", () => {
       showDockLabels: true,
       reopenLastApps: true,
       lastOpenApps: ["notes", "tasks"],
+      workspaceLayouts: [
+        {
+          name: "Review",
+          windows: [{ appId: "notes", rect: { x: 10, y: 20, width: 900, height: 600 } }],
+        },
+      ],
     };
     assert.deepEqual(sanitizePreferences(stored), stored);
   });
@@ -313,5 +324,98 @@ describe("dock labels and reopening last session's apps", () => {
     const out = sanitizeAppIds(many);
     assert.equal(out.length, MAX_LAST_OPEN_APPS);
     assert.equal(out[0], "app0");
+  });
+});
+
+describe("named workspace layouts", () => {
+  const rect = { x: 10, y: 20, width: 800, height: 500 };
+  const layout = (name, windows = [{ appId: "notes", rect }]) => ({ name, windows });
+
+  it("start as an empty list", () => {
+    assert.deepEqual(DEFAULT_PREFERENCES.workspaceLayouts, []);
+  });
+
+  it("anything that is not a list gives an empty list, and one bad field leaves the rest alone", () => {
+    for (const bad of ["x", 5, null, {}, true, undefined]) {
+      assert.deepEqual(sanitizeWorkspaceLayouts(bad), []);
+      assert.deepEqual(sanitizeLayoutWindows(bad), []);
+      assert.deepEqual(
+        sanitizePreferences({ workspaceLayouts: bad }).workspaceLayouts,
+        [],
+      );
+    }
+    const out = sanitizePreferences({ workspaceLayouts: "nope", instantUnlock: true });
+    assert.equal(out.instantUnlock, true);
+    assert.deepEqual(out.workspaceLayouts, []);
+  });
+
+  it("keeps a good layout and trims its name", () => {
+    assert.deepEqual(sanitizeWorkspaceLayouts([layout("  Review  ")]), [
+      layout("Review"),
+    ]);
+  });
+
+  it("skips a layout with a bad name or no usable window, not the whole list", () => {
+    const out = sanitizeWorkspaceLayouts([
+      layout("   "),
+      layout(7),
+      "junk",
+      null,
+      layout("Empty", []),
+      layout("Bad windows", "x"),
+      layout("Only bad", [
+        { appId: "notes", rect: { x: NaN, y: 0, width: 5, height: 5 } },
+      ]),
+      layout("Good"),
+    ]);
+    assert.deepEqual(out, [layout("Good")]);
+  });
+
+  it("sanitises each window: text id, usable rectangle, no repeats", () => {
+    const out = sanitizeLayoutWindows([
+      { appId: " notes ", rect: { x: 1.6, y: 2, width: 300.4, height: 200 } },
+      { appId: "notes", rect },
+      { appId: "", rect },
+      { appId: 5, rect },
+      { appId: "x".repeat(200), rect },
+      { appId: "files", rect: { x: 0, y: 0, width: 0, height: 10 } },
+      { appId: "tasks" },
+      "junk",
+      { appId: "raid", rect },
+    ]);
+    assert.deepEqual(out, [
+      { appId: "notes", rect: { x: 2, y: 2, width: 300, height: 200 } },
+      { appId: "raid", rect },
+    ]);
+  });
+
+  it("caps the layouts and the windows in each", () => {
+    const many = Array.from({ length: MAX_WORKSPACE_LAYOUTS + 5 }, (_, i) =>
+      layout(`L${i}`),
+    );
+    assert.equal(sanitizeWorkspaceLayouts(many).length, MAX_WORKSPACE_LAYOUTS);
+    const windows = Array.from({ length: MAX_LAYOUT_WINDOWS + 6 }, (_, i) => ({
+      appId: `app${i}`,
+      rect,
+    }));
+    assert.equal(sanitizeLayoutWindows(windows).length, MAX_LAYOUT_WINDOWS);
+    assert.equal(
+      sanitizeWorkspaceLayouts([layout("Big", windows)])[0].windows.length,
+      MAX_LAYOUT_WINDOWS,
+    );
+  });
+
+  it("caps the name length and drops a repeated name, ignoring case", () => {
+    const out = sanitizeWorkspaceLayouts([
+      layout("x".repeat(MAX_LAYOUT_NAME + 20)),
+      layout("Review"),
+      layout("REVIEW"),
+      layout(" review "),
+    ]);
+    assert.equal(out[0].name.length, MAX_LAYOUT_NAME);
+    assert.deepEqual(
+      out.map((l) => l.name),
+      ["x".repeat(MAX_LAYOUT_NAME), "Review"],
+    );
   });
 });

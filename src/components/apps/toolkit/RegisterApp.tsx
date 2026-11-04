@@ -83,9 +83,14 @@ export function RegisterApp({
   defId,
   windowId,
   renderTop,
+  startAdding = false,
 }: {
   defId: string;
   windowId: string;
+  /** Open the new-record dialog on first render only (a Toolkit tile's plus button). It is
+   *  the initial value of the dialog state, so a re-render never opens it again and closing
+   *  it leaves the tool open. */
+  startAdding?: boolean;
   /** A panel for tools with their own view above the list (the capacity grid). */
   renderTop?: (props: TopProps) => ReactNode;
 }) {
@@ -96,7 +101,9 @@ export function RegisterApp({
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("");
   const [showClosed, setShowClosed] = useState(false);
-  const [editing, setEditing] = useState<RegisterRecord | "new" | null>(null);
+  const [editing, setEditing] = useState<RegisterRecord | "new" | null>(
+    startAdding ? "new" : null,
+  );
   const [heat, setHeat] = useState<HeatSelection | null>(null);
   /** The values of a record being duplicated: opens an unsaved new record with them. */
   const [copyOf, setCopyOf] = useState<Values | null>(null);

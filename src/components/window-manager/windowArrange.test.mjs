@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  applyPlacements,
   applyTidy,
   hasVisibleWindow,
   minimizeAll,
@@ -172,5 +173,94 @@ describe("applyTidy", () => {
     const windows = record(win("a"), parked);
     const out = applyTidy(windows, tidyUpdates(windows, roomy, config, fit));
     assert.equal(out.p, parked);
+  });
+});
+
+describe("applyPlacements (restoring a saved layout)", () => {
+  const geo = (x) => ({ position: { x, y: 50 }, size: { width: 700, height: 500 } });
+
+  it("places each window, shows it, stacks them in the given order and focuses the last", () => {
+    const windows = record(
+      win("a", { zIndex: 100, isFocused: true }),
+      win("b", { zIndex: 101, isMinimized: true }),
+      win("c", { zIndex: 102, isMaximized: true, restoreBounds: { x: 1 } }),
+    );
+    const out = applyPlacements(
+      windows,
+      110,
+      [
+        { id: "c", geometry: geo(10) },
+        { id: "a", geometry: geo(20) },
+        { id: "b", geometry: geo(30) },
+      ],
+      false,
+    );
+    assert.equal(out.nextZIndex, 113);
+    assert.deepEqual(
+      ["c", "a", "b"].map((id) => out.windows[id].zIndex),
+      [110, 111, 112],
+    );
+    assert.deepEqual(out.windows.a.position, { x: 20, y: 50 });
+    assert.deepEqual(out.windows.a.size, { width: 700, height: 500 });
+    assert.equal(out.windows.b.isMinimized, false);
+    assert.equal(out.windows.c.isMaximized, false);
+    assert.equal(out.windows.c.restoreBounds, undefined);
+    assert.deepEqual(
+      ["a", "b", "c"].map((id) => out.windows[id].isFocused),
+      [false, true, false],
+    );
+  });
+
+  it("leaves a window the layout lacks open and unmoved (only its focus goes)", () => {
+    const other = win("o", { zIndex: 105, isFocused: true });
+    const parked = win("p", { isMinimized: true });
+    const out = applyPlacements(
+      record(win("a"), other, parked),
+      200,
+      [{ id: "a", geometry: geo(0) }],
+      false,
+    );
+    assert.equal(out.windows.o.isMinimized, false);
+    assert.equal(out.windows.o.isFocused, false);
+    assert.equal(out.windows.o.zIndex, 105);
+    assert.deepEqual(out.windows.o.position, other.position);
+    assert.equal(out.windows.p, parked);
+    assert.equal(Object.keys(out.windows).length, 3);
+  });
+
+  it("minimises (never closes) the other windows only when asked", () => {
+    const windows = record(win("a"), win("o"), win("p", { isMinimized: true }));
+    const out = applyPlacements(windows, 200, [{ id: "a", geometry: geo(0) }], true);
+    assert.equal(out.windows.o.isMinimized, true);
+    assert.equal(out.windows.o.isFocused, false);
+    assert.equal(out.windows.p, windows.p);
+    assert.deepEqual(Object.keys(out.windows).sort(), ["a", "o", "p"]);
+  });
+
+  it("skips unknown ids and repeats, and returns the same record when nothing is placed", () => {
+    const windows = record(win("a", { isFocused: true }));
+    assert.equal(
+      applyPlacements(windows, 200, [{ id: "zzz", geometry: geo(0) }], true).windows,
+      windows,
+    );
+    const out = applyPlacements(
+      windows,
+      200,
+      [
+        { id: "a", geometry: geo(1) },
+        { id: "a", geometry: geo(2) },
+        { id: "zzz", geometry: geo(3) },
+      ],
+      false,
+    );
+    assert.equal(out.windows.a.position.x, 1);
+    assert.equal(out.nextZIndex, 201);
+  });
+
+  it("does not change the record it was given", () => {
+    const windows = record(win("a"), win("o"));
+    const copy = JSON.parse(JSON.stringify(windows));
+    applyPlacements(windows, 200, [{ id: "a", geometry: geo(5) }], true);
+    assert.deepEqual(windows, copy);
   });
 });

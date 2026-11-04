@@ -25,6 +25,7 @@ import {
   createTodo,
   rejectProposal,
   retryProposal,
+  saveProposalExample,
   stageEdits,
 } from "./api";
 import { DraftForm } from "./DraftForm";
@@ -90,6 +91,7 @@ export function ProposalReview({
   const [busy, setBusy] = useState(false);
   const [approving, setApproving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [savedNote, setSavedNote] = useState<string | null>(null);
 
   // Adjusting state while rendering (React's documented alternative to an
   // effect): the form restarts when a different proposal opens or the open
@@ -102,6 +104,7 @@ export function ProposalReview({
     setManual(false);
     setApproving(false);
     setError(null);
+    setSavedNote(null);
   }
 
   const isReady = proposal.status === "ready";
@@ -168,6 +171,22 @@ export function ProposalReview({
       settle();
       onFinished();
     } else setApproving(false);
+  };
+  // Keep this message and the draft as it is now as an example for the model
+  // (used in prompts only while the switch in "Saved examples" is on).
+  const saveAsExample = async () => {
+    if (!draft) return;
+    setSavedNote(null);
+    // Nothing is approved or rejected: the review stays open.
+    await run(async () => {
+      const reply = await saveProposalExample(proposal.id, draft);
+      if (reply.ok) {
+        setSavedNote(
+          `${reply.replaced ? "Example updated" : "Saved as an example"} (${reply.count} of ${reply.max} saved). The model uses saved examples only while “Use my saved examples in prompts” is on; find it under Saved examples at the top of the window.`,
+        );
+      }
+      return reply;
+    });
   };
   const reject = async () => {
     if (await run(() => rejectProposal(proposal.id))) {
@@ -325,6 +344,16 @@ export function ProposalReview({
       </div>
 
       {error && <ErrorLine className="mt-3 shrink-0">{error}</ErrorLine>}
+      {savedNote && (
+        <Note
+          tone="accent"
+          role="status"
+          data-testid="example-saved"
+          className="mt-3 shrink-0"
+        >
+          {savedNote}
+        </Note>
+      )}
 
       <div className="border-line mt-4 flex shrink-0 flex-wrap items-center justify-between gap-x-3 gap-y-2 border-t pt-4">
         {approving ? (
@@ -355,6 +384,16 @@ export function ProposalReview({
           {isFailed && !manual && (
             <Button variant="secondary" disabled={busy} onClick={() => setManual(true)}>
               Create manually from original
+            </Button>
+          )}
+          {showForm && isReady && !manual && !notATask && (
+            <Button
+              variant="ghost"
+              disabled={busy || !draft?.title.trim()}
+              title="Keep this message and the to-do as it is now, as an example the model can follow"
+              onClick={saveAsExample}
+            >
+              Save as an example
             </Button>
           )}
           <Button variant="outline" disabled={busy} onClick={reject}>

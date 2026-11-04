@@ -1,6 +1,6 @@
 # PMO Desk roadmap
 
-Enhancement plan for PMO Desk, checked against the codebase. Generated 2026-11-04 from the audited roadmap page. Nothing here has been built or run.
+Enhancement plan for PMO Desk, checked against the codebase. Generated 2026-11-04 from the audited roadmap page. All 45 items have since been built on four local branches (see [Build progress](#build-progress)); none has been looked at in a running app.
 
 ## How this was checked
 
@@ -17,12 +17,12 @@ Line numbers in the evidence were correct when checked. Files move, so open the 
 
 Work happens on one git branch per phase, each started from the previous phase's branch (later phases depend on earlier ones). Branches are local and have not been pushed.
 
-| Phase        | Branch               | State              | Checks run on the branch                                                                                                                                                                                                                                                                          |
-| ------------ | -------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1 Foundation | `phase-1-foundation` | All 9 items built  | Typecheck clean. Formatting clean. 3060 of 3060 tests pass (baseline before any change: 3029 of 3030, the one failure a flaky Windows file-rename error in the backup test that passed on rerun). Lint could not run: `eslint-plugin-react-hooks` is missing from this checkout's `node_modules`. |
-| 2 Build      | `phase-2-build`      | All 16 items built | Typecheck clean. Formatting clean. 3158 of 3158 tests pass (one older staff-store test was updated for the new offboard reply). Lint could not run (same missing plugin).                                                                                                                         |
-| 3 Scale      | `phase-3-scale`      | All 15 items built | Typecheck clean. Formatting clean. 3348 of 3348 tests pass. Lint could not run (same missing plugin).                                                                                                                                                                                             |
-| 4 Later      | not started          |                    |                                                                                                                                                                                                                                                                                                   |
+| Phase        | Branch               | State              | Checks run on the branch                                                                                                                                                                                                                                                                                                                                                                               |
+| ------------ | -------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1 Foundation | `phase-1-foundation` | All 9 items built  | Typecheck clean. Formatting clean. 3060 of 3060 tests pass (baseline before any change: 3029 of 3030, the one failure a flaky Windows file-rename error in the backup test that passed on rerun). Lint could not run: `eslint-plugin-react-hooks` is missing from this checkout's `node_modules`.                                                                                                      |
+| 2 Build      | `phase-2-build`      | All 16 items built | Typecheck clean. Formatting clean. 3158 of 3158 tests pass (one older staff-store test was updated for the new offboard reply). Lint could not run (same missing plugin).                                                                                                                                                                                                                              |
+| 3 Scale      | `phase-3-scale`      | All 15 items built | Typecheck clean. Formatting clean. 3348 of 3348 tests pass. Lint could not run (same missing plugin).                                                                                                                                                                                                                                                                                                  |
+| 4 Later      | `phase-4-later`      | All 5 items built  | Typecheck clean. Formatting clean. 3588 of 3588 tests pass. The production build (`next build --turbopack`) completes with no errors and includes all new routes; it ran against a throwaway home and OneDrive folder because the app's background scanners act on real files. That build covers all four phases, since each branch contains the one before. Lint could not run (same missing plugin). |
 
 **What "built" means here:** the code is written, typechecks and has unit tests for its logic. Nobody has looked at the screens. The review machine has no Node on its PATH (the Electron binary in `node_modules` was used as Node), and a live run of the app uses the real OneDrive `AI-OS` folders, so it must not be started without a throwaway data folder. Look at each changed screen in a real run before release.
 
@@ -68,6 +68,29 @@ Work happens on one git branch per phase, each started from the previous phase's
 - `q-1`: copies subject (or title line) and body with placeholders, including unsaved edits. To and Cc are left out.
 - `q-17`: the last-opened time is saved at launch, not at close, so your own actions from the last session appear in the next recap. The recap covers the PMO audit log only and says so.
 - `q-19`: CSV cells starting with `=`, `+`, `-` or `@` get an apostrophe. Excel stores text. The Staff, Activity and register CSV exports are still unguarded.
+
+**Decisions made while building Phase 4** (change them if you disagree):
+
+- `ui-18`: the plus button opens the tool with its Add dialog showing. The label is "Add a <tool name>", so plural tools read "Add a Meeting minutes". Timesheets has no plus.
+- `ux-6`: restoring a layout never closes windows. An off-by-default switch minimises the others instead. One window per app is saved. Saving under an existing name is refused (delete and save again). Restore also updates each moved app's remembered position.
+- `ui-20`: no italic, blockquotes, images or link titles. Links allow only http, https and mailto. The preview is bounded (100,000 characters, 4,000 lines, tables 20 columns by 500 rows). A link to the app's own address opens as an in-app window (existing shell behaviour for every app).
+- `ai-6`: PMO structuring prompt only. Off by default. At most 2 examples, needing 2 shared meaningful words, capped at 2000 characters. With the switch off the prompt is byte-identical to the previous version (sha-256 checked in a test); `PROMPT_VERSION` is now 5. You can only save from a ready proposal while its review is open. No example text reaches any log or the audit trail.
+- `q-18`: the location is a platform preference with a pick-list from the Staff holiday editor. Only a day that is itself a holiday moves, and a typed date like "25 Dec" moves too, with a "(skipped a holiday)" note. "In 3 days" and "In 1 hour" never move.
+
+## Not finished, found while building
+
+These are gaps the build left on purpose. None of them is fixed.
+
+- **`q-18` server side.** The server reminder engine and chasers (`notify.ts`, `chaserDrafts.ts`, `state.ts`) do not know the holiday location or the roster, so reminders and "days waiting" counts ignore holidays while the screens do not. Fixing it means a server reader for the platform prefs file plus the roster. "Every weekday" recurrence keeps its own Sat/Sun skip, and meeting-notes action items do not use holidays.
+- **`ops-4`:** the morning briefing toast does not list contract milestones.
+- **`q-19`:** the Staff, Activity and register CSV exports do not guard against formula injection (only the to-do export does).
+- **`q-17`:** the recap time is saved at launch, not close.
+- **Existing template libraries** do not get the two new Toolkit templates (`ai-3`) automatically.
+- **Offboarded tab Restore** does not relink the shift roster entry (only the Undo toast does).
+
+## Before release
+
+Nothing in phases 1 to 4 has been looked at in a running app, and lint has not run. Before release: install the missing lint plugin and run `pnpm check`; run the app against a throwaway data folder and walk each changed screen (Phase 1 to 4 tables above), with light, dark and Deloitte looks and a narrow window; and check the dock with labels on, the snap preview, the layouts dialog, the Notes preview and the Ctrl+Shift+Space hotkey on a real desktop.
 
 ## Rules every item must respect
 
@@ -154,13 +177,13 @@ Everything else is independent and can be built in any order.
 
 ### Phase 4: Later (only if needed), 5 items
 
-| ID      | Item                                               | Area              | Priority | Effort | Status                        |
-| ------- | -------------------------------------------------- | ----------------- | -------- | ------ | ----------------------------- |
-| `ui-18` | [Add an item straight from a Toolkit tile](#ui-18) | UI polish         | Low      | 3      | Reshaped after the code check |
-| `ui-20` | [Notes: links, code blocks and tables](#ui-20)     | UI polish         | Low      | 3      | Reshaped after the code check |
-| `ux-6`  | [Named workspace layouts](#ux-6)                   | User experience   | Low      | 3      | Fits as written               |
-| `ai-6`  | [Saved-examples library for prompts](#ai-6)        | AI and automation | Low      | 3      | Reshaped after the code check |
-| `q-18`  | [Holiday-aware due dates](#q-18)                   | Quality of life   | Medium   | 4      | Added after the code check    |
+| ID      | Item                                               | Area              | Priority | Effort | Status                                           |
+| ------- | -------------------------------------------------- | ----------------- | -------- | ------ | ------------------------------------------------ |
+| `ui-18` | [Add an item straight from a Toolkit tile](#ui-18) | UI polish         | Low      | 3      | **Built** (`phase-4-later`), not seen in the app |
+| `ui-20` | [Notes: links, code blocks and tables](#ui-20)     | UI polish         | Low      | 3      | **Built** (`phase-4-later`), not seen in the app |
+| `ux-6`  | [Named workspace layouts](#ux-6)                   | User experience   | Low      | 3      | **Built** (`phase-4-later`), not seen in the app |
+| `ai-6`  | [Saved-examples library for prompts](#ai-6)        | AI and automation | Low      | 3      | **Built** (`phase-4-later`), not seen in the app |
+| `q-18`  | [Holiday-aware due dates](#q-18)                   | Quality of life   | Medium   | 4      | **Built** (`phase-4-later`), not seen in the app |
 
 ## Item details
 

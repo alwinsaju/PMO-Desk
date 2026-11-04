@@ -25,6 +25,7 @@ import {
   type AiUpdate,
   type Proposal,
 } from "../types.ts";
+import { examplesForPrompt } from "./savedExamples.ts";
 import type { Store } from "./store.ts";
 
 export interface ModelRequest {
@@ -344,7 +345,14 @@ export class StructuringWorker {
       });
     }
 
-    const system = buildSystemPrompt(config.me, config.reminders.timeZone);
+    // The user's saved examples (off unless they turned the switch on): at most
+    // two, chosen by word overlap with this message. Never throws; the model
+    // log only ever sees how many were used.
+    const savedExamples = await examplesForPrompt(
+      this.store.root,
+      `${intake.subject}\n${bodyText}`,
+    );
+    const system = buildSystemPrompt(config.me, config.reminders.timeZone, savedExamples);
     const prompt = buildUserPrompt(
       intake,
       bodyText,
@@ -356,6 +364,7 @@ export class StructuringWorker {
       claimed,
       bytes: Buffer.byteLength(system) + Buffer.byteLength(prompt),
       promptVersion: PROMPT_VERSION,
+      logExtra: savedExamples.length > 0 ? { savedExamples: savedExamples.length } : {},
       task: "structure",
       call: () => this.generator.generate({ system, prompt, label: intake.subject }),
       onOk: async (output, durationMs, attempts) => {
@@ -484,6 +493,8 @@ ${bodyText}`,
     claimed: Proposal;
     bytes: number;
     promptVersion: number;
+    /** Extra counts for the call log (numbers only, never prompt text). */
+    logExtra?: Record<string, number>;
     task: "structure" | "update" | "update-signoff";
     call: () => Promise<T>;
     onOk: (
@@ -508,6 +519,7 @@ ${bodyText}`,
           model: this.generator.model(),
           bytes: job.bytes,
           promptVersion: job.promptVersion,
+          ...job.logExtra,
           task: job.task,
           durationMs,
           outcome: "ok",
@@ -521,6 +533,7 @@ ${bodyText}`,
           model: this.generator.model(),
           bytes: job.bytes,
           promptVersion: job.promptVersion,
+          ...job.logExtra,
           task: job.task,
           durationMs: failedAfter,
           outcome: kind,
