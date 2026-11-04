@@ -170,7 +170,7 @@ cannot send, delete, move or change a mail, and it does not open attachments.
 2. Open PowerShell (a normal one, **not** "Run as administrator") and go to the
    scripts folder:
    ```
-   cd "C:\Projects\AI OS\pmo-intake\scripts"
+   cd "C:\Projects\pmo-desk\pmo-intake\scripts"
    ```
 3. Do a **dry run**. It reads Outlook, prints what it _would_ write, and writes
    nothing at all:

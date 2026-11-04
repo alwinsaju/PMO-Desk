@@ -254,7 +254,7 @@ an installed copy, point `$script` there (the `schtasks` one-liner for that is i
 [`HOW-TO-GET-STARTED.md`](./HOW-TO-GET-STARTED.md) section 7).
 
 ```powershell
-$script    = 'C:\Projects\AI OS\pmo-intake\scripts\Export-OutlookToInbox.ps1'
+$script    = 'C:\Projects\pmo-desk\pmo-intake\scripts\Export-OutlookToInbox.ps1'
 $arguments = '-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "{0}" -SinceDays 3' -f $script
 $action    = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $arguments
 $trigger   = New-ScheduledTaskTrigger -Once -At (Get-Date).Date.AddHours(8) `

@@ -25,6 +25,7 @@ import {
 import { resolveOllamaExe } from "@/lib/ai-runtime/core";
 import { allowedModels, saveModelChoice } from "@/lib/ai-runtime/modelChoice";
 import { withoutTlsOverride } from "@/lib/security/childEnv";
+import { embeddedPythonHome } from "@/lib/tasks-engine/embeddedPython";
 import { Store } from "@/lib/pmo/server/store";
 import { resolveDataDir } from "@/lib/pmo/server/paths";
 import { appVersion } from "@/lib/platform/appInfo";
@@ -490,12 +491,13 @@ export function startSelfTest(): ActionResult {
         checks: [{ id: "run", title: "Self-test", ok: false, detail }],
       });
       try {
+        const home = embeddedPythonHome(python);
         const result = await runCommand(
           consolePython(python),
           [path.join(process.cwd(), "tasks-engine", "selftest.py")],
           {
             timeoutMs: 300_000,
-            env: { PYTHONNOUSERSITE: "1" },
+            env: { PYTHONNOUSERSITE: "1", ...(home && { PYTHONHOME: home }) },
             cwd: path.join(process.cwd(), "tasks-engine"),
           },
         );

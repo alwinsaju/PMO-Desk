@@ -97,7 +97,7 @@ describe("server mirror of the appearance", () => {
     serverWith.calls = [];
   });
 
-  it("setTheme / setBrand PUT both choices to the preferences key", () => {
+  it("setTheme / setBrand PUT both choices to the appearance key, not the preferences store's", () => {
     const env = fakeEnv();
     globalThis.window = { localStorage: env.localStorage, location: {} };
     globalThis.document = { documentElement: env.documentElement };
@@ -108,8 +108,8 @@ describe("server mirror of the appearance", () => {
     assert.deepEqual(
       puts.map((c) => [c.url, JSON.parse(c.body)]),
       [
-        ["/api/ui-state/preferences", { value: { theme: "dark", brand: "default" } }],
-        ["/api/ui-state/preferences", { value: { theme: "dark", brand: "deloitte" } }],
+        ["/api/ui-state/appearance", { value: { theme: "dark", brand: "default" } }],
+        ["/api/ui-state/appearance", { value: { theme: "dark", brand: "deloitte" } }],
       ],
     );
   });

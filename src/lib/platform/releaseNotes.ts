@@ -15,6 +15,29 @@ export interface Release {
 /** Newest first. Add a release here when the version in package.json goes up. */
 export const RELEASES: readonly Release[] = [
   {
+    version: "6.0.2",
+    title: "PMO Desk 6.0.2",
+    groups: [
+      {
+        title: "Shell",
+        items: [
+          "The lock screen shows your Microsoft 365 full name and photo, and setup adds you as the first person in Staff.",
+          "The quick settings menu stays inside the screen and scrolls when the screen is short.",
+          "A window snapped onto the spot it already occupied now settles there instead of staying where the pointer let go.",
+          "Toasts fade out, and a directory row flashes when its Microsoft 365 profile arrives.",
+        ],
+      },
+      {
+        title: "Tasks",
+        items: [
+          "Faster incident review, with local-AI Subcategory2 suggestions.",
+          "An idle workflow's step timeline starts again from all pending instead of replaying the last run.",
+          "The Tasks engine starts even when another Python 3.13 is installed on the computer.",
+        ],
+      },
+    ],
+  },
+  {
     version: "6.0.1",
     title: "PMO Desk 6.0.1",
     groups: [

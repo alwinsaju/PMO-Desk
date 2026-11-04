@@ -16,13 +16,13 @@ afterEach(() => {
 });
 
 describe("display settings file", () => {
-  it("defaults to OFF (lean, GPU disabled) when the file is missing", () => {
+  it("defaults to ON (rich, GPU allowed) when the file is missing", () => {
     const file = settings.settingsFilePath(dir);
     assert.equal(path.basename(file), "display-settings.json");
-    assert.deepEqual(settings.readDisplaySettings(file), { hardwareAcceleration: false });
+    assert.deepEqual(settings.readDisplaySettings(file), { hardwareAcceleration: true });
     assert.equal(
       settings.shouldDisableHardwareAcceleration(settings.readDisplaySettings(file)),
-      true,
+      false,
     );
   });
 
@@ -40,7 +40,7 @@ describe("display settings file", () => {
     assert.deepEqual(fs.readdirSync(path.dirname(file)), [settings.SETTINGS_FILE_NAME]);
   });
 
-  it("treats corrupt or odd content as OFF and never throws", () => {
+  it("treats corrupt or odd content as the default (ON) and never throws", () => {
     const file = settings.settingsFilePath(dir);
     for (const content of [
       "",
@@ -54,25 +54,31 @@ describe("display settings file", () => {
       fs.writeFileSync(file, content);
       assert.deepEqual(
         settings.readDisplaySettings(file),
-        { hardwareAcceleration: false },
+        { hardwareAcceleration: true },
         content,
       );
     }
   });
 
-  it("only an explicit true turns acceleration on, and drops unknown keys", () => {
+  it("only an explicit boolean is honoured, and unknown keys are dropped", () => {
     assert.deepEqual(settings.normalizeSettings({ hardwareAcceleration: 1, extra: 1 }), {
-      hardwareAcceleration: false,
+      hardwareAcceleration: true,
     });
     assert.deepEqual(
-      settings.normalizeSettings({ hardwareAcceleration: true, extra: 1 }),
+      settings.normalizeSettings({ hardwareAcceleration: false, extra: 1 }),
       {
-        hardwareAcceleration: true,
+        hardwareAcceleration: false,
       },
     );
     assert.deepEqual(settings.normalizeSettings(undefined), {
-      hardwareAcceleration: false,
+      hardwareAcceleration: true,
     });
+  });
+
+  it("an explicit OFF in the file is kept", () => {
+    const file = settings.settingsFilePath(dir);
+    fs.writeFileSync(file, '{"hardwareAcceleration":false}');
+    assert.deepEqual(settings.readDisplaySettings(file), { hardwareAcceleration: false });
   });
 
   it("disables hardware acceleration exactly when the setting is OFF", () => {
@@ -84,13 +90,13 @@ describe("display settings file", () => {
       settings.shouldDisableHardwareAcceleration({ hardwareAcceleration: true }),
       false,
     );
-    assert.equal(settings.shouldDisableHardwareAcceleration(undefined), true);
+    assert.equal(settings.shouldDisableHardwareAcceleration(undefined), false);
   });
 
   it("maps the setting to the page's visual mode", () => {
     assert.equal(settings.fxModeFor({ hardwareAcceleration: true }), "rich");
     assert.equal(settings.fxModeFor({ hardwareAcceleration: false }), "lean");
-    assert.equal(settings.fxModeFor(null), "lean");
+    assert.equal(settings.fxModeFor(null), "rich");
   });
 
   it("propagates a write failure (the caller reports it)", () => {

@@ -11,6 +11,7 @@
 import net from "node:net";
 import { spawnSync, type ChildProcess } from "node:child_process";
 import { withoutTlsOverride } from "../../../lib/security/childEnv.ts";
+import { embeddedPythonHome } from "../../../lib/tasks-engine/embeddedPython.ts";
 import {
   engineAuthHeaders,
   getEngineAuth,
@@ -116,13 +117,19 @@ export function rememberEngineUrl(url: string): void {
  * The engine's environment: ours without any PYTHON* setting (a stray PYTHONHOME
  * or PYTHONPATH breaks the bundled interpreter) and without a disabled TLS
  * check, with the user site switched off and this process's token/instance id.
+ * For the bundled interpreter (`pythonExe`) it also pins PYTHONHOME to its folder.
  */
-export function engineEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+export function engineEnv(
+  base: NodeJS.ProcessEnv = process.env,
+  pythonExe?: string,
+): NodeJS.ProcessEnv {
   const env = {} as NodeJS.ProcessEnv;
   for (const [key, value] of Object.entries(withoutTlsOverride(base))) {
     if (!key.toUpperCase().startsWith("PYTHON")) env[key] = value;
   }
   env.PYTHONNOUSERSITE = "1";
+  const home = embeddedPythonHome(pythonExe);
+  if (home) env.PYTHONHOME = home;
   // Task scripts read the template library from the same folder the app writes.
   env.AI_OS_TEMPLATES_DIR = templatesDir(base);
   const auth = getEngineAuth();

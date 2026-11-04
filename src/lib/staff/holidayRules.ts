@@ -1,6 +1,7 @@
 /** Public holidays that follow a rule (a fixed date, "last Monday of May", Easter), so a bundled list cannot be
  *  wrong about them. Lunar festivals (Diwali, Eid, ...) change every year and are not guessed: add those by hand. */
 import { addDays, isIsoDate, weekdayIndex } from "./dates.ts";
+import { INDIA_LOCATIONS } from "./holidays.ts";
 import type { RosterEvent } from "./types.ts";
 
 export interface HolidayEntry {
@@ -49,9 +50,11 @@ function observed(date: string): string {
   return w === 5 ? addDays(date, -1) : w === 6 ? addDays(date, 1) : date;
 }
 
+/** `locations` are the places a person's office is matched against (see `observes` in
+ *  holidays.ts), so India lists its cities: a country name alone matches nobody. */
 export const COUNTRIES = [
-  { id: "in", label: "India", locations: ["India"] },
-  { id: "us", label: "United States", locations: ["United States"] },
+  { id: "in", label: "India", locations: INDIA_LOCATIONS },
+  { id: "us", label: "United States", locations: ["US"] },
   { id: "uk", label: "United Kingdom", locations: ["United Kingdom"] },
 ] as const;
 export type CountryId = (typeof COUNTRIES)[number]["id"];

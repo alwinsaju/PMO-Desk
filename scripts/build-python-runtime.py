@@ -138,7 +138,9 @@ def drop_path_file(python_dir: Path, p: dict) -> None:
     matters here, no script folder on sys.path, which the task scripts rely on
     (`from _common import ...`). Without it the stdlib zip, the interpreter folder
     and Lib/site-packages are found next to python.exe as usual. The engine starts
-    it with PYTHONNOUSERSITE=1 so nothing from a user-level Python leaks in."""
+    it with PYTHONNOUSERSITE=1 so nothing from a user-level Python leaks in, and with
+    PYTHONHOME set to this folder (embeddedPythonHome in src/lib/tasks-engine) so the
+    registry entries of a python.org Python on the machine are not read either."""
     major, minor = p["python"].split(".")[:2]
     (python_dir / f"python{major}{minor}._pth").unlink(missing_ok=True)
 

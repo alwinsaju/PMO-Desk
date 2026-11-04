@@ -46,7 +46,7 @@ app.setName("PMO Desk");
 
 // Hardware acceleration is a process-start decision in Chromium, so the saved
 // choice (display-settings.cjs; written by the Settings toggle) is read here,
-// synchronously, before the app is ready. OFF (the default) disables it.
+// synchronously, before the app is ready. ON is the default; OFF disables it.
 const displayFile = displaySettings.settingsFilePath(app.getPath("userData"));
 /** What this process was started with; the toggle only takes effect on restart. */
 const launchedDisplay = displaySettings.readDisplaySettings(displayFile);

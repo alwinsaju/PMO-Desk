@@ -19,7 +19,7 @@ function fakeFs(files) {
   };
 }
 
-const PROJECT = "C:\\Projects\\AI OS";
+const PROJECT = "C:\\Projects\\pmo-desk";
 const goodProject = {
   [`${PROJECT}\\package.json`]: JSON.stringify({
     scripts: { dev: "next dev --turbopack" },

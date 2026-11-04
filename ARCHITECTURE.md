@@ -101,7 +101,9 @@ heavy shadow (tokens.css); the window being dragged/resized (`data-gesture`)
 alone gets `will-change: transform`. Lean mode paints window bodies opaque.
 The desktop shell reports `noHardwareAcceleration` (display-settings.cjs
 `describeGpu`); the Settings "Hardware acceleration" toggle is then disabled
-and lean is forced.
+and lean is forced. Hardware acceleration is ON by default (a missing or corrupt
+`display-settings.json` means ON; only an explicit `false` keeps software
+rendering); a machine without real GPU compositing falls back to lean on its own.
 
 **Keyboard**: a window root is `role="dialog" aria-modal="false"` with the window
 title as label and `tabIndex=-1`; focus moves into it on open (unless its app

@@ -229,7 +229,7 @@ pnpm desktop:package
 The command first builds the private Python the installer carries (`pnpm runtime:python`; it needs any
 Python 3.9+ with pip on this machine and network access the first time, and reuses its download cache after).
 See `scripts/build-python-runtime.py` for how it is pinned. The installer is built from the working tree, so the gitignored files the tasks need (`tasks/*/templates`, `tasks/*/config`, `tasks/shared/roster-reference`, `tasks/shared/roster/Names.xlsx`) must be present on the machine that builds it; a fresh clone does not have them. The installer is written to
-`release/PMO Desk Setup 6.0.1.exe`. Run it
+`release/PMO Desk Setup 6.0.2.exe`. Run it
 once to install PMO Desk under `%LOCALAPPDATA%\Programs\PMO Desk` (or select a
 different folder in the installer). The installer wizard is branded to match the app (dark welcome and finish pages; the artwork is redrawn from `package.json`'s version by `pnpm installer:art` (part of `pnpm desktop:package`, needs Pillow, fonttools and brotli) into `build/installer/`). It creates Start-menu and
 desktop shortcuts; pin either to the Windows taskbar. The installed app does
@@ -249,7 +249,7 @@ reinstall keeps them. How to test all of this on a clean machine: [`docs/clean-m
 
 An installed (packaged) build defaults to `bundled`, the production server
 shipped with the app. A live mode that runs the UI from the project folder
-(`C:\Projects\AI OS`, or `AI_OS_PROJECT_DIR`; it needs `package.json` and
+(`C:\Projects\pmo-desk`, or `AI_OS_PROJECT_DIR`; it needs `package.json` and
 `node_modules`) is opt-in. A run from source (`pnpm desktop`, i.e. `electron .`)
 instead defaults to `live-dev` when the project folder is usable.
 
@@ -262,7 +262,7 @@ instead defaults to `live-dev` when the project folder is usable.
 Choose the mode and folder with, in order of priority: the environment
 variables `AI_OS_MODE` (`live-dev`, `live-build`, `bundled`) and
 `AI_OS_PROJECT_DIR`; a `live-config.json` next to `PMO Desk.exe` or in the app's
-`desktop` folder (`{ "projectDir": "C:\\Projects\\AI OS", "mode": "live-dev" }`, both keys
+`desktop` folder (`{ "projectDir": "C:\\Projects\\pmo-desk", "mode": "live-dev" }`, both keys
 optional; see `desktop/launch-config.cjs`); then the default. The installer
 removes `live-config.json` on every reinstall, so to keep an installed build in
 a live mode set `AI_OS_MODE` (for example as a persistent user environment
@@ -271,7 +271,7 @@ cannot be used (folder missing, no `node_modules/next`, no build for
 `live-build`) or the server does not answer within 90 seconds, PMO Desk logs the
 reason in `%APPDATA%\ai-os\desktop.log` and starts the bundled app instead
 (Help > About PMO Desk shows the reason). The window title shows the active mode,
-for example `PMO Desk (live-dev: C:\Projects\AI OS)`.
+for example `PMO Desk (live-dev: C:\Projects\pmo-desk)`.
 
 The **Developer** menu has _Restart UI server_ (stops and respawns the server
 and the Tasks engine it owns, then reloads; it warns first if a task is running),

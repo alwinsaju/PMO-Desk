@@ -14,6 +14,7 @@ export const UI_STATE_KEYS = [
   "pinned-apps",
   "installed-apps",
   "preferences",
+  "appearance",
   "tasks-prefs",
   "staff-prefs",
   "dashboard-prefs",
@@ -27,7 +28,7 @@ export const MAX_BODY_BYTES = 1024 * 1024;
 const KEY_SET: ReadonlySet<string> = new Set(UI_STATE_KEYS);
 
 /** Exact, case-sensitive match against the fixed list: the key is never used to
- *  build a path unless it is one of these four literals. */
+ *  build a path unless it is one of these literals. */
 export function isUiStateKey(key: unknown): key is UiStateKey {
   return typeof key === "string" && KEY_SET.has(key);
 }

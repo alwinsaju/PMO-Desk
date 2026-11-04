@@ -26,11 +26,34 @@ afterEach(async () => {
 });
 
 describe("key allow-list", () => {
-  it("accepts exactly the four keys", () => {
-    for (const key of ["notes", "pinned-apps", "installed-apps", "preferences"]) {
+  it("accepts the allow-listed keys", () => {
+    for (const key of [
+      "notes",
+      "pinned-apps",
+      "installed-apps",
+      "preferences",
+      "appearance",
+    ]) {
       assert.equal(isUiStateKey(key), true);
       assert.equal(uiStatePath(key, env), path.join(dir, "ui-state", `${key}.json`));
     }
+  });
+
+  it("keeps the appearance mirror apart from the preferences store", async () => {
+    await writeUiState(
+      "preferences",
+      { state: { reducedMotion: true }, version: 1 },
+      env,
+    );
+    await writeUiState("appearance", { theme: "dark", brand: "default" }, env);
+    assert.deepEqual(await readUiState("preferences", env), {
+      state: { reducedMotion: true },
+      version: 1,
+    });
+    assert.deepEqual(await readUiState("appearance", env), {
+      theme: "dark",
+      brand: "default",
+    });
   });
 
   it("rejects anything else", () => {

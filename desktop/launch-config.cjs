@@ -29,7 +29,7 @@ const nodeFs = require("node:fs");
 const nodePath = require("node:path");
 
 const MODES = ["live-dev", "live-build", "bundled"];
-const DEFAULT_PROJECT_DIR = "C:\\Projects\\AI OS";
+const DEFAULT_PROJECT_DIR = "C:\\Projects\\pmo-desk";
 const CONFIG_FILE_NAME = "live-config.json";
 const DEFAULT_DEV_ARGS = ["--turbopack"];
 

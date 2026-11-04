@@ -513,7 +513,9 @@ body {
 /* RICH EFFECTS (Settings > Hardware acceleration ON => <html data-fx="rich">,
    src/lib/displayFx.ts). The lean values above are the default; with a working
    GPU these restore the heavier frosted look that was cut for software
-   rendering (commits ac7820f, f077446). The wallpaper's rich half is next to
+   rendering (commits ac7820f, f077446). Windows (`glass-win`) stay unblurred in
+   rich mode too: their fill is 90-97% opaque, so a window-sized live blur only
+   cost frames while dragging. The wallpaper's rich half is next to
    the wallpaper rules below. */
 :root[data-fx="rich"] .glass {
   -webkit-backdrop-filter: blur(30px) saturate(1.7);
@@ -522,10 +524,6 @@ body {
 :root[data-fx="rich"] .glass-pop {
   -webkit-backdrop-filter: blur(36px) saturate(1.7);
   backdrop-filter: blur(36px) saturate(1.7);
-}
-:root[data-fx="rich"] .glass-win {
-  -webkit-backdrop-filter: blur(40px) saturate(1.5);
-  backdrop-filter: blur(40px) saturate(1.5);
 }
 :root[data-fx="rich"] .scrim {
   -webkit-backdrop-filter: blur(var(--scrim-blur));

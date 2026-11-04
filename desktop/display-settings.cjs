@@ -10,21 +10,28 @@
 //
 //   { "hardwareAcceleration": true }
 //
-// OFF (the default, also for a missing / unreadable file) = the lean look and
-// software rendering. ON = Chromium may use the GPU and the page switches to the
-// rich visual effects (<html data-fx="rich">, see src/lib/displayFx.ts).
+// ON (the default, also for a missing / unreadable file) = Chromium may use the
+// GPU and the page switches to the rich visual effects (<html data-fx="rich">,
+// see src/lib/displayFx.ts); software rendering is much less smooth. A machine
+// with no real GPU compositing still gets the lean look (see fxModeFor).
+// OFF (an explicit `false`) = the lean look and software rendering.
 
 const nodeFs = require("node:fs");
 const nodePath = require("node:path");
 
 const SETTINGS_FILE_NAME = "display-settings.json";
 
-const DEFAULT_SETTINGS = Object.freeze({ hardwareAcceleration: false });
+const DEFAULT_SETTINGS = Object.freeze({ hardwareAcceleration: true });
 
-/** Only an explicit `true` turns it on; anything else is the lean default. */
+/** Only an explicit boolean is honoured; anything else is the default. */
 function normalizeSettings(value) {
   const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
-  return { hardwareAcceleration: source.hardwareAcceleration === true };
+  return {
+    hardwareAcceleration:
+      typeof source.hardwareAcceleration === "boolean"
+        ? source.hardwareAcceleration
+        : DEFAULT_SETTINGS.hardwareAcceleration,
+  };
 }
 
 function settingsFilePath(userDataDir, path = nodePath) {
@@ -32,7 +39,7 @@ function settingsFilePath(userDataDir, path = nodePath) {
 }
 
 /** Reads the settings file synchronously; never throws (a missing or corrupt
- *  file is the default, OFF). */
+ *  file is the default, ON). */
 function readDisplaySettings(file, fs = nodeFs) {
   try {
     if (!fs.existsSync(file)) return { ...DEFAULT_SETTINGS };
@@ -57,7 +64,7 @@ function writeDisplaySettings(file, settings, fs = nodeFs, path = nodePath) {
 
 /** main.cjs calls app.disableHardwareAcceleration() exactly when this is true. */
 function shouldDisableHardwareAcceleration(settings) {
-  return normalizeSettings(settings).hardwareAcceleration !== true;
+  return !normalizeSettings(settings).hardwareAcceleration;
 }
 
 /** The page-facing visual mode that goes with a setting. A machine without

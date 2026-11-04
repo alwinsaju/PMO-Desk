@@ -130,7 +130,7 @@ async function attemptStart(): Promise<StartResult> {
       stdio: ["ignore", outFd, errFd],
       windowsHide: true,
       // No stray PYTHON* settings; carries this server's engine token and instance id.
-      env: engineEnv(),
+      env: engineEnv(process.env, pythonExe),
     });
     // The child gets its own duplicated handles at spawn time; drop our
     // copies right away so a long-lived dev server doesn't accumulate open

@@ -12,6 +12,7 @@ import {
 } from "./leave.ts";
 import { onCallDays, planOnCall } from "./onCall.ts";
 import { COUNTRIES, easterSunday, holidayEvents, holidaysFor } from "./holidayRules.ts";
+import { INDIA_LOCATIONS, observes } from "./holidays.ts";
 import {
   endAlerts,
   endAlertText,
@@ -297,8 +298,19 @@ describe("holiday rules", () => {
       false,
     );
     assert.equal(events.length, 3);
-    assert.deepEqual(events[0].locations, ["India"]);
+    assert.deepEqual(events[0].locations, [...INDIA_LOCATIONS]);
     assert.equal(COUNTRIES.length, 3);
+  });
+  it("adds holidays that the people of that country's offices actually observe", () => {
+    const india = holidayEvents("in", 2026, [], () => "ev");
+    for (const city of ["Bengaluru", "Bangalore", "Pune", "Gurgaon"]) {
+      assert.equal(observes(india[0], city), true, city);
+    }
+    assert.equal(observes(india[0], "Mexico"), false);
+    assert.equal(observes(india[0], ""), false);
+    const us = holidayEvents("us", 2026, [], () => "ev");
+    assert.equal(observes(us[0], "US"), true);
+    assert.equal(observes(us[0], "Pune"), false);
   });
 });
 

@@ -4,7 +4,7 @@
  * live in Quick settings (SettingsMenu.tsx), which reads them via `useTheme` /
  * `useBrand`). localStorage is the source of truth (it must be readable before
  * hydration); each change is also mirrored, best effort, to the server's
- * `preferences` key so a new origin (another port) can restore it once.
+ * `appearance` key so a new origin (another port) can restore it once.
  *
  *   Theme  — `data-theme="dark"`      key `ai-os:theme`   absent = light
  *   Brand  — `data-brand="deloitte"`  key `ai-os:brand`   absent = default

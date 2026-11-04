@@ -154,6 +154,20 @@ describe("engine identity and token", () => {
     assert.equal(env.AI_OS_ENGINE_INSTANCE, instance);
   });
 
+  it("pins PYTHONHOME to the bundled interpreter only", () => {
+    const bundled = mkdtempSync(path.join(tmpdir(), "py-embed-"));
+    writeFileSync(path.join(bundled, "python313.zip"), "");
+    writeFileSync(path.join(bundled, "pythonw.exe"), "");
+    const venv = mkdtempSync(path.join(tmpdir(), "py-venv-"));
+    writeFileSync(path.join(venv, "python.exe"), "");
+
+    const home = engineEnv({ PYTHONHOME: "C:\\other" }, path.join(bundled, "pythonw.exe"));
+    assert.equal(home.PYTHONHOME, bundled);
+    assert.equal(engineEnv({}, path.join(venv, "python.exe")).PYTHONHOME, undefined);
+    assert.equal(engineEnv({}, path.join(venv, "missing", "python.exe")).PYTHONHOME, undefined);
+    assert.equal(engineEnv({}).PYTHONHOME, undefined);
+  });
+
   it("points task scripts at the template library folder", () => {
     const explicit = engineEnv({ AI_OS_TEMPLATES_DIR: "C:\\data\\tpl" });
     assert.equal(explicit.AI_OS_TEMPLATES_DIR, path.resolve("C:\\data\\tpl"));
