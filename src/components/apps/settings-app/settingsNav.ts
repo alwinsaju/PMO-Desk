@@ -15,7 +15,7 @@ export type SettingsTab =
 
 interface SettingsNav {
   /** The tab the window should show next (consumed by SettingsApp). */
-  request: { id: number; tab: SettingsTab } | null;
+  request: { id: number; tab: SettingsTab; activitySince?: string } | null;
   clear: (id: number) => void;
 }
 
@@ -26,9 +26,15 @@ export const useSettingsNav = create<SettingsNav>()((set) => ({
   clear: (id) => set((s) => (s.request?.id === id ? { request: null } : s)),
 }));
 
-/** Open (or raise) the Settings window, optionally on one tab. */
-export function openSettings(tab: SettingsTab = "general"): void {
-  useSettingsNav.setState({ request: { id: ++counter, tab } });
+/** Open (or raise) the Settings window, optionally on one tab. `activitySince` (an ISO time) opens
+ *  Activity showing only the entries after that time. */
+export function openSettings(
+  tab: SettingsTab = "general",
+  options: { activitySince?: string } = {},
+): void {
+  useSettingsNav.setState({
+    request: { id: ++counter, tab, activitySince: options.activitySince },
+  });
   const store = useWindowStore.getState();
   const existing = Object.values(store.windows).find((w) => w.appId === "settings");
   if (existing) store.restoreWindow(existing.id);

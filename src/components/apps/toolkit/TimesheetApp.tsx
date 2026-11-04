@@ -15,6 +15,7 @@ import type { RegisterRecord } from "@/lib/registers/types";
 import { useMyFirstName } from "@/components/people/useMyFirstName";
 import { CopyDetailsButton } from "@/components/platform/CopyDetailsButton";
 import { NativeSelect, TextArea } from "../pmo-todo-app/parts";
+import { useTemplateText } from "../templates-app/useTemplateText";
 import { PersonChasersDialog } from "./PersonChasersDialog";
 import { ReportDialog } from "./ReportDialog";
 import { usePeople } from "./usePeople";
@@ -45,17 +46,17 @@ export function TimesheetApp({ windowId }: { windowId: string }) {
     rows.filter((r) => textOf(r, "status") === status).length;
   const missing = rows.filter((r) => textOf(r, "status") === "Missing");
   const absent = people.filter((p) => !rows.some((r) => textOf(r, "person") === p.name));
-  const chaser = timesheetChaser(
-    week,
-    missing.map((r) => ({ person: textOf(r, "person"), email: textOf(r, "email") })),
-    me,
+  // The wording is the Templates app's "Timesheet chaser" when one is set, else the built-in text.
+  const chaserText = useTemplateText(
+    "app:toolkit:timesheet-chaser",
+    chaserOpen || perPersonOpen,
   );
-
-  const perPerson = personChasers(
-    week,
-    missing.map((r) => ({ person: textOf(r, "person"), email: textOf(r, "email") })),
-    me,
-  );
+  const missingPeople = missing.map((r) => ({
+    person: textOf(r, "person"),
+    email: textOf(r, "email"),
+  }));
+  const chaser = timesheetChaser(week, missingPeople, me, chaserText.fill);
+  const perPerson = personChasers(week, missingPeople, me, chaserText.fill);
 
   const fail = (reason: string, detail?: string) => setNote({ text: reason, detail });
 
@@ -296,6 +297,7 @@ export function TimesheetApp({ windowId }: { windowId: string }) {
       {perPersonOpen && (
         <PersonChasersDialog
           chasers={perPerson}
+          onUse={chaserText.used}
           onClose={() => setPerPersonOpen(false)}
         />
       )}
@@ -306,6 +308,7 @@ export function TimesheetApp({ windowId }: { windowId: string }) {
           subject={chaser.subject}
           text={chaser.body}
           to={chaser.to.includes(";") ? undefined : chaser.to || undefined}
+          onUse={chaserText.used}
           onClose={() => setChaserOpen(false)}
         />
       )}

@@ -131,6 +131,8 @@ const TASK_PHRASE: Record<string, (label?: string) => string> = {
   report: (l) => `Writing the report highlights${l ? ` for ${l}` : ""}`,
   command: (l) => `Answering a command-bar request${l ? ` (${l})` : ""}`,
   "pto-email": (l) => `Reading a PTO email${quoted(l)} to file the leave`,
+  "register-impact-note": () => "Drafting an impact note for a change request",
+  "register-category": () => "Suggesting a category for a lesson",
 };
 
 /** "Reading a message "Cutover checklist..." to propose a to-do". */

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Button,
   Dialog,
@@ -20,6 +20,7 @@ import {
   textOf,
 } from "@/lib/registers/records";
 import { duplicateValues } from "@/lib/registers/duplicate";
+import { suggestSpecFor } from "@/lib/registers/registerSuggest";
 import { recordText } from "@/lib/registers/recordText";
 import { todoSeed } from "@/lib/registers/reports";
 import type { FieldValue, RegisterDef, RegisterRecord } from "@/lib/registers/types";
@@ -28,7 +29,9 @@ import type { Person } from "@/lib/registers/timesheets";
 import { useMyFirstName } from "@/components/people/useMyFirstName";
 import { CopyDetailsButton } from "@/components/platform/CopyDetailsButton";
 import { FieldInput } from "./FieldInput";
+import { RecordHistory } from "./RecordHistory";
 import { removeWithUndo } from "./removeWithUndo";
+import { SuggestControl } from "./SuggestControl";
 import { createTodoFrom } from "./todoBridge";
 import { useProjectNames } from "./useProjectNames";
 import { emailOf } from "./usePeople";
@@ -106,6 +109,17 @@ export function RecordDialog({
   const problems = useMemo(() => fieldErrors(def, values), [def, values]);
   const problemCount = Object.keys(problems).length;
   const sections = useMemo(() => formSections(def), [def]);
+  // Change requests (impact note) and lessons (Category) get a "Suggest" button; no other register does.
+  const suggestSpec = suggestSpecFor(def);
+  const suggestControl = suggestSpec && (
+    <SuggestControl
+      tool={def.id}
+      spec={suggestSpec}
+      values={values}
+      disabled={busy}
+      onApply={(value) => setValues((cur) => ({ ...cur, [suggestSpec.field]: value }))}
+    />
+  );
 
   const draftRecord: RegisterRecord = {
     id: record?.id ?? "rg_000000000000",
@@ -229,23 +243,31 @@ export function RecordDialog({
               </legend>
               <div className="grid grid-cols-2 content-start gap-3">
                 {section.fields.map((field) => (
-                  <FieldInput
-                    key={field.key}
-                    field={field}
-                    value={values[field.key]}
-                    onChange={(v) => setValues((cur) => ({ ...cur, [field.key]: v }))}
-                    people={names}
-                    projects={projects}
-                    error={problems[field.key]}
-                    showErrorNow={attempted}
-                  />
+                  <Fragment key={field.key}>
+                    <FieldInput
+                      field={field}
+                      value={values[field.key]}
+                      onChange={(v) => setValues((cur) => ({ ...cur, [field.key]: v }))}
+                      people={names}
+                      projects={projects}
+                      error={problems[field.key]}
+                      showErrorNow={attempted}
+                    />
+                    {suggestSpec?.placement === "after-field" &&
+                      field.key === suggestSpec.field &&
+                      suggestControl}
+                  </Fragment>
                 ))}
+                {suggestSpec?.placement === "end-of-section" &&
+                  section.fields.some((f) => f.key === suggestSpec.field) &&
+                  suggestControl}
               </div>
             </fieldset>
           ))}
           {renderExtras && (
             <div>{renderExtras({ values, setValues, record, saveNow })}</div>
           )}
+          {record && <RecordHistory def={def} recordId={record.id} />}
         </div>
         {error && (
           <p role="alert" className="text-red mt-2 text-[13px]">

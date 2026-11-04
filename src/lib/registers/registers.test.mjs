@@ -1184,7 +1184,9 @@ test("project field: records saved before it existed load, save and round-trip u
       // 1. The sanitiser keeps every old value and just adds an empty project.
       const parsed = sanitizeRecord(d, stored, SEEN[id]);
       assert.equal(parsed.ok, true, `${id}: an old record still validates`);
-      assert.deepEqual(parsed.record.values, { ...values, project: "" });
+      // (changes also gained the optional impactNote, which an old record gets empty.)
+      const added = id === "changes" ? { project: "", impactNote: "" } : { project: "" };
+      assert.deepEqual(parsed.record.values, { ...values, ...added });
       assert.equal(parsed.record.todoId, "td_0123456789ab");
 
       // 2. Reading an old file returns the record, not an empty register.
@@ -1194,7 +1196,7 @@ test("project field: records saved before it existed load, save and round-trip u
       );
       const read = await readRegister(d, env);
       assert.equal(read.items.length, 1, `${id}: not dropped on read`);
-      assert.deepEqual(read.items[0].values, { ...values, project: "" });
+      assert.deepEqual(read.items[0].values, { ...values, ...added });
       assert.equal(read.items[0].createdAt, SEEN[id]);
       assert.equal(read.items[0].todoId, "td_0123456789ab");
 
@@ -1210,7 +1212,7 @@ test("project field: records saved before it existed load, save and round-trip u
       );
       assert.equal(onDisk.items.length, 2);
       const kept = onDisk.items.find((i) => i.id === "rg_0000000000a1");
-      assert.deepEqual(kept.values, { ...values, project: "" });
+      assert.deepEqual(kept.values, { ...values, ...added });
       assert.equal(kept.createdAt, SEEN[id]);
       assert.equal(kept.todoId, "td_0123456789ab");
       assert.equal(

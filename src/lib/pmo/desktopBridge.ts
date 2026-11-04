@@ -2,11 +2,18 @@
 // the Electron shell (window.aiOsDesktop). In a plain browser it is undefined,
 // which is also how the reminder code knows which path it is on: the shell
 // claims and shows reminders itself, a browser tab does it from the page.
+import type { QuickCaptureBridge } from "../quickCapture";
+
 export interface AiOsDesktopBridge {
   isDesktop: true;
   /** The user clicked a reminder: open the PMO To-Do app (on that to-do when
    *  the id is not null). Returns an unsubscribe function. */
   onOpenTodo: (callback: (todoId: string | null) => void) => () => void;
+  /** The global quick-capture hotkey was pressed (the window is already shown): put the
+   *  cursor in the command bar. Returns an unsubscribe function. */
+  onQuickCapture?: (callback: () => void) => () => void;
+  /** The opt-in quick-capture hotkey (desktop/quick-capture.cjs). */
+  quickCapture?: QuickCaptureBridge;
   /** Tell the shell how many items need attention (taskbar overlay, tray tip). */
   setBadge: (count: number) => void;
   /** Folder picker over the main window; null when cancelled. */

@@ -281,6 +281,77 @@ export const TARGETS: readonly TemplateTarget[] = [
       sender(),
     ],
   },
+  {
+    key: "app:toolkit:timesheet-chaser",
+    type: "app",
+    label: "PMO Toolkit",
+    detail: "Timesheet chaser",
+    kind: "email",
+    usesRecipients: false,
+    placeholders: [
+      {
+        name: "greeting",
+        description: "“Hi Sam,” for one person, “Hi all,” for several",
+        sample: "Hi all,",
+      },
+      {
+        name: "week_start",
+        description: "The Monday of the week",
+        sample: "2 Nov",
+      },
+      {
+        name: "week_end",
+        description: "The Friday of the week",
+        sample: "6 Nov",
+      },
+      {
+        name: "people",
+        description: "The names being chased, separated by commas",
+        sample: "Sam Rivera, Ana Lopez",
+      },
+      { name: "count", description: "How many people are being chased", sample: "2" },
+      sender(),
+    ],
+  },
+  {
+    key: "app:toolkit:status-report",
+    type: "app",
+    label: "PMO Toolkit",
+    detail: "Weekly status report",
+    kind: "report",
+    usesRecipients: false,
+    placeholders: [
+      { name: "date", description: "Today with the year", sample: "5 Nov 2026" },
+      { name: "date_short", description: "Today without the year", sample: "5 Nov" },
+      {
+        name: "overall",
+        description: "The overall status: Green, Amber or Red",
+        sample: "Amber",
+      },
+      {
+        name: "overall_upper",
+        description: "The overall status in capitals",
+        sample: "AMBER",
+      },
+      { name: "red", description: "Number of red projects", sample: "1" },
+      { name: "amber", description: "Number of amber projects", sample: "2" },
+      { name: "green", description: "Number of green projects", sample: "4" },
+      {
+        name: "projects",
+        description:
+          "Every project's lines (status, notes, top risks, late changes), and any records with no active project",
+        sample:
+          "Atlas (Priya): AMBER\n  Schedule Amber, budget Green, scope Green\n  This week: Vendor delay on the cut-over.",
+      },
+      {
+        name: "report",
+        description: "The whole built-in report, heading and overall line included",
+        sample:
+          "Weekly status report: 5 Nov 2026\n\nOverall: AMBER (1 red, 2 amber, 4 green)\n\nAtlas (Priya): AMBER",
+      },
+      sender(),
+    ],
+  },
 ];
 
 export const targetByKey = (key: string): TemplateTarget | undefined =>

@@ -379,6 +379,7 @@ export function SettingsApp({ windowId }: { windowId: string }) {
   const [tab, setTab] = useState<SettingsTab>("general");
   const [query, setQuery] = useState("");
   const [jump, setJump] = useState<{ id: string; n: number } | null>(null);
+  const [activitySince, setActivitySince] = useState("");
   const rootRef = useRef<HTMLDivElement>(null);
   const searching = query.trim() !== "";
   useWindowContext(windowId, TAB_LABELS[tab]);
@@ -387,6 +388,7 @@ export function SettingsApp({ windowId }: { windowId: string }) {
     if (!request) return;
     setTab(request.tab);
     setQuery("");
+    setActivitySince(request.tab === "activity" ? (request.activitySince ?? "") : "");
     useSettingsNav.getState().clear(request.id);
   }, [request]);
 
@@ -415,6 +417,8 @@ export function SettingsApp({ windowId }: { windowId: string }) {
 
   const goTo = (next: SettingsTab) => {
     setQuery("");
+    if (next !== "activity") setActivitySince("");
+    if (next !== "activity") setActivitySince("");
     setTab(next);
   };
 
@@ -483,7 +487,10 @@ export function SettingsApp({ windowId }: { windowId: string }) {
                   <DataTab />
                 </TabsContent>
                 <TabsContent value="activity">
-                  <ActivityTab />
+                  <ActivityTab
+                    since={activitySince}
+                    onShowAll={() => setActivitySince("")}
+                  />
                 </TabsContent>
                 <TabsContent value="help">
                   <HelpTab />

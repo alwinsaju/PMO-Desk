@@ -249,6 +249,14 @@ export const REGISTERS: readonly RegisterDef[] = [
       { key: "cost", label: "Cost or effort", type: "text" },
       { key: "targetDate", label: "Target date", type: "date" },
       { key: "description", label: "Description", type: "longtext" },
+      // Optional text on purpose (a new required field would hide old records). The form's
+      // "Suggest" button can draft it with the local model; a person edits and saves it.
+      {
+        key: "impactNote",
+        label: "Impact note",
+        type: "longtext",
+        placeholder: "Effect on scope, time, cost and risk",
+      },
       { key: "decisionNote", label: "Decision note", type: "longtext" },
     ],
     titleKey: "title",

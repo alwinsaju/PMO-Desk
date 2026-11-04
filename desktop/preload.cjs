@@ -4,7 +4,8 @@
 // poll for reminders itself, (b) open a to-do when a reminder notification is
 // clicked, (c) report how many items need attention, and (d) read/change the
 // "Hardware acceleration" display setting and restart to apply it, and (e) pick a
-// (e) pick a folder for the setup screen, and (f) hand the Tasks Run form an exported workbook: the
+// (e) pick a folder for the setup screen, (g) read/change the opt-in quick-capture hotkey and
+// hear when it is pressed, and (f) hand the Tasks Run form an exported workbook: the
 // newest matching file in Downloads, or one chosen in a native dialog. The page never names a path. No
 // generic IPC and no Node is handed over; main.cjs also checks who is asking.
 const { contextBridge, ipcRenderer } = require("electron");
@@ -81,6 +82,39 @@ contextBridge.exposeInMainWorld("aiOsDesktop", {
     return () => {
       active = false;
       ipcRenderer.removeListener("pmo:open-todo", handler);
+    };
+  },
+
+  /** The opt-in global "quick capture" hotkey (desktop/quick-capture.cjs). The page can
+   *  only read its state and turn it on or off; the shortcut itself is the shell's. */
+  quickCapture: {
+    /** { enabled, registered, accelerator, label, error } | null */
+    getState: () => ipcRenderer.invoke("quickcapture:get-state"),
+    /** Saves the setting and registers or releases the shortcut now; resolves to the new state. */
+    setEnabled: (enabled) =>
+      ipcRenderer.invoke("quickcapture:set-enabled", enabled === true),
+  },
+
+  /** callback() when the quick-capture hotkey is pressed (the window has been shown);
+   *  returns an unsubscribe. A press that arrived before the page was ready is
+   *  delivered right away. */
+  onQuickCapture(callback) {
+    if (typeof callback !== "function") return () => {};
+    let active = true;
+    const deliver = () => {
+      if (active) callback();
+    };
+    const handler = () => deliver();
+    ipcRenderer.on("pmo:quick-capture", handler);
+    ipcRenderer
+      .invoke("pmo:quick-capture-ready")
+      .then((pending) => {
+        if (pending === true) deliver();
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+      ipcRenderer.removeListener("pmo:quick-capture", handler);
     };
   },
 

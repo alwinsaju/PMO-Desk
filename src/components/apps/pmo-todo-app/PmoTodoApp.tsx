@@ -10,6 +10,7 @@ import { NeedsAttentionStrip } from "./NeedsAttentionStrip";
 import { NewTodoDialog } from "./NewTodoDialog";
 import { PasteIntakeDialog } from "./PasteIntakeDialog";
 import { useDockBadgeStore } from "@/components/taskbar/dockBadgeStore";
+import { useDockRecents } from "@/components/taskbar/dockRecentsStore";
 import { useWindowContext } from "@/components/window-manager/titleSuffixStore";
 import { needsFirstRun } from "@/lib/pmo/firstRun";
 import type { Proposal } from "@/lib/pmo/types";
@@ -112,6 +113,23 @@ export function PmoTodoApp({ windowId }: { windowId: string }) {
     setAutoChaserFor(openRequest.chaser ? openRequest.todoId : null);
     clearOpenRequest(openRequest.id);
   }, [openRequest, loaded, clearOpenRequest]);
+
+  // Dock menu > Recent (q-22): remember the to-do just opened, and keep the saved ones in
+  // step with the list (a to-do that is gone drops out, a renamed one shows its new title).
+  const openedTitle = todoId
+    ? state?.todos.find((t) => t.id === todoId)?.title
+    : undefined;
+  useEffect(() => {
+    if (todoId && openedTitle) {
+      useDockRecents.getState().remember("pmo-todo", { id: todoId, title: openedTitle });
+    }
+  }, [todoId, openedTitle]);
+  const allTodos = state?.todos;
+  useEffect(() => {
+    if (!allTodos) return;
+    const titles = new Map(allTodos.map((t) => [t.id, t.title]));
+    useDockRecents.getState().sync("pmo-todo", (id) => titles.get(id));
+  }, [allTodos]);
 
   // Edits here (done, snooze, a new due date) show on the dock badge at once,
   // without waiting for the next 60 s reminder poll.

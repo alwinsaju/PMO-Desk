@@ -279,6 +279,7 @@ export function TodoList({
         state={state}
         view={view}
         onViewChange={onViewChange}
+        visible={visible}
         quickAdd={
           <QuickAddBar today={state.today} todos={state.todos} onSettled={onSettled} />
         }

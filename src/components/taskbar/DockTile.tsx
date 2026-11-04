@@ -8,6 +8,7 @@ import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
+  ContextMenuLabel,
   ContextMenuSeparator,
   ContextMenuTrigger,
   Tooltip,
@@ -71,6 +72,10 @@ interface DockTileProps {
     ButtonHTMLAttributes<HTMLButtonElement>,
     "draggable" | "onDragStart" | "onDragEnd"
   >;
+  /** A short "Recent" list at the top of the menu (the last few to-dos or templates
+   *  opened); needs `onOpenRecent` too. Nothing shows while the list is empty. */
+  recents?: readonly { id: string; title: string }[];
+  onOpenRecent?: (id: string) => void;
 }
 
 /**
@@ -102,6 +107,8 @@ export function DockTile({
   badgeMeaning,
   windowTitles = [],
   dragProps,
+  recents = [],
+  onOpenRecent,
 }: DockTileProps) {
   const badgeLabel = badgeText(badge);
   const hover = tileHover({ label, running, badge, meaning: badgeMeaning, windowTitles });
@@ -183,6 +190,22 @@ export function DockTile({
         </span>
       </ContextMenuTrigger>
       <ContextMenuContent>
+        {onOpenRecent && recents.length > 0 && (
+          <>
+            <ContextMenuLabel>Recent</ContextMenuLabel>
+            {recents.map((item) => (
+              <ContextMenuItem
+                key={item.id}
+                onSelect={() => onOpenRecent(item.id)}
+                title={item.title}
+                className="max-w-64"
+              >
+                <span className="truncate">{item.title}</span>
+              </ContextMenuItem>
+            ))}
+            <ContextMenuSeparator />
+          </>
+        )}
         {onNewWindow && running !== "none" && (
           <>
             <ContextMenuItem onSelect={onNewWindow}>New window</ContextMenuItem>

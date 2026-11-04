@@ -4,16 +4,36 @@ import { useId, useState, type ReactNode } from "react";
 import {
   BookmarkSimpleIcon,
   CaretDownIcon,
+  DownloadSimpleIcon,
   MagnifyingGlassIcon,
   TagIcon,
   XIcon,
 } from "@phosphor-icons/react";
-import { Button, Input } from "@/components/ui";
+import {
+  Button,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+  Input,
+} from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { toast } from "@/lib/notifications/toastStore";
 import { usePreferences } from "@/lib/preferences/preferencesStore";
 import { snoozeUntil } from "@/lib/pmo/due";
 import { noSpellcheck } from "@/lib/ui/noSpellcheck";
+import { downloadFile } from "@/lib/ui/downloadFile";
+import { buildXlsx, XLSX_MIME } from "@/lib/xlsx/writeXlsx";
+import {
+  exportScopeText,
+  todoExportFilename,
+  todosToCsv,
+  todosToSheets,
+  type ExportScope,
+} from "@/lib/pmo/todoExport";
+import { todayIso } from "@/lib/staff/dates";
 import {
   bulkPatches,
   bulkSummary,
@@ -43,12 +63,15 @@ export function ListTools({
   view,
   onViewChange,
   quickAdd,
+  visible,
 }: {
   state: PmoState;
   view: ViewState;
   onViewChange: (view: ViewState) => void;
   /** The quick-add box, laid out as the first control of the row. */
   quickAdd?: ReactNode;
+  /** The to-dos the list shows now (filter, tag and search applied): what "current list" exports. */
+  visible?: readonly Todo[];
 }) {
   const savedViews = usePreferences((s) => s.savedViews);
   const [naming, setNaming] = useState(false);
@@ -56,6 +79,29 @@ export function ListTools({
   const [statsOpen, setStatsOpen] = useState(false);
   const statsId = useId();
   const tags = tagRollup(state.todos, state.today);
+
+  const exportTodos = (scope: ExportScope, format: "csv" | "xlsx") => {
+    const todos = scope === "filtered" ? (visible ?? state.todos) : state.todos;
+    if (todos.length === 0) {
+      toast({ tone: "warning", message: "There are no to-dos to export." });
+      return;
+    }
+    try {
+      const name = todoExportFilename(scope, format, todayIso());
+      if (format === "csv") {
+        downloadFile(name, todosToCsv(todos), "text/csv;charset=utf-8");
+      } else {
+        downloadFile(name, buildXlsx(todosToSheets(todos)), XLSX_MIME);
+      }
+      toast({
+        tone: "success",
+        message: `Saved ${name} with ${todos.length} ${todos.length === 1 ? "to-do" : "to-dos"}.`,
+      });
+    } catch {
+      toast({ tone: "danger", message: "Could not create the export file." });
+    }
+  };
+  const currentCount = (visible ?? state.todos).length;
 
   const save = () => {
     const label = name.trim();
@@ -137,6 +183,42 @@ export function ListTools({
             Save view
           </Button>
         )}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-9"
+              aria-label="Export to-dos"
+              data-testid="todo-export"
+            >
+              <DownloadSimpleIcon size={14} />
+              Export
+              <CaretDownIcon size={11} weight="bold" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="max-w-72">
+            <DropdownMenuLabel className="text-ink-soft text-[12.5px] font-semibold tracking-normal whitespace-normal normal-case">
+              Export {exportScopeText("filtered", currentCount)}
+            </DropdownMenuLabel>
+            <DropdownMenuItem onSelect={() => exportTodos("filtered", "csv")}>
+              CSV, current list
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => exportTodos("filtered", "xlsx")}>
+              Excel, current list
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel className="text-ink-soft text-[12.5px] font-semibold tracking-normal whitespace-normal normal-case">
+              Export {exportScopeText("all", state.todos.length)}
+            </DropdownMenuLabel>
+            <DropdownMenuItem onSelect={() => exportTodos("all", "csv")}>
+              CSV, all to-dos
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => exportTodos("all", "xlsx")}>
+              Excel, all to-dos
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
         {tags.length > 0 && (
           <Button
             variant="ghost"

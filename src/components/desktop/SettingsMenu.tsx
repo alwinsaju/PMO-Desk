@@ -12,6 +12,7 @@ import {
   ArrowsClockwiseIcon,
   CircleNotchIcon,
   GearSixIcon,
+  KeyboardIcon,
   LightningIcon,
   ListChecksIcon,
   LockKeyOpenIcon,
@@ -43,6 +44,7 @@ import { restoreAppearanceFromServer } from "@/lib/theme";
 import { useTheme } from "@/lib/useTheme";
 import { useEngineRestart, type EngineRestartStatus } from "./useEngineRestart";
 import { useHardwareAcceleration } from "./useHardwareAcceleration";
+import { useQuickCaptureSetting } from "./useQuickCaptureSetting";
 import { useFastModel } from "./useFastModel";
 
 /**
@@ -210,6 +212,37 @@ function HardwareAccelerationRow() {
         </DropdownMenuItem>
       ) : null}
     </>
+  );
+}
+
+/** "Quick capture" - a global hotkey (Ctrl+Shift+Space) that brings PMO Desk forward from any
+ *  other program with the command bar ready for "/todo ...". Desktop app only, off by default
+ *  (a system-wide shortcut can clash with another program), and only while PMO Desk is
+ *  running. If another program already owns the keys the row stays on and says why. */
+function QuickCaptureRow() {
+  const { available, view, toggle } = useQuickCaptureSetting();
+  if (!available) return null;
+  return (
+    <DropdownMenuSwitchItem
+      checked={view.checked}
+      onCheckedChange={toggle}
+      className="group py-2.5"
+    >
+      <RowBody
+        icon={<KeyboardIcon size={18} weight="regular" aria-hidden />}
+        title="Quick capture hotkey"
+        hint={
+          <>
+            {view.hint}
+            {view.warning ? (
+              <span role="status" className="text-ink mt-0.5 block font-medium">
+                {view.warning}
+              </span>
+            ) : null}
+          </>
+        }
+      />
+    </DropdownMenuSwitchItem>
   );
 }
 
@@ -487,6 +520,7 @@ const settingsRows: { id: string; Row: ComponentType }[] = [
   { id: "reopen-apps", Row: ReopenAppsRow },
   { id: "all-settings", Row: AllSettingsRow },
   { id: "hardware-acceleration", Row: HardwareAccelerationRow },
+  { id: "quick-capture", Row: QuickCaptureRow },
   { id: "fast-model", Row: FastModelRow },
   { id: "restart-engine", Row: RestartEngineRow },
   { id: "setup", Row: SetupRow },

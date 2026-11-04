@@ -5,6 +5,7 @@ const {
   Notification,
   Tray,
   dialog,
+  globalShortcut,
   ipcMain,
   nativeImage,
   powerMonitor,
@@ -26,6 +27,7 @@ const { warmDevRoutes } = require("./dev-warmup.cjs");
 const { describeExitCode } = require("./exit-code.cjs");
 const portRetry = require("./port-retry.cjs");
 const pmoNotifier = require("./pmo-notifier.cjs");
+const quickCapture = require("./quick-capture.cjs");
 const recoveryPolicy = require("./renderer-recovery.cjs");
 const singleFlight = require("./single-flight.cjs");
 const trayPolicy = require("./tray-policy.cjs");
@@ -84,6 +86,18 @@ let attentionCount = 0;
 /** The page has registered its window.aiOsDesktop.onOpenTodo listener. */
 let rendererReady = false;
 let pendingOpen = null;
+/** Same idea for the quick-capture hotkey (window.aiOsDesktop.onQuickCapture): the page
+ *  has registered its listener, or a press is waiting for it to. */
+let quickCaptureReady = false;
+let pendingQuickCapture = false;
+/** The opt-in global hotkey (quick-capture.cjs). OFF unless the setting says so; the
+ *  setting file sits next to display-settings.json. */
+const quickCaptureFile = quickCapture.settingsFilePath(app.getPath("userData"));
+const quickCaptureControl = quickCapture.createQuickCapture({
+  globalShortcut,
+  onTrigger: () => triggerQuickCapture(),
+  log: (message) => desktopLog(message),
+});
 /** Skip the Tasks engine start/stop calls (they would touch the real engine):
  *  for testing the shell on its own, e.g. AI_OS_SKIP_TASKS_ENGINE=1. */
 const skipTasksEngine = process.env.AI_OS_SKIP_TASKS_ENGINE === "1";
@@ -175,6 +189,10 @@ async function startDesktopApp() {
   createWindow();
   closeSplash();
   startReminders();
+  // Opt-in global hotkey; nothing is registered unless the person turned it on.
+  if (quickCapture.readQuickCaptureSettings(quickCaptureFile).enabled) {
+    quickCaptureControl.enable();
+  }
   if (launch.mode === "live-dev") {
     // `next dev` compiles each route on first use; do that now, in the background.
     void warmDevRoutes({ baseUrl: appUrl }).then(({ warmed, failed }) =>
@@ -661,12 +679,16 @@ function createWindow() {
   mainWindow.on("closed", () => {
     mainWindow = undefined;
     rendererReady = false;
+    quickCaptureReady = false;
   });
   // A new page load has not registered its listener yet.
   mainWindow.webContents.on(
     "did-start-navigation",
     (_event, _url, _inPlace, isMainFrame) => {
-      if (isMainFrame) rendererReady = false;
+      if (isMainFrame) {
+        rendererReady = false;
+        quickCaptureReady = false;
+      }
     },
   );
   void mainWindow.loadURL(appUrl);
@@ -786,6 +808,19 @@ function openTodoFromNotification(todoId) {
   }
 }
 
+/** The quick-capture hotkey was pressed: show the window and have the page put the
+ *  cursor in the command bar. Like a clicked reminder, a press that arrives before the
+ *  page has registered waits for it. There is no second window. */
+function triggerQuickCapture() {
+  if (isQuitting) return;
+  showMainWindow();
+  if (quickCaptureReady && mainWindow) {
+    mainWindow.webContents.send("pmo:quick-capture");
+  } else {
+    pendingQuickCapture = true;
+  }
+}
+
 /** Taskbar overlay badge (Windows) and the tray tooltip. */
 function applyBadge(count) {
   attentionCount = Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0;
@@ -883,6 +918,43 @@ ipcMain.handle("pmo:renderer-ready", (event) => {
   const pending = pendingOpen;
   pendingOpen = null;
   return pending;
+});
+
+ipcMain.handle("pmo:quick-capture-ready", (event) => {
+  if (!isFromMainWindow(event)) {
+    return false;
+  }
+  quickCaptureReady = true;
+  const pending = pendingQuickCapture;
+  pendingQuickCapture = false;
+  return pending;
+});
+
+/** Settings > Quick capture: what the hotkey is and whether it is really registered. */
+ipcMain.handle("quickcapture:get-state", (event) =>
+  isFromMainWindow(event) ? quickCaptureControl.snapshot() : null,
+);
+
+/** Turns the hotkey on or off: saves the choice, then registers or unregisters it right
+ *  away (no restart). A shortcut another app already owns is not an exception: the state
+ *  comes back with `error` saying so, and the saved choice stays ON so the next start
+ *  tries again. */
+ipcMain.handle("quickcapture:set-enabled", (event, enabled) => {
+  if (!isFromMainWindow(event) || typeof enabled !== "boolean") {
+    return null;
+  }
+  let saveError;
+  try {
+    quickCapture.writeQuickCaptureSettings(quickCaptureFile, { enabled });
+  } catch (error) {
+    desktopLog(
+      `Could not save the quick capture setting: ${error && error.message}`,
+      "error",
+    );
+    saveError = "Could not save the setting.";
+  }
+  const state = quickCaptureControl.setEnabled(enabled);
+  return saveError && !state.error ? { ...state, error: saveError } : state;
 });
 
 // ---------------------------------------------------------------------------
@@ -1279,6 +1351,8 @@ app.on("before-quit", (event) => {
   if (reminderPoller) {
     reminderPoller.stop();
   }
+  // Give the global shortcut back to Windows before the (slow) shutdown starts.
+  quickCaptureControl.dispose();
   if (tray) {
     tray.destroy();
     tray = undefined;

@@ -21,7 +21,7 @@ Work happens on one git branch per phase, each started from the previous phase's
 | ------------ | -------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1 Foundation | `phase-1-foundation` | All 9 items built  | Typecheck clean. Formatting clean. 3060 of 3060 tests pass (baseline before any change: 3029 of 3030, the one failure a flaky Windows file-rename error in the backup test that passed on rerun). Lint could not run: `eslint-plugin-react-hooks` is missing from this checkout's `node_modules`. |
 | 2 Build      | `phase-2-build`      | All 16 items built | Typecheck clean. Formatting clean. 3158 of 3158 tests pass (one older staff-store test was updated for the new offboard reply). Lint could not run (same missing plugin).                                                                                                                         |
-| 3 Scale      | not started          |                    |                                                                                                                                                                                                                                                                                                   |
+| 3 Scale      | `phase-3-scale`      | All 15 items built | Typecheck clean. Formatting clean. 3348 of 3348 tests pass. Lint could not run (same missing plugin).                                                                                                                                                                                             |
 | 4 Later      | not started          |                    |                                                                                                                                                                                                                                                                                                   |
 
 **What "built" means here:** the code is written, typechecks and has unit tests for its logic. Nobody has looked at the screens. The review machine has no Node on its PATH (the Electron binary in `node_modules` was used as Node), and a live run of the app uses the real OneDrive `AI-OS` folders, so it must not be started without a throwaway data folder. Look at each changed screen in a real run before release.
@@ -50,6 +50,24 @@ Work happens on one git branch per phase, each started from the previous phase's
 - `q-10`: register Duplicate is in the record dialog only and opens an unsaved prefilled Add dialog. To-do Duplicate has an Undo toast.
 - `pgm-1` and `ops-1`: both Dashboard cards are hidden by default so saved layouts do not change. The scorecard shows counts for the 8 registers with alert rules, not a percentage.
 - `ops-4`: six optional vendor fields (two milestones and a payment note, each with a date). A passed date stays late until you clear it. All late and soon vendor alerts now reach Today. The morning briefing toast does not show contract rows.
+
+**Decisions made while building Phase 3** (change them if you disagree):
+
+- `ui-16`: the preview shows all six snap zones and is drawn by direct DOM updates from the drag callback. The controller is `snapPreviewController.ts` (a `snapPreview.ts` next to `SnapPreview.tsx` clashed on case-insensitive file systems).
+- `q-22`: Recent covers PMO To-Do and Templates, last 4 each, kept in browser storage. Closed to-dos outside the server's capped list drop off.
+- `q-15`: opt-in, off by default. Accelerator Ctrl+Shift+Space (it overrides Word's non-breaking space while the setting is on). A press focuses the command bar pre-filled with `/todo `, not the PMO To-Do quick-add box.
+- `q-20`: slash commands apply only when the text starts with `/`. A recognised command is rewritten to a sentence the existing routers understand, and that sentence is what the history records. `/done <x>` with no match falls to the model, as "mark x done" does.
+- `q-16`: all registers get tick boxes, bulk delete with one Undo, and Staff gets bulk offboard with one Undo. Bulk actions touch only ticked rows that are on screen. This also changed the Phase 2 to-do bulk action, which used to include hidden ticked rows. No bulk permanent delete.
+- `q-21`: J, K, Home, End and E, with Up and Down also in Staff and Templates. Toolkit tiles get no arrow keys (grid). Register rows and cards got the keys too.
+- `pm-7`: new optional long-text `impactNote` field on change requests (a required field would delete old records). The suggestion goes into the field for editing and is never saved by the route. The note check catches invented names, figures and dates but not a false claim made of true words, so a person must read it.
+- `ops-5`: accepts only an exact existing Category, otherwise suggests nothing.
+- `pgm-4`: no AI narrative (the existing helper works on to-do data). The pack groups by project only if any RAID or change record has a Project.
+- `ai-3`: two new template places (`app:toolkit:timesheet-chaser`, `app:toolkit:status-report`). Starters are written only when a template library is first created, so an existing library needs the template created by hand. Once assigned, output goes through `tidyText`, which can trim blank-field whitespace.
+- `ops-6`: all-day events only. The Time text is copied into the event description, not parsed. Only saved records are exported.
+- `ops-3`: field names only, never values. Capped at 2000 entries per tool, so one active record can push out older entries. A history write failure never blocks a save.
+- `q-1`: copies subject (or title line) and body with placeholders, including unsaved edits. To and Cc are left out.
+- `q-17`: the last-opened time is saved at launch, not at close, so your own actions from the last session appear in the next recap. The recap covers the PMO audit log only and says so.
+- `q-19`: CSV cells starting with `=`, `+`, `-` or `@` get an apostrophe. Excel stores text. The Staff, Activity and register CSV exports are still unguarded.
 
 ## Rules every item must respect
 
@@ -116,23 +134,23 @@ Everything else is independent and can be built in any order.
 
 ### Phase 3: Scale (next quarter), 15 items
 
-| ID      | Item                                                  | Area                 | Priority | Effort | Status                        |
-| ------- | ----------------------------------------------------- | -------------------- | -------- | ------ | ----------------------------- |
-| `ui-16` | [Live snap preview while dragging a window](#ui-16)   | UI polish            | Medium   | 2      | Reshaped after the code check |
-| `pm-7`  | [AI-drafted impact note on change requests](#pm-7)    | Project management   | Low      | 3      | Reshaped after the code check |
-| `pgm-4` | [Weekly pack: status, changes and late risks](#pgm-4) | Programme management | Medium   | 3      | Reshaped after the code check |
-| `ops-6` | [Calendar file export for governance events](#ops-6)  | PMO operations       | Medium   | 2      | Reshaped after the code check |
-| `ops-3` | [Local change history per register record](#ops-3)    | PMO operations       | Low      | 3      | Reshaped after the code check |
-| `ops-5` | [AI suggestion for the lesson Category](#ops-5)       | PMO operations       | Low      | 3      | Reshaped after the code check |
-| `ai-3`  | [Template targets for Toolkit drafts](#ai-3)          | AI and automation    | Medium   | 3      | Reshaped after the code check |
-| `q-1`   | [Copy a template's wording](#q-1)                     | Quality of life      | Low      | 1      | Added after the code check    |
-| `q-15`  | [Global quick-capture hotkey](#q-15)                  | Quality of life      | Medium   | 3      | Added after the code check    |
-| `q-16`  | [Bulk select in registers and Staff](#q-16)           | Quality of life      | Medium   | 3      | Added after the code check    |
-| `q-17`  | ["Since you last opened" recap](#q-17)                | Quality of life      | Medium   | 3      | Added after the code check    |
-| `q-19`  | [Export the to-do list to Excel or CSV](#q-19)        | Quality of life      | Low      | 2      | Added after the code check    |
-| `q-20`  | [Slash shortcuts in the command bar](#q-20)           | Quality of life      | Low      | 2      | Added after the code check    |
-| `q-21`  | [Keyboard navigation in more lists](#q-21)            | Quality of life      | Low      | 3      | Added after the code check    |
-| `q-22`  | [Recent items in the dock right-click menu](#q-22)    | Quality of life      | Low      | 3      | Added after the code check    |
+| ID      | Item                                                  | Area                 | Priority | Effort | Status                                           |
+| ------- | ----------------------------------------------------- | -------------------- | -------- | ------ | ------------------------------------------------ |
+| `ui-16` | [Live snap preview while dragging a window](#ui-16)   | UI polish            | Medium   | 2      | **Built** (`phase-3-scale`), not seen in the app |
+| `pm-7`  | [AI-drafted impact note on change requests](#pm-7)    | Project management   | Low      | 3      | **Built** (`phase-3-scale`), not seen in the app |
+| `pgm-4` | [Weekly pack: status, changes and late risks](#pgm-4) | Programme management | Medium   | 3      | **Built** (`phase-3-scale`), not seen in the app |
+| `ops-6` | [Calendar file export for governance events](#ops-6)  | PMO operations       | Medium   | 2      | **Built** (`phase-3-scale`), not seen in the app |
+| `ops-3` | [Local change history per register record](#ops-3)    | PMO operations       | Low      | 3      | **Built** (`phase-3-scale`), not seen in the app |
+| `ops-5` | [AI suggestion for the lesson Category](#ops-5)       | PMO operations       | Low      | 3      | **Built** (`phase-3-scale`), not seen in the app |
+| `ai-3`  | [Template targets for Toolkit drafts](#ai-3)          | AI and automation    | Medium   | 3      | **Built** (`phase-3-scale`), not seen in the app |
+| `q-1`   | [Copy a template's wording](#q-1)                     | Quality of life      | Low      | 1      | **Built** (`phase-3-scale`), not seen in the app |
+| `q-15`  | [Global quick-capture hotkey](#q-15)                  | Quality of life      | Medium   | 3      | **Built** (`phase-3-scale`), not seen in the app |
+| `q-16`  | [Bulk select in registers and Staff](#q-16)           | Quality of life      | Medium   | 3      | **Built** (`phase-3-scale`), not seen in the app |
+| `q-17`  | ["Since you last opened" recap](#q-17)                | Quality of life      | Medium   | 3      | **Built** (`phase-3-scale`), not seen in the app |
+| `q-19`  | [Export the to-do list to Excel or CSV](#q-19)        | Quality of life      | Low      | 2      | **Built** (`phase-3-scale`), not seen in the app |
+| `q-20`  | [Slash shortcuts in the command bar](#q-20)           | Quality of life      | Low      | 2      | **Built** (`phase-3-scale`), not seen in the app |
+| `q-21`  | [Keyboard navigation in more lists](#q-21)            | Quality of life      | Low      | 3      | **Built** (`phase-3-scale`), not seen in the app |
+| `q-22`  | [Recent items in the dock right-click menu](#q-22)    | Quality of life      | Low      | 3      | **Built** (`phase-3-scale`), not seen in the app |
 
 ### Phase 4: Later (only if needed), 5 items
 

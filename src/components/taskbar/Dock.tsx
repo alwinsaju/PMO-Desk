@@ -21,6 +21,9 @@ import { DockTile, dockTileClassName, type TileRunState } from "./DockTile";
 import { builtInAppIds, builtInApps } from "./pinnedApps";
 import { launchBuiltInApp } from "./launchBuiltInApp";
 import { useDockBadgeStore } from "./dockBadgeStore";
+import { isDockRecentApp } from "./dockRecents";
+import { useDockRecents } from "./dockRecentsStore";
+import { openRecentItem } from "./openRecent";
 import { startSessionRestore } from "./sessionRestore";
 import { APP_DRAG_MIME_TYPE, usePinnedAppsStore } from "./pinnedAppsStore";
 import {
@@ -177,6 +180,7 @@ export function Dock() {
   );
   const badges = useDockBadgeStore((s) => s.badges);
   const meanings = useDockBadgeStore((s) => s.meanings);
+  const recents = useDockRecents((s) => s.recents);
   // Each open window as "appId<NUL>title", so a tile's tooltip can list them.
   const windowEntries = useWindowStore(
     useShallow((s) =>
@@ -418,6 +422,12 @@ export function Dock() {
                   badge={badges[id]}
                   badgeMeaning={meanings[id]}
                   windowTitles={titlesOf(id)}
+                  recents={recents[id]}
+                  onOpenRecent={
+                    isDockRecentApp(id)
+                      ? (itemId) => openRecentItem(id, itemId)
+                      : undefined
+                  }
                   dragProps={
                     pinned
                       ? {

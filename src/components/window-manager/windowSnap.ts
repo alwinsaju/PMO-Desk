@@ -57,6 +57,25 @@ export function edgeZone(
   return null;
 }
 
+export interface SnapTarget {
+  zone: SnapZone;
+  rect: Rect;
+}
+
+/** The zone a drop at `point` would snap to and the rect the window would fill, or null
+ *  when no zone applies. The live preview and the drop both go through this, built on
+ *  `snapRect` so the preview follows the insets exactly as the snap does. */
+export function snapTarget(
+  point: { x: number; y: number },
+  viewport: Viewport,
+  insets: Insets,
+  edge?: number,
+  corner?: number,
+): SnapTarget | null {
+  const zone = edgeZone(point, viewport, edge, corner);
+  return zone ? { zone, rect: snapRect(zone, viewport, insets) } : null;
+}
+
 export type SnapKey = SnapZone | "maximize" | "restore";
 
 /** Ctrl+Alt+arrows: left/right halves, up = maximise, down = restore the size it had.

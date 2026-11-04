@@ -22,6 +22,8 @@ export interface PlatformPrefs {
   updates: UpdatePrefs;
   /** When a backup was last created from Settings > Data (ISO; "" = never). */
   lastBackupAt: string;
+  /** When the app was last opened, for the "Since you last opened" recap (ISO; "" = never). */
+  lastOpenedAt: string;
 }
 
 export const DEFAULT_UPDATE_PREFS: UpdatePrefs = {
@@ -38,6 +40,7 @@ export const DEFAULT_PLATFORM_PREFS: PlatformPrefs = {
   sampleLoaded: false,
   updates: DEFAULT_UPDATE_PREFS,
   lastBackupAt: "",
+  lastOpenedAt: "",
 };
 
 const str = (v: unknown, max: number): string =>
@@ -66,5 +69,8 @@ export function sanitizePlatformPrefs(value: unknown): PlatformPrefs {
     lastBackupAt: Number.isNaN(Date.parse(str(raw.lastBackupAt, 40)))
       ? ""
       : str(raw.lastBackupAt, 40),
+    lastOpenedAt: Number.isNaN(Date.parse(str(raw.lastOpenedAt, 40)))
+      ? ""
+      : str(raw.lastOpenedAt, 40),
   };
 }

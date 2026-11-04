@@ -21,6 +21,9 @@ export interface StatusReport {
   subject: string;
   text: string;
   counts: Record<Rag, number>;
+  /** The placeholder values for the "Toolkit status report" template (see targets.ts). `my_name`
+   *  is not here: the caller adds it, because the report itself does not know who is signed in. */
+  values: Record<string, string>;
 }
 
 /** The RAID and change records (with their definitions) a report can add under each project. */
@@ -59,12 +62,7 @@ export function statusReport(
         today,
       )
     : null;
-  const lines = [
-    `Weekly status report: ${formatDate(today)}`,
-    "",
-    `Overall: ${overall.toUpperCase()} (${counts.Red} red, ${counts.Amber} amber, ${counts.Green} green)`,
-    "",
-  ];
+  const lines: string[] = [];
   for (const p of ordered) {
     const owner = textOf(p, "owner");
     lines.push(
@@ -89,11 +87,28 @@ export function statusReport(
       if (hasDigest(group)) lines.push(label, ...digestLines(group), "");
     }
   }
+  const heading = `Weekly status report: ${formatDate(today)}`;
+  const overallLine = `Overall: ${overall.toUpperCase()} (${counts.Red} red, ${counts.Amber} amber, ${counts.Green} green)`;
+  const projectsText = lines.join("\n").trimEnd();
+  // The same pieces the template place "Toolkit status report" fills (targets.ts), made here by code.
+  // With the starter wording they join back into exactly `text`.
+  const text = [heading, "", overallLine, "", projectsText].join("\n").trimEnd();
   return {
     overall,
     subject: `Weekly status report: ${formatDayMonth(today)} (${overall})`,
-    text: lines.join("\n").trimEnd(),
+    text,
     counts,
+    values: {
+      date: formatDate(today),
+      date_short: formatDayMonth(today),
+      overall,
+      overall_upper: overall.toUpperCase(),
+      red: String(counts.Red),
+      amber: String(counts.Amber),
+      green: String(counts.Green),
+      projects: projectsText,
+      report: text,
+    },
   };
 }
 

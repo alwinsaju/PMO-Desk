@@ -90,25 +90,59 @@ export interface Chaser {
   withoutEmail: string[];
 }
 
+/** Fills the "Toolkit timesheet chaser" template (the assigned one) with the values made by code, or
+ *  returns the built-in wording when no template is set. The Templates app's `useTemplateText(...).fill`
+ *  has exactly this shape. */
+export type FillText = (
+  values: Record<string, string>,
+  fallback: { subject: string; body: string },
+) => { subject: string; body: string };
+
+/** The pieces the timesheet chaser template can use, by the names in targets.ts. */
+export function chaserValues(
+  monday: string,
+  names: readonly string[],
+  me: string,
+): Record<string, string> {
+  const first = (n: string) => n.split(" ")[0] ?? n;
+  return {
+    greeting: `Hi ${names.length === 1 ? first(names[0]!) : "all"},`,
+    week_start: formatDayMonth(monday),
+    week_end: formatDayMonth(addDays(monday, 4)),
+    people: names.join(", "),
+    count: String(names.length),
+    my_name: me || "",
+  };
+}
+
+/** The chaser for the people given. With `fill` (an assigned template), its wording is used; without
+ *  one, or when the template renders empty, the built-in wording below. Text only; nothing is sent. */
 export function timesheetChaser(
   monday: string,
   missing: readonly { person: string; email: string }[],
   me: string,
+  fill?: FillText,
 ): Chaser {
   const names = missing.map((m) => m.person);
-  const first = (n: string) => n.split(" ")[0] ?? n;
-  const body = [
-    `Hi ${names.length === 1 ? first(names[0]!) : "all"},`,
-    "",
-    `Our records show no timesheet yet for the week of ${formatDayMonth(monday)} to ${formatDayMonth(addDays(monday, 4))}.`,
-    "Could you please file it today, or let me know if it is not needed (for example, you were on leave)?",
-    "",
-    "Thanks,",
-    me || "",
-  ].join("\n");
+  const values = chaserValues(monday, names, me);
+  const builtIn = {
+    subject: `Timesheet reminder: week of ${values.week_start}`,
+    body: [
+      values.greeting,
+      "",
+      `Our records show no timesheet yet for the week of ${values.week_start} to ${values.week_end}.`,
+      "Could you please file it today, or let me know if it is not needed (for example, you were on leave)?",
+      "",
+      "Thanks,",
+      values.my_name,
+    ]
+      .join("\n")
+      .trimEnd(),
+  };
+  const text = fill ? fill(values, builtIn) : builtIn;
   return {
-    subject: `Timesheet reminder: week of ${formatDayMonth(monday)}`,
-    body: body.trimEnd(),
+    subject: text.subject,
+    body: text.body,
     to: missing
       .map((m) => m.email)
       .filter(Boolean)
@@ -132,6 +166,7 @@ export function personChasers(
   monday: string,
   missing: readonly { person: string; email: string }[],
   me: string,
+  fill?: FillText,
 ): PersonChaser[] {
   const seen = new Set<string>();
   const out: PersonChaser[] = [];
@@ -139,7 +174,7 @@ export function personChasers(
     const key = m.person.toLowerCase().trim();
     if (seen.has(key)) continue;
     seen.add(key);
-    const one = timesheetChaser(monday, [m], me);
+    const one = timesheetChaser(monday, [m], me, fill);
     out.push({
       person: m.person,
       email: m.email.trim(),

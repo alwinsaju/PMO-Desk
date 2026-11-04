@@ -21,6 +21,7 @@ const pick = (s: PlatformPrefs): PlatformPrefs => ({
   sampleLoaded: s.sampleLoaded,
   updates: s.updates,
   lastBackupAt: s.lastBackupAt,
+  lastOpenedAt: s.lastOpenedAt,
 });
 
 export const usePlatformPrefs = create<PlatformPrefsState>()(

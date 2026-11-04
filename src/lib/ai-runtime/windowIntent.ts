@@ -73,6 +73,11 @@ function normalize(text: string): string {
   return text.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
+/** Every name the bar accepts for an app ("staff", "directory", ...), for "did you mean". */
+export function knownAppNames(): string[] {
+  return AI_APP_IDS.flatMap((appId) => [...APP_ALIASES[appId]]);
+}
+
 export function appIdFromName(name: string): AiAppId | null {
   const key = normalize(name);
   for (const appId of AI_APP_IDS) {

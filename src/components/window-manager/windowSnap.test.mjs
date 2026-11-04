@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { edgeZone, snapKey, snapRect, SNAP_GAP } from "./windowSnap.ts";
+import { edgeZone, snapKey, snapRect, snapTarget, SNAP_GAP } from "./windowSnap.ts";
 import { mruOrder, stepIndex, switcherKey } from "./windowSwitch.ts";
 
 const vp = { width: 1426, height: 850 };
@@ -39,6 +39,49 @@ describe("edgeZone", () => {
     assert.equal(edgeZone({ x: 700, y: 400 }, vp), null);
     assert.equal(edgeZone({ x: 700, y: 2 }, vp), null);
     assert.equal(edgeZone({ x: 700, y: 848 }, vp), null);
+  });
+});
+
+describe("snapTarget (live preview)", () => {
+  const points = {
+    left: { x: 0, y: 400 },
+    right: { x: 1426, y: 400 },
+    "top-left": { x: 8, y: 90 },
+    "top-right": { x: 1418, y: 0 },
+    "bottom-left": { x: 3, y: 850 - 90 },
+    "bottom-right": { x: 1426, y: 849 },
+  };
+
+  it("covers all six zones, with the rect the drop will use", () => {
+    for (const [zone, point] of Object.entries(points)) {
+      const target = snapTarget(point, vp, insets);
+      assert.equal(target.zone, zone);
+      assert.deepEqual(target.rect, snapRect(zone, vp, insets));
+    }
+  });
+
+  it("is null where no zone applies", () => {
+    assert.equal(snapTarget({ x: 700, y: 400 }, vp, insets), null);
+    assert.equal(snapTarget({ x: 9, y: 400 }, vp, insets), null);
+    assert.equal(snapTarget({ x: 1417, y: 400 }, vp, insets), null);
+    assert.equal(snapTarget({ x: 700, y: 0 }, vp, insets), null);
+  });
+
+  it("switches between a half and a quarter at the corner band", () => {
+    assert.equal(snapTarget({ x: 2, y: 91 }, vp, insets).zone, "left");
+    assert.equal(snapTarget({ x: 2, y: 90 }, vp, insets).zone, "top-left");
+    assert.equal(snapTarget({ x: 2, y: 850 - 91 }, vp, insets).zone, "left");
+    assert.equal(snapTarget({ x: 2, y: 850 - 90 }, vp, insets).zone, "bottom-left");
+  });
+
+  it("follows the insets", () => {
+    const wide = { side: 40, top: 100, bottom: 120 };
+    const a = snapTarget(points.left, vp, insets).rect;
+    const b = snapTarget(points.left, vp, wide).rect;
+    assert.equal(b.x, 40);
+    assert.equal(b.y, 100);
+    assert.equal(b.height, 850 - 100 - 120);
+    assert.notDeepEqual(a, b);
   });
 });
 

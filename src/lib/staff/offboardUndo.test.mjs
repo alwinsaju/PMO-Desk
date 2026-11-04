@@ -2,7 +2,7 @@
 // and undoing restores the profile (with its roster link) first, then exactly the dropped leave.
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { readOffboardUndo, undoOffboard } from "./offboardUndo.ts";
+import { readOffboardUndo, undoOffboard, undoOffboardMany } from "./offboardUndo.ts";
 
 const leave = (id, employeeId) => ({
   id,
@@ -90,5 +90,54 @@ describe("undoOffboard", () => {
     assert.equal(result.ok, false);
     assert.match(result.reason, /back on the roster/);
     assert.match(result.reason, /Offline\./);
+  });
+});
+
+describe("undoOffboardMany", () => {
+  const undo = {
+    timeOff: [leave("t1", "e1"), leave("t2", "e2"), leave("t3", "e3")],
+    unlinked: [
+      { memberId: "m1", employeeId: "e1" },
+      { memberId: "m3", employeeId: "e3" },
+    ],
+  };
+  const actionsWith = (calls, over = {}) => ({
+    restore: async (ids, relink) => (calls.push(["restore", ids, relink]), { ok: true }),
+    addTimeOff: async (r) => (
+      calls.push(["addTimeOff", r.map((x) => x.id)]),
+      { ok: true }
+    ),
+    ...over,
+  });
+
+  it("restores everyone in one call with only their links, then only their leave", async () => {
+    const calls = [];
+    const result = await undoOffboardMany(["e1", "e2"], undo, actionsWith(calls));
+    assert.deepEqual(result, { ok: true });
+    assert.deepEqual(calls, [
+      ["restore", ["e1", "e2"], [{ memberId: "m1", employeeId: "e1" }]],
+      ["addTimeOff", ["t1", "t2"]],
+    ]);
+  });
+
+  it("adds nothing when the restore fails", async () => {
+    const calls = [];
+    const result = await undoOffboardMany(
+      ["e1", "e2"],
+      undo,
+      actionsWith(calls, { restore: async () => ({ ok: false, reason: "Taken." }) }),
+    );
+    assert.deepEqual(result, { ok: false, reason: "Taken." });
+    assert.deepEqual(calls, []);
+  });
+
+  it("says they are all back when only the leave could not be added", async () => {
+    const result = await undoOffboardMany(
+      ["e1", "e2"],
+      undo,
+      actionsWith([], { addTimeOff: async () => ({ ok: false, reason: "Offline." }) }),
+    );
+    assert.equal(result.ok, false);
+    assert.match(result.reason, /They are all back on the roster/);
   });
 });

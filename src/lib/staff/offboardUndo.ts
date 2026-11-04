@@ -46,21 +46,33 @@ export interface UndoActions {
 
 /** Puts one offboarded person back as they were: the profile first, then the time off that was
  *  deleted. If only the second step fails the person is still back, and the reason says so. */
-export async function undoOffboard(
+export function undoOffboard(
   personId: string,
   undo: OffboardUndo,
   actions: UndoActions,
 ): Promise<Result> {
-  const relink = undo.unlinked.filter((l) => l.employeeId === personId);
-  const timeOff = undo.timeOff.filter((r) => r.employeeId === personId);
-  const restored = await actions.restore([personId], relink);
+  return undoOffboardMany([personId], undo, actions);
+}
+
+/** Puts several offboarded people back in one go (bulk "Remove from roster"): one restore for
+ *  all of them with only their own roster links, then only their own time off. Same failure
+ *  rule as `undoOffboard`: if only the time off fails, the people are still back. */
+export async function undoOffboardMany(
+  personIds: readonly string[],
+  undo: OffboardUndo,
+  actions: UndoActions,
+): Promise<Result> {
+  const ids = new Set(personIds);
+  const relink = undo.unlinked.filter((l) => ids.has(l.employeeId));
+  const timeOff = undo.timeOff.filter((r) => ids.has(r.employeeId));
+  const restored = await actions.restore([...ids], relink);
   if (!restored.ok) return restored;
   if (timeOff.length === 0) return { ok: true };
   const added = await actions.addTimeOff(timeOff);
   if (!added.ok) {
     return {
       ok: false,
-      reason: `They are back on the roster, but their time off could not be added again. ${added.reason}`,
+      reason: `${ids.size === 1 ? "They are" : "They are all"} back on the roster, but their time off could not be added again. ${added.reason}`,
     };
   }
   return { ok: true };

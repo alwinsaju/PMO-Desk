@@ -33,6 +33,7 @@ import { cn } from "@/lib/cn";
 import { toast } from "@/lib/notifications/toastStore";
 import { easeEntrance, rowEnterClass, rowEnterStyle } from "@/lib/motion";
 import { useChangeCount } from "@/lib/useChangeCount";
+import { nameList, offboardConfirmText, offboardTitle } from "@/lib/staff/bulkOffboard";
 import { formatDate, relativeDays, todayIso } from "@/lib/staff/dates";
 import {
   NO_FILTER,
@@ -52,6 +53,14 @@ import {
   type SortState,
 } from "@/lib/staff/employees";
 import { useStaffStore } from "@/lib/staff/staffStore";
+import {
+  allSelected,
+  selectedText,
+  selectionView,
+  toggleAll,
+  toggleId,
+  withoutIds,
+} from "@/lib/ui/multiSelect";
 import { noSpellcheck } from "@/lib/ui/noSpellcheck";
 import {
   COLUMN_WIDTHS_KEY,
@@ -69,11 +78,14 @@ import {
   type DirectoryColumnKey,
 } from "@/lib/staff/layout";
 import type { Employee } from "@/lib/staff/types";
+import { handleRowKey } from "../rowNav";
+import { offboardMany } from "./bulkOffboardActions";
 import { EmployeeDialog } from "./EmployeeDialog";
 import { EmployeePane } from "./EmployeePane";
 import { ImportDialog } from "./ImportDialog";
 import { readSetting, writeSetting } from "./localSetting";
 import {
+  ConfirmDialog,
   DASH,
   EmployeeAvatar,
   EmptyState,
@@ -122,6 +134,12 @@ export function DirectoryTab() {
   const [sort, setSort] = useState<SortState>({ key: "name", dir: "asc" });
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [paneOpen, setPaneOpen] = useState(false);
+  /** People ticked for a bulk action (separate from the one picked for the details pane). */
+  const [ticked, setTicked] = useState<ReadonlySet<string>>(new Set());
+  const [removing, setRemoving] = useState<{
+    busy: boolean;
+    error: string | null;
+  } | null>(null);
   const [dialog, setDialog] = useState<
     { kind: "add" } | { kind: "edit"; employee: Employee } | { kind: "import" } | null
   >(null);
@@ -155,11 +173,27 @@ export function DirectoryTab() {
     [employees, filter, sort],
   );
   const stats = useMemo(() => rosterStats(employees, today), [employees, today]);
+  // A bulk action only reaches ticked people who are on screen, never ones a filter hides.
+  const tickedView = useMemo(
+    () =>
+      selectionView(
+        shown,
+        employees.map((e) => e.id),
+        ticked,
+      ),
+    [shown, employees, ticked],
+  );
+  const shownIds = useMemo(() => shown.map((e) => e.id), [shown]);
   const ops = useMemo(() => distinctValues(employees, "op"), [employees]);
   const offerings = useMemo(() => distinctValues(employees, "offering"), [employees]);
   const levels = useMemo(() => distinctValues(employees, "level"), [employees]);
   const columns = useMemo(
-    () => fitColumns(visibleColumns(employees), widths, tableWidth),
+    () =>
+      fitColumns(
+        visibleColumns(employees),
+        widths,
+        tableWidth > 0 ? tableWidth - SELECT_COL_WIDTH : 0,
+      ),
     [employees, widths, tableWidth],
   );
 
@@ -189,6 +223,16 @@ export function DirectoryTab() {
     key: K,
     value: DirectoryFilter[K],
   ) => setFilter((f) => ({ ...f, [key]: value }));
+
+  const removeTicked = async () => {
+    const ids = tickedView.visible.map((e) => e.id);
+    setRemoving({ busy: true, error: null });
+    const result = await offboardMany(ids);
+    if (result.ok) {
+      setRemoving(null);
+      setTicked((cur) => withoutIds(cur, ids));
+    } else setRemoving({ busy: false, error: result.reason });
+  };
 
   if (status === "idle" || (status === "loading" && employees.length === 0)) {
     return <SkeletonList rows={8} label="Loading the roster" className="px-5 py-2" />;
@@ -312,6 +356,29 @@ export function DirectoryTab() {
           </div>
         </div>
 
+        {(tickedView.visible.length > 0 || tickedView.hidden > 0) && (
+          <div
+            data-testid="staff-bulk-bar"
+            className="flex flex-wrap items-center gap-2 px-5 pb-2 text-[12.5px]"
+          >
+            <span className="text-ink-soft" aria-live="polite">
+              {selectedText(tickedView.visible.length, tickedView.hidden)}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-red"
+              disabled={tickedView.visible.length === 0}
+              onClick={() => setRemoving({ busy: false, error: null })}
+            >
+              Remove {tickedView.visible.length} from roster
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => setTicked(new Set())}>
+              Clear selection
+            </Button>
+          </div>
+        )}
+
         <div ref={tableAreaRef} className="scroll-thin min-h-0 flex-1 overflow-y-auto">
           {employees.length === 0 ? (
             <EmptyState
@@ -349,6 +416,10 @@ export function DirectoryTab() {
                 setSelectedId(id);
                 setPaneOpen(true);
               }}
+              ticked={ticked}
+              allTicked={allSelected(ticked, shownIds)}
+              onTick={(id) => setTicked((cur) => toggleId(cur, id))}
+              onTickAll={() => setTicked((cur) => toggleAll(cur, shownIds))}
             />
           )}
         </div>
@@ -441,8 +512,28 @@ export function DirectoryTab() {
         open={dialog?.kind === "import"}
         onOpenChange={(open) => !open && setDialog(null)}
       />
+      <ConfirmDialog
+        open={removing !== null}
+        title={offboardTitle(tickedView.visible.length)}
+        description={bulkRemoveText(tickedView.visible)}
+        confirmLabel={`Remove ${tickedView.visible.length} from roster`}
+        busy={removing?.busy || tickedView.visible.length === 0}
+        error={removing?.error}
+        onConfirm={() => void removeTicked()}
+        onOpenChange={(open) => !open && !removing?.busy && setRemoving(null)}
+      />
     </div>
   );
+}
+
+/** Width of the tick-box column. */
+const SELECT_COL_WIDTH = 44;
+
+/** The confirmation text for a bulk remove: who, then what offboarding does. */
+function bulkRemoveText(people: readonly Employee[]): string {
+  const { names, more } = nameList(people);
+  const who = names.join(", ") + (more > 0 ? ` and ${more} more` : "");
+  return `${who}. ${offboardConfirmText()}`;
 }
 
 /** The sort a column header triggers; the employee column sorts by name. */
@@ -538,6 +629,10 @@ function EmployeeTable({
   onWidth,
   sort,
   onSort,
+  ticked,
+  allTicked,
+  onTick,
+  onTickAll,
 }: {
   employees: Employee[];
   selectedId: string | null;
@@ -549,11 +644,17 @@ function EmployeeTable({
   onWidth: (key: DirectoryColumnKey, width: number) => void;
   sort: SortState;
   onSort: (key: SortKey) => void;
+  /** Ticked people (bulk remove), the header box, and their handlers. */
+  ticked: ReadonlySet<string>;
+  allTicked: boolean;
+  onTick: (id: string) => void;
+  onTickAll: () => void;
 }) {
   const columns = DIRECTORY_COLUMNS.filter((c) => keys.includes(c.key));
   return (
     <table className="w-full table-fixed border-collapse text-left">
       <colgroup>
+        <col style={{ width: SELECT_COL_WIDTH }} />
         {columns.map((column) => (
           <col key={column.key} style={{ width: widths[column.key] }} />
         ))}
@@ -561,6 +662,14 @@ function EmployeeTable({
       </colgroup>
       <thead className="text-ink-muted bg-surface-elevated sticky top-0 z-[1]">
         <tr className="border-line border-b">
+          <th scope="col" className="py-2 pr-0 pl-5">
+            <input
+              type="checkbox"
+              checked={allTicked}
+              onChange={onTickAll}
+              aria-label="Select all people shown"
+            />
+          </th>
           {columns.map((column, index) => (
             <SortableTh
               key={column.key}
@@ -568,7 +677,7 @@ function EmployeeTable({
               sortKey={SORT_OF_COLUMN[column.key]}
               sort={sort}
               onSort={onSort}
-              className={index === 0 ? "pl-5" : undefined}
+              className={index === 0 ? "pl-2" : undefined}
             >
               <ResizeHandle
                 label={`Resize the ${column.label} column`}
@@ -596,16 +705,20 @@ function EmployeeTable({
               aria-selected={active}
               onClick={() => onSelect(employee.id)}
               onKeyDown={(e) => {
+                // Keys pressed on the tick box belong to the box.
+                if (e.target !== e.currentTarget) return;
                 if (e.key === "Enter" || e.key === " ") {
                   e.preventDefault();
                   onSelect(employee.id);
-                } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-                  e.preventDefault();
-                  const next =
-                    e.key === "ArrowDown"
-                      ? e.currentTarget.nextElementSibling
-                      : e.currentTarget.previousElementSibling;
-                  (next as HTMLElement | null)?.focus();
+                } else {
+                  // Up, Down, J, K, Home and End move between rows; E opens the row.
+                  handleRowKey(
+                    e,
+                    Array.from(
+                      e.currentTarget.parentElement?.children ?? [],
+                    ) as HTMLElement[],
+                    e.currentTarget,
+                  );
                 }
               }}
               className={cn(
@@ -618,10 +731,19 @@ function EmployeeTable({
             >
               <td
                 className={cn(
-                  "relative py-1.5 pr-3 pl-5",
+                  "py-1.5 pr-0 pl-5",
                   active && "shadow-[inset_3px_0_0_var(--color-accent)]",
                 )}
+                onClick={(e) => e.stopPropagation()}
               >
+                <input
+                  type="checkbox"
+                  checked={ticked.has(employee.id)}
+                  onChange={() => onTick(employee.id)}
+                  aria-label={`Select ${displayName(employee)}`}
+                />
+              </td>
+              <td className="relative py-1.5 pr-3 pl-2">
                 <ArrivalFlash waiting={isAwaitingProfile(employee)} />
                 <div className="flex min-w-0 items-center gap-2.5">
                   <EmployeeAvatar employee={employee} size="sm" />

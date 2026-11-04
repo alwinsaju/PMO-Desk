@@ -30,6 +30,7 @@ import {
   filterAudit,
   type AuditEntry,
 } from "@/lib/platform/auditView";
+import { RECAP_SCOPE_NOTE, entriesSince, validSince } from "@/lib/platform/sinceRecap";
 import { toCsv } from "@/lib/staff/exportFiles";
 import { FilterPill } from "../pmo-todo-app/parts";
 import { fetchAudit } from "./platformApi";
@@ -46,8 +47,15 @@ const CATEGORY_ICON: Record<ActivityCategory, Icon> = {
   other: ClockIcon,
 };
 
-/** Settings > Activity: the PMO audit log in plain words as a timeline, newest first. Read only. */
-export function ActivityTab() {
+/** Settings > Activity: the PMO audit log in plain words as a timeline, newest first. Read only.
+ *  `since` (an ISO time) limits it to the lines after that time (the "Since you last opened" recap). */
+export function ActivityTab({
+  since = "",
+  onShowAll,
+}: {
+  since?: string;
+  onShowAll?: () => void;
+} = {}) {
   const [entries, setEntries] = useState<AuditEntry[] | null>(null);
   const [total, setTotal] = useState(0);
   const [error, setError] = useState<{ reason: string; detail?: string } | null>(null);
@@ -76,15 +84,20 @@ export function ActivityTab() {
     })();
   }, []);
 
-  const actions = useMemo(() => actionCounts(entries ?? []), [entries]);
-  const categories = useMemo(() => categoryCounts(entries ?? []), [entries]);
+  const sinceTime = validSince(since);
+  const visible = useMemo(
+    () => (sinceTime && entries ? entriesSince(entries, sinceTime) : entries),
+    [entries, sinceTime],
+  );
+  const actions = useMemo(() => actionCounts(visible ?? []), [visible]);
+  const categories = useMemo(() => categoryCounts(visible ?? []), [visible]);
   const shown = useMemo(
     () =>
       filterByCategory(
-        filterAudit(entries ?? [], { action: action || undefined, query }),
+        filterAudit(visible ?? [], { action: action || undefined, query }),
         category,
       ),
-    [entries, action, query, category],
+    [visible, action, query, category],
   );
   const groups = useMemo(() => groupByDay(shown.slice(0, SHOWN), now), [shown, now]);
 
@@ -141,18 +154,41 @@ export function ActivityTab() {
           Copy as CSV
         </Button>
       </div>
+      {sinceTime && (
+        <div className="border-line bg-accent-soft text-accent-ink rounded-control mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 border px-3 py-2 text-[13px]">
+          <span className="min-w-0 flex-1 basis-60">
+            <span className="font-semibold">
+              Showing {visible?.length ?? 0} {visible?.length === 1 ? "line" : "lines"}{" "}
+              since you last opened (
+              {new Date(sinceTime).toLocaleString("en-GB", {
+                dateStyle: "medium",
+                timeStyle: "short",
+              })}
+              ).
+            </span>{" "}
+            {RECAP_SCOPE_NOTE}
+          </span>
+          {onShowAll && (
+            <Button variant="outline" size="sm" onClick={onShowAll}>
+              Show all
+            </Button>
+          )}
+        </div>
+      )}
       {error && (
         <Note tone="error" detail={error.detail}>
           {error.reason}
         </Note>
       )}
       {entries === null && !error && <Note>Reading the log…</Note>}
-      {entries && entries.length === 0 && (
+      {entries && visible && visible.length === 0 && (
         <p className="text-ink-muted py-2 text-[13px]">
-          Nothing has been recorded yet. Approving a to-do or saving a report adds a line.
+          {entries.length === 0
+            ? "Nothing has been recorded yet. Approving a to-do or saving a report adds a line."
+            : "Nothing has been recorded since you last opened."}
         </p>
       )}
-      {entries && entries.length > 0 && (
+      {visible && visible.length > 0 && (
         <>
           <ul className="flex flex-wrap gap-2 pb-3" aria-label="Filter by kind">
             <li>

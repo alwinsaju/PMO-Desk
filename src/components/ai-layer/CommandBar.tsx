@@ -30,6 +30,7 @@ import { useTasksNav } from "@/components/apps/tasks-app/tasksNavStore";
 import { resolvePmoIntent, type PmoIntent } from "@/lib/ai-runtime/pmoIntent";
 import { prepareTaskSummary } from "@/lib/ai-runtime/pmoReply";
 import { resolveLocalIntent, type LocalIntent } from "@/lib/ai-runtime/localIntent";
+import { resolveSlash } from "@/lib/ai-runtime/slashCommands";
 import { planText, splitSteps } from "@/lib/ai-runtime/steps";
 import { logCommand, usePreferences } from "@/lib/preferences/preferencesStore";
 import {
@@ -37,7 +38,14 @@ import {
   recentSuccessfulPrompts,
   type CommandLogEntry,
 } from "@/lib/preferences/schema";
-import { MAX_RECENT_CHIPS, completeFrom, suggestionsFor } from "./barSuggestions";
+import {
+  MAX_RECENT_CHIPS,
+  completeFrom,
+  isSlashInput,
+  slashSuggestions,
+  suggestionsFor,
+} from "./barSuggestions";
+import { QUICK_CAPTURE_PREFIX, useQuickCapture } from "./useQuickCapture";
 import { BarActionCard } from "./BarActionCard";
 import { showMeFor } from "./barLinks";
 import { openOrFocusBuiltInApp } from "@/components/taskbar/launchBuiltInApp";
@@ -418,6 +426,19 @@ export function CommandBar() {
     return () => document.removeEventListener("keydown", onKey);
   }, []);
 
+  // The desktop app's opt-in global hotkey (the shell has already shown the window): the
+  // cursor goes in the bar with "/todo " ready, unless something is already typed.
+  useQuickCapture(() => {
+    setValue((current) => (current.trim() ? current : QUICK_CAPTURE_PREFIX));
+    setHistoryIndex(-1);
+    requestAnimationFrame(() => {
+      const input = inputRef.current;
+      if (!input) return;
+      input.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
+    });
+  });
+
   useEffect(() => {
     if (notice) lastNoticeRef.current = notice;
   }, [notice]);
@@ -643,8 +664,24 @@ export function CommandBar() {
   /** The one submit path: typing + Enter and the starter chips both end up
    *  here. */
   function submitPrompt(rawPrompt: string, clearInput: boolean, inChain = false) {
-    const prompt = rawPrompt.trim();
+    let prompt = rawPrompt.trim();
     if (!prompt || isBusy) return;
+
+    // "/todo buy milk Fri", "/open staff", "/overdue": a shorter way to type a sentence the
+    // routers below already understand. A mistyped one gets a plain "did you mean" and never
+    // reaches the model; the typed text stays so it can be fixed.
+    if (!inChain) {
+      const slash = resolveSlash(prompt);
+      if (slash.kind === "say") {
+        showNotice(slash.text);
+        return;
+      }
+      if (slash.kind === "run") {
+        prompt = slash.prompt;
+        inChain = true;
+        chainRef.current = [];
+      }
+    }
 
     // "Open Tasks, then what's overdue?": show the plan, then run the steps one by one.
     if (!inChain) {
@@ -717,8 +754,11 @@ export function CommandBar() {
   const recent = recentPrompts(commandLog);
   // Only prompts that worked become chips; Up-arrow recall (`recent`) keeps all of them.
   const recentChips = recentSuccessfulPrompts(commandLog, MAX_RECENT_CHIPS);
-  const completions =
-    value === ""
+  // Text that starts with "/" is a slash command being typed: its chips are the commands.
+  const slashChips = isSlashInput(value) ? slashSuggestions(value) : null;
+  const completions = slashChips
+    ? slashChips.map((s) => s.text)
+    : value === ""
       ? []
       : completeFrom(value, [
           ...favourites,
@@ -730,8 +770,15 @@ export function CommandBar() {
     favourite: boolean;
     recent: boolean;
     complete: boolean;
-  }[] =
-    value === ""
+    hint?: string;
+  }[] = slashChips
+    ? slashChips.map((s) => ({
+        ...s,
+        favourite: false,
+        recent: false,
+        complete: true,
+      }))
+    : value === ""
       ? suggestionsFor(focusedAppId, favourites, 6, recentChips).map((s) => ({
           ...s,
           complete: false,
@@ -826,7 +873,7 @@ export function CommandBar() {
             : "pointer-events-none translate-y-2.5 opacity-0",
         )}
       >
-        {chips.map(({ text, favourite, recent: isRecent, complete }) => (
+        {chips.map(({ text, favourite, recent: isRecent, complete, hint: chipHint }) => (
           <span key={text} className="inline-flex items-center">
             <button
               type="button"
@@ -854,6 +901,7 @@ export function CommandBar() {
                 />
               )}
               {text}
+              {chipHint && <span className="text-ink-muted font-medium">{chipHint}</span>}
             </button>
             {favourite && (
               <button

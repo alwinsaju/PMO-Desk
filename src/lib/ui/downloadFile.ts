@@ -1,0 +1,16 @@
+// Saves a file the browser built itself (nothing is sent to a server). Browser only.
+
+export function downloadFile(
+  name: string,
+  data: string | Uint8Array,
+  type: string,
+): void {
+  const url = URL.createObjectURL(new Blob([data as BlobPart], { type }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = name;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}

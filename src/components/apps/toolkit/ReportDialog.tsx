@@ -18,6 +18,7 @@ export function ReportDialog({
   subject,
   text,
   to,
+  onUse,
   onClose,
 }: {
   title: string;
@@ -25,12 +26,15 @@ export function ReportDialog({
   subject: string;
   text: string;
   to?: string;
+  /** Called when the text is copied or opened as a mail (the Templates app notes which template made it). */
+  onUse?: () => void;
   onClose: () => void;
 }) {
   const mail = buildMailto({ to, subject, body: text });
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(text);
+      onUse?.();
       toast({ tone: "success", message: "Copied." });
     } catch {
       toast({ tone: "danger", message: "Could not copy to the clipboard." });
@@ -64,7 +68,9 @@ export function ReportDialog({
           </Button>
           {mail.ok && (
             <Button asChild>
-              <a href={mail.url}>Open as unsent mail</a>
+              <a href={mail.url} onClick={() => onUse?.()}>
+                Open as unsent mail
+              </a>
             </Button>
           )}
         </div>

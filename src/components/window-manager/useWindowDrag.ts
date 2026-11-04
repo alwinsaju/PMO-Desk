@@ -1,9 +1,11 @@
 "use client";
 
+import { useEffect } from "react";
 import { useDrag } from "@use-gesture/react";
 import { useWindowStore, windowClampConfig } from "./windowStore";
 import { clampToViewport, windowTransform } from "./windowGeometry";
 import { edgeZone } from "./windowSnap";
+import { hideSnapPreview, updateSnapPreview } from "./snapPreviewController";
 
 /** `data-gesture` on the window node while a drag/resize is live: tokens.css
  *  gives only that window `will-change: transform` + contained chrome, and
@@ -45,6 +47,9 @@ export function useWindowDrag(
 ) {
   const { disabled = false } = options;
 
+  // A window that closes mid-drag never sees its release: do not leave the outline up.
+  useEffect(() => hideSnapPreview, []);
+
   return useDrag(
     ({ offset: [rawX, rawY], xy, first, last }) => {
       if (disabled) return;
@@ -62,6 +67,9 @@ export function useWindowDrag(
         el.style.transform = windowTransform({ x, y });
         if (last) markGesture(el, false);
       }
+      // Live outline of where a release here would snap (direct DOM, no store/state).
+      if (last) hideSnapPreview();
+      else updateSnapPreview({ x: xy[0], y: xy[1] });
       if (last) {
         // Let go at the left or right edge of the screen: snap to half (or a quarter near a corner).
         const zone = edgeZone(

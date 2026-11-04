@@ -258,6 +258,18 @@ export function previewBodyOf(draft: Draft, snippets?: Snippets): string {
   return tidyText(renderText(draft.body, sampleValues(sampleKeys(draft)), snippets));
 }
 
+/**
+ * The template's wording for the clipboard: the subject (or title line) and the message exactly as typed,
+ * with the {{placeholders}} and **bold** markers kept. Not the example-filled preview. To and Cc are left out.
+ */
+export function wordingOf(draft: Pick<Draft, "kind" | "subject" | "body">): string {
+  const subject = draft.subject.trim();
+  const body = draft.body.trim();
+  const label = draft.kind === "email" ? "Subject" : "Title line";
+  if (subject && body) return `${label}: ${subject}\n\n${body}`;
+  return subject ? `${label}: ${subject}` : body;
+}
+
 /** What is wrong with the form now (nothing is shown until a field has been touched). */
 export function problems(draft: Draft): TemplateErrors {
   const checked = checkInput(toInput(draft));

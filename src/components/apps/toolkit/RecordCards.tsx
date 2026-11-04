@@ -23,7 +23,7 @@ export function RecordCards({
   onEdit: (record: RegisterRecord) => void;
   onDelete: (record: RegisterRecord) => void;
   onStamp: (record: RegisterRecord) => void;
-  /** Tick boxes on the cards (bulk to-dos); without it the cards have none. */
+  /** Tick boxes on the cards (bulk to-dos and delete); without it the cards have none. */
   selection?: { selected: ReadonlySet<string>; onToggle: (id: string) => void };
 }) {
   const [titleKey, ...rest] = def.columns;
@@ -53,6 +53,7 @@ export function RecordCards({
               )}
               <button
                 type="button"
+                data-record-open
                 className="text-ink focus-ring text-left text-[14px] font-semibold underline-offset-2 hover:underline"
                 onClick={() => onEdit(record)}
                 aria-label={`Open ${recordTitle(def, record)}`}

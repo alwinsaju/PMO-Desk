@@ -1,6 +1,14 @@
 // What the command bar offers as you focus or type: pinned favourites, chips that fit the app
 // you are looking at (120), and completions from your history (119). Pure.
 
+// While the bar's text starts with "/", the chips are the slash commands (q-20); the
+// commands themselves live in ai-runtime/slashCommands.ts next to the intent routers.
+export {
+  isSlashInput,
+  slashSuggestions,
+  type SlashSuggestion,
+} from "../../lib/ai-runtime/slashCommands.ts";
+
 /** Chips for the focused app (its window's appId). */
 export const CONTEXT_SUGGESTIONS: Readonly<Record<string, readonly string[]>> = {
   "pmo-todo": [

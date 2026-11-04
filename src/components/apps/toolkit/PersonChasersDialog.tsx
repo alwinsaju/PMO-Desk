@@ -14,14 +14,18 @@ import type { PersonChaser } from "@/lib/registers/timesheets";
 /** One timesheet chaser per person, each to copy or open as an unsent mail. Nothing here sends anything. */
 export function PersonChasersDialog({
   chasers,
+  onUse,
   onClose,
 }: {
   chasers: PersonChaser[];
+  /** Called when a draft is copied or opened as a mail (the Templates app notes which template made it). */
+  onUse?: () => void;
   onClose: () => void;
 }) {
   const copy = async (text: string) => {
     try {
       await navigator.clipboard.writeText(text);
+      onUse?.();
       toast({ tone: "success", message: "Copied." });
     } catch {
       toast({ tone: "danger", message: "Could not copy to the clipboard." });
@@ -65,6 +69,7 @@ export function PersonChasersDialog({
                     <Button size="sm" asChild>
                       <a
                         href={mail.url}
+                        onClick={() => onUse?.()}
                         aria-label={`Open the chaser for ${c.person} as unsent mail`}
                       >
                         Open as unsent mail

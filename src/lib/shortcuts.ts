@@ -20,6 +20,11 @@ export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [
       { keys: "Ctrl+Space", action: "Jump to the command bar" },
       { keys: "Ctrl+,", action: "Open Settings" },
       { keys: "?", action: "Show this list" },
+      {
+        keys: "Ctrl+Shift+Space",
+        action:
+          "Quick capture from any program (desktop app, off until turned on in Quick settings)",
+      },
     ],
   },
   {
@@ -46,6 +51,11 @@ export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [
       { keys: "Up / Down", action: "Earlier and later commands" },
       { keys: "Tab", action: "Accept the first completion" },
       { keys: "Esc", action: "Dismiss an answer" },
+      {
+        keys: "/",
+        action:
+          "Slash commands: /todo buy milk Fri, /open staff, /overdue (type / to see them)",
+      },
     ],
   },
   {

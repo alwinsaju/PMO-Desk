@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from "react";
 import { ArrowLeftIcon, PushPinIcon } from "@phosphor-icons/react";
 import { useWindowContext } from "@/components/window-manager";
 import { toolApps } from "@/components/taskbar/pinnedApps";
@@ -9,6 +16,7 @@ import type { RegisterSummary } from "@/lib/registers/alerts";
 import { registerById } from "@/lib/registers/defs";
 import { groupTools } from "@/lib/registers/layout";
 import { noSpellcheck } from "@/lib/ui/noSpellcheck";
+import { handleRowKey } from "../rowNav";
 import { fetchSummaries } from "./registersApi";
 import { toolComponent } from "./tools";
 import {
@@ -63,6 +71,18 @@ export function ToolkitApp({ windowId }: { windowId: string }) {
     return arrangeGroups(groupTools(filterTools(entries, query)), pinned);
   }, [query, pinned]);
   const lastTool = toolApps.find((tool) => tool.id === lastId) ?? null;
+  const gridRef = useRef<HTMLDivElement>(null);
+
+  /** J/K, Home/End and E move between the tiles in the order shown (the arrows are left
+   *  alone: in a grid they would mean a row or a column). Enter already opens a tile. */
+  const handleTileKey = (event: KeyboardEvent<HTMLDivElement>) => {
+    const items = Array.from(
+      gridRef.current?.querySelectorAll<HTMLElement>("[data-tool-tile]") ?? [],
+    );
+    const row = (event.target as HTMLElement).closest("li");
+    const current = row?.querySelector<HTMLElement>("[data-tool-tile]") ?? null;
+    handleRowKey(event, items, current, { arrows: false });
+  };
 
   const load = useCallback(async () => {
     const reply = await fetchSummaries();
@@ -104,6 +124,8 @@ export function ToolkitApp({ windowId }: { windowId: string }) {
 
   return (
     <div
+      ref={gridRef}
+      onKeyDown={handleTileKey}
       data-window-id={windowId}
       data-testid="toolkit"
       className="scroll-thin h-full w-full overflow-y-auto px-6 pb-6"
@@ -190,6 +212,7 @@ export function ToolkitApp({ windowId }: { windowId: string }) {
                     </IconButton>
                     <button
                       type="button"
+                      data-tool-tile
                       data-testid={`tool-card-${tool.id}`}
                       onClick={() => openTool(tool.id)}
                       className="border-line bg-card hover:bg-chip focus-ring rounded-card flex h-full w-full items-start gap-3 border py-3 pr-11 pl-4 text-left transition-colors"

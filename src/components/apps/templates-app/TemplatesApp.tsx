@@ -17,11 +17,14 @@ import { snippetKey } from "@/lib/templates/render";
 import { lastUsedText } from "@/lib/templates/usage";
 import { usedByBadge, usedByCount } from "@/lib/templates/listView";
 import { useTemplateUsage } from "@/lib/templates/usageStore";
+import { useDockRecents } from "@/components/taskbar/dockRecentsStore";
+import { useTemplatesNav } from "./templatesNavStore";
 import { TemplateExtrasDialog } from "./TemplateExtrasDialog";
 import { TemplateKindIcon } from "./TemplateKindIcon";
 import { VersionsDrawer } from "./VersionsDrawer";
 import { FilterPill, Note, PanelMessage, ScrollBody } from "../pmo-todo-app/parts";
 import { ConfirmDialog } from "../staff-app/parts";
+import { handleRowKey } from "../rowNav";
 import {
   createTemplate,
   deleteTemplate,
@@ -196,6 +199,15 @@ export function TemplatesApp({ windowId }: { windowId: string }) {
   };
 
   const go = (next: Selection) => {
+    if (next.type === "saved") {
+      // Dock menu > Recent (q-22).
+      const opened = templates.find((t) => t.id === next.id);
+      if (opened) {
+        useDockRecents
+          .getState()
+          .remember("templates", { id: opened.id, title: opened.name });
+      }
+    }
     setSelection(next);
     setListOpen(false);
     setVersionsOpen(false);
@@ -204,6 +216,24 @@ export function TemplatesApp({ windowId }: { windowId: string }) {
     setFields(null);
     setNotice(null);
   };
+
+  // Dock menu > Recent (q-22): show the template it asked for once the library is loaded, and
+  // keep the saved list in step (a deleted template drops out, a renamed one shows its new name).
+  const openRequest = useTemplatesNav((s) => s.openRequest);
+  const clearOpenRequest = useTemplatesNav((s) => s.clearOpenRequest);
+  useEffect(() => {
+    if (library.status !== "ready") return;
+    const names = new Map(templates.map((t) => [t.id, t.name]));
+    useDockRecents.getState().sync("templates", (id) => names.get(id));
+    if (!openRequest) return;
+    if (names.has(openRequest.templateId)) {
+      setFilter("all");
+      setTagFilter(null);
+      select({ type: "saved", id: openRequest.templateId });
+    }
+    clearOpenRequest(openRequest.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- select changes every render; this runs per request or library change
+  }, [openRequest, library.status, templates, clearOpenRequest]);
 
   const startNew = (
     seed: Draft = blankDraft(filter === "report" ? "report" : "email"),
@@ -361,7 +391,22 @@ export function TemplatesApp({ windowId }: { windowId: string }) {
               )}
             </div>
             <ScrollBody className="px-3 pb-4">
-              <ul className="flex flex-col gap-1.5">
+              <ul
+                className="flex flex-col gap-1.5"
+                onKeyDown={(event) =>
+                  handleRowKey(
+                    event,
+                    Array.from(
+                      event.currentTarget.querySelectorAll<HTMLElement>(
+                        "[data-template-item]",
+                      ),
+                    ),
+                    (event.target as HTMLElement)
+                      .closest("li")
+                      ?.querySelector<HTMLElement>("[data-template-item]") ?? null,
+                  )
+                }
+              >
                 {selection?.type === "new" && (
                   <li>
                     <div className="bg-accent-soft text-accent-ink rounded-control px-3 py-2.5 text-[13.5px] font-semibold">
@@ -381,6 +426,7 @@ export function TemplatesApp({ windowId }: { windowId: string }) {
                     <li key={template.id}>
                       <button
                         type="button"
+                        data-template-item
                         onClick={() => select({ type: "saved", id: template.id })}
                         aria-current={active ? "true" : undefined}
                         className={cn(

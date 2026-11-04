@@ -385,3 +385,14 @@ test("errors: plain sentences for the usual problems, with cleaned details", () 
     /Details: \(none\)/,
   );
 });
+
+test("platform prefs: lastOpenedAt is kept only when it is a real time", () => {
+  assert.equal(DEFAULT_PLATFORM_PREFS.lastOpenedAt, "");
+  assert.equal(sanitizePlatformPrefs({}).lastOpenedAt, "");
+  assert.equal(
+    sanitizePlatformPrefs({ lastOpenedAt: "2026-11-05T09:05:00.000Z" }).lastOpenedAt,
+    "2026-11-05T09:05:00.000Z",
+  );
+  assert.equal(sanitizePlatformPrefs({ lastOpenedAt: "last week" }).lastOpenedAt, "");
+  assert.equal(sanitizePlatformPrefs({ lastOpenedAt: 12345 }).lastOpenedAt, "");
+});

@@ -2321,6 +2321,26 @@ title, tone, action, key })` from anywhere; a repeated `key` replaces the earlie
   (`useProjectNames`, `projectSuggestions`), and free text is still accepted. It must stay optional text:
   a required field or a select would make stored records fail the re-validation done on every read, and the
   next save would write back only the records that passed, deleting the rest.
+- **Phase 2 and 3 additions to the Toolkit.**
+  - Change history: `applyRegisterChanges` appends created, changed and deleted entries (field names only, never
+    values) to `<data>/registers/history/<tool>.jsonl` after the atomic register write, in its own try/catch so
+    a log failure never blocks a save; capped at 2000 entries per tool; read through
+    `GET /api/registers/<tool>/history?record=` (`history.ts`, `RecordHistory.tsx`).
+  - AI suggestions: `POST /api/registers/suggest` (`registerSuggestRoute.ts`, `registerSuggest.ts`) drafts the
+    change-request Impact note (`impactNote`, an optional long-text field) and suggests a lesson Category. The
+    model sees only structured fields; code checks the output (`pickCategory`, `verifyImpactNote`); the answer
+    is put in the form for the user to edit and is never saved by the route. `AI_OS_REGISTER_AI_STUB=1` swaps in
+    a deterministic stub for tests and `AI_OS_REGISTER_AI_TIMEOUT_MS` sets the timeout.
+  - Weekly pack (`weeklyPack.ts`), per-project risks and late changes (`projectDigest.ts`), per-person
+    timesheet chasers and Toolkit template targets (`app:toolkit:timesheet-chaser`,
+    `app:toolkit:status-report`): copy text or unsent mail only. Starter templates are written only when a
+    template library is first created, so an existing library needs the template created by hand.
+  - Bulk select (`lib/ui/multiSelect.ts`, `bulkDelete.ts`, `bulkTodos.ts`): ticked rows on screen only, one
+    confirmation, one Undo.
+- **Desktop quick capture.** `desktop/quick-capture.cjs` registers an opt-in global shortcut
+  (Ctrl+Shift+Space, off by default, setting in `<userData>/quick-capture.json`). A press shows the main window
+  and sends `pmo:quick-capture` to the page, which focuses the command bar with `/todo `. There is no second
+  window: every shell message handler requires the main window as sender.
 - **Storage and routes.** One file per tool in `<data>/registers/<tool>.json`, written atomically under the
   data-folder mutex through the same definition (`server.ts`); a damaged file is reported and never
   overwritten. Routes: `GET|POST /api/registers/<tool>` (`upsert`, `remove`, `config`; at most 500 records per

@@ -18,6 +18,7 @@ import {
   toggleWrap,
   versionInput,
   withKind,
+  wordingOf,
   withPlace,
 } from "./templateForm.ts";
 
@@ -149,12 +150,12 @@ describe("placeholders to offer", () => {
     ]) {
       assert.ok(all.includes(name), name);
     }
-    assert.deepEqual(names({ kind: "report", usedBy: [] }), [
-      "report",
-      "title",
-      "period",
-      "my_name",
-    ]);
+    // Every report place adds its own (the PMO To-Do report first, then the Toolkit status report).
+    const reports = names({ kind: "report", usedBy: [] });
+    assert.deepEqual(reports.slice(0, 4), ["report", "title", "period", "my_name"]);
+    for (const name of ["date", "overall", "projects"]) {
+      assert.ok(reports.includes(name), name);
+    }
   });
 
   it("with places chosen, only what all of them can fill", () => {
@@ -267,5 +268,33 @@ describe("preview and problems", () => {
     assert.match(problems({ ...base, to: "Support team" }).to, /not an email address/);
     assert.match(problems({ ...base, cc: "a@x.com; oops" }).cc, /“oops”/);
     assert.equal(problems({ ...base, kind: "report", to: "Support team" }).to, undefined);
+  });
+});
+
+describe("copying the wording", () => {
+  it("keeps the placeholders and bold markers, not the example values", () => {
+    const draft = {
+      ...draftOf(saved()),
+      subject: "Aging | {{date_subject}}",
+      body: "Hi,\n\n**{{total}}** open.\n",
+    };
+    const text = wordingOf(draft);
+    assert.equal(text, "Subject: Aging | {{date_subject}}\n\nHi,\n\n**{{total}}** open.");
+    assert.ok(text.includes("{{total}}"));
+    assert.ok(!text.includes("42"), "the example value is not substituted");
+    assert.notEqual(text, previewOf(draft).body);
+  });
+
+  it("labels a report's first line as the title line", () => {
+    assert.equal(
+      wordingOf({ kind: "report", subject: "{{title}}", body: "Body" }),
+      "Title line: {{title}}\n\nBody",
+    );
+  });
+
+  it("copes with a missing subject or body", () => {
+    assert.equal(wordingOf({ kind: "email", subject: "  ", body: " Hi " }), "Hi");
+    assert.equal(wordingOf({ kind: "email", subject: "S", body: "" }), "Subject: S");
+    assert.equal(wordingOf({ kind: "email", subject: "", body: "" }), "");
   });
 });

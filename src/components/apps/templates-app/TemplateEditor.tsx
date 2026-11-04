@@ -5,6 +5,7 @@ import {
   ArrowCounterClockwiseIcon,
   CaretDownIcon,
   CheckIcon,
+  ClipboardTextIcon,
   ClockCounterClockwiseIcon,
   CopyIcon,
   DotsThreeIcon,
@@ -26,6 +27,8 @@ import {
   Input,
 } from "@/components/ui";
 import { cn } from "@/lib/cn";
+import { toast } from "@/lib/notifications/toastStore";
+import { copyToClipboard } from "@/lib/ui/copyToClipboard";
 import {
   joinRecipients,
   recipientError,
@@ -73,6 +76,7 @@ import {
   toggleWrap,
   withKind,
   withPlace,
+  wordingOf,
   type Draft,
 } from "./templateForm";
 
@@ -208,6 +212,27 @@ export function TemplateEditor({
     if (Object.keys(errors).length === 0) onSave(toInput(draft));
   };
 
+  // Copies what is typed now (unsaved edits included) with its {{placeholders}}, not the example preview.
+  const copyWording = async () => {
+    const text = wordingOf(draft);
+    if (!text) {
+      toast({ tone: "warning", message: "There is no wording to copy yet." });
+      return;
+    }
+    if (await copyToClipboard(text)) {
+      toast({
+        tone: "success",
+        message: "Copied the wording with its {{placeholders}}.",
+      });
+    } else {
+      toast({
+        tone: "danger",
+        message:
+          "Could not copy to the clipboard. Select the text in the Message box and press Ctrl+C instead.",
+      });
+    }
+  };
+
   const restoreOriginal = () => {
     if (!starter) return;
     change({ ...draft, ...starter, id: draft.id, usedBy: draft.usedBy });
@@ -270,48 +295,53 @@ export function TemplateEditor({
           <FloppyDiskIcon size={14} />
           {busy ? "Saving…" : "Save"}
         </Button>
-        {(template || starter) && (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <IconButton
-                aria-label="More actions"
-                variant="outline"
-                size="sm"
-                data-testid="template-more"
-              >
-                <DotsThreeIcon weight="bold" />
-              </IconButton>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              {starter && (
-                <DropdownMenuItem disabled={busy} onSelect={restoreOriginal}>
-                  <ArrowCounterClockwiseIcon size={14} />
-                  Restore original wording
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <IconButton
+              aria-label="More actions"
+              variant="outline"
+              size="sm"
+              data-testid="template-more"
+            >
+              <DotsThreeIcon weight="bold" />
+            </IconButton>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem
+              onSelect={() => void copyWording()}
+              data-testid="template-copy-wording"
+            >
+              <ClipboardTextIcon size={14} />
+              Copy wording
+            </DropdownMenuItem>
+            {starter && (
+              <DropdownMenuItem disabled={busy} onSelect={restoreOriginal}>
+                <ArrowCounterClockwiseIcon size={14} />
+                Restore original wording
+              </DropdownMenuItem>
+            )}
+            {template && (
+              <DropdownMenuItem disabled={busy} onSelect={onDuplicate}>
+                <CopyIcon size={14} />
+                Duplicate
+              </DropdownMenuItem>
+            )}
+            {template && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  disabled={busy}
+                  onSelect={onDelete}
+                  className="text-red"
+                  data-testid="template-delete"
+                >
+                  <TrashIcon size={14} />
+                  Delete template
                 </DropdownMenuItem>
-              )}
-              {template && (
-                <DropdownMenuItem disabled={busy} onSelect={onDuplicate}>
-                  <CopyIcon size={14} />
-                  Duplicate
-                </DropdownMenuItem>
-              )}
-              {template && (
-                <>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    disabled={busy}
-                    onSelect={onDelete}
-                    className="text-red"
-                    data-testid="template-delete"
-                  >
-                    <TrashIcon size={14} />
-                    Delete template
-                  </DropdownMenuItem>
-                </>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        )}
+              </>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </header>
 
       <ScrollBody className="@container px-5 py-4">
