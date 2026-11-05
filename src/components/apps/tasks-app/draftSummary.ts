@@ -30,7 +30,14 @@ export function parseDraftSummary(
   const to = list(source.to);
   const cc = list(source.cc);
   if (to.length === 0 && cc.length === 0) return null;
-  return { to, cc, subject: text(source.subject), attachments: list(source.attachments) };
+  const notes = list(source.notes);
+  return {
+    to,
+    cc,
+    subject: text(source.subject),
+    attachments: list(source.attachments),
+    ...(notes.length > 0 ? { notes } : {}),
+  };
 }
 
 /** Dialog lines: To / Cc / Subject / Attachments, or the single "check Outlook" warning. */

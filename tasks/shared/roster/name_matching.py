@@ -38,6 +38,16 @@ def load_roster(path):
             roster_names.append(name)
             if email:
                 email_by_roster_name[name] = email.strip()
+    # Plain messages (SystemExit prints without a traceback) so the Tasks app can show them as they are.
+    if not roster_names:
+        raise SystemExit(
+            "The team roster has no names. Upload Names.xlsx with Full Name in column A and Email in column B."
+        )
+    if not email_by_roster_name:
+        raise SystemExit(
+            "The team roster has no email addresses. Upload Names.xlsx with Full Name in column A "
+            "and Email in column B."
+        )
     return roster_names, email_by_roster_name
 
 

@@ -88,9 +88,15 @@ def table_html(header, rows):
         "<tr>" + "".join(f"<td style=\"{td}\">{html.escape(c)}</td>" for c in row) + "</tr>"
         for row in rows[:MAX_ROWS]
     )
+    cut = (
+        f"<p style=\"font-size:10.5pt;font-family:'Aptos Narrow',sans-serif;color:#C00000\">"
+        f"Only the first {MAX_ROWS} of {len(rows)} rows are shown here.</p>"
+        if len(rows) > MAX_ROWS
+        else ""
+    )
     return (
         "<table border=1 cellspacing=0 cellpadding=0 style='border-collapse:collapse;border:solid #D9D9D9 1.0pt'>"
-        f"<tr>{head}</tr>{body}</table>"
+        f"<tr>{head}</tr>{body}</table>{cut}"
     )
 
 
@@ -136,6 +142,15 @@ def main():
     else:
         subject, body_html = " ".join(subject.split()), "<p>" + html.escape(body) + "</p>"
 
+    warnings = []
+    if len(rows) > MAX_ROWS:
+        warnings.append(
+            f"The table has {len(rows)} rows, but only the first {MAX_ROWS} are in the email. "
+            "Turn on “attach the table” if the others must reach the readers."
+        )
+    if not to:
+        warnings.append("No To address is set; add one in Outlook before sending.")
+
     data = {
         "to": to,
         "cc": cc,
@@ -144,6 +159,7 @@ def main():
         "table_html": table_html(header, rows),
         "attachments": [path] if config.get("attachTable") else [],
         "rows": len(rows),
+        "warnings": warnings,
     }
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     out = os.path.join(OUTPUT_DIR, "email-data.json")
@@ -151,10 +167,8 @@ def main():
         json.dump(data, f, indent=2)
     print(f"Saved: {out}")
     print(f"Rows: {len(rows)}, columns: {len(header)}")
-    if len(rows) > MAX_ROWS:
-        print(f"WARNING - the table has {len(rows)} rows; only the first {MAX_ROWS} are in the email.")
-    if not to:
-        print("WARNING - no To address is set; add one in Outlook before sending.")
+    for warning in warnings:
+        print(f"WARNING - {warning}")
 
 
 if __name__ == "__main__":

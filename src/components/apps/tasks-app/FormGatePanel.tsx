@@ -29,6 +29,7 @@ import {
   isTextField,
   gatePending,
   localPending,
+  preselectedNote,
   requiredQuestionsText,
   TEXT_MAX_CHARS,
 } from "./formGate";
@@ -173,6 +174,7 @@ export const FormGatePanel = memo(function FormGatePanel({
 
   const required = schema.fields.filter((f) => f.required).length;
   const shownPending = gatePending(schema, form.pending, edits);
+  const preselected = preselectedNote(shownPending, pendingLocal);
   const unsavedDefaults = needsSave && !dirty;
 
   const focusNextPending = () => {
@@ -190,6 +192,7 @@ export const FormGatePanel = memo(function FormGatePanel({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-ink-muted text-[13px]" aria-live="polite">
           {requiredQuestionsText(shownPending.length, required)}
+          {preselected ? ` (${preselected})` : ""}
           {required > 0 && needsSave && shownPending.length === 0
             ? " — save to record them"
             : ""}
@@ -323,6 +326,7 @@ const FieldRow = memo(function FieldRow({
         {field.type === "select" ? (
           <NativeSelect
             id={domId}
+            aria-label={field.label}
             value={value}
             onChange={(event) => onChange(field.id, event.target.value)}
             aria-invalid={pending || undefined}

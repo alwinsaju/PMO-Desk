@@ -24,7 +24,7 @@ then `pythonw`/`python` on PATH.
 
 The engine listens on **127.0.0.1 only**, on the port it is given: `python main.py --port N`.
 The launcher takes the first free port from 8000 to 8019 and tells the UI where it is
-(`GET /api/tasks-engine/config`); nothing is hardcoded. `GET /health` answers
+(`GET /api/tasks-engine/config`); nothing is hardcoded. `GET` (or `HEAD`) `/health` answers
 `{"ok": true, "service": "tasks-engine"}` so the launcher can tell it from any other process.
 
 To run it by hand: `cd tasks-engine` then `python main.py --port 8123`, and set
@@ -40,6 +40,7 @@ instead of starting its own.
 | `AI_OS_TASKS_PYTHON` | Python used to launch the engine (and so every task step). The installed app points it at the Python it bundles. |
 | `AI_OS_TEMPLATES_DIR` | Folder holding the Template library's `library.json`. The UI server sets it for the engine it launches (default: `templates` inside the PMO data folder); the mail tasks read their subject, recipients and message from it through `tasks/shared/template_lib`. Unset or empty library = each task's own wording. |
 | `AI_OS_TASKS_ENGINE_URL` | Set on the UI server to use an engine you started by hand. |
+| `AI_OS_TASKS_OFFICE` | `off` (or `0`, `false`, `no`, `disabled`): every PowerShell step (the Outlook and Excel ones: pivot, draft, send, refresh) is skipped with a line in the task's log, and the review and completion messages say so. For testers and dev machines; unset = normal. Python steps still run. |
 
 ## Data and the installed app
 

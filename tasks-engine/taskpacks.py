@@ -22,6 +22,7 @@ import json
 import re
 import shutil
 import stat
+import unicodedata
 import zipfile
 from io import BytesIO
 from pathlib import Path, PurePosixPath
@@ -35,6 +36,8 @@ MAX_FILE_BYTES = 5 * 1024 * 1024
 MAX_TOTAL_BYTES = 25 * 1024 * 1024
 ALLOWED_EXTENSIONS = frozenset({".json", ".py", ".ps1", ".md", ".txt", ".html", ".htm", ".csv", ".png", ".jpg", ".svg"})
 STEP_TYPES = frozenset({"python", "powershell", "review", "confirm"})
+# A pack must stop for a person at least once: the Tasks app promises that no task runs through unattended.
+GATE_STEP_TYPES = frozenset({"review", "confirm"})
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,48}[a-z0-9]$")
 # Where a pack may ask for input files to be placed, relative to its own folder.
 INPUT_DEST_ROOTS = ("input/", "config/")
@@ -58,6 +61,8 @@ def unsafe_name(name: str) -> str | None:
         return f"the entry name {name!r} uses a backslash"
     if name.startswith("/") or re.match(r"^[A-Za-z]:", name):
         return f"the entry name {name!r} is an absolute path"
+    if ":" in name:
+        return f"the entry name {name!r} has a colon, which Windows reads as a hidden data stream"
     if any(part in ("", ".", "..") for part in name.split("/")):
         return f"the entry name {name!r} climbs out of the folder"
     return None
@@ -80,6 +85,7 @@ def _read_entries(data: bytes) -> dict[str, bytes]:
     if len(infos) > MAX_FILES:
         raise PackError(f"The pack has {len(infos)} files; the limit is {MAX_FILES}.")
     entries: dict[str, bytes] = {}
+    seen_folded: set[str] = set()
     total = 0
     for info in infos:
         bad = unsafe_name(info.filename)
@@ -87,6 +93,10 @@ def _read_entries(data: bytes) -> dict[str, bytes]:
             raise PackError(f"Refused: {bad}.")
         if info.filename in entries:
             raise PackError(f"Refused: {info.filename!r} appears twice.")
+        # Windows treats Scripts/a.py and scripts/A.py as one file, so the second would overwrite the first.
+        if info.filename.casefold() in seen_folded:
+            raise PackError(f"Refused: {info.filename!r} has the same name as another file apart from capital letters.")
+        seen_folded.add(info.filename.casefold())
         if info.flag_bits & 0x1:
             raise PackError("Encrypted packs are not supported.")
         if stat.S_ISLNK(info.external_attr >> 16):
@@ -133,6 +143,11 @@ def _check_task(task: dict, pack_id: str, listed: set[str]) -> list[dict]:
             if not isinstance(args, list) or not all(isinstance(a, str) for a in args):
                 raise PackError(f"Step {step['id']!r} has arguments that are not text.")
         summary.append({"id": step["id"], "type": step["type"], "cmd": cmd if isinstance(cmd, str) else None})
+    if not any(s["type"] in GATE_STEP_TYPES for s in summary):
+        raise PackError(
+            "This task has no review or confirm step, so it could run to the end (and send an email) without "
+            "anyone checking it first. Add a “review” or “confirm” step before the last step."
+        )
     for item in task.get("inputs", []) if isinstance(task.get("inputs"), list) else []:
         dest = item.get("dest") if isinstance(item, dict) else None
         rel = _relative_inside(dest, "An input")
@@ -162,8 +177,12 @@ def inspect_pack(data: bytes) -> dict:
     if not isinstance(pack_id, str) or not ID_RE.match(pack_id):
         raise PackError("The pack's id must be lower-case letters, digits and hyphens (3 to 50 characters).")
     name = manifest.get("name")
-    if not isinstance(name, str) or not name.strip() or len(name) > 80:
+    if not isinstance(name, str) or not name.strip():
         raise PackError("The pack has no name.")
+    if len(name.strip()) > 80:
+        raise PackError("The pack's name is longer than 80 characters.")
+    if any(unicodedata.category(c) in ("Cc", "Cf") for c in name):
+        raise PackError("The pack's name has hidden characters (such as a right-to-left override).")
     listed = manifest.get("files")
     if not isinstance(listed, dict) or TASK_FILE not in listed:
         raise PackError("pack.json must list task.json and every other file with its checksum.")

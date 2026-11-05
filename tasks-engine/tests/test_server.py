@@ -158,11 +158,13 @@ def test_health_needs_no_token(monkeypatch):
     assert client().get("/health").json()["service"] == "tasks-engine"
 
 
-def test_health_is_exempt_only_for_get(monkeypatch):
+def test_health_is_exempt_only_for_get_and_head(monkeypatch):
     monkeypatch.setenv(engine.TOKEN_ENV, TOKEN)
 
-    assert client().head("/health").status_code == 403
+    assert client().head("/health").status_code == 200
+    assert client().get("/health").status_code == 200
     assert client().post("/health").status_code == 403
+    assert client().head("/tasks").status_code == 403
 
 
 def test_preflight_needs_no_token_and_allows_the_token_header(monkeypatch):

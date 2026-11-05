@@ -2,7 +2,7 @@
 // comparison, recipient safety, send-later and the dry-run plan.
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { explainFailure, lastLine, retryLabel } from "./failureExplainer.ts";
+import { explainFailure, hidePaths, lastLine, retryLabel } from "./failureExplainer.ts";
 import {
   defaultSchedule,
   latestOccurrence,
@@ -11,6 +11,7 @@ import {
   pendingOccurrence,
   sanitizeSchedules,
   scheduleMessage,
+  staleUploads,
 } from "./taskSchedule.ts";
 import {
   durationMs,
@@ -36,6 +37,7 @@ import {
   attachmentWarning,
   checkRecipients,
   internalDomains,
+  looksLikeAddress,
   sameRecipients,
 } from "./recipientCheck.ts";
 import { canDispatch, decide, dequeue, enqueue, nextAt, sanitizeQueue } from "./sendQueue.ts";
@@ -55,6 +57,42 @@ describe("explainFailure", () => {
   it("recognises Outlook and missing-file failures", () => {
     assert.match(explainFailure("pywintypes.com_error: (-2147221005").title, /Outlook/);
     assert.match(explainFailure("No raw ServiceNow export found in input").title, /not found/);
+  });
+  it("says a missing sheet is a sheet, not a column", () => {
+    const e = explainFailure(
+      "Traceback (most recent call last):\n  File \"x.py\"\nKeyError: 'Worksheet Page 1 does not exist.'",
+    );
+    assert.equal(e.title, "The sheet “Page 1” was not found");
+    assert.doesNotMatch(e.title, /column/);
+    assert.match(e.steps[0], /named exactly “Page 1”/);
+    assert.match(explainFailure("KeyError: 'Assigned to'").title, /column called “Assigned to”/);
+  });
+  it("explains text dates and unexpected layouts without showing the path in the title or steps", () => {
+    const dates = explainFailure("File \"b.py\", line 9\nAttributeError: 'str' object has no attribute 'year'");
+    assert.match(dates.title, /date column/);
+    const layout = explainFailure(
+      "ValueError: Unexpected column layout in C:\\Users\\a\\input\\x.xlsx: ['Number', 'Short description']",
+    );
+    assert.match(layout.title, /columns are not the ones/);
+    assert.doesNotMatch([layout.title, ...layout.steps].join(" "), /C:\\/);
+    assert.match(layout.technical, /C:\\Users/);
+  });
+  it("explains an interrupted run and does not mention uploads for a task without any", () => {
+    assert.match(
+      explainFailure("The engine restarted while this task was running. Retry resumes after the last completed step.").title,
+      /restarted/,
+    );
+    assert.match(explainFailure("boom", null).steps[0], /uploaded/);
+    assert.doesNotMatch(explainFailure("boom", null, { hasUploads: false }).steps[0], /uploaded/);
+  });
+  it("shows a script's own plain message without folder names, and keeps tracebacks out of it", () => {
+    const plain = explainFailure(
+      'No raw ServiceNow export found in C:\\Users\\a\\tasks\\input (expected a file like "incident (19).xlsx")',
+    );
+    assert.doesNotMatch(plain.message ?? "", /C:\\/);
+    assert.match(plain.message ?? "", /No raw ServiceNow export found in input/);
+    assert.equal(explainFailure("Traceback (most recent call last):\nKeyError: 'x'").message, undefined);
+    assert.equal(hidePaths("in C:\\Program Files\\App\\a b\\file.xlsx now"), "in file.xlsx now");
   });
   it("falls back to a generic message that names the step", () => {
     const e = explainFailure("boom", "Build report");
@@ -187,7 +225,21 @@ describe("input check and comparison", () => {
     const c = checkSheets(sheet([row("INC1"), row("INC2")]), rule, now);
     assert.equal(c.ok, true);
     assert.equal(c.rows, 2);
-    assert.equal(ruleFor("weekly-backlog-report", "roster"), null);
+    assert.equal(ruleFor("weekly-backlog-report", "unknown"), null);
+  });
+  it("requires the Email column in the team roster and the Deployment sheet in the deployment workbook", () => {
+    const rule = ruleFor("weekly-aging-report", "roster");
+    const good = [{ sheet: "Sheet1", data: [["Full Name", "Email"], ["Ann", "ann@x.com"]] }];
+    assert.equal(checkSheets(good, rule, now).ok, true);
+    const noEmail = [{ sheet: "Sheet1", data: [["Full Name"], ["Ann"]] }];
+    assert.match(checkSheets(noEmail, rule, now).problems[0], /Missing column: Email/);
+    assert.equal(checkSheets([{ sheet: "Sheet1", data: [["Full Name", "Email"]] }], rule, now).ok, false);
+    const deployment = ruleFor("deployment-dep-weekend-mailer", "workbook");
+    assert.match(
+      checkSheets([{ sheet: "Sheet1", data: [["x"], ["y"]] }], deployment, now).problems[0],
+      /no sheet called “Deployment”/,
+    );
+    assert.equal(checkSheets([{ sheet: "Deployment", data: [["Title"], ["y"]] }], deployment, now).ok, true);
   });
   it("reports a wrong sheet, missing columns and an empty sheet", () => {
     const rule = ruleFor("weekly-aging-report", "incident");
@@ -306,6 +358,43 @@ describe("dry run", () => {
     assert.match(plan.note, /Nothing is sent until you confirm/);
     assert.match(plan.reads[0], /incident \(19\)\.xlsx/);
     assert.match(dryRunPlan(task, []).reads[0], /NOT uploaded/);
+  });
+});
+
+describe("scheduled runs and stale uploads", () => {
+  const file = (over) => ({ label: "Incident export", type: "file", present: true, ...over });
+  it("names uploads older than the day the task was due, never the ones kept on purpose", () => {
+    const inputs = [
+      file({ modified: "2026-10-20T08:00:00" }),
+      file({ label: "Roster", persist: true, modified: "2026-01-01T08:00:00" }),
+      file({ label: "Fresh", modified: "2026-10-27T08:30:00" }),
+      file({ label: "Unknown age", modified: null }),
+      file({ label: "Missing", present: false, modified: null }),
+      { label: "Pick", type: "select", present: true },
+    ];
+    assert.deepEqual(staleUploads(inputs, "2026-10-27"), ["Incident export", "Unknown age"]);
+    assert.deepEqual(staleUploads([file({ modified: "2026-10-27T00:00:00" })], "2026-10-27"), []);
+  });
+  it("says why a stale schedule was not prepared", () => {
+    const due = { kind: "due", day: "2026-10-27" };
+    assert.match(scheduleMessage("Aging", due, true, false, ["Incident export"]), /Incident export was uploaded before then, so it was not prepared/);
+    assert.match(scheduleMessage("Aging", due, true, false, ["A", "B"]), /A, B were uploaded before then/);
+    assert.match(scheduleMessage("Aging", due, true, false, []), /files are in/);
+  });
+});
+
+describe("recipient syntax", () => {
+  it("accepts plain and display-name addresses and refuses text with something else in it", () => {
+    assert.equal(looksLikeAddress("a@b.com"), true);
+    assert.equal(looksLikeAddress("Peethambaram, Sreela <speethambaram@deloitte.com>"), true);
+    assert.equal(looksLikeAddress("not an email"), false);
+    assert.equal(looksLikeAddress("x@y.comBcc: evil@evil.com"), false);
+  });
+  it("warns about entries that are not clear addresses", () => {
+    const w = checkRecipients({ to: ["a@b.com", "not an email"], cc: [] }, null, new Set());
+    assert.equal(w.length, 1);
+    assert.equal(w[0].kind, "invalid");
+    assert.match(w[0].text, /not an email/);
   });
 });
 

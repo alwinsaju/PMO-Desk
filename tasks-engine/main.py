@@ -8,6 +8,7 @@ import logging
 import os
 import platform
 import re
+import shutil
 import stat
 import subprocess
 import sys
@@ -98,7 +99,7 @@ def _guard_refusal(method: str, path: str, headers: Headers) -> str | None:
         if origin is not None and not LOOPBACK_ORIGIN_RE.fullmatch(origin):
             return "The engine refuses requests from other web pages."
     token = os.environ.get(TOKEN_ENV)
-    if token and method != "OPTIONS" and not (method == "GET" and path == "/health"):
+    if token and method != "OPTIONS" and not (method in ("GET", "HEAD") and path == "/health"):
         if not hmac.compare_digest(headers.get(TOKEN_HEADER, "").encode("utf-8"), token.encode("utf-8")):
             return "The engine token is missing or wrong. Restart PMO Desk."
     return None
@@ -129,7 +130,7 @@ app.add_middleware(
 )
 
 
-@app.get("/health")
+@app.api_route("/health", methods=["GET", "HEAD"])
 async def health():
     """Identity probe: lets the launcher tell this engine from any other
     process that happens to answer on a port. `instance` echoes the launch id
@@ -163,6 +164,8 @@ class Task:
         self.approvals: list[dict] = []
         # True while a manifest `prepare` script is executing (one at a time).
         self.preparing = False
+        # True when a step of the current run was skipped by AI_OS_TASKS_OFFICE=off.
+        self.office_skipped = False
         # Run generation + the step process in flight (see _cancel_run): a
         # Force reset ends the current run by bumping the generation, so a run
         # that was still inside a step can no longer touch this task's state.
@@ -245,6 +248,18 @@ def _step_python() -> str:
 
 
 STEP_PYTHON = _step_python()
+
+# Safety switch for testers and dev machines: AI_OS_TASKS_OFFICE=off turns every PowerShell step (the ones that
+# drive Outlook and Excel: pivot, draft, send, refresh) into a logged no-op. Unset = real users, unchanged.
+OFFICE_ENV = "AI_OS_TASKS_OFFICE"
+_OFFICE_OFF_VALUES = frozenset({"off", "0", "false", "no", "disabled"})
+
+
+def office_steps_enabled() -> bool:
+    return os.environ.get(OFFICE_ENV, "").strip().lower() not in _OFFICE_OFF_VALUES
+
+
+OFFICE_OFF_NOTE = "Outlook and Excel steps were skipped on this computer (AI_OS_TASKS_OFFICE=off): nothing was drafted, sent or recalculated."
 
 
 def _step_env() -> dict:
@@ -593,6 +608,11 @@ def run_step(step: dict, cwd: Path, entry_id: str | None, task: "Task | None" = 
         cmd = [STEP_PYTHON, "-u", step["cmd"], *args]
     elif kind == "powershell":
         cmd = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", step["cmd"], *args]
+        if not office_steps_enabled():
+            if task is not None:
+                task.office_skipped = True
+                task.log_step(step["id"], "stdout", f"[{OFFICE_ENV}=off] Skipped {step['cmd']}: Outlook and Excel are not touched.\n")
+            return subprocess.CompletedProcess(cmd, 0, "", "")
     else:
         raise ValueError(f"unknown step type {kind}")
     # stdin=DEVNULL: a headless step must never be able to block on interactive
@@ -713,7 +733,9 @@ def _append_history(record: dict):
         log.warning("failed to append run history", exc_info=True)
 
 
-def _finalize_run_record(task: Task, outcome: str, error: str | None = None, cleanup: dict | None = None):
+def _finalize_run_record(
+    task: Task, outcome: str, error: str | None = None, cleanup: dict | None = None, outputs: list[dict] | None = None
+):
     """Write the terminal record for a started run, exactly once. Runs that
     never started (reject/reset from resting) have no run_started_at and leave no trace."""
     if task.run_started_at is None:
@@ -733,6 +755,9 @@ def _finalize_run_record(task: Task, outcome: str, error: str | None = None, cle
     if cleanup is not None:
         # Counts only ({removed, bytes, skipped}): no file names in the audit log.
         record["cleanup"] = cleanup
+    if outputs:
+        # The files the run produced, so the History tab and the card can still offer them after a restart.
+        record["outputs"] = [{"label": o.get("label"), "path": o["path"]} for o in outputs]
     _append_history(record)
     task.run_id = None
     task.run_started_at = None
@@ -762,22 +787,25 @@ def _finish_task(task: Task, steps: list[dict]):
     # Every successful finish funnels through here (python-only pipelines, runs
     # ended by a confirm/send), so this is the one place a task's `cleanup` runs. Failed runs, resets and rejects never reach it.
     cleanup = _cleanup_after_run(task)
+    outputs = resolve_outputs(task)
     if steps:
         push_notification(
             task,
             "task.completed",
             f"{task.display_name}: task complete",
             (task.completed_message or "Sent successfully - nothing else needed from you.")
-            + _cleanup_note(cleanup),
-            *resolve_outputs(task),
+            + _cleanup_note(cleanup)
+            + (f" {OFFICE_OFF_NOTE}" if task.office_skipped else ""),
+            *outputs,
         )
     # Record first: current_step must still name the last executed step.
-    _finalize_run_record(task, "completed", cleanup=cleanup)
+    _finalize_run_record(task, "completed", cleanup=cleanup, outputs=outputs[1])
     set_state(task, "resting", current_step=None)
 
 
 def _review_gate(task: Task, step: dict):
     set_state(task, "awaiting_review", current_step=step["id"])
+    skipped_note = f" {OFFICE_OFF_NOTE}" if task.office_skipped else ""
     message = step.get("reviewMessage")
     if isinstance(message, str) and message.strip():
         # Manifest-supplied text (platform tasks that have no Outlook draft).
@@ -785,7 +813,7 @@ def _review_gate(task: Task, step: dict):
             task,
             "task.review_ready",
             f"{task.display_name}: your review is needed",
-            message.strip(),
+            message.strip() + skipped_note,
             *resolve_outputs(task),
         )
         return
@@ -793,7 +821,7 @@ def _review_gate(task: Task, step: dict):
         task,
         "task.review_ready",
         f"{task.display_name}: draft ready for your review",
-        "The report's built and a draft is waiting in Outlook - take a look before it goes out.",
+        "The report's built and a draft is waiting in Outlook - take a look before it goes out." + skipped_note,
         *resolve_outputs(task),
     )
 
@@ -917,6 +945,7 @@ async def start_task(task_id: str):
         task.completed_steps.clear()
         task.step_output.clear()
         task.approvals = []
+        task.office_skipped = False
         entry_id = None
     task.run_id = str(uuid.uuid4())
     task.run_started_at = datetime.now(timezone.utc).isoformat()
@@ -1976,7 +2005,18 @@ def _store_upload(task: Task, input_id: str, client_name, stream) -> dict:
                 out.write(chunk)
         if size == 0:
             raise _Refusal("the uploaded file is empty")
+        if ext == ".json":
+            # A broken config must not replace the good one: it would only fail later, at Check inputs.
+            try:
+                json.loads(tmp.read_bytes().decode("utf-8-sig"))
+            except ValueError:
+                raise _Refusal(
+                    f"“{filename}” is not a valid JSON file, so the one already on file was kept. "
+                    "Open it in a text editor to check it, then upload it again."
+                ) from None
         try:
+            if ext == ".json" and dest.is_file():
+                shutil.copy2(dest, dest.with_name(dest.name + ".bak"))
             os.replace(tmp, dest)
         except OSError as exc:
             raise _Refusal(f"could not save the file (is it open in another program?): {exc}") from None
@@ -2360,15 +2400,17 @@ def get_draft_summary(task_id: str):
         cc = _draft_list(data.get("cc"), split=True)
         if not to and not cc:
             return {"ok": True, "summary": None}
-        return {
-            "ok": True,
-            "summary": {
-                "to": to,
-                "cc": cc,
-                "subject": _draft_text(data.get("subject")),
-                "attachments": _draft_attachment_names(data.get("attachments")),
-            },
+        summary = {
+            "to": to,
+            "cc": cc,
+            "subject": _draft_text(data.get("subject")),
+            "attachments": _draft_attachment_names(data.get("attachments")),
         }
+        # Things the task wants the person to see before sending (e.g. people missing from the roster).
+        notes = _draft_list(data.get("warnings"))
+        if notes:
+            summary["notes"] = notes
+        return {"ok": True, "summary": summary}
     except _Refusal as exc:
         return exc.payload()
 
@@ -2430,6 +2472,8 @@ async def inspect_task_pack(request: Request):
     """What a pack contains and its fingerprint, without installing it."""
     try:
         info = taskpacks.inspect_pack(await _pack_body(request))
+        if info["id"] in set(tasks) - _installed_pack_ids():
+            raise taskpacks.PackError(f"{info['id']!r} is already a built-in task, so a pack cannot replace it.")
     except taskpacks.PackError as exc:
         return _pack_refusal(exc)
     return {"ok": True, "pack": taskpacks.public_info(info), "installed": info["id"] in _installed_pack_ids()}
@@ -2468,8 +2512,52 @@ async def create_mailer_pack(body: _PackWizardBody):
         return _pack_refusal(exc)
 
 
+MAX_RESTORED_OUTPUT_RUNS = 3
+
+
+def restore_output_notifications() -> None:
+    """After a restart the in-memory notifications are gone, and with them the Open buttons of the last
+    finished runs. Rebuild a completion notification from each task's newest history records that kept
+    output files (only files that still exist inside the task folder)."""
+    per_task: dict[str, list[dict]] = {}
+    for record in reversed(_read_history()):
+        outputs = record.get("outputs")
+        task_id = record.get("task_id")
+        if record.get("outcome") != "completed" or not isinstance(outputs, list) or task_id not in tasks:
+            continue
+        if len(per_task.setdefault(task_id, [])) < MAX_RESTORED_OUTPUT_RUNS:
+            per_task[task_id].append(record)
+    for task_id, records in per_task.items():
+        task = tasks[task_id]
+        if task.notifications:
+            continue
+        for record in reversed(records):
+            files = []
+            for entry in record["outputs"]:
+                if not isinstance(entry, dict) or not isinstance(entry.get("path"), str):
+                    continue
+                label = entry.get("label") if isinstance(entry.get("label"), str) else None
+                resolved = _resolve_report_file(task, entry["path"], inside_task_only=True)
+                if resolved:
+                    files.append({"label": label, "path": resolved})
+            if not files:
+                continue
+            task.notifications.append(
+                {
+                    "id": f"restored-{record.get('run_id')}",
+                    "kind": "task.completed",
+                    "title": f"{task.display_name}: task complete",
+                    "body": "Finished before the Tasks engine last restarted.",
+                    "outputPath": files[0]["path"],
+                    "outputPaths": files,
+                    "createdAt": record.get("ended_at") or _utc_now(),
+                }
+            )
+
+
 discover_tasks()
 restore_run_state()
+restore_output_notifications()
 
 
 def main(argv: list[str] | None = None) -> None:

@@ -41,6 +41,23 @@ def slug(name: str) -> str:
     return cleaned[:40].strip("-")
 
 
+# One address ("a@b.com" or "Name <a@b.com>") per entry; entries are separated by semicolons.
+_ADDRESS_RE = re.compile(r"^(?:[^<>@;]*<)?[^\s<>@;,]+@[^\s<>@;,]+\.[A-Za-z]{2,}>?$")
+
+
+def _recipients(value, label: str) -> str:
+    text = _text(value, 500, label)
+    for entry in (part.strip() for part in text.split(";")):
+        if not entry or "{{" in entry:  # a template placeholder is filled in on each run
+            continue
+        if not _ADDRESS_RE.match(entry):
+            raise WizardError(
+                f"{label} has something that is not an email address: {entry[:60]!r}. "
+                "Use one address after another, separated by semicolons (a@x.com; b@x.com)."
+            )
+    return text
+
+
 def build_mailer_pack(answers: dict, taken_ids: set[str]) -> tuple[str, bytes]:
     """Returns (pack id, pack zip). `taken_ids` are the ids already in use (built-in and installed)."""
     if not isinstance(answers, dict):
@@ -62,8 +79,8 @@ def build_mailer_pack(answers: dict, taken_ids: set[str]) -> tuple[str, bytes]:
         raise WizardError("Choose up to 30 columns.")
     config = {
         "templateName": _text(answers.get("templateName"), 80, "The template name"),
-        "to": _text(answers.get("to"), 500, "To"),
-        "cc": _text(answers.get("cc"), 500, "Cc"),
+        "to": _recipients(answers.get("to"), "To"),
+        "cc": _recipients(answers.get("cc"), "Cc"),
         "subject": _text(answers.get("subject"), 200, "The subject"),
         "body": _text(answers.get("body"), 4000, "The message"),
         "columns": [_text(c, 60, "A column name", required=True) for c in columns],

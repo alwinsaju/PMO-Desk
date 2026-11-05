@@ -3,6 +3,48 @@ import { describe, it } from "node:test";
 import { historyRows, outputForRun } from "./historyRows.ts";
 import { requirementChecklist, fileKind, inputKind } from "./inputChecklist.ts";
 import { stripDays, stripRows, toggleWeekday } from "./scheduleStrip.ts";
+import { plainReason, refusalText, stepLabel } from "./taskPresenter.ts";
+import { lastRunInfo } from "./workflowView.ts";
+import { joinList } from "../../../lib/tasks/listText.ts";
+
+describe("plain refusal reasons", () => {
+  it("puts the engine's short reasons in plain words and leaves unknown ones alone", () => {
+    assert.match(plainReason("prepare is running"), /still being checked/);
+    assert.match(plainReason("task is awaiting_review"), /waiting for your review/);
+    assert.match(plainReason("task is error"), /stopped with an error/);
+    assert.equal(plainReason("task is mystery"), "task is mystery");
+    assert.match(
+      plainReason("file type '.exe' is not accepted (allowed: .xlsx)"),
+      /\(\.exe\) is not accepted here\. Use \.xlsx\./,
+    );
+    assert.equal(plainReason("something else"), "something else");
+    assert.match(refusalText({ ok: false, reason: "task is working" }), /running/);
+  });
+});
+
+describe("labels and wording", () => {
+  it("joins lists the way people say them", () => {
+    assert.equal(joinList([]), "");
+    assert.equal(joinList(["A"]), "A");
+    assert.equal(joinList(["A", "B"]), "A and B");
+    assert.equal(joinList(["A", "B", "C", "D"]), "A, B, C and D");
+  });
+  it("gives the shipped mailers' steps plain names, and a manifest label wins", () => {
+    const task = {
+      steps: [{ id: "create_pivot" }, { id: "review_gate", label: "Check it" }],
+    };
+    assert.equal(stepLabel(task, "create_pivot"), "Create the pivot table");
+    assert.equal(stepLabel(task, "send_gate"), "Your OK to send");
+    assert.equal(stepLabel(task, "review_gate"), "Check it");
+    assert.equal(stepLabel(task, "build_report"), "Build report");
+  });
+  it("does not say 'Not run yet' while the first run is under way", () => {
+    const now = new Date("2026-11-05T10:00:00Z");
+    assert.equal(lastRunInfo([], now).text, "Not run yet");
+    assert.equal(lastRunInfo([], now, "resting").text, "Not run yet");
+    assert.equal(lastRunInfo([], now, "awaiting_review").text, "First run in progress");
+  });
+});
 
 const note = (id, createdAt, outputPaths) => ({
   id,

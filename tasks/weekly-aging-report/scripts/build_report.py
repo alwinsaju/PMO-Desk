@@ -79,9 +79,21 @@ def main():
     shutil.copyfile(raw_path, out_path)
 
     wb = openpyxl.load_workbook(out_path)
+    if "Page 1" not in wb.sheetnames:
+        raise SystemExit(
+            f'The export has no sheet called "Page 1" (it has: {", ".join(wb.sheetnames)}). '
+            "Download the export again from ServiceNow without renaming the sheet."
+        )
     ws = wb["Page 1"]
     headers = [ws.cell(row=1, column=c).value for c in range(1, ws.max_column + 1)]
     idx = {h: i + 1 for i, h in enumerate(headers)}
+    missing = [c for c in ("Assigned to", "Updated") if c not in idx]
+    if missing:
+        names = " and ".join(f'"{c}"' for c in missing)
+        raise SystemExit(
+            f"The export has no column called {names}. "
+            "Download the export again from ServiceNow without removing or renaming columns."
+        )
     assigned_col = idx["Assigned to"]
     updated_col = idx["Updated"]
 
@@ -93,6 +105,11 @@ def main():
     for r in range(2, ws.max_row + 1):
         updated_val = ws.cell(row=r, column=updated_col).value
         if updated_val is not None:
+            if not isinstance(updated_val, (datetime.date, datetime.datetime)):
+                raise SystemExit(
+                    f'Row {r}: the "Updated" cell holds text ("{str(updated_val)[:30]}"), not a date. '
+                    "Fix that cell (or download the export again) and run it again."
+                )
             day_cell = ws.cell(row=r, column=day_col, value=datetime.datetime(
                 updated_val.year, updated_val.month, updated_val.day
             ))

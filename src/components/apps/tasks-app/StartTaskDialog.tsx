@@ -26,6 +26,7 @@ import { cn } from "@/lib/cn";
 import { FILE_SIZE, formatBytes } from "@/lib/format";
 import { getInputs, prepare, saveParams, uploadInput } from "./api";
 import { FileKindIcon } from "./FileKindIcon";
+import { focusDialogItself } from "./dialogFocus";
 import { fileKind, inputKind, requirementChecklist } from "./inputChecklist";
 import { SectionLabel, SeverityChip } from "./GateParts";
 import {
@@ -52,7 +53,7 @@ import {
   validateFile,
   type SelectChoice,
 } from "./startForm";
-import { refusalText } from "./taskPresenter";
+import { plainReason, refusalText } from "./taskPresenter";
 import { stillNeededText } from "./stillNeeded";
 import { readWorkbookSheets } from "./readWorkbook";
 import {
@@ -67,6 +68,8 @@ import {
   type RunSnapshot,
 } from "@/lib/tasks/inputCheck";
 import { dryRunPlan } from "@/lib/tasks/dryRun";
+import { hidePaths } from "@/lib/tasks/failureExplainer";
+import { joinList } from "@/lib/tasks/listText";
 import { getDesktopBridge } from "@/lib/pmo/desktopBridge";
 import { useTasksPrefs } from "@/lib/tasks/tasksPrefsStore";
 import type { ActionResult, InputStatus, OptionsFile, Task, TaskInputDef } from "./types";
@@ -188,10 +191,18 @@ export function StartTaskDialog({
     if (!reply.ok || !reply.options) {
       setOptions(null);
       setCheck("failed");
+      // Folder names on this computer are not for the form; the full text is in the task's log.
       setCheckError(
-        [reply.reason ?? "The check didn't produce any options.", reply.stderr_tail]
-          .filter(Boolean)
-          .join("\n"),
+        hidePaths(
+          [
+            reply.reason
+              ? plainReason(reply.reason)
+              : "The check didn't produce any options.",
+            reply.stderr_tail,
+          ]
+            .filter(Boolean)
+            .join("\n"),
+        ),
       );
       return;
     }
@@ -224,6 +235,12 @@ export function StartTaskDialog({
       return rest;
     });
     setBusy((b) => ({ ...b, [input.id]: true }));
+    // The reading of an earlier file must not stay on screen beside this one.
+    setFileChecks((c) => {
+      const rest = { ...c };
+      delete rest[input.id];
+      return rest;
+    });
     // Read the export on this computer while it uploads: a wrong sheet or a missing column is better
     // found now than after a failed run. It only warns; the upload goes ahead either way.
     const rule = ruleFor(task.id, input.id);
@@ -264,7 +281,10 @@ export function StartTaskDialog({
     if (session.current !== mine) return;
     setBusy((b) => ({ ...b, [input.id]: false }));
     if (!reply.ok) {
-      setFileErrors((e) => ({ ...e, [input.id]: reply.reason ?? "The upload failed." }));
+      setFileErrors((e) => ({
+        ...e,
+        [input.id]: reply.reason ? plainReason(reply.reason) : "The upload failed.",
+      }));
       return;
     }
     useTasksPrefs.getState().update((t) => ({
@@ -334,7 +354,10 @@ export function StartTaskDialog({
 
   return (
     <Dialog open={open} onOpenChange={(next) => !starting && onOpenChange(next)}>
-      <DialogContent className="scroll-thin flex max-h-[85vh] max-w-xl flex-col overflow-y-auto px-[30px] pt-7 pb-6">
+      <DialogContent
+        onOpenAutoFocus={focusDialogItself}
+        className="scroll-thin flex max-h-[85vh] max-w-xl flex-col overflow-y-auto px-[30px] pt-7 pb-6"
+      >
         <DialogTitle>Run {task.displayName}</DialogTitle>
         <DialogDescription>{startDescription(task)}</DialogDescription>
 
@@ -427,10 +450,11 @@ export function StartTaskDialog({
                       ? "Inputs checked."
                       : ready
                         ? "Check the files to see which cycles can be built."
-                        : `Upload ${afterIds
-                            .filter((id) => !isPresent(statuses, id))
-                            .map((id) => files.find((f) => f.id === id)?.label ?? id)
-                            .join(" and ")} first.`}
+                        : `Upload ${joinList(
+                            afterIds
+                              .filter((id) => !isPresent(statuses, id))
+                              .map((id) => files.find((f) => f.id === id)?.label ?? id),
+                          )} first.`}
                 </p>
                 {check === "failed" && checkError && (
                   <pre className="rounded-control bg-red-soft text-red px-3.5 py-2.5 font-mono text-[11.5px] whitespace-pre-wrap">

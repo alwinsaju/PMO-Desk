@@ -29,12 +29,30 @@ export function humanize(id: string | null | undefined): string {
   return id.replace(/_/g, " ").replace(/^./, (char) => char.toUpperCase());
 }
 
+/** Short names for the steps the shipped tasks use when their manifest gives no `label`. */
+const KNOWN_STEP_LABELS: Record<string, string> = {
+  recalc: "Recalculate the workbook",
+  create_pivot: "Create the pivot table",
+  build_email_data: "Prepare the email",
+  create_draft: "Create the Outlook draft",
+  review_gate: "Your review",
+  send_gate: "Your OK to send",
+  send_draft: "Send the email",
+  prepare_data: "Prepare the data",
+  review_incidents: "Classify incidents",
+  refresh_workbook: "Refresh the workbook",
+  review_workbook: "Check the workbook",
+};
+
 /** A step's display name: the manifest `label` when it has one (tasks on
- *  the platform), else the humanized id exactly as before. An unknown step
- *  id (e.g. a log line from a step since removed) humanizes the id too. */
+ *  the platform), else a plain name for the shipped tasks' steps, else the
+ *  humanized id. An unknown step id (e.g. a log line from a step since
+ *  removed) humanizes the id too. */
 export function stepLabel(task: Task, stepId: string | null | undefined): string {
   const step = task.steps.find((s) => s.id === stepId);
-  return step?.label || humanize(stepId);
+  return (
+    step?.label || (stepId ? KNOWN_STEP_LABELS[stepId] : undefined) || humanize(stepId)
+  );
 }
 
 /**
@@ -216,11 +234,34 @@ export function describeApproval(
 /** How many ids/messages a refusal line names before "+N more". */
 const REFUSAL_PREVIEW = 3;
 
+const TASK_STATE_TEXT: Record<string, string> = {
+  working: "This task is running. Wait until it finishes.",
+  finishing: "This task is finishing. Wait until it is done.",
+  awaiting_review: "This task is waiting for your review. Approve or reject it first.",
+  awaiting_send:
+    "This task is waiting for your confirmation. Confirm or cancel it first.",
+  error: "This task stopped with an error. Retry or reset it first.",
+};
+
+/** The engine's short refusal reasons in plain words; anything it does not know passes through. */
+export function plainReason(reason: string): string {
+  const text = reason.trim();
+  if (text === "prepare is running")
+    return "The files are still being checked. Wait for the check to finish, then try again.";
+  const state = /^task is (\w+)$/.exec(text);
+  if (state) return TASK_STATE_TEXT[state[1]] ?? text;
+  const type = /^file type '(.*)' is not accepted \(allowed: (.*)\)$/.exec(text);
+  if (type) return `That kind of file (${type[1]}) is not accepted here. Use ${type[2]}.`;
+  if (text === "the uploaded file is empty")
+    return "That file is empty. Choose another one.";
+  return text;
+}
+
 /** One-line text for an `ok:false` action reply. The engine's `reason` is
- *  used as given; a form-gate refusal also names the first few unanswered
+ *  put in plain words (see plainReason); a form-gate refusal also names the first few unanswered
  *  field ids, and a diff-gate refusal the first few blockers. */
 export function refusalText(result: ActionResult): string {
-  const base = result.reason?.trim() || "request was rejected";
+  const base = plainReason(result.reason ?? "") || "request was rejected";
   const names: string[] = Array.isArray(result.pending)
     ? result.pending
     : (result.blocking ?? []).map((b) => b.message || b.kind);

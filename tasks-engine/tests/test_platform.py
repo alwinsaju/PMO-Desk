@@ -571,10 +571,29 @@ def test_upload_can_land_in_the_task_config_and_reference_folders(tmp_path, dest
     c = client()
     assert backend._missing_required_inputs(backend.tasks["plat"]) == ["kept"]
 
-    assert upload(c, "plat", "kept", name="x.json" if dest.endswith(".json") else "x.xlsx")["ok"] is True
+    payload = b'{"ok": true}' if dest.endswith(".json") else b"PK-data"
 
-    assert (folder / dest).read_bytes() == b"PK-data"
+    assert upload(c, "plat", "kept", name="x.json" if dest.endswith(".json") else "x.xlsx", data=payload)["ok"] is True
+
+    assert (folder / dest).read_bytes() == payload
     assert backend._missing_required_inputs(backend.tasks["plat"]) == []
+
+
+def test_a_broken_json_config_is_refused_and_the_good_one_kept_with_a_backup(tmp_path):
+    folder = make_platform_task(tmp_path, inputs=[
+        {"id": "cfg", "type": "file", "accept": [".json"], "dest": "config/c.json", "required": True, "persist": True}])
+    c = client()
+    assert upload(c, "plat", "cfg", name="c.json", data=b'{"v": 1}')["ok"] is True
+
+    body = upload(c, "plat", "cfg", name="c.json", data=b'{"x":')
+
+    assert body["ok"] is False and "not a valid JSON file" in body["reason"]
+    assert (folder / "config" / "c.json").read_bytes() == b'{"v": 1}'
+    assert not list((folder / "config").glob("*.upload"))
+
+    assert upload(c, "plat", "cfg", name="c.json", data=b'{"v": 2}')["ok"] is True
+    assert (folder / "config" / "c.json").read_bytes() == b'{"v": 2}'
+    assert (folder / "config" / "c.json.bak").read_bytes() == b'{"v": 1}'
 
 
 def test_shared_root_is_only_resolved_when_the_caller_allows_it(tmp_path):

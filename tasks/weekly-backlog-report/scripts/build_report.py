@@ -56,7 +56,11 @@ def main():
     ws = wb["Page 1"]
     headers = [ws.cell(row=1, column=c).value for c in range(1, ws.max_column + 1)]
     if headers[:3] != ["Number", "Requested for", "Opened"]:
-        raise SystemExit(f"Unexpected column layout in {raw_path}: {headers}")
+        raise SystemExit(
+            f"Unexpected column layout in {os.path.basename(raw_path)}: the first columns should be "
+            f"Number, Requested for, Opened (this file starts with {headers[:3]}). "
+            "Check that this is the Backlog export, not another report's."
+        )
 
     max_row = ws.max_row
 

@@ -48,9 +48,19 @@ export interface LastRunInfo {
   text: string;
 }
 
-export function lastRunInfo(runs: readonly HistoryRun[], now: Date): LastRunInfo {
+export function lastRunInfo(
+  runs: readonly HistoryRun[],
+  now: Date,
+  state?: string,
+): LastRunInfo {
   const run = latestRun(runs);
-  if (!run) return { tone: "neutral", text: "Not run yet" };
+  if (!run) {
+    // "Not run yet" must not sit beside a run that is under way or waiting for you.
+    return {
+      tone: "neutral",
+      text: state && state !== "resting" ? "First run in progress" : "Not run yet",
+    };
+  }
   const failed = run.outcome === "failed";
   const when = relativeTime(run.ended_at, now);
   const took = failed ? "" : ` · ${formatDuration(durationMs(run))}`;

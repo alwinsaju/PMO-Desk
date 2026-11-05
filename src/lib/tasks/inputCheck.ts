@@ -14,10 +14,17 @@ export interface SheetRule {
 }
 
 const NUMBER_ETC = ["Number", "Assigned to", "Updated"];
+// Names.xlsx as the mailers read it (Sheet1: Full Name, Email). Without the Email column nobody can be addressed.
+const ROSTER_RULE: SheetRule = { sheet: "Sheet1", required: ["Full Name", "Email"] };
 
-/** Per `taskId:inputId`. Only the incident exports have rules; other files are just checked as readable. */
+/** Per `taskId:inputId`. Only some uploads have rules; other files are just checked as readable. */
 export const INPUT_RULES: Record<string, SheetRule> = {
   "weekly-aging-report:incident": { sheet: "Page 1", required: NUMBER_ETC },
+  "weekly-aging-report:roster": ROSTER_RULE,
+  "weekly-backlog-report:roster": ROSTER_RULE,
+  "monthly-report-deck:roster": ROSTER_RULE,
+  "deployment-dep-weekend-mailer:roster": ROSTER_RULE,
+  "deployment-dep-weekend-mailer:workbook": { sheet: "Deployment", required: [] },
   "weekly-backlog-report:incident": {
     sheet: "Page 1",
     required: ["Number", "Requested for", "Opened", "Assigned to"],

@@ -150,6 +150,50 @@ def test_the_task_must_be_sound():
     refused(task_with(prepare={"cmd": "scripts/nope.py"}), "prepare step")
 
 
+def test_a_pack_without_a_review_or_confirm_step_is_refused():
+    send_script = {"scripts/send_draft.ps1": b"Write-Host 'send'"}
+    no_gate = [
+        {"id": "make", "type": "python", "cmd": "scripts/make.py"},
+        {"id": "send", "type": "powershell", "cmd": "scripts/send_draft.ps1"},
+    ]
+    refused(pack(**{**send_script, "task.json": json.dumps({**TASK, "steps": no_gate}).encode()}), "no review or confirm step")
+    for gate in ("review", "confirm"):
+        gated = [no_gate[0], {"id": "gate", "type": gate}, no_gate[1]]
+        info = taskpacks.inspect_pack(pack(**{**send_script, "task.json": json.dumps({**TASK, "steps": gated}).encode()}))
+        assert [s["type"] for s in info["steps"]] == ["python", gate, "powershell"]
+
+
+def test_a_colon_in_a_file_name_is_refused():
+    refused(raw_zip(files(**{"notes.txt:evil.json": b"{}"})), "colon")
+
+
+def test_names_that_differ_only_by_capitals_are_refused():
+    refused(raw_zip(files(**{"Scripts/Hello.py": b"a", "scripts/hello.py": b"b"})), "capital letters")
+
+
+def test_the_pack_name_must_be_plain_and_short():
+    def named(name):
+        entries = files()
+        manifest = {
+            "format": taskpacks.FORMAT, "version": 1, "id": "demo-pack", "name": name, "packVersion": "1",
+            "files": {k: hashlib.sha256(v).hexdigest() for k, v in entries.items()},
+        }
+        return raw_zip(entries, manifest=manifest)
+
+    refused(named("x" * 81), "longer than 80")
+    refused(named("   "), "no name")
+    refused(named("Shift \u202eRoster"), "hidden characters")
+    assert taskpacks.inspect_pack(named("Shift Roster"))["name"] == "Shift Roster"
+
+
+def test_inspect_refuses_a_builtin_id_before_anyone_types_a_fingerprint(client):
+    engine.tasks["demo-pack"] = engine.Task({"id": "demo-pack", "steps": []}, Path("."))
+
+    reply = client.post("/task-packs/inspect", content=pack())
+
+    assert reply.status_code == 400 and "built-in" in reply.json()["reason"]
+
+
 def test_install_needs_the_confirmed_fingerprint_and_never_replaces_a_builtin(tmp_path):
     data = pack()
     fp = taskpacks.inspect_pack(data)["fingerprint"]
@@ -324,6 +368,8 @@ def test_the_wizard_builds_a_valid_pack():
         ({"subject": "", "body": ""}, "subject and a message"),
         ({"columns": ["x"] * 31}, "30 columns"),
         ({"to": "x" * 600}, "longer than 500"),
+        ({"to": "not an email, a@b"}, "To has something that is not an email address"),
+        ({"cc": "x@y.comBcc: evil@evil.com"}, "Cc has something that is not an email address"),
         ({"body": 5}, "must be text"),
     ],
 )
@@ -354,7 +400,8 @@ def run_build_script(folder: Path, env_extra: dict) -> subprocess.CompletedProce
     env = {**os.environ, "AI_OS_TASKS_SHARED": str(REPO_SHARED), "PYTHONUTF8": "1", **env_extra}
     env.pop("AI_OS_PMO_DATA_DIR", None)
     return subprocess.run(
-        [sys.executable, "scripts/build_email_data.py"], cwd=folder, env=env, capture_output=True, text=True, timeout=60,
+        [sys.executable, "scripts/build_email_data.py"], cwd=folder, env=env, capture_output=True, text=True,
+        encoding="utf-8", errors="replace", timeout=60,
     )
 
 
@@ -398,6 +445,30 @@ def test_the_mailer_script_can_pick_columns_and_use_a_named_template(tmp_path):
     assert "Amount" not in data["table_html"] and "Vendor" in data["table_html"]
     assert data["attachments"] == [str(folder / "input" / "table.csv")]
     assert "Using template: Vendor mail" in result.stdout
+
+
+def test_the_mailer_script_says_loudly_when_it_cuts_a_long_table(tmp_path):
+    table = "Vendor\n" + "".join(f"V{i}\n" for i in range(600))
+    folder = make_mailer(tmp_path, ANSWERS, "table.csv", table.encode())
+
+    result = run_build_script(folder, {})
+
+    assert result.returncode == 0, result.stderr
+    data = json.loads((folder / "output" / "email-data.json").read_text(encoding="utf-8"))
+    assert "Only the first 500 of 600 rows are shown here." in data["table_html"]
+    assert "V599" not in data["table_html"] and "V499" in data["table_html"]
+    assert data["warnings"] == [
+        "The table has 600 rows, but only the first 500 are in the email. "
+        "Turn on “attach the table” if the others must reach the readers."
+    ]
+    assert "only the first 500" in result.stdout
+
+
+def test_the_wizard_takes_several_addresses_and_template_placeholders():
+    answers = {**ANSWERS, "to": "a@x.com; Sarab, Mani <msarab@x.com>", "cc": "{{owner}}"}
+    _, data = pack_mailer.build_mailer_pack(answers, set())
+    config = json.loads(zipfile.ZipFile(io.BytesIO(data)).read("config/mail.json"))
+    assert config["to"] == "a@x.com; Sarab, Mani <msarab@x.com>" and config["cc"] == "{{owner}}"
 
 
 def test_the_mailer_script_explains_a_missing_or_empty_table(tmp_path):

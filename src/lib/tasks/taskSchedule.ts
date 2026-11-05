@@ -119,18 +119,43 @@ export function dayLabel(day: string): string {
   });
 }
 
-/** The words for a task-day reminder. `inputsReady` is whether every required file is already uploaded. */
+/** The words for a task-day reminder. `inputsReady` is whether every required file is already uploaded;
+ *  `staleLabels` names uploads that are older than the day it is due (see staleUploads). */
 export function scheduleMessage(
   taskName: string,
   due: Exclude<ScheduleDue, { kind: "none" }>,
   inputsReady: boolean,
   autoPrepared: boolean,
+  staleLabels: readonly string[] = [],
 ): string {
   const when = due.kind === "due" ? "is due today" : `was due ${dayLabel(due.day)}`;
   if (autoPrepared) return `${taskName} ${when}. It was prepared and is waiting at the review step.`;
+  if (inputsReady && staleLabels.length > 0)
+    return `${taskName} ${when}, but ${staleLabels.join(", ")} ${staleLabels.length === 1 ? "was" : "were"} uploaded before then, so it was not prepared. Upload fresh files in Tasks and run it.`;
   return inputsReady
     ? `${taskName} ${when}. The files are in; open Tasks to run it.`
     : `${taskName} ${when}, but not all of its files are uploaded yet.`;
+}
+
+interface UploadLite {
+  label: string;
+  type?: string;
+  persist?: boolean;
+  present: boolean;
+  modified?: string | null;
+}
+
+/** Labels of the uploaded files that are older than the day the task was due. A scheduled run that prepares
+ *  itself must not quietly reuse leftovers from an earlier run. Files kept on purpose (the roster) never count. */
+export function staleUploads(inputs: readonly UploadLite[], dueDay: string): string[] {
+  const dayStart = parseDay(dueDay).getTime();
+  return inputs
+    .filter((i) => i.type === "file" && !i.persist && i.present)
+    .filter((i) => {
+      const at = i.modified ? Date.parse(i.modified) : Number.NaN;
+      return !Number.isFinite(at) || at < dayStart;
+    })
+    .map((i) => i.label);
 }
 
 /** A sane schedule when someone first turns one on. */

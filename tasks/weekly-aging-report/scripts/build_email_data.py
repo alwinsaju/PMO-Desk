@@ -120,6 +120,14 @@ def main():
     no_email = [r["label"] for r in rows if r["type"] == "name" and "email" not in r]
     if no_email:
         print(f"WARNING - no roster email on file for: {no_email}")
+        # Shown next to the recipients in the Tasks app's review and confirm dialogs.
+        data["warnings"] = [
+            f"No roster email on file for: {', '.join(no_email[:10])}"
+            + (f" and {len(no_email) - 10} more" if len(no_email) > 10 else "")
+            + ". The draft looks them up in Outlook by name instead; check the draft before sending."
+        ]
+        with open(out_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
 
 
 if __name__ == "__main__":

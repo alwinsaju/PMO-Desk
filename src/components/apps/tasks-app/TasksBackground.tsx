@@ -9,7 +9,7 @@ import { markTemplateUsed } from "@/lib/templates/usageStore";
 import { fetchAssignedTemplate } from "../templates-app/api";
 import { explainFailure } from "@/lib/tasks/failureExplainer";
 import { dequeue, canDispatch, decide } from "@/lib/tasks/sendQueue";
-import { scheduleMessage } from "@/lib/tasks/taskSchedule";
+import { scheduleMessage, staleUploads } from "@/lib/tasks/taskSchedule";
 import { useTasksPrefs } from "@/lib/tasks/tasksPrefsStore";
 import { fetchTasks, getDraftSummary, getInputs, sendTask, startTask } from "./api";
 import { parseDraftSummary } from "./draftSummary";
@@ -63,23 +63,27 @@ export function TasksBackground() {
         const ready = Boolean(
           inputs?.ok && inputs.inputs?.every((i) => !i.required || i.present),
         );
+        const stale = ready ? staleUploads(inputs?.inputs ?? [], due.day) : [];
         let prepared = false;
-        if (schedule.autoPrepare && ready && task.state === "resting") {
+        if (
+          schedule.autoPrepare &&
+          ready &&
+          stale.length === 0 &&
+          task.state === "resting"
+        ) {
           const started = await startTask(task.id).catch(() => null);
           prepared = started?.ok === true;
         }
         prefs().update((t) => ({ ...t, handled: { ...t.handled, [task.id]: due.day } }));
+        const message = scheduleMessage(task.displayName, due, ready, prepared, stale);
         toast({
           key: `sched-${task.id}`,
-          tone: due.kind === "missed" ? "warning" : "info",
+          tone: due.kind === "missed" || stale.length > 0 ? "warning" : "info",
           durationMs: 12_000,
-          message: scheduleMessage(task.displayName, due, ready, prepared),
+          message,
           action: { label: "Open Tasks", run: () => openTasks(task.id) },
         });
-        systemNotice(
-          task.displayName,
-          scheduleMessage(task.displayName, due, ready, prepared),
-        );
+        systemNotice(task.displayName, message);
       }
     }
 

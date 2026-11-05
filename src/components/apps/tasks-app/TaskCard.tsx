@@ -11,7 +11,7 @@ import { TaskActions } from "./TaskActions";
 import { TaskStateBadge } from "./TaskStateBadge";
 import { latestArtifactNotification, statusSentence } from "./taskPresenter";
 import { OpenFileButtons } from "./OpenFileButtons";
-import { explainFailure, lastLine } from "@/lib/tasks/failureExplainer";
+import { explainFailure } from "@/lib/tasks/failureExplainer";
 import { plainStepName, stepPosition, timeLeftText } from "@/lib/tasks/runHistory";
 
 import { useGateData, type GateData } from "./useGateData";
@@ -64,7 +64,7 @@ export const TaskCard = memo(function TaskCard({
   // Earlier runs: the last-run line, the step colours when idle, and a rough "time left".
   const runs = useTaskRuns(taskId, task.state);
   const timeLeft = timeLeftText(task, runs);
-  const lastRun = lastRunInfo(runs, new Date());
+  const lastRun = lastRunInfo(runs, new Date(), task.state);
 
   return (
     <article
@@ -82,7 +82,7 @@ export const TaskCard = memo(function TaskCard({
         <div className="min-w-0 flex-1">
           <h3
             title={task.displayName}
-            className="text-ink truncate text-[16.5px] font-bold tracking-[-0.015em]"
+            className="text-ink line-clamp-2 text-[16.5px] leading-tight font-bold tracking-[-0.015em] break-words"
           >
             {task.displayName}
           </h3>
@@ -110,16 +110,16 @@ export const TaskCard = memo(function TaskCard({
       </div>
 
       {task.state === "error" && task.error ? (
-        <div
-          className="rounded-control bg-red-soft text-red px-3 py-2"
-          title={task.error}
-        >
+        <div className="rounded-control bg-red-soft text-red px-3 py-2">
           <p className="text-[12.5px] leading-snug font-semibold">
             {explainFailure(task.error).title}
           </p>
-          <p className="line-clamp-1 font-mono text-[11px] leading-normal [overflow-wrap:anywhere]">
-            {lastLine(task.error)}
-          </p>
+          {/* Only what the task said in plain words; the raw error (with folders) is under Details. */}
+          {explainFailure(task.error).message && (
+            <p className="line-clamp-2 text-[11.5px] leading-normal [overflow-wrap:anywhere]">
+              {explainFailure(task.error).message}
+            </p>
+          )}
         </div>
       ) : (
         <p className="text-ink-soft line-clamp-2 min-h-5 text-[13.5px]">

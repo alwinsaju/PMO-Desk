@@ -199,8 +199,9 @@ export function ScheduleTab({
           <span>
             <strong>Schedules only run while PMO Desk is open.</strong> Anything that came
             due while it was closed is reported the next time it starts. A scheduled task
-            can be prepared for you, but it always stops at the first review step; nothing
-            is sent without your approval.
+            can be prepared for you, but only from files uploaded on or after the day it
+            is due (older ones are left alone and you are told). It always stops at the
+            first review step; nothing is sent without your approval.
           </span>
         </Note>
         <WeekStrip tasks={tasks} schedules={prefs.schedules} onChange={setSchedule} />
