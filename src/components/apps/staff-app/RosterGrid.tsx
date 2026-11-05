@@ -1,7 +1,13 @@
 "use client";
 
-import { useMemo } from "react";
+import {
+  useMemo,
+  useState,
+  type FocusEvent as ReactFocusEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from "react";
 import { cn } from "@/lib/cn";
+import { cellSelector, moveInGrid, tabStop } from "@/lib/staff/gridNav";
 import {
   dayName,
   formatDayMonth,
@@ -159,8 +165,51 @@ export function RosterGrid({
   }, [cycle, days]);
   const dayRowTop = eventRow + (cycle ? WEEK_ROW : 0);
 
+  // One tab stop for the whole grid; the arrow keys, Home, End and Page keys move inside it.
+  const rowKeys = useMemo(
+    () => sections.flatMap((s) => s.rows.map((r) => (s.group ? r.key : null))),
+    [sections],
+  );
+  const [remembered, setRemembered] = useState<{ rowKey: string; date: string } | null>(
+    null,
+  );
+  const stop = useMemo(
+    () => tabStop(remembered, rowKeys, days),
+    [remembered, rowKeys, days],
+  );
+  const cellOf = (target: EventTarget): HTMLElement | null => {
+    const el = target as HTMLElement;
+    return el.dataset?.rosterCell !== undefined ? el : null;
+  };
+  const onGridKeyDown = (e: ReactKeyboardEvent<HTMLTableElement>) => {
+    const el = cellOf(e.target);
+    if (!el || !el.dataset.rowKey || !el.dataset.date) return;
+    const to = moveInGrid(
+      { row: rowKeys.indexOf(el.dataset.rowKey), col: days.indexOf(el.dataset.date) },
+      e,
+      rowKeys.map((k) => k !== null),
+      days.length,
+    );
+    const rowKey = to ? rowKeys[to.row] : null;
+    if (!to || !rowKey) return;
+    e.preventDefault();
+    const date = days[to.col];
+    setRemembered({ rowKey, date });
+    e.currentTarget.querySelector<HTMLElement>(cellSelector(rowKey, date))?.focus();
+  };
+  const onGridFocus = (e: ReactFocusEvent<HTMLTableElement>) => {
+    const el = cellOf(e.target);
+    const rowKey = el?.dataset.rowKey;
+    const date = el?.dataset.date;
+    if (rowKey && date && (stop?.rowKey !== rowKey || stop.date !== date)) {
+      setRemembered({ rowKey, date });
+    }
+  };
+
   return (
     <table
+      onKeyDown={onGridKeyDown}
+      onFocus={onGridFocus}
       className="border-separate border-spacing-0"
       style={{
         tableLayout: "fixed",
@@ -331,6 +380,7 @@ export function RosterGrid({
                       today={day === today}
                       weekStart={cycle && weekdayIndex(day) === 6}
                       who={row.name}
+                      tabbable={stop?.rowKey === rowKey && stop.date === day}
                       onOpen={actions.open}
                     />
                   );

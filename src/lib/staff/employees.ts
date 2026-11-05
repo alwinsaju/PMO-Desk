@@ -6,8 +6,8 @@ import { csvSafeCell } from "../pmo/todoExport.ts";
 import {
   LIMITS,
   checkEmployeeFields,
+  isValidBirthday,
   isValidEmail,
-  type FieldProblems,
 } from "./fieldRules.ts";
 
 export { isValidEmail };
@@ -350,6 +350,11 @@ export const ROSTER_COLUMNS: readonly Column[] = [
   { key: "gender", header: "Gender", aliases: ["Gender ( The column should be hidden)"] },
   { key: "clientManager", header: "Client Manager" },
   {
+    key: "birthday",
+    header: "Birthday",
+    aliases: ["Date of birth", "DOB", "Birthday (MM-DD)"],
+  },
+  {
     key: "excludeFromShiftRoster",
     header: "Exclude from shift roster",
     aliases: ["Excluded from shift roster"],
@@ -413,6 +418,28 @@ export function parseDateCell(value: unknown): string {
 }
 
 const TRUE_WORDS = new Set(["yes", "y", "true", "1", "campus"]);
+
+/**
+ * A birthday cell as the "MM-DD" the reminders use (or "yyyy-mm-dd" when that is how it was typed).
+ * A real date cell (Excel stores "14 Mar" as a date in some year) and a day-first date are cut down
+ * to month and day, so a birth year that was never meant to be kept is not stored. "" when the cell
+ * is empty or is not a real day.
+ */
+export function parseBirthdayCell(value: unknown): string {
+  if (value instanceof Date) return parseDateCell(value).slice(5);
+  const text = clean(value);
+  if (!text) return "";
+  if (/^(\d{4}-)?\d{2}-\d{2}$/.test(text)) return isValidBirthday(text) ? text : "";
+  const monthDay = /^(\d{1,2})[ -]([A-Za-z]{3})[a-z]*$/.exec(text);
+  if (monthDay) {
+    const month = MONTHS.indexOf(monthDay[2].toLowerCase());
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const found = `${pad(month + 1)}-${pad(Number(monthDay[1]))}`;
+    return month >= 0 && isValidBirthday(found) ? found : "";
+  }
+  const date = parseDateCell(value);
+  return date ? date.slice(5) : "";
+}
 
 export function parseSkills(value: unknown): string[] {
   const seen = new Set<string>();
@@ -538,6 +565,11 @@ export function parseRosterRows(rows: readonly (readonly unknown[])[]): ImportRe
       else if (clean(raw[key]) !== "") {
         dropped.push(`${DATE_LABELS[key]} "${clean(raw[key]).slice(0, 30)}"`);
       }
+    }
+    const birthday = parseBirthdayCell(raw.birthday);
+    if (birthday) employee.birthday = birthday;
+    else if (clean(raw.birthday) !== "") {
+      dropped.push(`Birthday "${clean(raw.birthday).slice(0, 30)}"`);
     }
     if (clean(raw.campus))
       employee.campus = TRUE_WORDS.has(clean(raw.campus).toLowerCase());
@@ -747,8 +779,48 @@ export function toggleSort(current: SortState, key: SortKey): SortState {
   return { key, dir: defaultSortDir(key) };
 }
 
-const byName = (a: Employee, b: Employee) =>
-  displayName(a).localeCompare(displayName(b), undefined, { sensitivity: "base" });
+/** A typical consulting ladder, junior to senior. A level is placed by the longest entry it starts with
+ *  ("Senior Consultant 2" sits with "Senior Consultant"); anything else comes after, in natural order. */
+const LEVEL_LADDER = [
+  "intern",
+  "analyst",
+  "senior analyst",
+  "consultant",
+  "senior consultant",
+  "manager",
+  "senior manager",
+  "associate director",
+  "director",
+  "senior director",
+  "specialist leader",
+  "principal",
+  "managing director",
+  "partner",
+];
+
+export function levelRank(level: string): number {
+  const text = level.trim().toLowerCase();
+  let best = -1;
+  let bestLength = 0;
+  LEVEL_LADDER.forEach((entry, rank) => {
+    if (text.startsWith(entry) && entry.length > bestLength) {
+      best = rank;
+      bestLength = entry.length;
+    }
+  });
+  return best < 0 ? LEVEL_LADDER.length : best;
+}
+
+/** Seniority first, then natural order of the words ("Senior 2" before "Senior 10"). */
+export function compareLevels(a: string, b: string): number {
+  return (
+    levelRank(a) - levelRank(b) ||
+    a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" })
+  );
+}
+
+const COLLATE = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+const COLLATE_NAME = new Intl.Collator(undefined, { sensitivity: "base" });
 
 /** People with no value in the column always come last, in either direction. */
 export function sortEmployees<T extends Employee>(
@@ -758,23 +830,29 @@ export function sortEmployees<T extends Employee>(
 ): T[] {
   const value = SORT_VALUE[key];
   const sign = dir === "desc" ? -1 : 1;
-  return [...employees].sort((a, b) => {
-    const x = value(a).trim();
-    const y = value(b).trim();
-    if (!x !== !y) return x ? -1 : 1;
-    const order = x.localeCompare(y, undefined, { numeric: true, sensitivity: "base" });
-    return sign * order || byName(a, b);
+  // Each person's sort keys are worked out once, not on every comparison.
+  const keyed = employees.map((e) => {
+    const v = value(e).trim();
+    return { e, v, rank: key === "level" ? levelRank(v) : 0, name: displayName(e) };
   });
+  keyed.sort((a, b) => {
+    if (!a.v !== !b.v) return a.v ? -1 : 1;
+    const order = a.rank - b.rank || COLLATE.compare(a.v, b.v);
+    return sign * order || COLLATE_NAME.compare(a.name, b.name);
+  });
+  return keyed.map((k) => k.e);
 }
 
-/** Distinct non-empty values of a text field, sorted. */
+/** Distinct non-empty values of a text field, sorted (levels by seniority). */
 export function distinctValues(
   employees: readonly Employee[],
   key: "offering" | "op" | "level" | "team" | "homeOffice",
 ): string[] {
-  return [...new Set(employees.map((e) => e[key]).filter(Boolean))].sort((a, b) =>
-    a.localeCompare(b, undefined, { numeric: true }),
-  );
+  const compare =
+    key === "level"
+      ? compareLevels
+      : (a: string, b: string) => a.localeCompare(b, undefined, { numeric: true });
+  return [...new Set(employees.map((e) => e[key]).filter(Boolean))].sort(compare);
 }
 
 export interface RollOff {

@@ -32,6 +32,7 @@ import {
 import { useStaffPrefs } from "@/lib/staff/staffPrefsStore";
 import { useStaffStore } from "@/lib/staff/staffStore";
 import { useActiveStaff } from "./tabActive";
+import { CHECKLIST_TOAST_KEY } from "./startedToast";
 import type { Employee } from "@/lib/staff/types";
 import { PersonName } from "@/components/people/PersonName";
 import { useMyFirstName } from "@/components/people/useMyFirstName";
@@ -433,7 +434,8 @@ export function ChecklistsPanel() {
         seenEmployees: seen,
         checklists: [...p.checklists, ...made],
       }));
-      if (made.length > 0) toast({ ...startedText(made), tone: "info" });
+      if (made.length > 0)
+        toast({ ...startedText(made), tone: "info", key: CHECKLIST_TOAST_KEY });
     }
   }, [status, hydrated, employees, offboarded, update]);
 

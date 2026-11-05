@@ -10,6 +10,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
 } from "react";
 import { motion, useReducedMotion } from "motion/react";
@@ -81,7 +82,8 @@ import {
   type DirectoryColumnKey,
 } from "@/lib/staff/layout";
 import type { Employee } from "@/lib/staff/types";
-import { handleRowKey } from "../rowNav";
+import { ROW_HEIGHT, scrollTopToReveal, windowRange } from "@/lib/staff/windowing";
+import { rowKeyAction } from "../rowNav";
 import { offboardMany } from "./bulkOffboardActions";
 import { EmployeeDialog } from "./EmployeeDialog";
 import { EmployeePane } from "./EmployeePane";
@@ -99,6 +101,7 @@ import {
 } from "./parts";
 import { ResizeHandle } from "./ResizeHandle";
 import { useElementWidth } from "./useElementWidth";
+import { useScrollWindow } from "./useScrollWindow";
 
 function downloadCsv(employees: readonly Employee[]) {
   const blob = new Blob(["\uFEFF", employeesToCsv(employees)], {
@@ -157,7 +160,19 @@ export function DirectoryTab() {
   const layoutRef = useRef<HTMLDivElement>(null);
   const reduceMotion = useReducedMotion() === true;
   const [tableAreaRef, tableWidth] = useElementWidth();
+  const [scrollAreaRef, scrollArea] = useScrollWindow();
+  const areaRef = useCallback(
+    (el: HTMLElement | null) => {
+      tableAreaRef(el);
+      scrollAreaRef(el);
+    },
+    [tableAreaRef, scrollAreaRef],
+  );
   const revealRef = useRef<string | null>(null);
+  /** Who the bulk-remove confirmation is about (fixed when it opens, so it stays readable while it closes). */
+  const [confirmPeople, setConfirmPeople] = useState<readonly Employee[]>([]);
+  /** Set only when a bulk remove is slow enough to need a progress line. */
+  const [slowRemove, setSlowRemove] = useState(0);
 
   useEffect(() => {
     writeSetting(COLUMN_WIDTHS_KEY, JSON.stringify(widths));
@@ -212,17 +227,23 @@ export function DirectoryTab() {
     deferredFilter.offering !== "" ||
     deferredFilter.level !== "";
 
-  // A person just added or edited is scrolled into view once their row exists.
+  // A person just added or edited is scrolled into view once they are in the list.
+  const scrollEl = scrollArea.element;
   useEffect(() => {
     const id = revealRef.current;
-    if (!id || id !== selectedId) return;
-    const row = layoutRef.current?.querySelector<HTMLElement>(
-      `[data-employee-id="${CSS.escape(id)}"]`,
-    );
-    if (!row) return;
-    row.scrollIntoView({ block: "nearest" });
+    if (!id || id !== selectedId || !scrollEl) return;
+    const at = shown.findIndex((e) => e.id === id);
+    if (at < 0) return;
+    const top = scrollTopToReveal({
+      index: at,
+      rowHeight: ROW_HEIGHT,
+      scrollTop: scrollEl.scrollTop,
+      viewportHeight: scrollEl.clientHeight,
+      headerHeight: headerHeightOf(scrollEl),
+    });
+    if (top !== null) scrollEl.scrollTop = top;
     revealRef.current = null;
-  }, [shown, selectedId]);
+  }, [shown, selectedId, scrollEl]);
 
   const setFilterKey = <K extends keyof DirectoryFilter>(
     key: K,
@@ -235,14 +256,22 @@ export function DirectoryTab() {
   }, []);
   const tickRow = useCallback((id: string) => setTicked((cur) => toggleId(cur, id)), []);
 
+  // The list updates at once: the people leave the screen in a single state change while the
+  // server call finishes. A progress line appears only if that call is slow.
   const removeTicked = async () => {
-    const ids = tickedView.visible.map((e) => e.id);
-    setRemoving({ busy: true, error: null });
+    const present = new Set(employees.map((e) => e.id));
+    const ids = confirmPeople.map((e) => e.id).filter((id) => present.has(id));
+    setRemoving(null);
+    if (ids.length === 0) return;
+    setTicked((cur) => withoutIds(cur, ids));
+    const timer = setTimeout(() => setSlowRemove(ids.length), SLOW_REMOVE_MS);
     const result = await offboardMany(ids);
-    if (result.ok) {
-      setRemoving(null);
-      setTicked((cur) => withoutIds(cur, ids));
-    } else setRemoving({ busy: false, error: result.reason });
+    clearTimeout(timer);
+    setSlowRemove(0);
+    if (!result.ok) {
+      setTicked((cur) => new Set([...cur, ...ids]));
+      toast({ tone: "danger", title: "Could not remove them", message: result.reason });
+    }
   };
 
   if (status === "idle" || (status === "loading" && employees.length === 0)) {
@@ -380,7 +409,10 @@ export function DirectoryTab() {
               size="sm"
               className="text-red"
               disabled={tickedView.visible.length === 0}
-              onClick={() => setRemoving({ busy: false, error: null })}
+              onClick={() => {
+                setConfirmPeople(tickedView.visible);
+                setRemoving({ busy: false, error: null });
+              }}
             >
               Remove {tickedView.visible.length} from roster
             </Button>
@@ -389,8 +421,13 @@ export function DirectoryTab() {
             </Button>
           </div>
         )}
+        {slowRemove > 0 && (
+          <p role="status" className="text-ink-muted px-5 pb-2 text-[12.5px]">
+            Removing {slowRemove} people from the roster…
+          </p>
+        )}
 
-        <div ref={tableAreaRef} className="scroll-thin min-h-0 flex-1 overflow-y-auto">
+        <div ref={areaRef} className="scroll-thin min-h-0 flex-1 overflow-y-auto">
           {employees.length === 0 ? (
             <EmptyState
               icon={<UsersThreeIcon size={26} />}
@@ -428,6 +465,9 @@ export function DirectoryTab() {
               allTicked={allSelected(ticked, shownIds)}
               onTick={tickRow}
               onTickAll={() => setTicked((cur) => toggleAll(cur, shownIds))}
+              scrollTop={scrollArea.scrollTop}
+              viewportHeight={scrollArea.height}
+              scroller={scrollArea.element}
             />
           )}
         </div>
@@ -522,13 +562,13 @@ export function DirectoryTab() {
       />
       <ConfirmDialog
         open={removing !== null}
-        title={offboardTitle(tickedView.visible.length)}
-        description={bulkRemoveText(tickedView.visible)}
-        confirmLabel={`Remove ${tickedView.visible.length} from roster`}
-        busy={removing?.busy || tickedView.visible.length === 0}
+        title={offboardTitle(confirmPeople.length)}
+        description={bulkRemoveText(confirmPeople)}
+        confirmLabel={`Remove ${confirmPeople.length} from roster`}
+        busy={confirmPeople.length === 0}
         error={removing?.error}
         onConfirm={() => void removeTicked()}
-        onOpenChange={(open) => !open && !removing?.busy && setRemoving(null)}
+        onOpenChange={(open) => !open && setRemoving(null)}
       />
     </div>
   );
@@ -536,6 +576,16 @@ export function DirectoryTab() {
 
 /** Width of the tick-box column. */
 const SELECT_COL_WIDTH = 44;
+
+/** A bulk remove shows a progress line only when the server takes longer than this. */
+const SLOW_REMOVE_MS = 600;
+
+/** Height of the sticky header row, for scrolling a row clear of it. */
+const HEADER_HEIGHT = 37;
+/** Rows drawn above and below the visible ones. */
+const ROW_OVERSCAN = 10;
+const headerHeightOf = (scroller: HTMLElement): number =>
+  scroller.querySelector("thead")?.getBoundingClientRect().height ?? HEADER_HEIGHT;
 
 /** The confirmation text for a bulk remove: who, then what offboarding does. */
 function bulkRemoveText(people: readonly Employee[]): string {
@@ -641,6 +691,9 @@ function EmployeeTable({
   allTicked,
   onTick,
   onTickAll,
+  scrollTop,
+  viewportHeight,
+  scroller,
 }: {
   employees: Employee[];
   selectedId: string | null;
@@ -657,14 +710,85 @@ function EmployeeTable({
   allTicked: boolean;
   onTick: (id: string) => void;
   onTickAll: () => void;
+  /** The scroll area the rows live in: only the rows in view (and a few more) are drawn. */
+  scrollTop: number;
+  viewportHeight: number;
+  scroller: HTMLElement | null;
 }) {
   const columns = useMemo(
     () => DIRECTORY_COLUMNS.filter((c) => keys.includes(c.key)),
     [keys],
   );
   const rowColumns = useMemo(() => columns.slice(1).map((c) => c.key), [columns]);
+  const range = windowRange({
+    count: employees.length,
+    rowHeight: ROW_HEIGHT,
+    scrollTop,
+    // Before the area is measured, draw a screenful.
+    viewportHeight: viewportHeight || 800,
+    overscan: ROW_OVERSCAN,
+    headerHeight: HEADER_HEIGHT,
+  });
+  const span = columns.length + 2;
+
+  // Keyboard moves go by position in the whole list, so they reach rows that are not drawn yet.
+  const listRef = useRef(employees);
+  listRef.current = employees;
+  const pendingFocus = useRef<string | null>(null);
+  const [focusTick, setFocusTick] = useState(0);
+  const moveTo = useCallback(
+    (index: number) => {
+      const target = listRef.current[index];
+      if (!target) return;
+      pendingFocus.current = target.id;
+      if (scroller) {
+        const top = scrollTopToReveal({
+          index,
+          rowHeight: ROW_HEIGHT,
+          scrollTop: scroller.scrollTop,
+          viewportHeight: scroller.clientHeight,
+          headerHeight: headerHeightOf(scroller),
+        });
+        if (top !== null) scroller.scrollTop = top;
+      }
+      setFocusTick((n) => n + 1);
+    },
+    [scroller],
+  );
+  useEffect(() => {
+    const id = pendingFocus.current;
+    if (!id || !scroller) return;
+    const row = scroller.querySelector<HTMLElement>(
+      `[data-employee-id="${CSS.escape(id)}"]`,
+    );
+    if (!row) return; // not drawn yet: the scroll brings the window here and this runs again
+    row.focus({ preventScroll: true });
+    pendingFocus.current = null;
+  }, [focusTick, range.start, range.end, scroller]);
+  const onRowKey = useCallback(
+    (e: ReactKeyboardEvent<HTMLElement>, index: number) => {
+      // Keys pressed on the tick box belong to the box.
+      if (e.target !== e.currentTarget) return;
+      const person = listRef.current[index];
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        onSelect(person.id);
+        return;
+      }
+      // Up, Down, J, K, Home and End move between rows; E opens the row.
+      const action = rowKeyAction(e, index, listRef.current.length);
+      if (!action) return;
+      e.preventDefault();
+      if (action.type === "move") moveTo(action.index);
+      else onSelect(person.id);
+    },
+    [moveTo, onSelect],
+  );
   return (
-    <table className="w-full table-fixed border-collapse text-left">
+    <table
+      className="w-full table-fixed border-collapse text-left"
+      aria-rowcount={employees.length + 1}
+    >
       <colgroup>
         <col style={{ width: SELECT_COL_WIDTH }} />
         {columns.map((column) => (
@@ -706,19 +830,30 @@ function EmployeeTable({
         </tr>
       </thead>
       <tbody>
-        {employees.map((employee, rowIndex) => (
+        {range.padTop > 0 && (
+          <tr aria-hidden>
+            <td colSpan={span} className="p-0" style={{ height: range.padTop }} />
+          </tr>
+        )}
+        {employees.slice(range.start, range.end).map((employee, offset) => (
           <EmployeeRow
             key={employee.id}
             employee={employee}
-            rowIndex={rowIndex}
+            rowIndex={range.start + offset}
             active={employee.id === selectedId}
             ticked={ticked.has(employee.id)}
             today={today}
             columnKeys={rowColumns}
             onSelect={onSelect}
             onTick={onTick}
+            onKey={onRowKey}
           />
         ))}
+        {range.padBottom > 0 && (
+          <tr aria-hidden>
+            <td colSpan={span} className="p-0" style={{ height: range.padBottom }} />
+          </tr>
+        )}
       </tbody>
     </table>
   );
@@ -734,6 +869,7 @@ const EmployeeRow = memo(function EmployeeRow({
   columnKeys,
   onSelect,
   onTick,
+  onKey,
 }: {
   employee: Employee;
   rowIndex: number;
@@ -743,29 +879,17 @@ const EmployeeRow = memo(function EmployeeRow({
   columnKeys: readonly DirectoryColumnKey[];
   onSelect: (id: string) => void;
   onTick: (id: string) => void;
+  onKey: (e: ReactKeyboardEvent<HTMLElement>, index: number) => void;
 }) {
   return (
     <tr
-      style={rowEnterStyle(rowIndex)}
+      style={{ height: ROW_HEIGHT, ...rowEnterStyle(rowIndex) }}
       data-employee-id={employee.id}
       tabIndex={0}
       aria-selected={active}
+      aria-rowindex={rowIndex + 2}
       onClick={() => onSelect(employee.id)}
-      onKeyDown={(e) => {
-        // Keys pressed on the tick box belong to the box.
-        if (e.target !== e.currentTarget) return;
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onSelect(employee.id);
-        } else {
-          // Up, Down, J, K, Home and End move between rows; E opens the row.
-          handleRowKey(
-            e,
-            Array.from(e.currentTarget.parentElement?.children ?? []) as HTMLElement[],
-            e.currentTarget,
-          );
-        }
-      }}
+      onKeyDown={(e) => onKey(e, rowIndex)}
       className={cn(
         "border-line group cursor-pointer scroll-mt-10 border-b outline-none",
         "transition-colors duration-150",

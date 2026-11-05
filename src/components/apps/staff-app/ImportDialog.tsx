@@ -5,6 +5,7 @@ import { FileXlsIcon, WarningCircleIcon } from "@phosphor-icons/react";
 import { Button, Dialog, DialogContent } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { parseRosterRows, planImport, type ImportResult } from "@/lib/staff/employees";
+import { parseCsv } from "@/lib/staff/csvRead";
 import { MAX_BATCH } from "@/lib/staff/fieldRules";
 import { employeeTemplate } from "@/lib/staff/importTemplates";
 import { useStaffStore } from "@/lib/staff/staffStore";
@@ -55,9 +56,12 @@ function ImportBody({ onClose }: { onClose: () => void }) {
     if (file.size > MAX_FILE_BYTES) return setError("That file is larger than 10 MB.");
     setBusy(true);
     try {
-      const sheets = await readWorkbookSheets(file);
-      const parsed = sheets
-        .map((sheet) => parseRosterRows(sheet.data))
+      const isCsv = /\.csv$/i.test(file.name) || file.type === "text/csv";
+      const grids: (readonly unknown[])[][] = isCsv
+        ? [parseCsv(await file.text())]
+        : (await readWorkbookSheets(file)).map((sheet) => sheet.data);
+      const parsed = grids
+        .map((grid) => parseRosterRows(grid))
         .find((candidate) => candidate.headerFound);
       if (!parsed) {
         setError(
@@ -67,7 +71,7 @@ function ImportBody({ onClose }: { onClose: () => void }) {
         setResult(parsed);
       }
     } catch {
-      setError("That file could not be read. Is it an .xlsx workbook?");
+      setError("That file could not be read. Is it an .xlsx workbook or a .csv file?");
     } finally {
       setBusy(false);
     }
@@ -125,7 +129,7 @@ function ImportBody({ onClose }: { onClose: () => void }) {
                 <FileXlsIcon size={28} className="text-accent-ink shrink-0" />
                 <span className="min-w-0">
                   <span className="text-ink block truncate text-[14px] font-semibold">
-                    {fileName || "Choose a workbook (.xlsx)"}
+                    {fileName || "Choose a workbook (.xlsx) or a CSV file"}
                   </span>
                   <span className="text-ink-muted text-[12.5px]">
                     {busy && !result
@@ -137,7 +141,7 @@ function ImportBody({ onClose }: { onClose: () => void }) {
               <input
                 ref={fileRef}
                 type="file"
-                accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 className="hidden"
                 onChange={(e) => take(e.target.files)}
               />

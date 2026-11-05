@@ -90,6 +90,9 @@ const pending: { [K in StaffKind]: StaffChanges<Collections[K]>[] } = {
   timeoff: [],
   offboarded: [],
 };
+/** People being removed from the roster whose offboard is still on its way to the server:
+ *  they leave the screen at once, in one state change, and come back if the server refuses. */
+const departing = new Set<string>();
 
 function visible(): Pick<
   StaffState,
@@ -100,7 +103,8 @@ function visible(): Pick<
       (items, changes) => mergeChanges(items, changes),
       confirmed[kind],
     );
-  const employees = lay("employees");
+  const laid = lay("employees");
+  const employees = departing.size > 0 ? laid.filter((e) => !departing.has(e.id)) : laid;
   // A person who is gone takes their time off with them (their shift roster entry
   // stays, unlinked, so its shifts are kept).
   const people = new Set(employees.map((e) => e.id));
@@ -159,6 +163,10 @@ export const useStaffStore = create<StaffState>()((set, get) => {
   // Runs after every earlier write to either list, and before any later one.
   const move = (action: "offboard" | "restore", ids: string[], relink?: RosterLink[]) => {
     inFlight++;
+    if (action === "offboard") {
+      for (const id of ids) departing.add(id);
+      set(visible());
+    }
     const run = async (): Promise<StaffResult & { undo?: OffboardUndo }> => {
       try {
         const response = await fetch("/api/staff/offboard", {
@@ -190,6 +198,7 @@ export const useStaffStore = create<StaffState>()((set, get) => {
         return { ok: false, reason: OFFLINE };
       } finally {
         inFlight--;
+        if (action === "offboard") for (const id of ids) departing.delete(id);
         set(visible());
       }
     };

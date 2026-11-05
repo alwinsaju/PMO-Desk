@@ -138,7 +138,7 @@ export function TimeOffTab({
         <section className={cn(CARD, "px-4 py-3.5")} aria-label="Time off by type">
           <h3 className="text-ink mb-3 text-[14px] font-bold">Time off request type</h3>
           <ul className="flex flex-col gap-2">
-            {stats.byType.slice(0, 4).map(({ type, count }) => (
+            {stats.byType.map(({ type, count }) => (
               <li key={type} className="flex items-center gap-3 text-[12.5px]">
                 <span className="text-ink-soft w-[104px] shrink-0 truncate font-medium">
                   {TIME_OFF_META[type].label}

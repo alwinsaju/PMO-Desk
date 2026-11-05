@@ -10,6 +10,7 @@ import {
   EyeIcon,
   FileXlsIcon,
   GearSixIcon,
+  LinkSimpleIcon,
   MagnifyingGlassIcon,
   UsersThreeIcon,
   WarningCircleIcon,
@@ -642,6 +643,7 @@ export function ShiftRoster() {
               Import from Excel…
             </DropdownMenuItem>
             <DropdownMenuItem onSelect={matchNames}>
+              <LinkSimpleIcon size={14} weight="bold" />
               Match names to the directory
             </DropdownMenuItem>
           </DropdownMenuContent>

@@ -1,5 +1,6 @@
 "use client";
 
+import { useRef } from "react";
 import {
   CaretRightIcon,
   DotsThreeIcon,
@@ -24,6 +25,7 @@ import {
 } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { formatDate } from "@/lib/staff/dates";
+import { cellSelector } from "@/lib/staff/gridNav";
 import { CUSTOM_REF, STATUS_DEFS, statusRef, type Hue } from "@/lib/staff/rosterCatalog";
 import {
   compactHours,
@@ -285,6 +287,9 @@ export function CellMenu({
   onClear: () => void;
 }) {
   const rect = menu?.rect;
+  // The menu hangs from an invisible anchor, so focus goes back to the cell it was opened from.
+  const lastCell = useRef<{ rowKey: string; date: string } | null>(null);
+  if (menu) lastCell.current = { rowKey: menu.rowKey, date: menu.date };
   return (
     <DropdownMenu open={menu !== null} onOpenChange={(open) => !open && onClose()}>
       <DropdownMenuTrigger asChild>
@@ -303,6 +308,15 @@ export function CellMenu({
       <DropdownMenuContent
         align="center"
         collisionPadding={8}
+        onCloseAutoFocus={(event) => {
+          const cell = lastCell.current;
+          const button = cell
+            ? document.querySelector<HTMLElement>(cellSelector(cell.rowKey, cell.date))
+            : null;
+          if (!button) return;
+          event.preventDefault();
+          button.focus();
+        }}
         className="max-h-[min(70vh,var(--radix-dropdown-menu-content-available-height))] min-w-[250px] overflow-y-auto"
       >
         {menu && (

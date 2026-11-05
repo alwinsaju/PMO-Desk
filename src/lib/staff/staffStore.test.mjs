@@ -252,4 +252,50 @@ describe("staff store", () => {
     );
     assert.equal(useStaffStore.getState().offboarded.length, 1);
   });
+
+  it("removing 1000 people leaves the list at once, in one state change", async () => {
+    const people = Array.from({ length: 1200 }, (_, i) =>
+      createEmployee(
+        { id: `emp_${String(i).padStart(12, "0")}`, deloitteEmail: `p${i}@x.com` },
+        NOW,
+      ),
+    );
+    server.employees = people;
+    await useStaffStore.getState().load();
+    let changes = 0;
+    const stop = useStaffStore.subscribe(() => changes++);
+    const started = performance.now();
+    const move = useStaffStore
+      .getState()
+      .offboard(people.slice(0, 1000).map((p) => p.id));
+    // Before the server has answered, the 1000 are already gone from the screen.
+    assert.equal(useStaffStore.getState().employees.length, 200);
+    assert.equal(changes, 1);
+    assert.ok(performance.now() - started < 200, "the optimistic update must be instant");
+    assert.equal((await move).ok, true);
+    stop();
+    assert.equal(changes, 2);
+    assert.equal(useStaffStore.getState().employees.length, 200);
+    assert.equal(useStaffStore.getState().offboarded.length, 1000);
+  });
+
+  it("a refused bulk remove brings everyone back", async () => {
+    const [a, b] = [person(1), person(2)];
+    server.employees = [a, b];
+    await useStaffStore.getState().load();
+    fail = "refuse";
+    const move = useStaffStore.getState().offboard([a.id, b.id]);
+    assert.equal(useStaffStore.getState().employees.length, 0);
+    assert.equal((await move).ok, false);
+    assert.equal(useStaffStore.getState().employees.length, 2);
+  });
+
+  it("people the server has not confirmed yet do not count as saved", async () => {
+    fail = "refuse";
+    const result = await useStaffStore
+      .getState()
+      .commit("employees", { upsert: [person(1)] });
+    assert.equal(result.ok, false);
+    assert.equal(useStaffStore.getState().savedEmployees.length, 0);
+  });
 });
