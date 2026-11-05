@@ -1,5 +1,5 @@
 /** Who is working when, per team, and where the roster falls below a team's minimum. Pure. */
-import { addDays, inclusiveDays, isIsoDate } from "./dates.ts";
+import { addDays, formatDate, inclusiveDays, isIsoDate, isWeekend } from "./dates.ts";
 import { assignmentId, indexAssignments, leaveOn, resolveAssignment } from "./shifts.ts";
 import type {
   Employee,
@@ -86,11 +86,23 @@ export function coverageGaps(
   rules: CoverageRules,
 ): CoverageGap[] {
   const gaps: CoverageGap[] = [];
+  // A team whose schedule has no weekend shift does not have a weekend minimum to miss.
+  const worksWeekends = new Set(
+    input.groups
+      .filter((g) =>
+        input.schedules
+          .find((s) => s.id === g.scheduleId)
+          ?.shifts.some((s) => s.days.some((d) => d >= 5)),
+      )
+      .map((g) => g.id),
+  );
   for (let i = 0; i < days; i++) {
     const day = addDays(from, i);
+    const weekend = isWeekend(day);
     for (const cap of capacityOn(day, input)) {
       const need = rules[cap.groupId] ?? 0;
       if (need <= 0 || cap.working + cap.onLeave === 0) continue;
+      if (weekend && !worksWeekends.has(cap.groupId)) continue;
       if (cap.working < need)
         gaps.push({ day, groupId: cap.groupId, name: cap.name, have: cap.working, need });
     }
@@ -144,5 +156,5 @@ export function breachText(breaches: readonly LeaveBreach[]): string {
     breaches.length > 1
       ? ` (and ${breaches.length - 1} more day${breaches.length > 2 ? "s" : ""})`
       : "";
-  return `Would leave ${first.name} with ${first.after} on ${first.day}, below its minimum of ${first.need}${more}.`;
+  return `Would leave ${first.name} with ${first.after} on ${formatDate(first.day)}, below its minimum of ${first.need}${more}.`;
 }

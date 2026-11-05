@@ -30,6 +30,7 @@ import {
   Input,
 } from "@/components/ui";
 import { cn } from "@/lib/cn";
+import { toast } from "@/lib/notifications/toastStore";
 import {
   cycleContaining,
   cycleDates,
@@ -58,14 +59,15 @@ import {
   withAutoLinks,
   buildSections,
   copyPreviousWeek,
-  fillWeek,
   indexAssignments,
   leaveOn,
   makeAssignment,
   newId,
+  planFillWeek,
   resolveAssignment,
   withGroup,
   type CellView,
+  type FillPlan,
   type RosterRow,
   type RosterSection,
 } from "@/lib/staff/shifts";
@@ -92,6 +94,7 @@ import { RosterGrid, type GridActions } from "./RosterGrid";
 import { CellMenu, Legend, type MenuTarget } from "./RosterParts";
 import { RosterImportDialog } from "./RosterImportDialog";
 import { ScheduleDialog } from "./ScheduleDialog";
+import { useActiveStaff } from "./tabActive";
 
 const VIEWS: readonly RosterView[] = ["today", "week", "month", "cycle"];
 const LEGEND_KEY = "ai-os:staff:roster-legend";
@@ -154,9 +157,9 @@ export function ShiftRoster() {
   useRosterSync();
   const config = useRosterStore((s) => s.config);
   const saveConfig = useRosterStore((s) => s.save);
-  const employees = useStaffStore((s) => s.employees);
-  const shifts = useStaffStore((s) => s.shifts);
-  const timeOff = useStaffStore((s) => s.timeOff);
+  const employees = useActiveStaff((s) => s.employees);
+  const shifts = useActiveStaff((s) => s.shifts);
+  const timeOff = useActiveStaff((s) => s.timeOff);
   const commit = useStaffStore((s) => s.commit);
 
   const today = todayIso();
@@ -173,6 +176,11 @@ export function ShiftRoster() {
   const [cellEdit, setCellEdit] = useState<CellEdit | null>(null);
   const [linking, setLinking] = useState<string | null>(null);
   const [removing, setRemoving] = useState<RosterRow | null>(null);
+  const [fillAsk, setFillAsk] = useState<{
+    plan: FillPlan;
+    label: string;
+    who: string;
+  } | null>(null);
   const [dialog, setDialog] = useState<"schedules" | "import" | "holidays" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -288,6 +296,26 @@ export function ShiftRoster() {
 
   /** The latest saved configuration, for actions that follow another save. */
   const latest = () => useRosterStore.getState().config;
+
+  /** Sets the week, then offers one Undo that puts every day back as it was. */
+  async function applyFill(plan: FillPlan, label: string) {
+    setError(null);
+    const result = await commit("shifts", { upsert: plan.fills });
+    if (!result.ok) return setError(result.reason);
+    toast({
+      key: "undo-fill-week",
+      title: "Week filled",
+      message: `${plan.fills.length} days are now ${label}.`,
+      durationMs: 10_000,
+      action: {
+        label: "Undo",
+        run: () =>
+          void commit("shifts", plan.undo).then((undone) => {
+            if (!undone.ok) setError(undone.reason);
+          }),
+      },
+    });
+  }
 
   /** `base` with the team stored, when only the directory has named it so far. */
   const withTeam = (base: RosterConfig, groupId: string): RosterConfig => {
@@ -727,10 +755,12 @@ export function ShiftRoster() {
         onFill={(def) => {
           const schedule = target?.section.schedule;
           if (!menu || !schedule) return;
+          const monday = mondayOf(menu.date);
           void ensureMember(menu.rowKey).then((id) => {
-            if (id) {
-              void run({ upsert: fillWeek(mondayOf(menu.date), id, schedule.id, def) });
-            }
+            if (!id) return;
+            const plan = planFillWeek(index, monday, id, schedule.id, def);
+            if (plan.replaced.length === 0) void applyFill(plan, def.label);
+            else setFillAsk({ plan, label: def.label, who: target?.row.name ?? "" });
           });
         }}
         onSwap={(swap) =>
@@ -799,6 +829,18 @@ export function ShiftRoster() {
         onPick={(employeeId) => {
           if (linking) void patchMember(linking, { employeeId });
           setLinking(null);
+        }}
+      />
+      <ConfirmDialog
+        open={fillAsk !== null}
+        title={`Replace ${fillAsk?.plan.replaced.length ?? 0} ${fillAsk?.plan.replaced.length === 1 ? "day" : "days"} that ${fillAsk?.plan.replaced.length === 1 ? "is" : "are"} already filled in?`}
+        description={`Filling the week with ${fillAsk?.label ?? "this shift"} for ${fillAsk?.who ?? "this person"} replaces what is on these days: ${(fillAsk?.plan.replaced ?? []).map((a) => `${formatDate(a.date)} (${viewOf(a).label})`).join(", ")}. Undo in the message that follows puts them back.`}
+        confirmLabel="Fill the week"
+        onOpenChange={(open) => !open && setFillAsk(null)}
+        onConfirm={() => {
+          const ask = fillAsk;
+          setFillAsk(null);
+          if (ask) void applyFill(ask.plan, ask.label);
         }}
       />
       <ConfirmDialog

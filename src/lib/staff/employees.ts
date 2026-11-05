@@ -2,9 +2,17 @@
 // No React, no I/O, so `pnpm test` can run it directly.
 import type { Employee, ProfilePayload, StaffLocation } from "./types.ts";
 import { daysBetween, isIsoDate } from "./dates.ts";
+import { csvSafeCell } from "../pmo/todoExport.ts";
+import {
+  LIMITS,
+  checkEmployeeFields,
+  isValidEmail,
+  type FieldProblems,
+} from "./fieldRules.ts";
+
+export { isValidEmail };
 
 export const EMPLOYEE_ID = /^emp_[0-9a-f]{8,32}$/;
-const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /** The sample row in the roster template; never a real person. */
 const PLACEHOLDER_EMAIL = "email@deloitte.com";
@@ -15,10 +23,6 @@ export function newEmployeeId(): string {
       ? crypto.randomUUID().replace(/-/g, "")
       : Math.random().toString(16).slice(2).padEnd(12, "0");
   return `emp_${hex.slice(0, 12)}`;
-}
-
-export function isValidEmail(value: string): boolean {
-  return EMAIL.test(value.trim());
 }
 
 const capitalise = (word: string) =>
@@ -32,7 +36,10 @@ export function nameFromEmail(email: string): { firstName: string; lastName: str
     .split(/[._-]+/)
     .filter(Boolean)
     .map(capitalise);
-  return { firstName: words[0] ?? "", lastName: words.slice(1).join(" ") };
+  return {
+    firstName: (words[0] ?? "").slice(0, LIMITS.firstName),
+    lastName: words.slice(1).join(" ").slice(0, LIMITS.lastName),
+  };
 }
 
 export function fullName(employee: Pick<Employee, "firstName" | "lastName">): string {
@@ -152,7 +159,22 @@ export type EmployeeErrors = Partial<
     | "staffitStartDate"
     | "staffitEndDate"
     | "contractEndDate"
-    | "name",
+    | "name"
+    | "firstName"
+    | "lastName"
+    | "phone"
+    | "level"
+    | "op"
+    | "offering"
+    | "team"
+    | "homeOffice"
+    | "clientManager"
+    | "deloittePersonId"
+    | "networkId"
+    | "workdayId"
+    | "gender"
+    | "birthday"
+    | "skills",
     string
   >
 >;
@@ -168,22 +190,17 @@ export function validateEmployee(
   draft: Employee,
   others: readonly Pick<Employee, "id" | "deloitteEmail">[],
 ): EmployeeErrors {
-  const errors: EmployeeErrors = {};
+  // Length, address, year, birthday and skill rules are the server's own (fieldRules.ts).
+  const errors: EmployeeErrors = { ...checkEmployeeFields(draft) };
   const email = draft.deloitteEmail.trim();
   if (!email) errors.deloitteEmail = "Deloitte email is required.";
-  else if (!isValidEmail(email)) errors.deloitteEmail = "Enter a valid email address.";
   else if (
+    !errors.deloitteEmail &&
     others.some(
       (o) => o.id !== draft.id && o.deloitteEmail.toLowerCase() === email.toLowerCase(),
     )
   ) {
     errors.deloitteEmail = "Someone with this email is already on the roster.";
-  }
-  if (draft.takedaEmail.trim() && !isValidEmail(draft.takedaEmail)) {
-    errors.takedaEmail = "Enter a valid email address.";
-  }
-  if (draft.milestone.trim() && !/^\d{4}$/.test(draft.milestone.trim())) {
-    errors.milestone = "Use a four-digit year.";
   }
   for (const [key, label] of DATE_FIELDS) {
     if (draft[key] && !isIsoDate(draft[key]))
@@ -427,23 +444,38 @@ export interface ImportSkip {
 }
 export interface ImportResult {
   rows: ImportRow[];
+  /** Rows that will not be imported, with the reason. */
   skipped: ImportSkip[];
+  /** Rows that are imported, with something the person should know (a date that was left out, a repeated email). */
+  notes: ImportSkip[];
   /** False when no recognisable header row was found. */
   headerFound: boolean;
 }
 
+const DATE_LABELS: Record<
+  "rollOffDate" | "staffitStartDate" | "staffitEndDate" | "contractEndDate",
+  string
+> = {
+  rollOffDate: "Roll-off date",
+  staffitStartDate: "Staffit start date",
+  staffitEndDate: "Staffit end date",
+  contractEndDate: "Contract end date",
+};
+
 /** Turns sheet rows (first recognisable row = headers) into partial employees.
- *  Rows without a usable Deloitte email are skipped with the reason. */
+ *  A row the server would refuse (no or bad email, a value too long, a bad year or address) is skipped
+ *  with the reason, so the preview and the save agree and one bad row never blocks the rest. */
 export function parseRosterRows(rows: readonly (readonly unknown[])[]): ImportResult {
   const headerIndex = rows.findIndex((row) => {
     const keys = row.map((cell) => HEADER_LOOKUP.get(normalise(cell)));
     // The email column alone is enough: every other column is optional.
     return keys.includes("deloitteEmail") || keys.filter(Boolean).length >= 2;
   });
-  if (headerIndex < 0) return { rows: [], skipped: [], headerFound: false };
+  if (headerIndex < 0) return { rows: [], skipped: [], notes: [], headerFound: false };
 
   const columns = rows[headerIndex].map((cell) => HEADER_LOOKUP.get(normalise(cell)));
-  const result: ImportResult = { rows: [], skipped: [], headerFound: true };
+  const result: ImportResult = { rows: [], skipped: [], notes: [], headerFound: true };
+  const rowOfEmail = new Map<string, number>();
 
   rows.slice(headerIndex + 1).forEach((cells, offset) => {
     const row = headerIndex + offset + 2; // 1-based sheet row
@@ -494,6 +526,7 @@ export function parseRosterRows(rows: readonly (readonly unknown[])[]): ImportRe
     }
     const milestone = clean(raw.milestone).replace(/\.0+$/, "");
     if (milestone) employee.milestone = milestone;
+    const dropped: string[] = [];
     for (const key of [
       "rollOffDate",
       "staffitStartDate",
@@ -502,6 +535,9 @@ export function parseRosterRows(rows: readonly (readonly unknown[])[]): ImportRe
     ] as const) {
       const date = parseDateCell(raw[key]);
       if (date) employee[key] = date;
+      else if (clean(raw[key]) !== "") {
+        dropped.push(`${DATE_LABELS[key]} "${clean(raw[key]).slice(0, 30)}"`);
+      }
     }
     if (clean(raw.campus))
       employee.campus = TRUE_WORDS.has(clean(raw.campus).toLowerCase());
@@ -514,6 +550,27 @@ export function parseRosterRows(rows: readonly (readonly unknown[])[]): ImportRe
     if (location) employee.location = location;
     const skills = parseSkills(raw.skills);
     if (skills.length) employee.skills = skills;
+
+    const problem = Object.values(checkEmployeeFields(employee))[0];
+    if (problem) {
+      result.skipped.push({ row, reason: problem });
+      return;
+    }
+    if (dropped.length > 0) {
+      result.notes.push({
+        row,
+        reason: `${dropped.join(", ")} is not a valid date and was left blank.`,
+      });
+    }
+    const key = email.toLowerCase();
+    const earlier = rowOfEmail.get(key);
+    if (earlier !== undefined) {
+      result.notes.push({
+        row,
+        reason: `Same email as row ${earlier}; the cells filled in here are added to that person.`,
+      });
+    }
+    rowOfEmail.set(key, row);
 
     result.rows.push({ row, employee });
   });
@@ -535,6 +592,7 @@ export function planImport(
 ): ImportPlan {
   const plan: ImportPlan = { upserts: [], added: 0, updated: 0 };
   const byEmail = new Map(existing.map((e) => [e.deloitteEmail.toLowerCase(), e]));
+  const planned = new Map<string, number>();
   for (const { employee } of rows) {
     const key = (employee.deloitteEmail ?? "").toLowerCase();
     const current = byEmail.get(key);
@@ -557,9 +615,10 @@ export function planImport(
           now,
         );
     byEmail.set(key, next);
-    const at = plan.upserts.findIndex((e) => e.id === next.id);
-    if (at >= 0) plan.upserts[at] = next;
+    const at = planned.get(next.id);
+    if (at !== undefined) plan.upserts[at] = next;
     else {
+      planned.set(next.id, plan.upserts.length);
       plan.upserts.push(next);
       if (current) plan.updated++;
       else plan.added++;
@@ -568,8 +627,11 @@ export function planImport(
   return plan;
 }
 
-function csvCell(value: string): string {
-  const safe = /^[=+\-@]/.test(value) ? `'${value}` : value;
+/** Phone numbers such as "+91 98765 43210" are plain digits, so they are left as they are. */
+const PHONE_LIKE = /^\+[\d\s().-]+$/;
+
+function csvCell(value: string, plainPhone = false): string {
+  const safe = plainPhone && PHONE_LIKE.test(value) ? value : csvSafeCell(value);
   return /[",\n\r]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
 }
 
@@ -587,7 +649,9 @@ export function employeesToCsv(employees: readonly Employee[]): string {
       if (Array.isArray(value)) return value.join(", ");
       return String(value ?? "");
     });
-    lines.push(cells.map(csvCell).join(","));
+    lines.push(
+      cells.map((cell, i) => csvCell(cell, columns[i].key === "phone")).join(","),
+    );
   }
   return lines.join("\r\n");
 }

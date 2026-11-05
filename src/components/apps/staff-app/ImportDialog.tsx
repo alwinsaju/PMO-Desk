@@ -5,6 +5,7 @@ import { FileXlsIcon, WarningCircleIcon } from "@phosphor-icons/react";
 import { Button, Dialog, DialogContent } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { parseRosterRows, planImport, type ImportResult } from "@/lib/staff/employees";
+import { MAX_BATCH } from "@/lib/staff/fieldRules";
 import { employeeTemplate } from "@/lib/staff/importTemplates";
 import { useStaffStore } from "@/lib/staff/staffStore";
 import { TemplateDownloadButton } from "../TemplateDownloadButton";
@@ -89,6 +90,7 @@ function ImportBody({ onClose }: { onClose: () => void }) {
   }
 
   const count = plan?.upserts.length ?? 0;
+  const tooMany = count > MAX_BATCH;
   return (
     <>
       <DialogHead
@@ -171,13 +173,31 @@ function ImportBody({ onClose }: { onClose: () => void }) {
                     <ul className="text-ink-muted list-disc pl-5 text-[12.5px]">
                       {result.skipped.slice(0, 5).map((skip) => (
                         <li key={skip.row}>
-                          Row {skip.row}: {skip.reason}
+                          Row {skip.row} is skipped: {skip.reason}
                         </li>
                       ))}
                       {result.skipped.length > 5 && (
-                        <li>and {result.skipped.length - 5} more</li>
+                        <li>and {result.skipped.length - 5} more skipped rows</li>
                       )}
                     </ul>
+                  )}
+                  {result.notes.length > 0 && (
+                    <ul className="text-ink-muted list-disc pl-5 text-[12.5px]">
+                      {result.notes.slice(0, 5).map((note) => (
+                        <li key={`${note.row}-${note.reason}`}>
+                          Row {note.row}: {note.reason}
+                        </li>
+                      ))}
+                      {result.notes.length > 5 && (
+                        <li>and {result.notes.length - 5} more notes</li>
+                      )}
+                    </ul>
+                  )}
+                  {tooMany && (
+                    <p role="alert" className="text-red text-[13px]">
+                      This file has {plan.upserts.length} people. PMO Desk imports up to{" "}
+                      {MAX_BATCH} at a time: split the workbook into smaller files.
+                    </p>
                   )}
                 </>
               ) : (
@@ -201,7 +221,7 @@ function ImportBody({ onClose }: { onClose: () => void }) {
         <Button variant="ghost" onClick={onClose}>
           Cancel
         </Button>
-        <Button disabled={count === 0 || busy} onClick={() => void run()}>
+        <Button disabled={count === 0 || busy || tooMany} onClick={() => void run()}>
           {count > 0 ? `Import ${count} ${count === 1 ? "person" : "people"}` : "Import"}
         </Button>
       </StickyFooter>

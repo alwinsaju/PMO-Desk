@@ -1,16 +1,22 @@
 /** Spreadsheet-friendly (CSV) and calendar (ICS) exports of the roster and time off. Pure. */
-import { addDays, inclusiveDays, isIsoDate } from "./dates.ts";
+import { addDays, isIsoDate, workingDays } from "./dates.ts";
 import { holidayAt, locationOf } from "./holidays.ts";
 import { TIME_OFF_META } from "./timeoff.ts";
 import { assignmentId, indexAssignments, leaveOn, resolveAssignment } from "./shifts.ts";
+import { csvSafeCell } from "../pmo/todoExport.ts";
 import type { Employee, RosterConfig, ShiftAssignment, TimeOffRequest } from "./types.ts";
 
 const quote = (cell: string): string =>
   /[",\r\n]/.test(cell) ? `"${cell.replace(/"/g, '""')}"` : cell;
 
-/** A CSV that Excel opens directly (with a BOM so accents survive). */
+/** A CSV that Excel opens directly (with a BOM so accents survive). Cells that start with = + - @ are
+ *  prefixed with an apostrophe, so a name or reason typed into the app can never run as a formula. */
 export function toCsv(rows: readonly (readonly string[])[]): string {
-  return "\uFEFF" + rows.map((r) => r.map(quote).join(",")).join("\r\n") + "\r\n";
+  return (
+    "\uFEFF" +
+    rows.map((r) => r.map((cell) => quote(csvSafeCell(cell))).join(",")).join("\r\n") +
+    "\r\n"
+  );
 }
 
 const nameOf = (
@@ -65,7 +71,9 @@ export function timeOffRows(
   requests: readonly TimeOffRequest[],
   employees: readonly Employee[],
 ): string[][] {
-  const rows: string[][] = [["Name", "Type", "From", "To", "Days", "Status", "Reason"]];
+  const rows: string[][] = [
+    ["Name", "Type", "From", "To", "Working days", "Status", "Reason"],
+  ];
   for (const r of [...requests].sort((a, b) => a.startDate.localeCompare(b.startDate))) {
     const e = employees.find((x) => x.id === r.employeeId);
     rows.push([
@@ -73,7 +81,7 @@ export function timeOffRows(
       TIME_OFF_META[r.type].label,
       r.startDate,
       r.endDate,
-      String(inclusiveDays(r.startDate, r.endDate)),
+      String(workingDays(r.startDate, r.endDate)),
       r.status,
       r.reason,
     ]);

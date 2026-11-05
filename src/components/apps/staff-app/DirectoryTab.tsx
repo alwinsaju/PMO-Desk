@@ -2,6 +2,9 @@
 
 import {
   Fragment,
+  memo,
+  useCallback,
+  useDeferredValue,
   useEffect,
   useMemo,
   useRef,
@@ -168,9 +171,11 @@ export function DirectoryTab() {
   const resizePane = (width: number) =>
     setPaneWidth(clampPaneWidth(width, layoutRef.current?.clientWidth));
 
+  // Typing stays instant; the list of a thousand rows follows a moment later.
+  const deferredFilter = useDeferredValue(filter);
   const shown = useMemo(
-    () => sortEmployees(filterEmployees(employees, filter), sort.key, sort.dir),
-    [employees, filter, sort],
+    () => sortEmployees(filterEmployees(employees, deferredFilter), sort.key, sort.dir),
+    [employees, deferredFilter, sort],
   );
   const stats = useMemo(() => rosterStats(employees, today), [employees, today]);
   // A bulk action only reaches ticked people who are on screen, never ones a filter hides.
@@ -201,11 +206,11 @@ export function DirectoryTab() {
   const selected = shown.find((e) => e.id === selectedId) ?? null;
   const showPane = selected !== null && paneOpen;
   const filtering =
-    filter.query !== "" ||
-    filter.location !== "" ||
-    filter.op !== "" ||
-    filter.offering !== "" ||
-    filter.level !== "";
+    deferredFilter.query !== "" ||
+    deferredFilter.location !== "" ||
+    deferredFilter.op !== "" ||
+    deferredFilter.offering !== "" ||
+    deferredFilter.level !== "";
 
   // A person just added or edited is scrolled into view once their row exists.
   useEffect(() => {
@@ -223,6 +228,12 @@ export function DirectoryTab() {
     key: K,
     value: DirectoryFilter[K],
   ) => setFilter((f) => ({ ...f, [key]: value }));
+
+  const selectRow = useCallback((id: string) => {
+    setSelectedId(id);
+    setPaneOpen(true);
+  }, []);
+  const tickRow = useCallback((id: string) => setTicked((cur) => toggleId(cur, id)), []);
 
   const removeTicked = async () => {
     const ids = tickedView.visible.map((e) => e.id);
@@ -412,13 +423,10 @@ export function DirectoryTab() {
               onWidth={resizeColumn}
               sort={sort}
               onSort={(key) => setSort((s) => toggleSort(s, key))}
-              onSelect={(id) => {
-                setSelectedId(id);
-                setPaneOpen(true);
-              }}
+              onSelect={selectRow}
               ticked={ticked}
               allTicked={allSelected(ticked, shownIds)}
-              onTick={(id) => setTicked((cur) => toggleId(cur, id))}
+              onTick={tickRow}
               onTickAll={() => setTicked((cur) => toggleAll(cur, shownIds))}
             />
           )}
@@ -650,7 +658,11 @@ function EmployeeTable({
   onTick: (id: string) => void;
   onTickAll: () => void;
 }) {
-  const columns = DIRECTORY_COLUMNS.filter((c) => keys.includes(c.key));
+  const columns = useMemo(
+    () => DIRECTORY_COLUMNS.filter((c) => keys.includes(c.key)),
+    [keys],
+  );
+  const rowColumns = useMemo(() => columns.slice(1).map((c) => c.key), [columns]);
   return (
     <table className="w-full table-fixed border-collapse text-left">
       <colgroup>
@@ -694,92 +706,116 @@ function EmployeeTable({
         </tr>
       </thead>
       <tbody>
-        {employees.map((employee, rowIndex) => {
-          const active = employee.id === selectedId;
-          return (
-            <tr
-              key={employee.id}
-              style={rowEnterStyle(rowIndex)}
-              data-employee-id={employee.id}
-              tabIndex={0}
-              aria-selected={active}
-              onClick={() => onSelect(employee.id)}
-              onKeyDown={(e) => {
-                // Keys pressed on the tick box belong to the box.
-                if (e.target !== e.currentTarget) return;
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  onSelect(employee.id);
-                } else {
-                  // Up, Down, J, K, Home and End move between rows; E opens the row.
-                  handleRowKey(
-                    e,
-                    Array.from(
-                      e.currentTarget.parentElement?.children ?? [],
-                    ) as HTMLElement[],
-                    e.currentTarget,
-                  );
-                }
-              }}
-              className={cn(
-                "border-line group cursor-pointer scroll-mt-10 border-b outline-none",
-                "transition-colors duration-150",
-                "focus-visible:ring-focus focus-visible:ring-2 focus-visible:ring-inset",
-                active ? "bg-accent-soft" : "hover:bg-chip",
-                rowEnterClass(rowIndex),
-              )}
-            >
-              <td
-                className={cn(
-                  "py-1.5 pr-0 pl-5",
-                  active && "shadow-[inset_3px_0_0_var(--color-accent)]",
-                )}
-                onClick={(e) => e.stopPropagation()}
-              >
-                <input
-                  type="checkbox"
-                  checked={ticked.has(employee.id)}
-                  onChange={() => onTick(employee.id)}
-                  aria-label={`Select ${displayName(employee)}`}
-                />
-              </td>
-              <td className="relative py-1.5 pr-3 pl-2">
-                <ArrivalFlash waiting={isAwaitingProfile(employee)} />
-                <div className="flex min-w-0 items-center gap-2.5">
-                  <EmployeeAvatar employee={employee} size="sm" />
-                  <div className="min-w-0">
-                    <p
-                      className="text-ink truncate text-[13.5px] font-semibold"
-                      title={
-                        isAwaitingProfile(employee)
-                          ? "Waiting for the M365 profile"
-                          : undefined
-                      }
-                    >
-                      {displayName(employee)}
-                    </p>
-                    <p
-                      className="text-ink-muted truncate text-[12px]"
-                      title={employee.deloitteEmail}
-                    >
-                      {employee.deloitteEmail}
-                    </p>
-                  </div>
-                </div>
-              </td>
-              {columns.slice(1).map((column) => (
-                <Fragment key={column.key}>
-                  {CELLS[column.key as Exclude<DirectoryColumnKey, "employee">]({
-                    employee,
-                    today,
-                  })}
-                </Fragment>
-              ))}
-              <td aria-hidden className="p-0" />
-            </tr>
-          );
-        })}
+        {employees.map((employee, rowIndex) => (
+          <EmployeeRow
+            key={employee.id}
+            employee={employee}
+            rowIndex={rowIndex}
+            active={employee.id === selectedId}
+            ticked={ticked.has(employee.id)}
+            today={today}
+            columnKeys={rowColumns}
+            onSelect={onSelect}
+            onTick={onTick}
+          />
+        ))}
       </tbody>
     </table>
   );
 }
+
+/** One directory row. Memoised, so ticking, searching or selecting only re-renders the rows that changed. */
+const EmployeeRow = memo(function EmployeeRow({
+  employee,
+  rowIndex,
+  active,
+  ticked,
+  today,
+  columnKeys,
+  onSelect,
+  onTick,
+}: {
+  employee: Employee;
+  rowIndex: number;
+  active: boolean;
+  ticked: boolean;
+  today: string;
+  columnKeys: readonly DirectoryColumnKey[];
+  onSelect: (id: string) => void;
+  onTick: (id: string) => void;
+}) {
+  return (
+    <tr
+      style={rowEnterStyle(rowIndex)}
+      data-employee-id={employee.id}
+      tabIndex={0}
+      aria-selected={active}
+      onClick={() => onSelect(employee.id)}
+      onKeyDown={(e) => {
+        // Keys pressed on the tick box belong to the box.
+        if (e.target !== e.currentTarget) return;
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onSelect(employee.id);
+        } else {
+          // Up, Down, J, K, Home and End move between rows; E opens the row.
+          handleRowKey(
+            e,
+            Array.from(e.currentTarget.parentElement?.children ?? []) as HTMLElement[],
+            e.currentTarget,
+          );
+        }
+      }}
+      className={cn(
+        "border-line group cursor-pointer scroll-mt-10 border-b outline-none",
+        "transition-colors duration-150",
+        "focus-visible:ring-focus focus-visible:ring-2 focus-visible:ring-inset",
+        active ? "bg-accent-soft" : "hover:bg-chip",
+        rowEnterClass(rowIndex),
+      )}
+    >
+      <td
+        className={cn(
+          "py-1.5 pr-0 pl-5",
+          active && "shadow-[inset_3px_0_0_var(--color-accent)]",
+        )}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <input
+          type="checkbox"
+          checked={ticked}
+          onChange={() => onTick(employee.id)}
+          aria-label={`Select ${displayName(employee)}`}
+        />
+      </td>
+      <td className="relative py-1.5 pr-3 pl-2">
+        <ArrivalFlash waiting={isAwaitingProfile(employee)} />
+        <div className="flex min-w-0 items-center gap-2.5">
+          <EmployeeAvatar employee={employee} size="sm" />
+          <div className="min-w-0">
+            <p
+              className="text-ink truncate text-[13.5px] font-semibold"
+              title={
+                isAwaitingProfile(employee) ? "Waiting for the M365 profile" : undefined
+              }
+            >
+              {displayName(employee)}
+            </p>
+            <p
+              className="text-ink-muted truncate text-[12px]"
+              title={employee.deloitteEmail}
+            >
+              {employee.deloitteEmail}
+            </p>
+          </div>
+        </div>
+      </td>
+      {columnKeys.map((key) => (
+        <Fragment key={key}>
+          {CELLS[key as Exclude<DirectoryColumnKey, "employee">]({ employee, today })}
+        </Fragment>
+      ))}
+      <td aria-hidden className="p-0" />
+    </tr>
+  );
+});

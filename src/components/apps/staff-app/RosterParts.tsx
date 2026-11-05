@@ -302,7 +302,8 @@ export function CellMenu({
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="center"
-        className="max-h-[70vh] min-w-[250px] overflow-y-auto"
+        collisionPadding={8}
+        className="max-h-[min(70vh,var(--radix-dropdown-menu-content-available-height))] min-w-[250px] overflow-y-auto"
       >
         {menu && (
           <>

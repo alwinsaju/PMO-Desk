@@ -69,6 +69,15 @@ function continues(earlier: string, later: string): boolean {
   return daysBetween(earlier, later) > 0;
 }
 
+/** True when every day from `start` to `end` is a Saturday or Sunday. */
+function isWeekendOnly(start: string, end: string): boolean {
+  if (!isIsoDate(start) || !isIsoDate(end) || end < start) return false;
+  for (let day = start; day <= end; day = addDays(day, 1)) {
+    if (!isWeekend(day)) return false;
+  }
+  return true;
+}
+
 export function whosOff(input: WhosOffInput): WhosOff {
   const { from, to } = input;
   if (
@@ -90,6 +99,8 @@ export function whosOff(input: WhosOffInput): WhosOff {
       (input.includePending && request.status === "pending");
     const person = people.get(request.employeeId);
     if (!wanted || !person || request.endDate < from || request.startDate > to) continue;
+    // A request that only covers a weekend takes no working day off: it is not "off".
+    if (isWeekendOnly(request.startDate, request.endDate)) continue;
     const start = request.startDate < from ? from : request.startDate;
     const end = request.endDate > to ? to : request.endDate;
     const days = covered.get(person.id) ?? new Set<string>();

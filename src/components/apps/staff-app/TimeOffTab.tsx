@@ -24,6 +24,7 @@ import { TERMS } from "@/lib/ui/terms";
 import { noSpellcheck } from "@/lib/ui/noSpellcheck";
 import { EmptyState, TONE_DOT } from "./parts";
 import { TimeOffCard } from "./TimeOffCard";
+import { useActiveStaff } from "./tabActive";
 import { TimeOffDialog } from "./TimeOffDialog";
 import { TimeOffDetailDialog } from "./TimeOffDetailDialog";
 import { ModelChip } from "./ModelChip";
@@ -44,8 +45,8 @@ export function TimeOffTab({
   status: TimeOffStatus | "";
   onStatusChange: (status: TimeOffStatus | "") => void;
 }) {
-  const employees = useStaffStore((s) => s.employees);
-  const timeOff = useStaffStore((s) => s.timeOff);
+  const employees = useActiveStaff((s) => s.employees);
+  const timeOff = useActiveStaff((s) => s.timeOff);
   const commit = useStaffStore((s) => s.commit);
 
   const [query, setQuery] = useState("");

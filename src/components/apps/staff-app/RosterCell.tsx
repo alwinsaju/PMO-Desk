@@ -40,6 +40,35 @@ const HATCH_LEAVE =
 const HATCH_PENDING =
   "[background-image:repeating-linear-gradient(135deg,color-mix(in_srgb,var(--color-amber)_45%,transparent)_0_2px,transparent_2px_6px)]";
 
+/** Arrow keys move between the day cells of the grid (the cell menu itself is opened with Enter or Space). */
+function moveFocus(button: HTMLButtonElement, key: string): boolean {
+  const cell = button.closest("td");
+  const row = cell?.parentElement as HTMLTableRowElement | null | undefined;
+  const table = button.closest("table");
+  if (!cell || !row || !table) return false;
+  const col = cell.cellIndex;
+  const rows = Array.from(table.rows);
+  const target = (from: number, step: number): HTMLElement | null => {
+    for (let i = from + step; i >= 0 && i < rows.length; i += step) {
+      const found = rows[i].cells[col]?.querySelector<HTMLElement>("[data-roster-cell]");
+      if (found) return found;
+    }
+    return null;
+  };
+  let next: HTMLElement | null = null;
+  if (key === "ArrowUp") next = target(rows.indexOf(row), -1);
+  else if (key === "ArrowDown") next = target(rows.indexOf(row), 1);
+  else {
+    const cells = Array.from(row.cells);
+    const step = key === "ArrowLeft" ? -1 : 1;
+    for (let i = col + step; i >= 0 && i < cells.length && !next; i += step) {
+      next = cells[i].querySelector<HTMLElement>("[data-roster-cell]");
+    }
+  }
+  next?.focus();
+  return next !== null;
+}
+
 /** One person's day. Memoised: a roster has thousands of these. */
 export const RosterCell = memo(function RosterCell({
   view,
@@ -86,9 +115,14 @@ export const RosterCell = memo(function RosterCell({
     <td className={frame}>
       <button
         type="button"
+        data-roster-cell
         title={title}
         aria-label={`${title}. Change`}
         onClick={(e) => onOpen(rowKey, date, e.currentTarget.getBoundingClientRect())}
+        onKeyDown={(e) => {
+          if (!e.key.startsWith("Arrow") || e.altKey || e.ctrlKey || e.metaKey) return;
+          if (moveFocus(e.currentTarget, e.key)) e.preventDefault();
+        }}
         className={cn(
           "group rounded-control transition-ui relative flex w-full flex-col items-center justify-center text-center leading-tight",
           "focus-visible:ring-focus outline-none focus-visible:ring-2",

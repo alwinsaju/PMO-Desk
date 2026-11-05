@@ -46,6 +46,10 @@ export interface StaffState {
   timeOff: TimeOffRequest[];
   /** People moved off the roster; other apps do not see them. */
   offboarded: OffboardedEmployee[];
+  /** What the server has confirmed, without the edits still on their way. Things that start
+   *  by themselves for new people (checklists) read these, so a failed add leaves nothing behind. */
+  savedEmployees: Employee[];
+  savedOffboarded: OffboardedEmployee[];
   status: StaffStatus;
   /** Reads all collections from the server. Skipped while an edit is in flight. */
   load: () => Promise<void>;
@@ -87,7 +91,10 @@ const pending: { [K in StaffKind]: StaffChanges<Collections[K]>[] } = {
   offboarded: [],
 };
 
-function visible(): Pick<StaffState, "employees" | "shifts" | "timeOff" | "offboarded"> {
+function visible(): Pick<
+  StaffState,
+  "employees" | "shifts" | "timeOff" | "offboarded" | "savedEmployees" | "savedOffboarded"
+> {
   const lay = <K extends StaffKind>(kind: K): Collections[K][] =>
     pending[kind].reduce<Collections[K][]>(
       (items, changes) => mergeChanges(items, changes),
@@ -102,6 +109,8 @@ function visible(): Pick<StaffState, "employees" | "shifts" | "timeOff" | "offbo
     shifts: lay("shifts"),
     timeOff: lay("timeoff").filter((r) => people.has(r.employeeId)),
     offboarded: lay("offboarded"),
+    savedEmployees: confirmed.employees,
+    savedOffboarded: confirmed.offboarded,
   };
 }
 
@@ -196,6 +205,8 @@ export const useStaffStore = create<StaffState>()((set, get) => {
     shifts: [],
     timeOff: [],
     offboarded: [],
+    savedEmployees: [],
+    savedOffboarded: [],
     status: "idle",
 
     load: async () => {
