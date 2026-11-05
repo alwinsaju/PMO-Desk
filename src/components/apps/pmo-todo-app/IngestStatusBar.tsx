@@ -26,7 +26,9 @@ import {
 import { ModelLogDialog } from "@/components/ai-runtime";
 import { cn } from "@/lib/cn";
 import type { PmoState } from "@/lib/pmo/types";
+import { attentionLines } from "@/lib/pmo/attentionView";
 import { scanNow } from "./api";
+import { AttentionBox, SAID_BY_NOTICES } from "./AttentionBox";
 import { GUTTER_X } from "./parts";
 import { SavedExamplesDialog } from "./SavedExamplesDialog";
 import { relativeTime } from "./queueView";
@@ -34,6 +36,7 @@ import { enableReminders, useRemindersStore } from "./remindersStore";
 import {
   buildNotices,
   modelStatus,
+  noticeSummary,
   offersReminderPrompt,
   scanSummary,
   type ModelTone,
@@ -311,9 +314,9 @@ export function PmoToolbar({
   );
 }
 
-/** What needs attention, under the toolbar. The most urgent notice is always
- *  visible; the rest fold into "+N more" so a stack of notices never eats a
- *  small window. */
+/** What needs attention, under the toolbar. One thing to say: shown in full. More than one:
+ *  a single compact line with a "Details" toggle (closed by default), so the notices
+ *  and the "Needs attention" box never take a third of a small window. */
 export function NoticeStack({
   state,
   offline,
@@ -325,20 +328,18 @@ export function NoticeStack({
 }) {
   const [expanded, setExpanded] = useState(false);
   const notices = buildNotices(state, offline);
-  if (notices.length === 0) return null;
-  const shown = expanded ? notices : notices.slice(0, 1);
+  const lines = attentionLines(state.needsAttention, SAID_BY_NOTICES);
+  const summary = noticeSummary(notices, lines);
+  if (notices.length === 0 && lines.length === 0) return null;
 
-  const toggle =
-    notices.length > 1 ? (
-      <button
-        type="button"
-        aria-expanded={expanded}
-        onClick={() => setExpanded((open) => !open)}
-        className="text-ink-soft hover:text-ink focus-visible:ring-focus rounded-chip ml-auto shrink-0 px-2.5 py-0.5 text-[12px] font-semibold whitespace-nowrap underline-offset-2 outline-none hover:underline focus-visible:ring-2"
-      >
-        {expanded ? "Show fewer" : `+${notices.length - 1} more`}
-      </button>
-    ) : null;
+  const details = (
+    <>
+      {notices.map((notice) => (
+        <NoticeRow key={notice.id} notice={notice} onSettings={onSettings} />
+      ))}
+      <AttentionBox lines={lines} />
+    </>
+  );
 
   return (
     <section
@@ -348,14 +349,40 @@ export function NoticeStack({
         GUTTER_X,
       )}
     >
-      {shown.map((notice, index) => (
-        <NoticeRow
-          key={notice.id}
-          notice={notice}
-          onSettings={onSettings}
-          trailing={index === 0 ? toggle : null}
-        />
-      ))}
+      {summary ? (
+        <>
+          <p
+            className={cn(
+              "rounded-card text-ink-soft flex items-center gap-2.5 px-4 py-1.5 text-[13px] leading-snug",
+              summary.amber ? "bg-amber-soft" : "bg-accent-soft",
+            )}
+          >
+            {summary.amber ? (
+              <WarningCircleIcon
+                size={16}
+                weight="fill"
+                className="text-amber shrink-0"
+              />
+            ) : (
+              <InfoIcon size={16} className="text-accent-ink shrink-0" />
+            )}
+            <span className="min-w-0 flex-1 truncate" title={summary.text}>
+              {summary.text}
+            </span>
+            <button
+              type="button"
+              aria-expanded={expanded}
+              onClick={() => setExpanded((open) => !open)}
+              className="text-ink hover:text-ink focus-visible:ring-focus rounded-chip shrink-0 px-2.5 py-0.5 text-[12px] font-semibold whitespace-nowrap underline underline-offset-2 outline-none focus-visible:ring-2"
+            >
+              {expanded ? "Hide details" : "Details"}
+            </button>
+          </p>
+          {expanded && details}
+        </>
+      ) : (
+        details
+      )}
     </section>
   );
 }

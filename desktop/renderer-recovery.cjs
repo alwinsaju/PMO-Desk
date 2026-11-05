@@ -4,7 +4,7 @@
 
 /** Reloading cannot fix these: the renderer cannot even start. */
 const NO_RELOAD_REASONS = new Set(["launch-failed", "integrity-failure"]);
-/** This many crashes inside the window means a reload loop; stop offering it. */
+/** This many crashes inside the window means a reload loop; stop offering it. The first is\n *  reloaded automatically, the second asks. */
 const CRASH_LOOP_LIMIT = 3;
 const CRASH_LOOP_WINDOW_MS = 60_000;
 
@@ -16,7 +16,7 @@ function recordCrash(timestamps, now) {
 /**
  * @param {{reason?: string, recentCrashes?: number}} input
  *        recentCrashes counts this crash too.
- * @returns {{action: "ignore" | "offer-reload" | "offer-quit", message: string}}
+ * @returns {{action: "ignore" | "auto-reload" | "offer-reload" | "offer-quit", message: string}}
  */
 function decideRendererGone({ reason, recentCrashes = 1 } = {}) {
   if (reason === "clean-exit") {
@@ -35,9 +35,17 @@ function decideRendererGone({ reason, recentCrashes = 1 } = {}) {
       message: `The PMO Desk window keeps crashing (${why}). Restart the app.`,
     };
   }
+  // The first crash inside the window is reloaded without asking (the data is on disk and a
+  // reload usually fixes it); a second one in the same minute asks the person.
+  if (recentCrashes <= 1) {
+    return {
+      action: "auto-reload",
+      message: `The PMO Desk window stopped (${why}); reloading it once.`,
+    };
+  }
   return {
     action: "offer-reload",
-    message: `The PMO Desk window stopped working (${why}).`,
+    message: `The PMO Desk window stopped working again (${why}).`,
   };
 }
 

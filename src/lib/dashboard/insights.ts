@@ -10,7 +10,7 @@ import type { RegisterSummary } from "../registers/alerts.ts";
 import { REGISTERS, registerById } from "../registers/defs.ts";
 import { isOpen, textOf } from "../registers/records.ts";
 import type { FieldValue, RegisterDef, RegisterRecord } from "../registers/types.ts";
-import type { ReportStatusRow, RunLike } from "./summary.ts";
+import { isDeliberateStop, type ReportStatusRow, type RunLike } from "./summary.ts";
 
 type Prefs = Pick<ReminderPrefs, "timeZone" | "workDays" | "chaserDays">;
 
@@ -288,6 +288,7 @@ export function reportHealth(
 ): Health {
   const tasks = rows.map((row) => {
     const runs = [...(histories[row.id] ?? [])]
+      .filter((r) => !isDeliberateStop(r.outcome))
       .sort((a, b) => Date.parse(b.ended_at) - Date.parse(a.ended_at))
       .slice(0, 5);
     const failing = row.tone === "danger";

@@ -6,7 +6,6 @@ import type { NextOffer } from "./api";
 import { FilteredList } from "./FilteredList";
 import { FirstRunWizard } from "./FirstRunWizard";
 import { NoticeStack, PmoToolbar } from "./IngestStatusBar";
-import { NeedsAttentionStrip } from "./NeedsAttentionStrip";
 import { NewTodoDialog } from "./NewTodoDialog";
 import { PasteIntakeDialog } from "./PasteIntakeDialog";
 import { useDockBadgeStore } from "@/components/taskbar/dockBadgeStore";
@@ -218,7 +217,6 @@ export function PmoTodoApp({ windowId }: { windowId: string }) {
           offline={offline}
           onSettings={() => setSettingsOpen(true)}
         />
-        <NeedsAttentionStrip state={state} />
         <UndoRejectBar
           item={justRejected}
           onClear={() => setJustRejected(null)}

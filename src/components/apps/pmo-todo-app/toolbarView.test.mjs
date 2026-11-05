@@ -5,6 +5,7 @@ import { describe, it } from "node:test";
 import {
   buildNotices,
   modelStatus,
+  noticeSummary,
   offersReminderPrompt,
   proposalWaitNote,
   reminderStatus,
@@ -220,6 +221,29 @@ describe("modelStatus", () => {
       now,
     );
     assert.equal(working.unloadsAt, null);
+  });
+});
+
+describe("noticeSummary", () => {
+  const info = { id: "teams", level: "info", text: "Teams messages are filtered ..." };
+  const attention = { id: "inbox", level: "attention", text: "Inbox folder not found" };
+
+  it("says nothing for zero or one thing (those are shown in full)", () => {
+    assert.equal(noticeSummary([], []), null);
+    assert.equal(noticeSummary([info], []), null);
+    assert.equal(noticeSummary([], [{ short: "locked inbox files" }]), null);
+  });
+
+  it("folds several into one short line, amber when something needs action", () => {
+    assert.deepEqual(noticeSummary([info], [{ short: "unreadable records" }]), {
+      text: "2 things to check: Teams messages filtered, unreadable records",
+      amber: true,
+    });
+    assert.deepEqual(noticeSummary([info, { ...info, id: "rejected" }], []), {
+      text: "2 things to check: Teams messages filtered, unreadable files parked",
+      amber: false,
+    });
+    assert.equal(noticeSummary([attention, info], []).amber, true);
   });
 });
 

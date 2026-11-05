@@ -249,6 +249,38 @@ export function buildNotices(
   return out.sort((a, b) => rank[a.level] - rank[b.level]);
 }
 
+const NOTICE_SHORT: Record<string, string> = {
+  "time-zone": "time zone",
+  offline: "server not reachable",
+  paused: "model not running",
+  runtime: "model problem",
+  waking: "model waking up",
+  inbox: "inbox folder missing",
+  stub: "test model in use",
+  teams: "Teams messages filtered",
+  rejected: "unreadable files parked",
+};
+
+/**
+ * The compact line shown instead of every notice when there is more than one thing to say:
+ * "3 things to check: Teams messages filtered, unreadable records, locked inbox files".
+ * `amber` when any of it needs action. `shorts` are the attention lines' short labels.
+ */
+export function noticeSummary(
+  notices: readonly Notice[],
+  attention: readonly { short: string }[],
+): { text: string; amber: boolean } | null {
+  const parts = [
+    ...notices.map((n) => NOTICE_SHORT[n.id] ?? n.text),
+    ...attention.map((a) => a.short),
+  ];
+  if (parts.length < 2) return null;
+  return {
+    text: `${parts.length} things to check: ${parts.join(", ")}`,
+    amber: notices.some((n) => n.level === "attention") || attention.length > 0,
+  };
+}
+
 /** One line for the result of "Scan now". */
 export function scanSummary(report: {
   ingested: number;

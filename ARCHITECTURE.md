@@ -1462,8 +1462,9 @@ one the form starts from, `proposal.ai.adjustments` lists what changed in words,
 dialog shows it as a quiet "Adjusted by the app: ..." line. Rules, with "today" = the IST day of
 the worker's clock:
 
-1. A due date before today is dropped (`dueBasis` "none", and "(Stated deadline D had already
-   passed when this was read.)" is appended to the description); the same for action-item dates.
+1. A due date before today is **kept** (`dueBasis` unchanged), so the to-do shows as overdue,
+   and `adjustments` says "The deadline D had already passed when this was read, so the
+   to-do will show as overdue." The same note, for action-item dates (kept too).
    A date of exactly today stays.
 2. "high" becomes "normal" unless the subject or cleaned text has an urgency word (urgent, asap,
    as soon as possible, immediately, right away, critical, escalat*, eod, end of day, by today,
@@ -1500,6 +1501,11 @@ the worker's clock:
    only add a "please check" note. Past results then fall into rule 1.
 9. A title copied from wording aimed at the assistant (a line that `looksLikeInjection`; or, for
    a not-actionable item, a title the subject does not support) is replaced by the subject line.
+10. "The attached item" with no attachment (`attachmentCount` 0 and the message never says
+    "attach"): the title falls back to the subject, the phrase is removed from the description
+    and steps. A not-actionable item gets no owner (it is not defaulted to the user). A date
+    the model only _inferred_ is dropped when the message has no timing wording at all, and
+    kept (shown as "suggested") when it has loose wording ("next week", "end of month").
 
 A message longer than `MAX_MODEL_CHARS` (12,000) is sent as its first 8,000 and last 4,000
 characters with a marker between (`capHeadTail` in `preprocess.ts`); `proposal.modelReadPartOnly`
@@ -1771,6 +1777,11 @@ shrunk to the shell's 360x240 minimum; dialogs are portaled to the viewport).
   a tab switch as well as a poll. `usePmoData` polls every 5 s (longer after a slow
   answer), only while the document is visible, and sends the last `digest` so the
   server can answer `unchanged` (`pollLogic.ts`, `app/api/pmo/state/route.ts`). The
+  store keeps each record folder's listing until the folder changes (its modified time plus
+  a per-folder write counter; a full recheck every 30 s catches a file edited in place), so an
+  unchanged poll reads no record file and stats none (`Store.readAll`, `listTodosShared`;
+  1,000 to-dos: about 300 ms first, a few ms after, `server/statePerf.server.test.mjs`).
+  `GET /api/pmo/state?summary=1` returns only the attention counts for the dock badge.
   to-do list draws 60 cards and more as the end scrolls into view (`renderWindow.ts`).
 - `tokens.css` keeps `--color-accent-contrast` white in the dark theme (it used to
   flip to black through `neutral-0`, about 2.8:1 on the accent fill).
@@ -2421,6 +2432,19 @@ title, tone, action, key })` from anywhere; a repeated `key` replaces the earlie
   `UnreadableTool.tsx`). New writes are strict: over-long text is refused with a count (never cut), a month is
   read by `month.ts` (`2026-03`, `Nov 2026`...) or refused, SLA days must be whole numbers 1 to 365 (`configProblem`),
   an SLA item is Resolved exactly when it has a Resolved on day, and a link needs a host and no password.
+- **Long lists, versions, soft checks.** A list over `WINDOW_THRESHOLD` (120) rows draws only the rows on screen
+  plus overscan (`windowing.ts` is pure; `useWindowedRows.ts` measures row heights and the scroll position;
+  `RecordList.tsx` owns the table and cards, J/K/Home/End/E, focus return and bulk select over the whole list,
+  with a sticky header). The edit form sends `baseUpdatedAt`; `applyRegisterChanges` refuses an upsert whose base is
+  older than the stored record (409, "changed elsewhere") or whose record was deleted. No base (API, seed, Undo, new
+  record) is never refused. The form's panels save through `ExtrasContext.saveRecord`, which chains the version
+  each reply returned (`versionChain.ts`), so they never refuse each other. A timesheet row that is still Missing
+  after its week is over is late (`timesheetWeekIsLate`: its Monday is before this week's Monday) and reaches the
+  tile, the Dashboard and the badge; On leave, Submitted and Excused rows never alert. `warnings.ts` holds the soft
+  checks the form shows in amber without blocking (repeated reference, future last contact, notice deadline before
+  the start, invoice send-by far from its month, capacity 0% or over 100%, a timesheet week that is not a Monday);
+  a vendor renewal before its start is a hard rule in `crossCheck`. Years 0001 to 0999 are accepted in dates by
+  `records.ts` (the shared `isIsoDate` misreads 0001 to 0099 and is left alone for the other apps).
 - **UI.** `RegisterApp` is the generic list (search, status filter, show closed, CSV, alert chips, status
   chips, "—" for blank cells, hover edit and delete with an Undo toast, an empty state with "Add your first
   ...", an add and edit dialog, make a to-do, an unsent chaser mail to the owner). The dialog marks each bad

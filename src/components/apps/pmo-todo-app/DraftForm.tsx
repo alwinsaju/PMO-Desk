@@ -87,7 +87,12 @@ export function DraftForm({ draft, onChange, dueBasis, disabled }: DraftFormProp
               onChange={(event) => set({ dueAt: event.target.value || null })}
             />
             {draft.dueAt && dueBasis === "inferred" && (
-              <Chip className="shrink-0">guessed</Chip>
+              <Chip
+                className="shrink-0"
+                title="The AI suggested this date; the message does not state it exactly."
+              >
+                suggested
+              </Chip>
             )}
           </div>
         </Field>
@@ -157,6 +162,7 @@ export function DraftForm({ draft, onChange, dueBasis, disabled }: DraftFormProp
               value={item.text}
               disabled={disabled}
               maxLength={200}
+              aria-label={`Action item ${index + 1}`}
               onChange={(event) =>
                 set({
                   actionItems: draft.actionItems.map((existing, i) =>

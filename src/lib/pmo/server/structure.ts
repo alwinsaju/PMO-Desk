@@ -389,6 +389,7 @@ ${bodyText}`,
             subject: intake.subject,
             bodyText,
             sender: { name: intake.sender.name, address: intake.sender.address },
+            attachmentCount: intake.attachments.length,
           });
           return { task, grounded, rawDraft, draft, adjustments, fallback };
         });

@@ -36,6 +36,9 @@ import { inferSetupComplete } from "../firstRun.ts";
 
 /** Record files read at once when a folder is listed. */
 const READ_CONCURRENCY = 16;
+/** A cached listing is trusted for this long; then every file is checked again (by size and
+ *  time), which catches a record another program rewrote in place. */
+const LIST_REVALIDATE_MS = 30_000;
 
 export interface SeenEntry {
   at: string;
@@ -122,6 +125,16 @@ export class Store {
   /** Parsed records by path, valid while (mtimeMs, size) are unchanged, so a
    *  poll re-reads only the files that changed. */
   private readonly cache = new Map<string, CacheEntry>();
+  /** The last listing of each record folder, valid while its signature is unchanged. */
+  private readonly lists = new Map<
+    string,
+    { sig: string; at: number; records: unknown[] }
+  >();
+  /** How long an unchanged folder's listing is trusted before every file is checked again (ms);
+   *  0 checks on every read. A field so tests can ask for the strict behaviour. */
+  listTrustMs = LIST_REVALIDATE_MS;
+  /** Records written or removed by this process, per folder (part of the signature). */
+  private readonly writes = new Map<string, number>();
   /** Files actually read from disk (cache misses); exposed for tests. */
   readonly stats = { fileReads: 0 };
 
@@ -204,7 +217,7 @@ export class Store {
     kind: RecordKind,
     reason: string,
   ): Promise<void> {
-    this.cache.delete(file);
+    this.touch(file);
     const stamp = new Date().toISOString().replace(/[:.]/g, "-");
     try {
       await moveFile(
@@ -278,7 +291,21 @@ export class Store {
     return structuredClone(result.data);
   }
 
-  private async readAll<T>(dir: string, kind: RecordKind, parse: Parse<T>): Promise<T[]> {
+  private async readAll<T>(
+    dir: string,
+    kind: RecordKind,
+    parse: Parse<T>,
+    shared = false,
+  ): Promise<T[]> {
+    // Unchanged folder: no per-file stat at all. The signature is read BEFORE the folder, so a
+    // change made while reading shows up as a different signature on the next call.
+    const sig = await this.dirSignature(dir);
+    const hit = this.lists.get(dir);
+    if (hit && hit.sig === sig && Date.now() - hit.at < this.listTrustMs) {
+      return shared
+        ? (hit.records as T[])
+        : hit.records.map((r) => structuredClone(r) as T);
+    }
     const names = await listFiles(dir);
     const live = new Set<string>();
     const files = names.map((name) => {
@@ -294,7 +321,30 @@ export class Store {
     for (const key of this.cache.keys()) {
       if (path.dirname(key) === dir && !live.has(key)) this.cache.delete(key);
     }
-    return out;
+    this.lists.set(dir, { sig, at: Date.now(), records: out });
+    return shared ? out : out.map((r) => structuredClone(r) as T);
+  }
+
+  /** Changes when something is added to, removed from or renamed in the folder, or when this
+   *  process writes a record in it. A record rewritten in place by another program is only
+   *  noticed at the next LIST_REVALIDATE_MS check. */
+  private async dirSignature(dir: string): Promise<string> {
+    let mtime = "missing";
+    try {
+      mtime = String((await stat(dir)).mtimeMs);
+    } catch {
+      // folder not created yet
+    }
+    return `${this.writes.get(dir) ?? 0}|${mtime}`;
+  }
+
+  /** Note that a record file is about to change, so its folder's cached listing is stale. */
+  private touch(...files: string[]): void {
+    for (const file of files) {
+      const dir = path.dirname(file);
+      this.writes.set(dir, (this.writes.get(dir) ?? 0) + 1);
+      this.cache.delete(file);
+    }
   }
 
   private async readOne<T>(
@@ -309,9 +359,9 @@ export class Store {
 
   /** Write a record and forget what was cached for it. */
   private async writeRecord(file: string, value: unknown): Promise<void> {
-    this.cache.delete(file);
+    this.touch(file);
     await writeJsonAtomic(file, value);
-    this.cache.delete(file);
+    this.touch(file);
   }
 
   /** Record files moved aside as unreadable, as `<kind>/<file>`, oldest first. */
@@ -355,7 +405,7 @@ export class Store {
   async removeRaw(intakeId: string): Promise<void> {
     if (!isSafeId(intakeId)) return;
     const file = path.join(this.paths.raw, `${intakeId}.json`);
-    this.cache.delete(file);
+    this.touch(file);
     await unlink(file).catch(() => undefined);
   }
 
@@ -368,7 +418,7 @@ export class Store {
   async removeQuarantine(id: string): Promise<void> {
     if (!isSafeId(id)) return;
     const file = path.join(this.paths.quarantine, `${id}.json`);
-    this.cache.delete(file);
+    this.touch(file);
     await unlink(file).catch(() => undefined);
   }
 
@@ -392,10 +442,19 @@ export class Store {
   }
 
   async listProposals(): Promise<Proposal[]> {
-    const all = await this.readAll(this.paths.queue, "queue", (v) =>
-      ProposalSchema.safeParse(v),
+    return [...(await this.listProposalsShared())];
+  }
+
+  /** The same list without copying each record: the objects are the store's own, so a
+   *  caller must only read them (the state route does). Sorted in a new array. */
+  async listProposalsShared(): Promise<readonly Proposal[]> {
+    const all = await this.readAll(
+      this.paths.queue,
+      "queue",
+      (v) => ProposalSchema.safeParse(v),
+      true,
     );
-    return all.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    return [...all].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   }
 
   /** Decided proposals moved out of queue/ by the retention sweep. */
@@ -419,6 +478,11 @@ export class Store {
     return this.readAll(this.paths.todos, "todos", (v) => TodoSchema.safeParse(v));
   }
 
+  /** Read-only list without copying each record (see listProposalsShared). */
+  listTodosShared(): Promise<readonly Todo[]> {
+    return this.readAll(this.paths.todos, "todos", (v) => TodoSchema.safeParse(v), true);
+  }
+
   /** Closed to-dos moved out of todos/ by the retention sweep. */
   listArchivedTodos(): Promise<Todo[]> {
     return this.readAll(this.paths.archiveTodos, "archive-todos", (v) =>
@@ -436,7 +500,7 @@ export class Store {
     if (!isSafeId(id)) return;
     for (const dir of [this.paths.todos, this.paths.archiveTodos]) {
       const file = path.join(dir, `${id}.json`);
-      this.cache.delete(file);
+      this.touch(file);
       await unlink(file).catch(() => undefined);
     }
   }
@@ -452,7 +516,7 @@ export class Store {
       kind === "queue" ? this.paths.archiveQueue : this.paths.archiveTodos,
       `${id}.json`,
     );
-    this.cache.delete(from);
+    this.touch(from, to);
     await moveFile(from, to);
   }
 
@@ -498,7 +562,7 @@ export class Store {
   async removeArchivedProposal(id: string): Promise<void> {
     if (!isSafeId(id)) return;
     const file = path.join(this.paths.archiveQueue, `${id}.json`);
-    this.cache.delete(file);
+    this.touch(file);
     await unlink(file).catch(() => undefined);
   }
 

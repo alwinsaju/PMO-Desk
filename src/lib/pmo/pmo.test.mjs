@@ -21,7 +21,6 @@ import {
   displayText,
   dropNoise,
   htmlToText,
-  prepareForModel,
   prepareForModelDetailed,
   stripQuotedChain,
   analyseQuotedChain,

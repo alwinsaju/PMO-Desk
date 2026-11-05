@@ -16,7 +16,7 @@ import type { AiStructured, PmoConfig } from "./types.ts";
 import { defaultOwnerToMe, isMe } from "./ownerDefault.ts";
 import { addressedToSomeoneElse } from "./addressee.ts";
 import { looksLikeInjection } from "./signoff.ts";
-import { checkDueAgainstQuote } from "./dueCheck.ts";
+import { checkDueAgainstQuote, dayWords, timingWording } from "./dueCheck.ts";
 
 /** The message without the lines that talk to the assistant, for judging urgency. */
 function withoutInjection(text: string): string {
@@ -46,7 +46,13 @@ export interface SanitizeContext {
   bodyText?: string;
   /** Who sent it: a title that is only their name is not a title. */
   sender?: { name?: string | null; address?: string | null };
+  /** How many attachments the message has. Left out when unknown (nothing is assumed). */
+  attachmentCount?: number;
 }
+
+const INVENTED_ATTACHMENT =
+  /\b(?:the |an? )?attached\s+(?:item|file|document|doc|attachment|report|spreadsheet|deck|presentation|material|paper|files|documents|items)s?\b/i;
+const INVENTED_ATTACHMENT_ALL = new RegExp(INVENTED_ATTACHMENT.source, "gi");
 
 export interface SanitizeResult {
   draft: AiStructured;
@@ -215,6 +221,37 @@ export function sanitizeDraft(input: AiStructured, ctx: SanitizeContext): Saniti
     }
   }
 
+  // (0c) "Review the attached item" when nothing is attached and the message never says
+  // "attached": the model made the attachment up. The subject line titles the card instead,
+  // and the phrase is taken out of the description and steps.
+  if (ctx.attachmentCount === 0 && !/attach/i.test(ctx.text)) {
+    let touched = false;
+    if (INVENTED_ATTACHMENT.test(draft.title)) {
+      touched = true;
+      fallback = true;
+      draft.title =
+        deriveFallbackTitle(
+          { subject, bodyText: withoutInjection(bodyText) },
+          TITLE_MAX,
+        ) || "Message to review";
+    }
+    const plain = (text: string) => {
+      const next = text.replace(
+        INVENTED_ATTACHMENT_ALL,
+        "the item mentioned in the message",
+      );
+      touched ||= next !== text;
+      return next;
+    };
+    draft.description = plain(draft.description);
+    for (const item of draft.actionItems) item.text = plain(item.text);
+    if (touched) {
+      adjustments.push(
+        "The AI wrote about an attachment, but the message has none, so that wording was replaced.",
+      );
+    }
+  }
+
   // (a0) A due date that disagrees with the day the quoted sentence names ("by
   // Friday", "tomorrow", "31 Dec 2026") is recomputed here, not trusted to the model.
   if (draft.dueAt && draft.dueBasis !== "none") {
@@ -228,30 +265,35 @@ export function sanitizeDraft(input: AiStructured, ctx: SanitizeContext): Saniti
     }
   }
 
-  // (a) A deadline that had already passed when the message was read. Relative
-  // dates are resolved against the day the message was written, so for an old
-  // message the answer can be long gone: say so instead of proposing it.
+  // (a1) A date the model only guessed ("inferred") is kept, as a suggestion the card marks,
+  // when the message has some timing wording; with none at all nobody stated a date, so
+  // none is proposed.
+  if (draft.dueAt && draft.dueBasis === "inferred") {
+    if (timingWording(`${draft.quote}\n${ctx.text}`, today) === "none") {
+      draft.dueAt = null;
+      draft.dueBasis = "none";
+      adjustments.push(
+        "No due date is proposed: the message does not mention a deadline, so the AI was guessing.",
+      );
+    }
+  }
+
+  // (a) A deadline that had already passed when the message was read ("needed it by
+  // yesterday"). It stays as the due date, so the to-do shows as overdue, and the note says
+  // why it already is.
   if (draft.dueAt && draft.dueBasis === "none") {
     draft.dueAt = null; // noise the review form ignores anyway
   } else if (draft.dueAt && draft.dueAt < today) {
-    const stated = draft.dueAt;
-    const note = `(Stated deadline ${stated} had already passed when this was read.)`;
-    draft.description = draft.description.trim()
-      ? `${draft.description.trim()} ${note}`
-      : note;
-    draft.dueAt = null;
-    draft.dueBasis = "none";
     adjustments.push(
-      `The deadline ${stated} had already passed when this was read, so no due date is set.`,
+      `The deadline ${dayWords(draft.dueAt)} had already passed when this was read, so the to-do will show as overdue.`,
     );
   }
   const stalePast = draft.actionItems.filter((i) => i.dueAt && i.dueAt < today);
   if (stalePast.length > 0) {
-    for (const item of stalePast) item.dueAt = null;
     adjustments.push(
       stalePast.length === 1
-        ? "One action item's date had already passed and was removed."
-        : `${stalePast.length} action items' dates had already passed and were removed.`,
+        ? "One action item's date had already passed when this was read."
+        : `${stalePast.length} action items' dates had already passed when this was read.`,
     );
   }
 
@@ -343,15 +385,25 @@ export function sanitizeDraft(input: AiStructured, ctx: SanitizeContext): Saniti
     }
   }
 
+  // (e-) Something that is not a task has no owner to default: the user is not given it just
+  // because it arrived in their inbox. A reviewer who approves it anyway ticks "This is mine".
+  const mineNow =
+    draft.owner.isMe === true ||
+    isMe(draft.owner.name, ctx.me) ||
+    isMe(draft.owner.email, ctx.me);
+  if (draft.isActionable === false) {
+    if (mineNow) {
+      draft.owner = { name: null, email: null, isMe: null };
+      adjustments.push("No owner is set: this does not look like something to do.");
+    }
+    draft.tags = tidyTags(draft.tags);
+    return { draft, adjustments, fallback };
+  }
+
   // (e0) A request that opens with somebody else's name ("Rohan, ...") is theirs, even
   // with me on the "to" line. The model often claims it for me.
   const addressees = addressedToSomeoneElse(bodyText, ctx.me);
-  if (
-    addressees &&
-    (draft.owner.isMe === true ||
-      isMe(draft.owner.name, ctx.me) ||
-      isMe(draft.owner.email, ctx.me))
-  ) {
+  if (addressees && mineNow) {
     const who = addressees.join(" / ");
     draft.owner = { name: who, email: null, isMe: false };
     adjustments.push(
@@ -370,13 +422,17 @@ export function sanitizeDraft(input: AiStructured, ctx: SanitizeContext): Saniti
   }
 
   // (f) Tidy tags.
+  draft.tags = tidyTags(draft.tags);
+
+  return { draft, adjustments, fallback };
+}
+
+function tidyTags(input: readonly string[]): string[] {
   const tags: string[] = [];
-  for (const tag of draft.tags) {
+  for (const tag of input) {
     const clean = squash(tag);
     if (clean && !tags.some((t) => t.toLowerCase() === clean.toLowerCase()))
       tags.push(clean);
   }
-  draft.tags = tags.slice(0, MAX_TAGS_KEPT);
-
-  return { draft, adjustments, fallback };
+  return tags.slice(0, MAX_TAGS_KEPT);
 }

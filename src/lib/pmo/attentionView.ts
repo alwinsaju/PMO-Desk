@@ -17,7 +17,21 @@ export type AttentionId =
 export interface AttentionLine {
   id: AttentionId;
   text: string;
+  /** A few words for the compact summary line. */
+  short: string;
 }
+
+const SHORT: Record<AttentionId, string> = {
+  corruptRecords: "unreadable records",
+  oversizedFiles: "files too large",
+  erroredFiles: "locked inbox files",
+  parkedFiles: "parked files",
+  foreignFiles: "other files in the inbox",
+  duplicatesIgnored: "repeated messages",
+  queuePaused: "structuring paused",
+  modelMissing: "model not installed",
+  badTimeZone: "bad time zone",
+};
 
 /** How many file names a line spells out before "and N more". */
 export const MAX_SHOWN_NAMES = 3;
@@ -40,7 +54,7 @@ export function attentionLines(
 ): AttentionLine[] {
   const lines: AttentionLine[] = [];
   const add = (id: AttentionId, text: string) => {
-    if (!skip.includes(id)) lines.push({ id, text });
+    if (!skip.includes(id)) lines.push({ id, text, short: SHORT[id] });
   };
 
   const corrupt = summary.corruptRecords;

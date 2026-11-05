@@ -198,6 +198,26 @@ function dateMentions(text: string, today: string): Mention[] {
   return out;
 }
 
+/** Does the sentence date the request? "concrete": it names a day or a date; "vague": only
+ *  loose timing ("next week", "soon", "end of the month", a deadline word); "none". */
+export function timingWording(
+  text: string,
+  today: string,
+): "concrete" | "vague" | "none" {
+  if (
+    relativeMentions(text, today).length +
+      weekdayMentions(text, today).length +
+      dateMentions(text, today).length >
+    0
+  ) {
+    return "concrete";
+  }
+  return VAGUE_TIMING.test(text) ? "vague" : "none";
+}
+
+const VAGUE_TIMING =
+  /\b(?:soon|asap|urgent(?:ly)?|eod|eow|eom|cob|end of (?:the |this |next )?(?:day|week|month|quarter|year)|(?:this|next|following|coming) (?:week|month|quarter|year)|(?:in|within) (?:a |an |\d+ |few |couple of )?(?:day|days|week|weeks|month|months|hour|hours)|deadline|due)\b/i;
+
 export interface DueCheck {
   dueAt: string;
   /** Plain-language note for `ai.adjustments`. */

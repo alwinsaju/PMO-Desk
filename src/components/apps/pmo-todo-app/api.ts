@@ -65,6 +65,13 @@ export async function fetchState(): Promise<PmoState> {
   return reply;
 }
 
+/** The attention counts behind the dock badge, without the whole state. */
+export async function fetchAttentionSummary(): Promise<number> {
+  const reply = await call<{ attention: Attention }>("/state?summary=1");
+  if (!reply.ok) throw new Error(reply.reason);
+  return reply.attention.count;
+}
+
 /** The poller's read: the server answers "unchanged" (no document) when `known` is still current. */
 export async function pollState(known: string | null): Promise<StatePoll> {
   const reply = await call<

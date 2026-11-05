@@ -8,7 +8,7 @@ describe("decideRendererGone", () => {
     assert.equal(recovery.decideRendererGone({ reason: "clean-exit" }).action, "ignore");
   });
 
-  it("offers a reload for crashes, kills, OOM and unknown reasons", () => {
+  it("reloads on its own after the first crash and asks on the second", () => {
     for (const reason of [
       "crashed",
       "abnormal-exit",
@@ -18,9 +18,14 @@ describe("decideRendererGone", () => {
       "something-new",
       undefined,
     ]) {
-      const result = recovery.decideRendererGone({ reason });
-      assert.equal(result.action, "offer-reload", String(reason));
-      assert.ok(result.message.length > 0);
+      const first = recovery.decideRendererGone({ reason, recentCrashes: 1 });
+      assert.equal(first.action, "auto-reload", String(reason));
+      assert.ok(first.message.length > 0);
+      assert.equal(
+        recovery.decideRendererGone({ reason, recentCrashes: 2 }).action,
+        "offer-reload",
+        String(reason),
+      );
     }
   });
 
@@ -45,7 +50,24 @@ describe("decideRendererGone", () => {
   });
 
   it("tolerates a missing argument", () => {
-    assert.equal(recovery.decideRendererGone().action, "offer-reload");
+    assert.equal(recovery.decideRendererGone().action, "auto-reload");
+  });
+
+  it("a crash after the window has passed counts as a first one again", () => {
+    const first = 1_000_000;
+    const later = first + recovery.CRASH_LOOP_WINDOW_MS + 1;
+    const times = recovery.recordCrash(recovery.recordCrash([], first), later);
+    assert.equal(
+      recovery.decideRendererGone({ reason: "crashed", recentCrashes: times.length })
+        .action,
+      "auto-reload",
+    );
+    const quick = recovery.recordCrash(recovery.recordCrash([], first), first + 5_000);
+    assert.equal(
+      recovery.decideRendererGone({ reason: "crashed", recentCrashes: quick.length })
+        .action,
+      "offer-reload",
+    );
   });
 });
 

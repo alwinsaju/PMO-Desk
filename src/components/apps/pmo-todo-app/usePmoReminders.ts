@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react";
 import { useDockBadgeStore } from "@/components/taskbar/dockBadgeStore";
 import { getDesktopBridge } from "@/lib/pmo/desktopBridge";
 import type { Toast } from "@/lib/pmo/due";
-import { acknowledgeReminders, claimReminders, fetchDue } from "./api";
+import { acknowledgeReminders, claimReminders, fetchAttentionSummary } from "./api";
 import { PMO_CHANGED_EVENT } from "./attentionRefresh";
 import { readNotificationPermission, useRemindersStore } from "./remindersStore";
 
@@ -105,9 +105,8 @@ export function usePmoReminders(onOpen: (todoId: string | null) => void) {
           }
         }
         if (attention === null) {
-          // The shell owns this server (or the claim was refused): read-only.
-          const due = await fetchDue();
-          if (due.ok) attention = due.attention.count;
+          // The shell owns this server (or the claim was refused): read-only, and light.
+          attention = await fetchAttentionSummary();
         }
         if (attention !== null && !cancelled) {
           useRemindersStore.getState().setAttention(attention);

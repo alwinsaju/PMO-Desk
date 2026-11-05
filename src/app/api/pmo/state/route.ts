@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { handle } from "@/lib/pmo/server/http";
-import { buildState } from "@/lib/pmo/server/state";
+import { buildState, buildSummary } from "@/lib/pmo/server/state";
 
 // Live local state; never cacheable.
 export const dynamic = "force-dynamic";
@@ -11,9 +11,13 @@ export const dynamic = "force-dynamic";
  *
  *  The answer carries a `digest` of everything but the server clock. A poller that
  *  sends it back as `?known=<digest>` gets `{ ok, unchanged: true, serverTime }`
- *  instead of the whole document while nothing has changed. */
+ *  instead of the whole document while nothing has changed.
+ *
+ *  `?summary=1` answers only the attention counts behind the dock badge. */
 export function GET(request: Request) {
-  const known = new URL(request.url).searchParams.get("known");
+  const params = new URL(request.url).searchParams;
+  const known = params.get("known");
+  if (params.get("summary") === "1") return handle(request, (pmo) => buildSummary(pmo));
   return handle(request, async (pmo) => {
     const state = await buildState(pmo, {
       runtime: pmo.runtime,

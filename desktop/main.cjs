@@ -522,7 +522,14 @@ async function runUiRestart({ confirmIfBusy }) {
       await startUiServer("bundled");
     }
 
-    await startTasksEngine();
+    // The engine is optional for the shell and answers a few seconds after it is spawned: reload the
+    // window now instead of holding it until the engine is up (the Tasks app waits for it itself).
+    void startTasksEngine().catch((error) => {
+      desktopLog(
+        `Tasks engine did not start: ${error instanceof Error ? error.message : error}`,
+        "error",
+      );
+    });
     buildMenu();
     updateWindowTitle();
     if (mainWindow) {
@@ -721,7 +728,14 @@ async function handleRendererGone(details) {
   if (decision.action === "ignore") {
     return;
   }
-  const canReload = decision.action === "offer-reload";
+  if (decision.action === "auto-reload") {
+    desktopLog(`${decision.message} (first crash in the last minute)`, "error");
+    if (mainWindow) {
+      void mainWindow.loadURL(appUrl);
+      return;
+    }
+  }
+  const canReload = decision.action !== "offer-quit";
   const { response } = await showMessage({
     type: "error",
     title: "PMO Desk window stopped",
