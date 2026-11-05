@@ -10,7 +10,10 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const dist = path.join(root, ".next");
-const previous = path.join(root, ".next.previous");
+// Named with a dash on purpose: `/.next-*/` is git-ignored, and Tailwind scans every folder git
+// does not ignore for class names. A `.next.previous` folder was scanned, and the old build's
+// compiled CSS produced a broken `url(...)` class that failed the new build.
+const previous = path.join(root, ".next-previous");
 
 let kept = false;
 if (existsSync(dist)) {
