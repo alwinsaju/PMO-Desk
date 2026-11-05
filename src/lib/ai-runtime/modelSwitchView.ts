@@ -46,14 +46,23 @@ export function fastSwitchView(input: SwitchInput): SwitchView {
   }
   if (checked)
     return { checked, hint: `${fastId}. Quicker answers, a little less careful.` };
+  const careful = accurate?.id ?? input.active;
+  // The careful model may not be the one answering (it is not installed here).
+  if (!sameModel(input.active, careful)) {
+    const reason =
+      accurate?.installed === false
+        ? `${careful}, the most careful, is not installed on this computer.`
+        : `${careful} is the most careful.`;
+    return { checked, hint: `Using ${input.active} right now. ${reason}` };
+  }
   if (fast?.installed === false) {
     return {
       checked,
-      hint: `${accurate?.id ?? input.active}, the most careful. Turn on to download ${fastId} (${downloadSizeText(fastId)}).`,
+      hint: `${careful}, the most careful. Turn on to download ${fastId} (${downloadSizeText(fastId)}).`,
     };
   }
   return {
     checked,
-    hint: `${accurate?.id ?? input.active}, the most careful. Slower on this computer.`,
+    hint: `${careful}, the most careful. Slower on this computer.`,
   };
 }

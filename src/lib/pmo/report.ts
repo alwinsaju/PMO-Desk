@@ -302,9 +302,13 @@ export interface ReportData {
 
 const PRIORITY_RANK: Record<Priority, number> = { high: 0, normal: 1, low: 2 };
 
-/** Owner's name, else email, else "Unassigned". */
+/** Owner's name, else email, else "Me" for the PMO lead's own to-do, else "Unassigned". */
 export function ownerOf(todo: Pick<Todo, "owner">): string {
-  return todo.owner.name?.trim() || todo.owner.email?.trim() || "Unassigned";
+  return (
+    todo.owner.name?.trim() ||
+    todo.owner.email?.trim() ||
+    (todo.owner.isMe ? "Me" : "Unassigned")
+  );
 }
 
 const validMs = (iso: string | null | undefined): number | null => {

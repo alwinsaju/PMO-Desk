@@ -128,6 +128,52 @@ export async function completeFirstRun(
   });
 }
 
+const SetInboxBodySchema = z.object({
+  inboxDir: z.string().trim().min(1, "Choose the inbox folder.").max(500),
+  confirmNonEmpty: z.boolean().optional(),
+});
+
+/** Settings > "Inbox folder": the same checks the wizard applies (full path, an
+ *  existing folder, not a drive, user, system or PMO Desk folder; a folder holding
+ *  other JSON needs `confirmNonEmpty`), then saved. Takes effect on the next scan. */
+export async function setInboxFolder(
+  pmo: Pick<Pmo, "store">,
+  body: unknown,
+  deps: FirstRunDeps,
+): Promise<ActionResult<{ config: PmoConfig }> | Refusal> {
+  if (envInbox(deps.env)) {
+    return refuse(
+      "The inbox folder is set by the AI_OS_PMO_INBOX_DIR setting and cannot be changed here.",
+    );
+  }
+  const parsed = SetInboxBodySchema.safeParse(body);
+  if (!parsed.success) return refuse(firstIssue(parsed.error));
+  const chosen = validateInboxChoice(
+    parsed.data.inboxDir,
+    deps.isDirectory,
+    deps.isAbsolute,
+  );
+  if (!chosen.ok) return refuse(chosen.reason);
+  const problem = inboxFolderProblem(
+    chosen.path,
+    deps.safety,
+    parsed.data.confirmNonEmpty === true,
+  );
+  if (problem) {
+    return refuse(
+      problem.reason,
+      problem.needsConfirmation ? { needsConfirmation: true } : {},
+    );
+  }
+  return pmo.store.withLock(async () => {
+    const current = await pmo.store.loadConfig();
+    const next: PmoConfig = { ...current, inboxDir: chosen.path };
+    await pmo.store.saveConfig(next);
+    await pmo.store.audit("config", { changed: ["inboxDir"] });
+    return { ok: true as const, config: next };
+  });
+}
+
 const CreateFolderBodySchema = z.object({
   /** Where PMO-Inbox goes: the folder the person picked or a OneDrive root. */
   parent: z.string().trim().min(1, "Choose where to create the folder.").max(500),

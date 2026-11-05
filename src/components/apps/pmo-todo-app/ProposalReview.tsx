@@ -277,6 +277,12 @@ export function ProposalReview({
           request is not lost. Check it against the original.
         </Note>
       )}
+      {isReady && proposal.modelReadPartOnly && (
+        <Note tone="warning" className="mt-3.5 shrink-0" data-testid="long-message">
+          <strong>Long message:</strong> the AI read the start and the end only. Check the
+          middle of the original for anything it missed.
+        </Note>
+      )}
       {isFailed && (
         <Note tone="danger" className="mt-3.5 shrink-0">
           The local model could not structure this message

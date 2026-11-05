@@ -22,6 +22,7 @@ import {
   dropNoise,
   htmlToText,
   prepareForModel,
+  prepareForModelDetailed,
   stripQuotedChain,
   analyseQuotedChain,
   MAX_MODEL_CHARS,
@@ -454,14 +455,15 @@ describe("message clean-up", () => {
     assert.equal(greeting.replyBelowQuote, false);
   });
 
-  it("caps a below-the-quote reply at the model's body limit", () => {
-    const huge = `Hi,\nOn Mon, 5 Oct 2026 at 10:00, Pat wrote:\n> q\n${"answer ".repeat(5000)}`;
-    const prepared = prepareForModel({ body: { text: huge, format: "text" } });
-    assert.ok(prepared.length <= MAX_MODEL_CHARS + 40);
-    assert.ok(analyseQuotedChain(huge).text.length <= MAX_MODEL_CHARS + 10);
+  it("caps a below-the-quote reply at the model's body limit, keeping start and end", () => {
+    const huge = `Hi,\nOn Mon, 5 Oct 2026 at 10:00, Pat wrote:\n> q\n${"answer ".repeat(5000)}FINAL ASK`;
+    const prepared = prepareForModelDetailed({ body: { text: huge, format: "text" } });
+    assert.ok(prepared.text.length <= MAX_MODEL_CHARS + 60);
+    assert.ok(prepared.text.endsWith("FINAL ASK"));
+    assert.equal(prepared.truncated, true);
   });
 
-  it("drops base64, tracking links and truncates long messages", () => {
+  it("drops base64, tracking links and keeps the head and tail of long messages", () => {
     const cleaned = dropNoise(
       `see https://example.com/doc and ${"https://safelinks.protection.outlook.com/?url=" + "a".repeat(40)} and data:image/png;base64,${"QUJD".repeat(30)} end`,
     );
@@ -469,11 +471,18 @@ describe("message clean-up", () => {
     assert.ok(cleaned.includes("[link]"));
     assert.ok(cleaned.includes("[embedded data removed]"));
     assert.ok(!cleaned.includes("QUJD"));
-    const long = prepareForModel({
-      body: { text: "word ".repeat(5000), format: "text" },
+    const body = `START ${"word ".repeat(5000)}ACTION FOR QA: approve PO-7781 by Wednesday`;
+    const long = prepareForModelDetailed({ body: { text: body, format: "text" } });
+    assert.ok(long.text.length <= MAX_MODEL_CHARS + 60);
+    assert.ok(long.text.startsWith("START"));
+    assert.ok(long.text.endsWith("approve PO-7781 by Wednesday"));
+    assert.ok(long.text.includes("the middle of the message was left out"));
+    assert.equal(long.truncated, true);
+    const short = prepareForModelDetailed({
+      body: { text: "Please send it", format: "text" },
     });
-    assert.ok(long.length <= MAX_MODEL_CHARS + 40);
-    assert.ok(long.endsWith("[... message truncated ...]"));
+    assert.equal(short.truncated, false);
+    assert.equal(short.text, "Please send it");
   });
 
   it("shows HTML bodies as text and keeps plain text as is", () => {

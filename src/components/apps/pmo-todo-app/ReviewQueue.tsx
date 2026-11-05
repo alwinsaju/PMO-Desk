@@ -380,6 +380,7 @@ const Row = memo(function Row({
     view.fellBack ||
     view.checkOriginal ||
     view.replyBelowQuote ||
+    view.longMessage ||
     view.duplicate ||
     view.part !== null ||
     view.showStatus;
@@ -433,6 +434,14 @@ const Row = memo(function Row({
               {view.replyBelowQuote && (
                 <Chip title="The sender's text sat under the quoted mail, and was kept">
                   Reply below quote
+                </Chip>
+              )}
+              {view.longMessage && (
+                <Chip
+                  tone="warning"
+                  title="Long message: the AI read the start and the end only"
+                >
+                  Long message
                 </Chip>
               )}
               {view.duplicate && (

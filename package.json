@@ -10,7 +10,7 @@
   },
   "scripts": {
     "dev": "next dev --turbopack",
-    "build": "next build --turbopack",
+    "build": "node scripts/safe-build.mjs",
     "start": "next start",
     "desktop": "electron .",
     "runtime:python": "python scripts/build-python-runtime.py build",
@@ -63,6 +63,7 @@
     "eslint": "^9",
     "eslint-config-next": "15.5.28",
     "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react-hooks": "^5.2.0",
     "prettier": "^3.9.10",
     "prettier-plugin-tailwindcss": "^0.8.1",
     "tailwindcss": "^4",

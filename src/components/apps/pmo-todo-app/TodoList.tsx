@@ -1,6 +1,14 @@
 "use client";
 
-import { memo, useRef, useState, type KeyboardEvent } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from "react";
 import {
   BellSlashIcon,
   CalendarCheckIcon,
@@ -56,6 +64,7 @@ import { BulkBar, ListTools } from "./ListTools";
 import { MeetingNotesDialog, PlanWeekDialog } from "./PlanDialogs";
 import { applyExtras, flagReason, similarTodos } from "@/lib/pmo/pmoViews";
 import { signoffBadgeText, signoffRowView } from "./signoffUi";
+import { PAGE_SIZE, growLimit, revealTarget, windowNote } from "./renderWindow";
 import {
   SOURCE_LABEL,
   TODO_FILTERS,
@@ -113,37 +122,107 @@ export function TodoList({
   onSettled,
 }: TodoListProps) {
   const { filter, sort } = view;
-  const now = new Date(state.serverTime);
-  const counts = countByFilter(state.todos, state.today, now);
-  const visible = applyExtras(
-    sortTodosBy(filterTodos(state.todos, filter, state.today, now), sort, state.today),
-    { tag: view.tag, text: view.text },
+  // Everything below is judged at whole-minute precision (as the cards are), so the 3 s
+  // poll that only moves the server clock does not recompute a long list.
+  const nowMinuteMs = Math.floor(new Date(state.serverTime).getTime() / 60_000) * 60_000;
+  const now = useMemo(() => new Date(nowMinuteMs), [nowMinuteMs]);
+  const counts = useMemo(
+    () => countByFilter(state.todos, state.today, now),
+    [state.todos, state.today, now],
   );
+  const visible = useMemo(
+    () =>
+      applyExtras(
+        sortTodosBy(
+          filterTodos(state.todos, filter, state.today, now),
+          sort,
+          state.today,
+        ),
+        { tag: view.tag, text: view.text },
+      ),
+    [state.todos, state.today, now, filter, sort, view.tag, view.text],
+  );
+
+  // Only the first page is drawn at first; more follow as the end comes into view.
+  const resetKey = `${filter}|${sort}|${view.tag ?? ""}|${view.text}`;
+  const [limit, setLimit] = useState(PAGE_SIZE);
+  const [limitKey, setLimitKey] = useState(resetKey);
+  if (limitKey !== resetKey) {
+    setLimitKey(resetKey);
+    setLimit(PAGE_SIZE);
+  }
+  const shown = useMemo(() => visible.slice(0, limit), [visible, limit]);
   // Why each to-do needs a look, worked out once here so the cards stay plain.
-  const flags = new Map(
-    visible.map((t) => [
-      t.id,
-      flagReason(t, state.todos, state.today, now, state.config.reminders),
-    ]),
+  const flags = useMemo(
+    () =>
+      new Map(
+        shown.map((t) => [
+          t.id,
+          flagReason(t, state.todos, state.today, now, state.config.reminders),
+        ]),
+      ),
+    [shown, state.todos, state.today, now, state.config.reminders],
   );
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
   const [planOpen, setPlanOpen] = useState(false);
   const [notesOpen, setNotesOpen] = useState(false);
   // A bulk action reaches only the ticked to-dos that are on screen; the rest are counted.
   const bulk = todoBulkSelection(visible, state.todos, selectedIds);
-  const toggleSelected = (id: string) =>
-    setSelectedIds((current) => {
-      const next = new Set(current);
-      if (!next.delete(id)) next.add(id);
-      return next;
-    });
+  const toggleSelected = useCallback(
+    (id: string) =>
+      setSelectedIds((current) => {
+        const next = new Set(current);
+        if (!next.delete(id)) next.add(id);
+        return next;
+      }),
+    [],
+  );
   const cancelledCount = state.todos.filter((todo) => todo.status === "cancelled").length;
-  // Whole minutes, so a card only redraws when something it shows can differ
-  // (the server clock moves on every 3 s poll).
-  const nowMinute = new Date(Math.floor(now.getTime() / 60_000) * 60_000).toISOString();
+  const nowMinute = now.toISOString();
+
+  // Stable callbacks, so a card is only redrawn when its own to-do changes.
+  const latest = useRef({ onOpen, onNextOffer, onSettled });
+  latest.current = { onOpen, onNextOffer, onSettled };
+  const stable = useMemo(
+    () => ({
+      onOpen: (id: string) => latest.current.onOpen(id),
+      onNextOffer: (offer: NextOffer) => latest.current.onNextOffer(offer),
+      onSettled: () => latest.current.onSettled(),
+    }),
+    [],
+  );
 
   const listRef = useRef<HTMLDivElement>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  const focusAfterGrow = useRef<number | null>(null);
 
+  useEffect(() => {
+    if (focusAfterGrow.current === null) return;
+    const card =
+      listRef.current?.querySelectorAll<HTMLElement>("[data-todo-card]")[
+        focusAfterGrow.current
+      ];
+    focusAfterGrow.current = null;
+    card?.focus();
+    card?.scrollIntoView({ block: "nearest" });
+  }, [limit]);
+
+  useEffect(() => {
+    const node = sentinelRef.current;
+    if (!node || limit >= visible.length || typeof IntersectionObserver === "undefined") {
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setLimit((current) => growLimit(current, visible.length));
+        }
+      },
+      { rootMargin: "800px 0px" },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [limit, visible.length]);
   /** "D": close the to-do, with an Undo (a repeating one opens its next-occurrence offer instead). */
   async function markDone(todo: Todo) {
     if (todo.status !== "open") return;
@@ -188,6 +267,13 @@ export function TodoList({
     if (event.key === "Enter" && !target.hasAttribute("data-todo-card")) return;
     event.preventDefault();
     if (action.type === "move") {
+      // Past the last drawn card: draw more, then move there.
+      const reveal = revealTarget(event.key, current, cards.length, visible.length);
+      if (reveal !== null) {
+        focusAfterGrow.current = reveal;
+        setLimit((l) => growLimit(l, visible.length, reveal));
+        return;
+      }
       cards[action.index]?.focus();
       cards[action.index]?.scrollIntoView({ block: "nearest" });
       return;
@@ -319,7 +405,7 @@ export function TodoList({
             "focus-visible:ring-focus rounded-control flex flex-col gap-2.5 pt-2.5 pb-6 outline-none focus-visible:ring-2",
           )}
         >
-          {visible.map((todo, index) => (
+          {shown.map((todo, index) => (
             <TodoCard
               key={todo.id}
               todo={todo}
@@ -330,11 +416,25 @@ export function TodoList({
               flag={flags.get(todo.id) ?? null}
               selected={selectedIds.has(todo.id)}
               onToggleSelected={toggleSelected}
-              onOpen={onOpen}
-              onNextOffer={onNextOffer}
-              onSettled={onSettled}
+              onOpen={stable.onOpen}
+              onNextOffer={stable.onNextOffer}
+              onSettled={stable.onSettled}
             />
           ))}
+          {shown.length < visible.length && (
+            <div ref={sentinelRef} className="flex flex-col items-center gap-2 pt-1">
+              <p className="text-ink-muted text-[12.5px]" role="status">
+                {windowNote(shown.length, visible.length)}
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setLimit((current) => growLimit(current, visible.length))}
+              >
+                Show more
+              </Button>
+            </div>
+          )}
           <p className="text-ink-faint pt-1 text-center text-[11.5px]">
             Keyboard: J / K move · E open · D done · S snooze
           </p>

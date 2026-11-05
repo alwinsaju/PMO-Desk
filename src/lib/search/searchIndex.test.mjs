@@ -106,6 +106,29 @@ describe("searchItems", () => {
   it("ignores case and punctuation", () => {
     assert.deepEqual(titles("  RELEASE-plan!! "), ["Release plan v2"]);
   });
+
+  it("a person who matches only through level text does not outrank a name match", () => {
+    const mia = createEmployee(
+      {
+        id: "emp_000000000002",
+        firstName: "Mia",
+        lastName: "Chen",
+        deloitteEmail: "mia@x.com",
+        level: "Analyst",
+      },
+      NOW,
+    );
+    const people = personItems([ana, mia]);
+    assert.deepEqual(
+      searchItems(people, "ana").map((i) => i.title),
+      ["Ana Rao"],
+    );
+    // With no name match at all, the level text is still searchable.
+    assert.deepEqual(
+      searchItems(people, "analyst").map((i) => i.title),
+      ["Mia Chen"],
+    );
+  });
 });
 
 describe("noteItems", () => {

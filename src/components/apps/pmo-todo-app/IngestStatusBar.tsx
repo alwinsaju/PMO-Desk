@@ -162,7 +162,7 @@ export function PmoToolbar({
             onClick={() => setLogOpen(true)}
             aria-label={`${status.detail}${scanNote ? `. ${scanNote}` : ""}. Click to see what the model is doing.`}
             aria-haspopup="dialog"
-            className="text-ink-soft hover:text-ink rounded-chip focus-visible:ring-focus -ml-1 flex h-9 min-w-0 flex-1 cursor-pointer items-center gap-2.5 pl-1 text-left text-[13px] font-semibold outline-none focus-visible:ring-2"
+            className="text-ink-soft hover:text-ink rounded-chip focus-visible:ring-focus -ml-1 flex h-9 min-w-0 flex-1 cursor-pointer items-center gap-2.5 overflow-hidden pl-1 text-left text-[13px] font-semibold outline-none focus-visible:ring-2"
           >
             <span
               className={cn(
@@ -176,7 +176,7 @@ export function PmoToolbar({
             {scanNote ? (
               <span className="hidden min-w-0 truncate @xl:inline">{scanNote}</span>
             ) : (
-              <span className="hidden min-w-0 items-baseline gap-1.5 @xl:flex">
+              <span className="hidden min-w-0 flex-1 items-baseline gap-1.5 overflow-hidden @xl:flex">
                 <span className="min-w-0 truncate">{status.chipParts.label}</span>
                 {status.chipParts.model && (
                   <span className="shrink-0 whitespace-nowrap">

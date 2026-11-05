@@ -2,10 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PmoState } from "@/lib/pmo/types";
-import { fetchState } from "./api";
-import { shareUnchanged } from "./shareState";
-
-const POLL_INTERVAL_MS = 3000;
+import { pollState } from "./api";
+import { mergePoll, pollDelay } from "./pollLogic";
 
 export type ConnectionStatus = "loading" | "online" | "offline";
 
@@ -17,7 +15,10 @@ export interface PmoData {
 }
 
 /**
- * Polls GET /api/pmo/state every 3s. Like useTasksData, a failed poll
+ * Polls GET /api/pmo/state every 5 s (longer when the server is slow), and only while the
+ * window is on screen: a hidden tab or minimised app stops asking and catches up the moment
+ * it is visible again. While nothing has changed the server answers "unchanged" instead of
+ * sending the whole document. Like useTasksData, a failed poll
  * never blanks the screen: the last good state stays and only `connection`
  * flips to "offline". `cancelled`/`inFlight` are effect-local (not refs) for
  * the same StrictMode reason documented there. Each answer is merged into the
@@ -33,20 +34,30 @@ export function usePmoData(): PmoData {
   useEffect(() => {
     let cancelled = false;
     let inFlight = false;
+    // Only sent once a full document has arrived, so "unchanged" always has something to apply to.
+    let digest: string | null = null;
+    let lastDuration = 0;
+    const hidden = () => typeof document !== "undefined" && document.hidden;
 
     async function poll() {
-      if (inFlight) return;
+      if (inFlight || cancelled) return;
+      if (hidden()) return; // resumed by the visibilitychange listener below
       inFlight = true;
+      const started = performance.now();
       try {
-        const next = await fetchState();
+        const reply = await pollState(digest);
         if (cancelled) return;
-        setState((prev) => (prev ? shareUnchanged(prev, next) : next));
+        lastDuration = performance.now() - started;
+        if (!reply.unchanged) digest = reply.digest;
+        setState((prev) => mergePoll(prev, reply));
         setConnection("online");
       } catch {
         if (!cancelled) setConnection("offline");
       } finally {
         inFlight = false;
-        if (!cancelled) timerRef.current = setTimeout(poll, POLL_INTERVAL_MS);
+        if (!cancelled && !hidden()) {
+          timerRef.current = setTimeout(poll, pollDelay(lastDuration));
+        }
       }
     }
 
@@ -55,10 +66,15 @@ export function usePmoData(): PmoData {
       if (timerRef.current) clearTimeout(timerRef.current);
       void poll();
     };
+    const onVisible = () => {
+      if (!document.hidden) pollRef.current();
+    };
+    document.addEventListener("visibilitychange", onVisible);
     void poll();
 
     return () => {
       cancelled = true;
+      document.removeEventListener("visibilitychange", onVisible);
       if (timerRef.current) clearTimeout(timerRef.current);
     };
   }, []);

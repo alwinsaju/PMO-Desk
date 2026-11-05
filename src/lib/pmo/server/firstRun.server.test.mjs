@@ -20,7 +20,12 @@ import { fileURLToPath } from "node:url";
 import { existsSync, statSync } from "node:fs";
 import { developerConfig } from "../developerDefaults.ts";
 import { createPmo } from "./create.ts";
-import { completeFirstRun, createInboxFolder, firstRunSuggestions } from "./firstRun.ts";
+import {
+  completeFirstRun,
+  createInboxFolder,
+  firstRunSuggestions,
+  setInboxFolder,
+} from "./firstRun.ts";
 import { buildState } from "./state.ts";
 import { resolveInboxDir } from "./paths.ts";
 import { Store } from "./store.ts";
@@ -306,6 +311,67 @@ describe("completeFirstRun", () => {
     const again = await completeFirstRun(pmo, body({ names: ["Someone Else"] }), deps());
     assert.equal(again.ok, false);
     assert.deepEqual((await pmo.store.loadConfig()).me.names, ["Pat Example", "Pat"]);
+  });
+});
+
+describe("setInboxFolder (Settings)", () => {
+  it("changes the folder after the wizard's checks and keeps the other settings", async () => {
+    const pmo = await freshPmo();
+    assert.equal((await completeFirstRun(pmo, body(), deps())).ok, true);
+    const other = await mkdtemp(path.join(os.tmpdir(), "pmo-fr-other-"));
+    try {
+      const result = await setInboxFolder(pmo, { inboxDir: other }, deps());
+      assert.equal(result.ok, true, JSON.stringify(result));
+      const config = await pmo.store.loadConfig();
+      assert.equal(config.inboxDir, other);
+      assert.deepEqual(config.me.names, ["Pat Example", "Pat"]);
+    } finally {
+      await rm(other, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses a missing folder, a system folder and the environment override, saving nothing", async () => {
+    const pmo = await freshPmo();
+    assert.equal((await completeFirstRun(pmo, body(), deps())).ok, true);
+    const missing = await setInboxFolder(
+      pmo,
+      { inboxDir: path.join(inboxDir, "nope") },
+      deps(),
+    );
+    assert.match(missing.reason, /does not exist/i);
+    const system = await setInboxFolder(
+      pmo,
+      { inboxDir: "C:\\Windows" },
+      deps({ isDirectory: () => true, isAbsolute: () => true }),
+    );
+    assert.equal(system.ok, false);
+    assert.match(system.reason, /Windows or program folder/);
+    const fixed = await setInboxFolder(
+      pmo,
+      { inboxDir: home },
+      deps({ env: { AI_OS_PMO_INBOX_DIR: inboxDir } }),
+    );
+    assert.match(fixed.reason, /AI_OS_PMO_INBOX_DIR/);
+    assert.equal((await pmo.store.loadConfig()).inboxDir, inboxDir);
+  });
+
+  it("asks before a folder with other JSON, and accepts the confirmation", async () => {
+    const pmo = await freshPmo();
+    assert.equal((await completeFirstRun(pmo, body(), deps())).ok, true);
+    const safety = {
+      home: "Z:\\nobody",
+      sampleJsonFiles: () => [{ name: "settings.json", text: '{"hello":1}' }],
+    };
+    const asked = await setInboxFolder(pmo, { inboxDir: home }, deps({ safety }));
+    assert.equal(asked.needsConfirmation, true);
+    assert.equal((await pmo.store.loadConfig()).inboxDir, inboxDir);
+    const ok = await setInboxFolder(
+      pmo,
+      { inboxDir: home, confirmNonEmpty: true },
+      deps({ safety }),
+    );
+    assert.equal(ok.ok, true);
+    assert.equal((await pmo.store.loadConfig()).inboxDir, home);
   });
 });
 

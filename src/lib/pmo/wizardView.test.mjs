@@ -6,6 +6,7 @@ import {
   STEP_ICON,
   STEP_INTRO,
   STEP_SHORT,
+  nextBlockedReason,
   nextSteps,
   wizardProgress,
   wizardSummary,
@@ -103,5 +104,33 @@ describe("wizardSummary", () => {
   it("says the name comes from Microsoft 365 when only the email is given", () => {
     const rows = wizardSummary({ ...form, fullName: " ", otherNames: "" });
     assert.equal(rows[0].value, "From your Microsoft 365 profile");
+  });
+});
+
+describe("nextBlockedReason", () => {
+  const ok = { emailProblem: null, invalidDomains: 0, allowedDomains: 1 };
+  it("gives no reason when Next is on", () => {
+    assert.equal(nextBlockedReason("who", ok), null);
+    assert.equal(nextBlockedReason("domains", ok), null);
+    assert.equal(nextBlockedReason("timeZone", { ...ok, allowedDomains: 0 }), null);
+  });
+
+  it("says why a bad email switches Next off", () => {
+    const reason = nextBlockedReason("who", {
+      ...ok,
+      emailProblem: "That is not an address",
+    });
+    assert.equal(reason, "Fix the email address to continue. That is not an address.");
+  });
+
+  it("says why domains switch Next off", () => {
+    assert.match(
+      nextBlockedReason("domains", { ...ok, invalidDomains: 2 }),
+      /Fix or remove/,
+    );
+    assert.match(
+      nextBlockedReason("domains", { ...ok, allowedDomains: 0 }),
+      /at least one sender domain/,
+    );
   });
 });

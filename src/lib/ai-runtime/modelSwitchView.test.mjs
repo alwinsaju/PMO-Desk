@@ -53,6 +53,22 @@ describe("fastSwitchView", () => {
     assert.equal(view.hint, "qwen3.5:4b is not downloaded yet. Using gemma4:12b.");
   });
 
+  it("says which model is really answering when the careful one is not installed", () => {
+    const view = fastSwitchView({
+      ...base,
+      active: "qwen3.5:4b",
+      options: [
+        { id: "gemma4:12b", kind: "accurate", installed: false },
+        { id: "qwen3.5:4b", kind: "fast", installed: true },
+      ],
+    });
+    assert.equal(view.checked, false);
+    assert.equal(
+      view.hint,
+      "Using qwen3.5:4b right now. gemma4:12b, the most careful, is not installed on this computer.",
+    );
+  });
+
   it("shows an error instead of the hint", () => {
     const view = fastSwitchView({ ...base, error: "Disk is full.", options: options() });
     assert.equal(view.hint, "Disk is full.");

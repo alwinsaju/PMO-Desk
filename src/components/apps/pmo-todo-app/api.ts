@@ -21,6 +21,9 @@ import type { Attention, DueNotification, Toast } from "@/lib/pmo/due";
 import type { TodoPatch } from "@/lib/pmo/todoLogic";
 import type { RecordableOutcome } from "@/lib/pmo/signoff";
 import type { GeneratedReport, OpenedReport, saveBody } from "./reportView";
+import { friendlyReason } from "@/lib/pmo/friendlyReason";
+import type { StatePoll } from "./pollLogic";
+import { announcePmoChanged, changesTodos } from "./attentionRefresh";
 
 const BASE = "/api/pmo";
 const TIMEOUT_MS = 15_000;
@@ -41,7 +44,12 @@ async function call<T extends object>(
     signal: AbortSignal.timeout(TIMEOUT_MS),
   });
   try {
-    return (await response.json()) as Reply<T>;
+    const reply = (await response.json()) as Reply<T>;
+    if (changesTodos(method, path, reply.ok)) announcePmoChanged();
+    // Server validation wording is never shown as it came.
+    return reply.ok === false
+      ? { ...reply, reason: friendlyReason(reply.reason) }
+      : reply;
   } catch {
     return {
       ok: false,
@@ -55,6 +63,19 @@ export async function fetchState(): Promise<PmoState> {
   const reply = await call<PmoState>("/state");
   if (!reply.ok) throw new Error(reply.reason);
   return reply;
+}
+
+/** The poller's read: the server answers "unchanged" (no document) when `known` is still current. */
+export async function pollState(known: string | null): Promise<StatePoll> {
+  const reply = await call<
+    { unchanged: true; serverTime: string } | (PmoState & { digest?: string })
+  >(`/state${known ? `?known=${encodeURIComponent(known)}` : ""}`);
+  if (!reply.ok) throw new Error(reply.reason);
+  if ("unchanged" in reply && reply.unchanged === true) {
+    return { unchanged: true, serverTime: reply.serverTime };
+  }
+  const { digest, ...state } = reply as PmoState & { digest?: string };
+  return { unchanged: false, state: state as PmoState, digest: digest ?? null };
 }
 
 export const scanNow = () =>
@@ -157,6 +178,12 @@ export const saveReport = (id: string, body: ReturnType<typeof saveBody>) =>
 
 export const updateConfig = (patch: PmoConfigPatch) =>
   call<{ config: PmoConfig }>("/config", "PUT", patch);
+/** Change the inbox folder; a folder that already holds other JSON asks for `confirmNonEmpty`. */
+export const setInboxFolder = (inboxDir: string, confirmNonEmpty = false) =>
+  call<{ config: PmoConfig }>("/inbox", "PUT", {
+    inboxDir,
+    confirmNonEmpty,
+  }) as Promise<FirstRunReply<{ config: PmoConfig }>>;
 
 // --- saved examples (server/savedExamples.ts): local file, used only if the switch is on ---
 

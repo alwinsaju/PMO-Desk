@@ -61,6 +61,7 @@ import {
   SourceBadge,
   TextArea,
 } from "./parts";
+import { TITLE_MAX, titleCounter } from "./titleLimit";
 import { formatDay, repeatsText } from "./queueView";
 import { cn } from "@/lib/cn";
 import { TimelineTab } from "./TimelineTab";
@@ -484,9 +485,10 @@ export function TodoDetailDialog({
           <TabsContent value="details" className={PANEL}>
             <ScrollBody className="pr-2">
               <div className="flex flex-col gap-3.5">
-                <Field label="Title">
+                <Field label="Title" hint={titleCounter(fields.title.length)}>
                   <Input
                     value={fields.title}
+                    maxLength={TITLE_MAX}
                     onChange={(e) => edit({ title: e.target.value })}
                   />
                 </Field>

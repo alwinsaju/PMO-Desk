@@ -26,6 +26,13 @@ export function inboxSafetyFacts(
   return {
     home: os.homedir(),
     libraryRoots: oneDriveFacts(env, isDirectory).roots,
+    systemDirs: [
+      env.SystemRoot,
+      env.windir,
+      env.ProgramFiles,
+      env["ProgramFiles(x86)"],
+      env.ProgramData,
+    ].filter((dir): dir is string => !!dir?.trim()),
     protectedDirs: [
       dataRoot,
       process.cwd(),

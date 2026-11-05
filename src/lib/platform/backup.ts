@@ -123,6 +123,7 @@ export function inspectBackup(zip: Uint8Array): InspectedBackup {
     throw new ZipError("This backup was made by a version this app cannot read.");
   }
   const entries = all.filter((e) => e.name !== BACKUP_MANIFEST);
+  const folded = new Set<string>();
   for (const entry of entries) {
     const top = entry.name.split("/")[0] ?? "";
     const bad = unsafeEntryName(entry.name);
@@ -131,6 +132,14 @@ export function inspectBackup(zip: Uint8Array): InspectedBackup {
       throw new ZipError(`Refused: "${entry.name}" is not something a backup contains.`);
     }
     if (isTemp(entry.name)) throw new ZipError(`Refused: "${entry.name}".`);
+    // Windows file names are case-insensitive, so these would overwrite each other.
+    const key = entry.name.toLowerCase();
+    if (folded.has(key)) {
+      throw new ZipError(
+        `Refused: "${entry.name}" has the same name as another file apart from capital letters.`,
+      );
+    }
+    folded.add(key);
   }
   return { manifest: m as BackupManifest, entries };
 }
@@ -166,13 +175,54 @@ export interface RestoreResult {
   safetyCopy: string;
 }
 
-/** Replace the data folder's contents with a backup's. The current data is saved first. */
+/** A restore that could not finish. The data folder is back as it was; the message is for the person. */
+export class RestoreFailedError extends ZipError {}
+
+const WORK_PREFIX = ".restore-";
+
+const inside = (root: string, target: string) => {
+  const relative = path.relative(root, target);
+  return !(relative.startsWith("..") || path.isAbsolute(relative));
+};
+
+const partsOf = (rel: string) => rel.split("/");
+
+async function moveFile(from: string, to: string): Promise<void> {
+  await mkdir(path.dirname(to), { recursive: true });
+  await rename(from, to);
+}
+
+/** Last resort if moving the old files back fails: write the safety copy's files over whatever is there. */
+async function restoreFromSafetyCopy(root: string, safetyCopy: string): Promise<void> {
+  const { entries } = inspectBackup(await readFile(safetyCopy));
+  const keep = new Set(entries.map((e) => e.name));
+  for (const file of await listBackupFiles(root)) {
+    if (!keep.has(file.rel)) await rm(file.abs, { force: true });
+  }
+  for (const entry of entries) {
+    await writeBinaryAtomic(path.join(root, ...partsOf(entry.name)), entry.data);
+  }
+}
+
+/**
+ * Replace the data folder's contents with a backup's, all or nothing. The current data
+ * is saved first; the backup is written to a staging folder before anything is touched;
+ * then the old files are moved aside and the new ones moved in. If any step fails the
+ * old files are put back (from the safety copy if they cannot be moved back).
+ */
 export async function restoreBackup(
   root: string,
   zip: Uint8Array,
   options: { appVersion: string; now?: Date },
 ): Promise<RestoreResult> {
   const { manifest, entries } = inspectBackup(zip);
+  const targets = entries.map((entry) => {
+    const target = path.join(root, ...partsOf(entry.name));
+    if (!inside(root, target)) {
+      throw new ZipError(`Refused: "${entry.name}" is outside the data folder.`);
+    }
+    return { entry, target };
+  });
   const now = options.now ?? new Date();
   const backupsDir = path.join(root, "backups");
   const safetyCopy = path.join(backupsDir, `before-restore-${stamp(now)}.zip`);
@@ -182,20 +232,63 @@ export async function restoreBackup(
   );
   await pruneSafetyCopies(backupsDir);
 
-  const keep = new Set(entries.map((e) => e.name));
-  let removed = 0;
-  for (const file of await listBackupFiles(root)) {
-    if (keep.has(file.rel)) continue;
-    await rm(file.abs, { force: true });
-    removed += 1;
-  }
-  for (const entry of entries) {
-    const target = path.join(root, ...entry.name.split("/"));
-    const relative = path.relative(root, target);
-    if (relative.startsWith("..") || path.isAbsolute(relative)) {
-      throw new ZipError(`Refused: "${entry.name}" is outside the data folder.`);
+  const work = path.join(backupsDir, `${WORK_PREFIX}${randomBytes(4).toString("hex")}`);
+  const staging = path.join(work, "new");
+  const aside = path.join(work, "old");
+  const failed = (cause: unknown, rolledBack: boolean) => {
+    console.error("[platform] restore failed:", cause);
+    return new RestoreFailedError(
+      rolledBack
+        ? "The restore could not be finished, so nothing was changed. Your data is exactly as it was."
+        : `The restore could not be finished and your data may be incomplete. Your data before the restore is saved in ${safetyCopy}.`,
+    );
+  };
+
+  try {
+    for (const { entry } of targets) {
+      await writeBinaryAtomic(path.join(staging, ...partsOf(entry.name)), entry.data);
     }
-    await writeBinaryAtomic(target, entry.data);
+  } catch (error) {
+    await rm(work, { recursive: true, force: true }).catch(() => undefined);
+    throw failed(error, true);
   }
+
+  const keep = new Set(entries.map((e) => e.name));
+  const current = await listBackupFiles(root);
+  const movedAside: string[] = [];
+  const placed: string[] = [];
+  let removed = 0;
+  try {
+    for (const file of current) {
+      await moveFile(file.abs, path.join(aside, ...partsOf(file.rel)));
+      movedAside.push(file.rel);
+      if (!keep.has(file.rel)) removed += 1;
+    }
+    for (const { entry, target } of targets) {
+      await moveFile(path.join(staging, ...partsOf(entry.name)), target);
+      placed.push(target);
+    }
+  } catch (error) {
+    let rolledBack = true;
+    try {
+      for (const target of placed) await rm(target, { force: true });
+      for (const rel of movedAside) {
+        await moveFile(
+          path.join(aside, ...partsOf(rel)),
+          path.join(root, ...partsOf(rel)),
+        );
+      }
+    } catch {
+      try {
+        await restoreFromSafetyCopy(root, safetyCopy);
+      } catch {
+        rolledBack = false;
+      }
+    }
+    if (rolledBack)
+      await rm(work, { recursive: true, force: true }).catch(() => undefined);
+    throw failed(error, rolledBack);
+  }
+  await rm(work, { recursive: true, force: true }).catch(() => undefined);
   return { restored: entries.length, removed, manifest, safetyCopy };
 }

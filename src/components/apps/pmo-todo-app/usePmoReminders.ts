@@ -5,10 +5,12 @@ import { useDockBadgeStore } from "@/components/taskbar/dockBadgeStore";
 import { getDesktopBridge } from "@/lib/pmo/desktopBridge";
 import type { Toast } from "@/lib/pmo/due";
 import { acknowledgeReminders, claimReminders, fetchDue } from "./api";
+import { PMO_CHANGED_EVENT } from "./attentionRefresh";
 import { readNotificationPermission, useRemindersStore } from "./remindersStore";
 
 export const REMINDER_POLL_MS = 60_000;
 const FIRST_POLL_MS = 4_000;
+const CHANGE_REFRESH_MS = 250;
 const PMO_APP_ID = "pmo-todo";
 
 /**
@@ -60,6 +62,7 @@ export function usePmoReminders(onOpen: (todoId: string | null) => void) {
     const clientId = `web:${Math.random().toString(36).slice(2, 10)}`;
     let cancelled = false;
     let inFlight = false;
+    let rerun = false;
 
     function deliver(toast: Toast) {
       useRemindersStore.getState().showToast(toast);
@@ -82,7 +85,11 @@ export function usePmoReminders(onOpen: (todoId: string | null) => void) {
     }
 
     async function tick() {
-      if (inFlight || cancelled) return;
+      if (cancelled) return;
+      if (inFlight) {
+        rerun = true;
+        return;
+      }
       inFlight = true;
       try {
         let attention: number | null = null;
@@ -110,15 +117,30 @@ export function usePmoReminders(onOpen: (todoId: string | null) => void) {
         // Server not reachable right now: keep the last badge, try next minute.
       } finally {
         inFlight = false;
+        // A to-do changed while this read was in flight: its answer may predate the change.
+        if (rerun && !cancelled) {
+          rerun = false;
+          void tick();
+        }
       }
     }
+
+    // A to-do changed anywhere in the app: refresh the badge now (bursts become one read).
+    let changedTimer: ReturnType<typeof setTimeout> | undefined;
+    const onChanged = () => {
+      clearTimeout(changedTimer);
+      changedTimer = setTimeout(() => void tick(), CHANGE_REFRESH_MS);
+    };
+    window.addEventListener(PMO_CHANGED_EVENT, onChanged);
 
     const first = setTimeout(() => void tick(), FIRST_POLL_MS);
     const timer = setInterval(() => void tick(), REMINDER_POLL_MS);
     return () => {
       cancelled = true;
       clearTimeout(first);
+      clearTimeout(changedTimer);
       clearInterval(timer);
+      window.removeEventListener(PMO_CHANGED_EVENT, onChanged);
       unsubscribeOpen?.();
       permissionStatus?.removeEventListener("change", syncPermission);
       window.removeEventListener("focus", syncPermission);

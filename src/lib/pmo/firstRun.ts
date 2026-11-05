@@ -166,13 +166,39 @@ export function initialFirstRunForm(options: {
   };
 }
 
+/** Older spellings the browser still lists (and the PC may report) for zones that have a
+ *  current name; people know "Asia/Kolkata", not "Asia/Calcutta". */
+const MODERN_ZONE: Record<string, string> = {
+  "Asia/Calcutta": "Asia/Kolkata",
+  "Asia/Katmandu": "Asia/Kathmandu",
+  "Asia/Saigon": "Asia/Ho_Chi_Minh",
+  "Asia/Rangoon": "Asia/Yangon",
+  "Asia/Thimbu": "Asia/Thimphu",
+  "Asia/Ujung_Pandang": "Asia/Makassar",
+  "Africa/Asmera": "Africa/Asmara",
+  "America/Godthab": "America/Nuuk",
+  "America/Buenos_Aires": "America/Argentina/Buenos_Aires",
+  "America/Indianapolis": "America/Indiana/Indianapolis",
+  "Atlantic/Faeroe": "Atlantic/Faroe",
+  "Europe/Kiev": "Europe/Kyiv",
+  "Pacific/Truk": "Pacific/Chuuk",
+  "Pacific/Ponape": "Pacific/Pohnpei",
+};
+
+/** The current name of a time zone (unchanged when it has none, or the new name is unknown here). */
+export function modernTimeZone(zone: string): string {
+  const modern = MODERN_ZONE[zone];
+  return modern && isValidTimeZone(modern) ? modern : zone;
+}
+
 /** Zones for the picker: the supported list, with the detected one always
- *  present. Sorted so it can be scanned. */
+ *  present, under their current names. Sorted so it can be scanned. */
 export function timeZoneChoices(
   supported: readonly string[],
   detected: string,
 ): string[] {
-  return [...new Set([...supported, ...(detected ? [detected] : [])])].sort();
+  const all = [...supported, ...(detected ? [detected] : [])].map(modernTimeZone);
+  return [...new Set(all)].sort();
 }
 
 const ABSOLUTE_PATH = /^(?:[a-zA-Z]:[\\/]|\\\\[^\\/]+[\\/][^\\/]+)/;

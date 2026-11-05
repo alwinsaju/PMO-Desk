@@ -78,21 +78,35 @@ export function SettingsSearchResults({
       <ul className="flex flex-col gap-2">
         {found.map((item) => (
           <li key={item.id}>
-            <button
-              type="button"
-              onClick={() => onPick(item)}
-              className="border-line bg-card hover:bg-chip rounded-control focus-ring flex w-full flex-col gap-0.5 border px-4 py-3 text-left"
-            >
-              <span className="text-ink-muted text-[11.5px] font-bold tracking-[0.06em] uppercase">
-                {pathOf(item)}
-              </span>
-              <span className="text-ink text-[14px] font-semibold">
-                <Marked text={item.title} query={query} />
-              </span>
-              <span className="text-ink-muted text-[12.5px]">
-                <Marked text={item.hint} query={query} />
-              </span>
-            </button>
+            {item.elsewhere ? (
+              <div className="border-line bg-card rounded-control flex w-full flex-col gap-0.5 border px-4 py-3 text-left">
+                <span className="text-ink-muted text-[11.5px] font-bold tracking-[0.06em] uppercase">
+                  Not in this window: {pathOf(item)}
+                </span>
+                <span className="text-ink text-[14px] font-semibold">
+                  <Marked text={item.title} query={query} />
+                </span>
+                <span className="text-ink-muted text-[12.5px]">
+                  <Marked text={item.hint} query={query} />
+                </span>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => onPick(item)}
+                className="border-line bg-card hover:bg-chip rounded-control focus-ring flex w-full flex-col gap-0.5 border px-4 py-3 text-left"
+              >
+                <span className="text-ink-muted text-[11.5px] font-bold tracking-[0.06em] uppercase">
+                  {pathOf(item)}
+                </span>
+                <span className="text-ink text-[14px] font-semibold">
+                  <Marked text={item.title} query={query} />
+                </span>
+                <span className="text-ink-muted text-[12.5px]">
+                  <Marked text={item.hint} query={query} />
+                </span>
+              </button>
+            )}
           </li>
         ))}
       </ul>

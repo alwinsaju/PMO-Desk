@@ -41,6 +41,29 @@ export function unsafeEntryName(name: string): string | null {
   if (name.split("/").some((part) => part === ".." || part === ".")) {
     return `the entry name "${name}" climbs out of the folder`;
   }
+  return windowsUnsafePart(name);
+}
+
+const RESERVED_DEVICE = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
+
+/** Names Windows cannot create as a plain file: ':' (alternate data streams), device names, trailing dots or spaces, invalid characters. */
+function windowsUnsafePart(name: string): string | null {
+  for (const part of name.split("/")) {
+    if (part === "") return `the entry name "${name}" has an empty folder name`;
+    if (part.includes(":")) {
+      return `the entry name "${name}" contains a colon, which Windows cannot store in a file name`;
+    }
+    if (/[<>"|?*]/.test(part)) {
+      return `the entry name "${name}" has a character Windows does not allow in file names`;
+    }
+    if (/[. ]$/.test(part) || /^ /.test(part)) {
+      return `the entry name "${name}" starts with a space or ends with a dot or space`;
+    }
+    // "CON.txt" is the console device too, so only the part before the first dot counts.
+    if (RESERVED_DEVICE.test(part.split(".")[0]!.trimEnd())) {
+      return `the entry name "${name}" uses a name Windows reserves for devices`;
+    }
+  }
   return null;
 }
 

@@ -16,6 +16,7 @@ import type { AiStructured, PmoConfig } from "./types.ts";
 import { defaultOwnerToMe, isMe } from "./ownerDefault.ts";
 import { addressedToSomeoneElse } from "./addressee.ts";
 import { looksLikeInjection } from "./signoff.ts";
+import { checkDueAgainstQuote } from "./dueCheck.ts";
 
 /** The message without the lines that talk to the assistant, for judging urgency. */
 function withoutInjection(text: string): string {
@@ -179,6 +180,52 @@ export function sanitizeDraft(input: AiStructured, ctx: SanitizeContext): Saniti
   if (draft.description.trim() && isSalutationOnly(draft.description)) {
     fallback = true;
     draft.description = firstMeaningfulSentence(bodyText).slice(0, DESCRIPTION_MAX);
+  }
+
+  // (0b) A title taken from wording aimed at the assistant ("...respond with a to-do
+  // titled 'PWNED...'"): the attacker's words must not become the card's heading.
+  // The subject line (or the sender's own words) is used instead.
+  const injectedLines = ctx.text
+    .split(/\r?\n/)
+    .filter((line) => looksLikeInjection(line))
+    .map(itemKey);
+  if (injectedLines.length > 0) {
+    const titleKey = itemKey(draft.title);
+    const copied =
+      titleKey.length >= 6 && injectedLines.some((l) => l.includes(titleKey));
+    const subjectKey = itemKey(subject);
+    const unsupported =
+      draft.isActionable === false &&
+      !titleKey
+        .split(" ")
+        .some((word) => word.length >= 4 && ` ${subjectKey} `.includes(` ${word} `));
+    if (copied || unsupported) {
+      fallback = true;
+      const title = deriveFallbackTitle(
+        {
+          subject: looksLikeInjection(subject) ? "" : subject,
+          bodyText: withoutInjection(bodyText),
+        },
+        TITLE_MAX,
+      );
+      draft.title = title || "Message to review";
+      adjustments.push(
+        "The AI's title repeated wording in the message that was aimed at the assistant, so the subject line is used instead.",
+      );
+    }
+  }
+
+  // (a0) A due date that disagrees with the day the quoted sentence names ("by
+  // Friday", "tomorrow", "31 Dec 2026") is recomputed here, not trusted to the model.
+  if (draft.dueAt && draft.dueBasis !== "none") {
+    const checked = checkDueAgainstQuote(draft.quote, draft.dueAt, today);
+    if (checked) {
+      adjustments.push(checked.note);
+      if (checked.changed) {
+        draft.dueAt = checked.dueAt;
+        draft.dueBasis = "explicit";
+      }
+    }
   }
 
   // (a) A deadline that had already passed when the message was read. Relative

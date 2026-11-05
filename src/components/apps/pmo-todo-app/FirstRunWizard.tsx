@@ -7,6 +7,7 @@ import {
   FIRST_RUN_STEPS,
   firstRunPayload,
   initialFirstRunForm,
+  modernTimeZone,
   nameToGoBy,
   stepProblems,
   suggestedDomain,
@@ -35,11 +36,11 @@ import {
   WizardStepper,
   WizardSummary,
 } from "./WizardParts";
-import { STEP_INTRO, wizardSummary } from "@/lib/pmo/wizardView";
+import { STEP_INTRO, nextBlockedReason, wizardSummary } from "@/lib/pmo/wizardView";
 
 const detectedTimeZone = () => {
   try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+    return modernTimeZone(Intl.DateTimeFormat().resolvedOptions().timeZone || "");
   } catch {
     return "";
   }
@@ -145,14 +146,11 @@ export function FirstRunWizard({
   const emailChecked = form.email.trim() === "" ? null : checkEmail(form.email);
   const emailProblem = emailChecked && !emailChecked.ok ? emailChecked.reason : null;
   const domainSuggestion = suggestedDomain(form);
-  const entriesInvalid =
-    current.id === "who"
-      ? emailProblem !== null
-      : current.id === "domains"
-        ? allowedParsed.invalid.length > 0 ||
-          blockedParsed.invalid.length > 0 ||
-          allowedParsed.valid.length === 0
-        : false;
+  const entriesInvalid = nextBlockedReason(current.id, {
+    emailProblem,
+    invalidDomains: allowedParsed.invalid.length + blockedParsed.invalid.length,
+    allowedDomains: allowedParsed.valid.length,
+  });
 
   const set = (patch: Partial<FirstRunForm>) => {
     setForm((value) => ({ ...value, ...patch }));
@@ -499,12 +497,25 @@ export function FirstRunWizard({
                         Skip for now
                       </Button>
                     )}
-                    <Button onClick={next} disabled={entriesInvalid}>
+                    <Button
+                      onClick={next}
+                      disabled={entriesInvalid !== null}
+                      aria-describedby={entriesInvalid ? "wizard-next-reason" : undefined}
+                    >
                       Next
                     </Button>
                   </span>
                 )}
               </div>
+              {entriesInvalid && !last && (
+                <p
+                  id="wizard-next-reason"
+                  role="status"
+                  className="text-ink-muted -mt-1 text-right text-[12px]"
+                >
+                  {entriesInvalid}
+                </p>
+              )}
             </>
           )}
         </div>
