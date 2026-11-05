@@ -2,7 +2,13 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import { appDetails, detailsFor, sizeLabel } from "./appDetails.ts";
-import { categoryCounts, featuredApps, matchApps, wrapIndex } from "./storeLogic.ts";
+import {
+  categoryCounts,
+  featuredApps,
+  matchApps,
+  shortenQuery,
+  wrapIndex,
+} from "./storeLogic.ts";
 
 const app = (id, extra = {}) => ({
   id,
@@ -33,6 +39,15 @@ describe("matchApps", () => {
   });
   it("finds nothing for blank text", () => {
     assert.deepEqual(matchApps(apps, "   "), []);
+  });
+});
+
+describe("shortenQuery", () => {
+  it("keeps a normal query and cuts a very long one", () => {
+    assert.equal(shortenQuery("task"), "task");
+    const cut = shortenQuery("x".repeat(500));
+    assert.equal(cut.length, 40);
+    assert.ok(cut.endsWith("…"));
   });
 });
 
@@ -76,7 +91,10 @@ describe("app details", () => {
     }
   });
   it("labels the size, and says when there is nothing to download", () => {
-    assert.equal(sizeLabel({}, { description: "", does: [], sizeMb: 62 }), "62 MB");
+    assert.equal(
+      sizeLabel({}, { description: "", does: [], sizeMb: 62 }),
+      "62 MB (example figure)",
+    );
     assert.match(
       sizeLabel({ url: "https://x.test/" }, { description: "", does: [] }),
       /Nothing to download/,

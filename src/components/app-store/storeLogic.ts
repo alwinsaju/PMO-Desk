@@ -34,3 +34,8 @@ export const featuredApps = (apps: readonly AppListing[]): AppListing[] =>
 export function wrapIndex(index: number, length: number): number {
   return length <= 0 ? 0 : ((index % length) + length) % length;
 }
+
+/** The search text as shown back to the person: a very long query is cut with an ellipsis. */
+export function shortenQuery(query: string, max = 40): string {
+  return query.length > max ? `${query.slice(0, max - 1).trimEnd()}…` : query;
+}

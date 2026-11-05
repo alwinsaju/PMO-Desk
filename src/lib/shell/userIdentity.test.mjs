@@ -1,7 +1,12 @@
 // Run with `pnpm test`. The name and initials the lock screen shows.
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { firstNameFromAccount, initialsOf, resolveIdentity } from "./userIdentity.ts";
+import {
+  firstNameFromAccount,
+  initialsOf,
+  resolveIdentity,
+  welcomeLine,
+} from "./userIdentity.ts";
 
 describe("firstNameFromAccount", () => {
   it("takes the first word of the account, capitalised", () => {
@@ -71,5 +76,13 @@ describe("resolveIdentity", () => {
       { name: "Pat Example", initials: "PE" },
     );
     assert.equal("photoUrl" in resolveIdentity({ self: null, account: "alex" }), false);
+  });
+});
+
+describe("welcomeLine", () => {
+  it("says Welcome on a brand-new profile and Welcome back afterwards", () => {
+    assert.equal(welcomeLine("Priya", true), "Welcome");
+    assert.equal(welcomeLine("Priya", false), "Welcome back");
+    assert.equal(welcomeLine("", false), "");
   });
 });

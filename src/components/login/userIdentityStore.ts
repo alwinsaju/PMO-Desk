@@ -5,6 +5,8 @@ import { resolveIdentity, type Identity } from "@/lib/shell/userIdentity";
 
 interface IdentityState {
   identity: Identity;
+  /** True while nobody has finished the PMO first-run setup on this profile. */
+  firstUse: boolean;
   /** Looks you up; asks again every 20 s (up to 30 times) while the M365 profile has not arrived. */
   load: () => Promise<void>;
 }
@@ -33,6 +35,7 @@ interface SelfReply {
  *  else the computer's account. A failed lookup just leaves "Welcome". */
 export const useUserIdentity = create<IdentityState>()((set, get) => ({
   identity: NOBODY,
+  firstUse: false,
   load: async () => {
     if (running) return;
     running = true;
@@ -40,9 +43,12 @@ export const useUserIdentity = create<IdentityState>()((set, get) => ({
       const [me, info, pmo] = await Promise.all([
         getJson<SelfReply>("/api/me"),
         getJson<{ account?: string }>("/api/platform/info"),
-        getJson<{ config?: { me?: { names?: string[] } } }>("/api/pmo/config"),
+        getJson<{ config?: { setupComplete?: boolean; me?: { names?: string[] } } }>(
+          "/api/pmo/config",
+        ),
       ]);
       set({
+        firstUse: pmo?.config?.setupComplete === false,
         identity: resolveIdentity({
           self: me?.self,
           pmoNames: pmo?.config?.me?.names,

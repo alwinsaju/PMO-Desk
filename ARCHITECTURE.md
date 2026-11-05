@@ -570,17 +570,17 @@ the preload exposes a small `window.aiOsDesktop` bridge. User data (settings, PM
 
 Everything is loopback-only; nothing listens on another interface. The rules, and where each lives:
 
-| Rule                                                                                                                                                                                                                                                                                                                                                                                      | Where                                                                                          |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| Every `/api/*` request must carry a loopback `Host` (stops DNS rebinding); a write (anything but GET/HEAD/OPTIONS) must not come from another origin                                                                                                                                                                                                                                      | `src/middleware.ts` -> `src/lib/security/apiGuard.ts` (reuses `lib/pmo/server/originCheck.ts`) |
-| The engine refuses a non-loopback `Host`, a non-GET with a foreign `Origin`, and, when `AI_OS_ENGINE_TOKEN` is set, any request without `X-AI-OS-Token` (only `GET /health` and `OPTIONS` are exempt)                                                                                                                                                                                     | `tasks-engine/main.py`                                                                         |
-| Per-process secrets: the Next server makes a random token and instance id once (kept on `globalThis` so every route shares them), passes them to the engine it spawns (`AI_OS_ENGINE_TOKEN`, `AI_OS_ENGINE_INSTANCE`) and sends the token on every call it makes to it                                                                                                                    | `src/lib/tasks-engine/engineAuth.ts`, `app/api/tasks-engine/shared.ts`                         |
-| The page calls the engine directly, so it gets the token from `GET /api/tasks-engine/token` (answered only to this app's own origin), caches it and refetches once on a 403                                                                                                                                                                                                               | `src/lib/tasks-engine/engineClient.ts`, `components/apps/tasks-app/api.ts`                     |
-| In the desktop app only an engine whose `/health` reports our instance id is adopted, so a stray process on ports 8000-8019 is never used; in `next dev` any engine that accepts our token is                                                                                                                                                                                             | `findRunningEngine` in `app/api/tasks-engine/shared.ts`                                        |
-| `NODE_TLS_REJECT_UNAUTHORIZED` and `PYTHON*` variables are not passed to the engine, Ollama or setup commands (a warning is logged once)                                                                                                                                                                                                                                                  | `lib/security/childEnv.ts`, `engineEnv()`                                                      |
-| Response headers: a CSP (`frame-ancestors 'none'`, `object-src 'none'`, `connect-src` limited to this app and loopback ports so the engine on 127.0.0.1:8000-8019 and Ollama work, `frame-src *` because the Browser app embeds arbitrary sites, `'unsafe-eval'` only in `next dev`), `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `X-Frame-Options: DENY`; `images.unoptimized` | `next.config.mjs`                                                                              |
-| Request bodies are read as a stream and cut off at a per-route cap (the `Content-Length` is checked first, then the bytes actually received, so chunked uploads cannot grow memory without bound); the PMO routes default to 1 MB                                                                                                                                                         | `src/lib/security/boundedBody.ts`, `lib/pmo/server/bodyCap.ts`, `lib/staff/http.ts`            |
-| The Browser app's "can this site be framed?" check fetches third-party URLs, so it resolves DNS and refuses private, loopback, link-local, CGNAT, unique-local and IPv4-mapped addresses, follows at most 5 redirects by hand (each hop re-validated) and treats HTTP >= 400 as not embeddable                                                                                            | `lib/browser/embeddableCheck.ts`, `app/api/browser/check-embeddable/route.ts`                  |
+| Rule                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | Where                                                                                          |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
+| Every `/api/*` request must carry a loopback `Host` (stops DNS rebinding); a write (anything but GET/HEAD/OPTIONS) must not come from another origin                                                                                                                                                                                                                                                                                                                                             | `src/middleware.ts` -> `src/lib/security/apiGuard.ts` (reuses `lib/pmo/server/originCheck.ts`) |
+| The engine refuses a non-loopback `Host`, a non-GET with a foreign `Origin`, and, when `AI_OS_ENGINE_TOKEN` is set, any request without `X-AI-OS-Token` (only `GET /health` and `OPTIONS` are exempt)                                                                                                                                                                                                                                                                                            | `tasks-engine/main.py`                                                                         |
+| Per-process secrets: the Next server makes a random token and instance id once (kept on `globalThis` so every route shares them), passes them to the engine it spawns (`AI_OS_ENGINE_TOKEN`, `AI_OS_ENGINE_INSTANCE`) and sends the token on every call it makes to it                                                                                                                                                                                                                           | `src/lib/tasks-engine/engineAuth.ts`, `app/api/tasks-engine/shared.ts`                         |
+| The page calls the engine directly, so it gets the token from `GET /api/tasks-engine/token` (answered only to this app's own origin), caches it and refetches once on a 403                                                                                                                                                                                                                                                                                                                      | `src/lib/tasks-engine/engineClient.ts`, `components/apps/tasks-app/api.ts`                     |
+| In the desktop app only an engine whose `/health` reports our instance id is adopted, so a stray process on ports 8000-8019 is never used; in `next dev` any engine that accepts our token is                                                                                                                                                                                                                                                                                                    | `findRunningEngine` in `app/api/tasks-engine/shared.ts`                                        |
+| `NODE_TLS_REJECT_UNAUTHORIZED` and `PYTHON*` variables are not passed to the engine, Ollama or setup commands (a warning is logged once)                                                                                                                                                                                                                                                                                                                                                         | `lib/security/childEnv.ts`, `engineEnv()`                                                      |
+| Response headers: a CSP (`frame-ancestors 'none'`, `object-src 'none'`, `connect-src` limited to this app and loopback ports so the engine on 127.0.0.1:8000-8019 and Ollama work, `frame-src *` because the Browser app embeds arbitrary sites, `'unsafe-eval'` only in `next dev`), `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `X-Frame-Options: DENY`; `images.unoptimized`                                                                                                        | `next.config.mjs`                                                                              |
+| Request bodies are read as a stream and cut off at a per-route cap (the `Content-Length` is checked first, then the bytes actually received, so chunked uploads cannot grow memory without bound); the PMO routes default to 1 MB                                                                                                                                                                                                                                                                | `src/lib/security/boundedBody.ts`, `lib/pmo/server/bodyCap.ts`, `lib/staff/http.ts`            |
+| The Browser app's "can this site be framed?" check fetches third-party URLs, so it resolves DNS and refuses private, loopback, link-local, CGNAT, unique-local and IPv4-mapped addresses, follows at most 5 redirects by hand (each hop re-validated) and treats HTTP >= 400 as not embeddable; a certificate error (a company proxy that re-signs HTTPS, which Node does not trust) means "unknown, let the frame try" after the address checks, and certificate checking is never switched off | `lib/browser/embeddableCheck.ts`, `app/api/browser/check-embeddable/route.ts`                  |
 
 Resilience: each app window is wrapped in `AppErrorBoundary` (`components/window-manager/`), so a render
 error in one app shows a "Reload app" panel inside that window instead of unmounting the desktop;
@@ -942,8 +942,9 @@ newest first by default) with a primary **Restore** (back onto the roster; refus
 that email), **Edit** (the same form as the Directory) and **Delete** (removes the profile for good, after a confirmation, and leaves no
 trace in the data folder: the picture, their shift roster entry and shifts, any request or
 profile files in the M365 exchange folder, and their checklists and "seen" entries in
-`staff-prefs.json`). The roster entry is found by name among the unlinked entries and is kept
-when someone else on file has the same name.
+`staff-prefs.json`). The roster entry is found by the id that offboarding stored on the
+person (`rosterMemberId`), so a rename cannot hide it; records without that id fall back to the
+name among the unlinked entries, and are kept when someone else on file has the same name.
 The move is one locked server operation that writes the new copy before dropping the old one,
 so an interrupted move can duplicate a person but never lose one.
 
@@ -1093,8 +1094,9 @@ meant different hours. It is modelled so that stays true without the confusion:
   typed hours and listed in the preview. Team names are mapped by alias (`Device Support L3` ->
   Device Support, `L N S 2.0` -> LNS 2.0, `Governance` -> Integration Hub). Re-importing updates
   the same people instead of adding them again; days left blank in the file are not cleared.
-- **Editing.** Click a day for the team's shifts, "Fill the week with..." (a shift's usual days),
-  day types, custom hours / swap / note, or clear. **More > Schedules and teams** edits
+- **Editing.** Click a day for the team's shifts, "Fill the week with..." (a shift's usual days;
+  asks first when it would replace days already filled in, and offers Undo), day types, custom
+  hours / swap / note, or clear. The arrow keys move between cells. **More > Schedules and teams** edits
   schedules, shifts and teams (a shift that days still use cannot be deleted).
 
 The roster itself starts with one schedule ("Standard") and no teams. The legends of the team's
@@ -1323,7 +1325,10 @@ weekly reports, phase 5).
 
 **Inbox**: `config.inboxDir`, default
 `C:\Users\alsaju\OneDrive - Deloitte (O365D)\PMO-Inbox` (a Power Automate flow writes
-there, OneDrive syncs it), overridden by env `AI_OS_PMO_INBOX_DIR`. **Use temp
+there, OneDrive syncs it), overridden by env `AI_OS_PMO_INBOX_DIR`. Settings > Me >
+Inbox folder changes it (`PUT /api/pmo/inbox`, `setInboxFolder` in `server/firstRun.ts`):
+the wizard's checks (`inboxFolderProblem`), which also refuse Windows and program
+folders. **Use temp
 folders for every test**: `AI_OS_PMO_INBOX_DIR` + `AI_OS_PMO_DATA_DIR`, and
 `PMO_AI_STUB=1` to skip the model. Files younger than 3 s and larger than 1 MB
 are skipped; the app deletes each file it has dealt with, and its only write
@@ -1487,6 +1492,18 @@ the worker's clock:
    rule: `approvedBy`, the audit `user` and every sign-off stamp record who pressed the button
    (the OS user); the owner of the work is a different thing and comes from `config.me`.
 7. Tags are trimmed, de-duplicated and capped at 4 (not reported in `adjustments`).
+8. The due date is checked against the quoted sentence (`dueCheck.ts`, before rule 1): when the
+   quote names a weekday ("by Friday": the first one after today; "next Friday" also allows the
+   one after), "today", "tomorrow", "yesterday" (only after by/before/due...) or an explicit
+   date (ISO, 31/12/2026, "31 Dec", "December 31st"), the day is worked out in the configured
+   zone and replaces a model date that is not one of the fair readings. Two different days named
+   only add a "please check" note. Past results then fall into rule 1.
+9. A title copied from wording aimed at the assistant (a line that `looksLikeInjection`; or, for
+   a not-actionable item, a title the subject does not support) is replaced by the subject line.
+
+A message longer than `MAX_MODEL_CHARS` (12,000) is sent as its first 8,000 and last 4,000
+characters with a marker between (`capHeadTail` in `preprocess.ts`); `proposal.modelReadPartOnly`
+makes the card say "Long message: the AI read the start and the end only".
 
 Nothing from the draft or the adjustments is written to `logs/ai-calls.jsonl` or `audit.jsonl`
 (a source-scan test checks `structure.ts`). Tests: `sanitizeDraft.test.mjs`,
@@ -1751,7 +1768,10 @@ shrunk to the shell's 360x240 minimum; dialogs are portaled to the viewport).
 - The polled state is merged with `shareUnchanged` (`shareState.ts`), so a record
   that did not change keeps its object identity; filter, sort, the open "Probably
   not a task" section and the Filtered reason live in `PmoTodoApp`, so they survive
-  a tab switch as well as a poll.
+  a tab switch as well as a poll. `usePmoData` polls every 5 s (longer after a slow
+  answer), only while the document is visible, and sends the last `digest` so the
+  server can answer `unchanged` (`pollLogic.ts`, `app/api/pmo/state/route.ts`). The
+  to-do list draws 60 cards and more as the end scrolls into view (`renderWindow.ts`).
 - `tokens.css` keeps `--color-accent-contrast` white in the dark theme (it used to
   flip to black through `neutral-0`, about 2.8:1 on the accent fill).
 
@@ -2079,7 +2099,15 @@ reaches back to last Sunday. The Tasks engine being down shows a note instead of
 - **Storage.** One file, `<PMO data dir>\templates\library.json` (`AI_OS_TEMPLATES_DIR` overrides
   it; `engineEnv()` sets it for the Tasks engine so the Python scripts read the same file). It is
   written with the starter templates on the first read; a damaged file is reported and never
-  replaced. Writes go through the same atomic writer and per-folder lock as the Staff files.
+  replaced by itself: the window offers **Restore built-in templates**, which keeps a copy of the
+  unreadable file as `library.json.bak` (a second one as `library.json.bak-<time>`) and starts a
+  fresh library. On a readable library the same button (`POST /api/templates/restore-built-in`) adds
+  back built-in templates that are gone, taking only places nobody uses. Entries a hand edit left
+  unusable (or a place given to two templates: the first keeps it) are left out with a note in the
+  window and a `library.json.bak` copy of the original. Writes go through the same atomic writer and
+  per-folder lock as the Staff files. Undo of a delete (`POST /api/templates/undelete`) puts the
+  template back as it was (id, dates, version history) but never takes places from the template
+  that has them now.
 - **Model.** A template has a kind (`email` or `report`), a subject (or title line), To and Cc
   (email), a body with `{{placeholders}}` and `**bold**`, and `usedBy`: the keys of the places that
   use it. The places are the catalog in `targets.ts`: `task:weekly-aging-report`,
@@ -2088,7 +2116,9 @@ reaches back to last Sunday. The Tasks engine being down shows a note instead of
   example values for the preview. **A place has at most one template**: saving one that claims a
   place takes it from the previous holder (the reply lists who lost what). A template may only use
   placeholders every one of its places can fill; a template used nowhere is not checked until it is
-  assigned. A placeholder with no value is left as typed, so a mistake is visible in the draft.
+  assigned. A placeholder with no value is left as typed, so a mistake is visible in the draft;
+  one written wrongly (`{{Name}}`, `{{first name}}`) can never be filled and is refused whether or not
+  the template is used, in the other wordings too (`malformedPlaceholders` in `render.ts`).
   Reading `library.json` is lenient (a template is kept even if a place dropped a placeholder).
 - **Consumers.** _Tasks_: `build_email_data.py` of the three mail tasks calls
   `template_lib.apply_email_template(<key>, data, values)` (`tasks/shared/template_lib/`), which
@@ -2124,6 +2154,14 @@ it up.
   period, "Skip the lock screen" and each app's last window rectangle. `schema.ts` sanitises whatever
   comes back, field by field, so a damaged file falls back to defaults. Add a preference by extending
   `Preferences`, `DEFAULT_PREFERENCES` and `sanitizePreferences`.
+- **Server-backed stores and failed saves** (`src/lib/persistedStorage.ts`, `src/lib/uiState/`). A store
+  using `createServerBackedStorage` writes localStorage at once and the server 300 ms later. A save the
+  server refuses (413 too large, 4xx) or never receives is recorded in `uiState/saveStatus.ts`
+  (`useSaveStatus(key)`; the Notes footer says "Not saved" instead of "Saved") and a network failure is
+  retried with back-off. The local copy is flagged as unconfirmed (`<name>.sync` in localStorage) and
+  at the next start it wins over the server's copy when it is newer than the file's write time
+  (`GET /api/ui-state/<key>` returns `updatedAt`; `chooseRestoreSource`). Body limit per key: 1 MB,
+  16 MB for `notes` (`maxBodyBytesFor`).
 - **Window placement** (`window-manager/windowPlacement.ts`). A window opens where that app's window
   last was (refitted to the screen), else at a per-app default size (`APP_DEFAULT_SIZES`: Dashboard,
   Templates, Staff and Tasks are wider), else the old cascade. A second window of the same app cascades
@@ -2345,8 +2383,8 @@ title, tone, action, key })` from anywhere; a repeated `key` replaces the earlie
 - **Optional Project field** (RAID, changes, SLA). A plain optional text field with `suggest: "projects"`, a
   form-only hint: the dialog fills a suggestion list from the status-report register's Project values
   (`useProjectNames`, `projectSuggestions`), and free text is still accepted. It must stay optional text:
-  a required field or a select would make stored records fail the re-validation done on every read, and the
-  next save would write back only the records that passed, deleting the rest.
+  a required field or a select would make stored records fail the re-validation done on every read. Such a
+  record is no longer dropped (see "Records that fail the checks" below), but it would leave the list.
 - **Phase 2 and 3 additions to the Toolkit.**
   - Change history: `applyRegisterChanges` appends created, changed and deleted entries (field names only, never
     values) to `<data>/registers/history/<tool>.jsonl` after the atomic register write, in its own try/catch so
@@ -2371,7 +2409,18 @@ title, tone, action, key })` from anywhere; a repeated `key` replaces the earlie
   data-folder mutex through the same definition (`server.ts`); a damaged file is reported and never
   overwritten. Routes: `GET|POST /api/registers/<tool>` (`upsert`, `remove`, `config`; at most 500 records per
   call, 5000 per tool) and `GET /api/registers/summary`, behind the same-origin guard. Backups include the folder
-  (it is part of the data folder); JSON and CSV export add each non-empty tool.
+  (it is part of the data folder); JSON and CSV export add each non-empty tool. Every CSV cell goes through
+  `csvSafeCell` (formula-injection guard), in `csvRows`, which the audit export shares.
+- **Records that fail the checks (never dropped).** `parseFile` reads a saved file leniently (text longer than
+  today's limit is cut, old months, links and cross-field rules still load) but a record that still fails
+  (e.g. a select value that is no longer an option) goes to `RegisterFile.invalid` and is written back to the
+  file untouched by every save. `InvalidRecords.tsx` lists them above the tool (reason, what it says, Fix in the
+  form, Remove with a confirm); the tile shows "N to repair" (`RegisterSummary.invalid`). A repair upserts the same
+  id and keeps its created time; removing uses the record id (or `bad_<hash>` for an entry with no usable id).
+  A file that is not valid JSON still stops with a message and is never overwritten (tile "Cannot be read",
+  `UnreadableTool.tsx`). New writes are strict: over-long text is refused with a count (never cut), a month is
+  read by `month.ts` (`2026-03`, `Nov 2026`...) or refused, SLA days must be whole numbers 1 to 365 (`configProblem`),
+  an SLA item is Resolved exactly when it has a Resolved on day, and a link needs a host and no password.
 - **UI.** `RegisterApp` is the generic list (search, status filter, show closed, CSV, alert chips, status
   chips, "—" for blank cells, hover edit and delete with an Undo toast, an empty state with "Add your first
   ...", an add and edit dialog, make a to-do, an unsent chaser mail to the owner). The dialog marks each bad

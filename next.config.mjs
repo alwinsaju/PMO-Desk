@@ -17,6 +17,8 @@ const securityHeaders = [
 const nextConfig = {
   // The dev-server "N" badge floats over the desktop shell's bottom-left corner.
   devIndicators: false,
+  // No "X-Powered-By: Next.js" header: it tells a visitor nothing they need.
+  poweredByHeader: false,
   // Nothing uses the image optimizer; turning it off removes its attack surface.
   images: { unoptimized: true },
   async headers() {

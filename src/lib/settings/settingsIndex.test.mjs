@@ -26,6 +26,20 @@ describe("searchSettings", () => {
     assert.deepEqual(searchSettings("  "), []);
   });
 
+  it("finds settings that live in the Quick settings menu or PMO To-Do and says so (SH-13)", () => {
+    for (const [query, id] of [
+      ["tray", "keep-running-in-tray"],
+      ["hardware acceleration", "hardware-acceleration"],
+      ["quick capture", "quick-capture"],
+      ["fast ai model", "fast-model"],
+    ]) {
+      const found = searchSettings(query);
+      assert.equal(found[0]?.id, id, query);
+      assert.ok(found[0].elsewhere, `${id} is not a row of the Settings window`);
+      assert.equal(pathOf(found[0]), found[0].elsewhere);
+    }
+  });
+
   it("shows where a setting lives", () => {
     const item = SETTINGS_INDEX.find((s) => s.id === "lock-summary");
     assert.equal(pathOf(item), "General › Lock screen and desktop");
@@ -55,6 +69,7 @@ describe("the index", () => {
       .map((f) => readFileSync(dir + f, "utf8"))
       .join("\n");
     for (const s of SETTINGS_INDEX) {
+      if (s.elsewhere) continue;
       const literal = [`settingId="${s.id}"`, `data-setting-id="${s.id}"`];
       const computed =
         s.id.startsWith("confirm-") && source.includes("settingId={`confirm-${key}`}");

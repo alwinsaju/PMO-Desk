@@ -22,6 +22,7 @@ const displaySettings = require("./display-settings.cjs");
 const launchConfig = require("./launch-config.cjs");
 const childEnv = require("./child-env.cjs");
 const exportPicker = require("./export-picker.cjs");
+const pdfPage = require("./pdf-page.cjs");
 const platformShell = require("./platform-shell.cjs");
 const { warmDevRoutes } = require("./dev-warmup.cjs");
 const { describeExitCode } = require("./exit-code.cjs");
@@ -1111,11 +1112,14 @@ ipcMain.handle("view:save", async (event, format, baseName, png) => {
     }
     const printer = new BrowserWindow({ show: false, webPreferences: { sandbox: true } });
     try {
-      const html = `<!doctype html><meta charset="utf-8"><style>@page{margin:8mm}body{margin:0}img{width:100%;display:block}</style><img src="data:image/png;base64,${bytes.toString("base64")}">`;
+      // One page as tall as the picture (a fixed A4 page cut the dashboard in half).
+      const page = pdfPage.pdfPageFor(pdfPage.pngSize(bytes));
+      const html = `<!doctype html><meta charset="utf-8"><style>@page{size:${page.pageWidthMm}mm ${page.pageHeightMm}mm;margin:${page.marginMm}mm}html,body{margin:0}img{width:${page.imageWidthMm}mm;display:block;margin:0 auto}</style><img src="data:image/png;base64,${bytes.toString("base64")}">`;
       await printer.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
       const pdf = await printer.webContents.printToPDF({
         printBackground: true,
-        pageSize: "A4",
+        preferCSSPageSize: true,
+        pageSize: { width: page.pageWidthIn, height: page.pageHeightIn },
       });
       fs.writeFileSync(result.filePath, pdf);
     } finally {

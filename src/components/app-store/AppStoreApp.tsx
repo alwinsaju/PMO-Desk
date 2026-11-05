@@ -16,12 +16,13 @@ import { appCatalog, appCategories } from "./appCatalog";
 import { AppCategoryRow } from "./AppCategoryRow";
 import { AppDetailSheet } from "./AppDetailSheet";
 import { AppHero } from "./AppHero";
-import { runAppPrimaryAction } from "./appActions";
+import { runStoreAction } from "./appActions";
 import { useInstalledAppsStore } from "./installedAppsStore";
 import {
   categoryCounts,
   featuredApps,
   matchApps,
+  shortenQuery,
   type CategoryFilter,
 } from "./storeLogic";
 import type { AppListing } from "./types";
@@ -58,7 +59,14 @@ export function AppStoreApp({ windowId }: { windowId: string }) {
   const installedIds = useInstalledAppsStore((s) => s.installedIds);
 
   const trimmedQuery = query.trim();
-  const searchResults = matchApps(appCatalog, query);
+  const shortQuery = shortenQuery(trimmedQuery);
+  // The category chip you picked still narrows a search, so the results match what the chips say.
+  const searchResults = matchApps(
+    category === "all"
+      ? appCatalog
+      : appCatalog.filter((app) => app.category === category),
+    query,
+  );
   const featured = featuredApps(appCatalog);
   const detailApp = appCatalog.find((app) => app.id === detailId) ?? null;
   const openDetails = (app: AppListing) => setDetailId(app.id);
@@ -93,15 +101,13 @@ export function AppStoreApp({ windowId }: { windowId: string }) {
             are examples and do nothing yet; the others open the real website.
           </p>
 
-          {!trimmedQuery && (
-            <TabsList>
-              {categoryCounts(appCatalog, appCategories).map((chip) => (
-                <TabsTrigger key={chip.id} value={chip.id} count={chip.count}>
-                  {chip.label}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          )}
+          <TabsList>
+            {categoryCounts(appCatalog, appCategories).map((chip) => (
+              <TabsTrigger key={chip.id} value={chip.id} count={chip.count}>
+                {chip.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
         </div>
 
         <ScrollArea className="min-h-0 flex-1">
@@ -111,10 +117,10 @@ export function AppStoreApp({ windowId }: { windowId: string }) {
             {trimmedQuery ? (
               <>
                 <AppCategoryRow
-                  title={`Results for "${trimmedQuery}"`}
+                  title={`Results for "${shortQuery}"`}
                   apps={searchResults}
                   installedIds={installedIds}
-                  onToggleInstall={runAppPrimaryAction}
+                  onToggleInstall={runStoreAction}
                   onOpenDetails={openDetails}
                 />
                 {searchResults.length === 0 && (
@@ -123,7 +129,7 @@ export function AppStoreApp({ windowId }: { windowId: string }) {
                       <MagnifyingGlassIcon size={26} />
                     </span>
                     <p className="text-ink text-[15px] font-semibold">
-                      No apps found for &quot;{trimmedQuery}&quot;.
+                      No apps found for &quot;{shortQuery}&quot;.
                     </p>
                     <p className="text-ink-muted text-[13px]">
                       Try a different name, or browse a category instead.
@@ -144,7 +150,7 @@ export function AppStoreApp({ windowId }: { windowId: string }) {
                   <AppHero
                     apps={featured}
                     installedIds={installedIds}
-                    onPrimaryAction={runAppPrimaryAction}
+                    onPrimaryAction={runStoreAction}
                     onOpenDetails={openDetails}
                   />
                   {appCategories.map((cat) => (
@@ -153,7 +159,7 @@ export function AppStoreApp({ windowId }: { windowId: string }) {
                       title={cat.label}
                       apps={appCatalog.filter((app) => app.category === cat.id)}
                       installedIds={installedIds}
-                      onToggleInstall={runAppPrimaryAction}
+                      onToggleInstall={runStoreAction}
                       onOpenDetails={openDetails}
                     />
                   ))}
@@ -164,7 +170,7 @@ export function AppStoreApp({ windowId }: { windowId: string }) {
                       title={cat.label}
                       apps={appCatalog.filter((app) => app.category === cat.id)}
                       installedIds={installedIds}
-                      onToggleInstall={runAppPrimaryAction}
+                      onToggleInstall={runStoreAction}
                       onOpenDetails={openDetails}
                     />
                   </TabsContent>
@@ -177,7 +183,7 @@ export function AppStoreApp({ windowId }: { windowId: string }) {
       <AppDetailSheet
         app={detailApp}
         isInstalled={Boolean(detailApp && installedIds[detailApp.id])}
-        onPrimaryAction={runAppPrimaryAction}
+        onPrimaryAction={runStoreAction}
         onClose={() => setDetailId(null)}
       />
     </div>

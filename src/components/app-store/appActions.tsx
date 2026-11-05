@@ -8,11 +8,11 @@
 // just the ones that happen to already cross a client boundary first.
 
 import { useWindowStore } from "@/components/window-manager";
-import { pinApp } from "@/components/taskbar/pinnedAppsStore";
+import { pinApp, unpinApp } from "@/components/taskbar/pinnedAppsStore";
 import { toast } from "@/lib/notifications/toastStore";
 import { appIcons } from "./appCatalog";
 import { installApp, isAppInstalled, uninstallApp } from "./installedAppsStore";
-import { installedToast, removedToast } from "./installFlow";
+import { demoOpenToast, installedToast, removedToast } from "./installFlow";
 import type { AppListing } from "./types";
 
 /**
@@ -31,16 +31,11 @@ import type { AppListing } from "./types";
  * needing to plumb the relevant store actions through as props.
  *
  * For a REAL entry (has `url`) that's already installed: opens the real
- * "web-app" window (see appCatalog.ts's "Real web apps" section). In every
- * other case — not installed yet, OR a fictional entry with no `url` at
- * all, installed or not — installs if not installed (via `completeInstall`:
- * dock pin + confirmation toast), uninstalls if already installed (with an
- * Undo toast). That second branch is
- * unchanged, pre-existing behavior for fictional entries (clicking "Open"
- * on an already-installed fictional app has always uninstalled it right
- * back off, since there's no real window content behind it either way) —
- * not something introduced here, and deliberately not special-cased any
- * differently for the App Menu.
+ * "web-app" window (see appCatalog.ts's "Real web apps" section). A fictional
+ * (demo) entry that is already installed has nothing to open, so using it only
+ * explains that; it is never uninstalled by "Open" (see `removeApp` and
+ * `runStoreAction` for the explicit Remove). Not installed: installs (via
+ * `completeInstall`: dock pin + confirmation toast).
  */
 export function runAppPrimaryAction(app: AppListing): void {
   const installed = isAppInstalled(app.id);
@@ -57,11 +52,24 @@ export function runAppPrimaryAction(app: AppListing): void {
   }
 
   if (installed) {
-    uninstallApp(app.id);
-    toast(removedToast(app, () => completeInstall(app)));
+    toast(demoOpenToast(app));
   } else {
     completeInstall(app);
   }
+}
+
+/** Takes an installed app off the dock and out of the installed list, with an Undo. */
+export function removeApp(app: AppListing): void {
+  uninstallApp(app.id);
+  unpinApp(app.id);
+  toast(removedToast(app, () => completeInstall(app)));
+}
+
+/** What the App Store's own button does: like `runAppPrimaryAction`, but an installed demo app's
+ *  button says Remove and removes it. */
+export function runStoreAction(app: AppListing): void {
+  if (isAppInstalled(app.id) && !app.url) removeApp(app);
+  else runAppPrimaryAction(app);
 }
 
 /** Installs, puts the app on the dock and confirms it with a toast. The card's

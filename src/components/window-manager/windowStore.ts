@@ -10,7 +10,7 @@ import type {
   WindowState,
 } from "./types";
 import {
-  fitRectToViewport,
+  fitRectInsideViewport,
   type FitConfig,
   type Rect,
   type Viewport,
@@ -252,7 +252,10 @@ export const useWindowStore = create<WindowStoreState>()((set) => ({
           : { position: w.position, size: w.size };
         if (!current) continue;
         const rect = { ...current.position, ...current.size };
-        const fitted = fitRectToViewport(rect, viewport, windowClampConfig, min);
+        // Wholly inside the usable area, not just the title bar: otherwise a window
+        // wider than the shrunken viewport keeps its right side (header buttons,
+        // "Add item") off-screen.
+        const fitted = fitRectInsideViewport(rect, viewport, windowClampConfig, min);
         if (fitted === rect) continue;
         const bounds = {
           position: { x: fitted.x, y: fitted.y },

@@ -60,7 +60,14 @@ export function busyTasks(payload: unknown): BusyTask[] {
   if (!Array.isArray(payload)) return [];
   const busy: BusyTask[] = [];
   for (const raw of payload as TaskLike[]) {
-    if (!raw || typeof raw !== "object" || !raw.state || raw.state === "resting")
+    // A task that only waits for a person to review keeps its state through a restart.
+    if (
+      !raw ||
+      typeof raw !== "object" ||
+      !raw.state ||
+      raw.state === "resting" ||
+      raw.state === "awaiting_review"
+    )
       continue;
     busy.push({
       label: raw.displayName || raw.name || raw.id || "Unnamed task",

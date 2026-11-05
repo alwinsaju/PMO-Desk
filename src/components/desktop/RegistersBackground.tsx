@@ -1,10 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { fetchSummaries } from "@/components/apps/toolkit/registersApi";
-import { useRegisterSummaries } from "@/components/apps/toolkit/summariesStore";
-import { useDockBadgeStore } from "@/components/taskbar/dockBadgeStore";
-import { useNeedsYou } from "@/lib/dashboard/needsYouStore";
+import { refreshRegisterSummaries } from "@/lib/dashboard/refreshRegisterSummaries";
 
 const FIRST_MS = 12_000;
 const EVERY_MS = 60_000;
@@ -18,12 +15,8 @@ export function RegistersBackground() {
     let stopped = false;
 
     async function check() {
-      const reply = await fetchSummaries();
-      if (stopped || !reply.ok) return;
-      useRegisterSummaries.getState().set(reply.summaries);
-      const late = reply.summaries.reduce((n, s) => n + s.late, 0);
-      useNeedsYou.getState().setRegisters(late);
-      useDockBadgeStore.getState().setBadge("pmo-toolkit", late);
+      if (stopped) return;
+      await refreshRegisterSummaries();
     }
 
     const first = setTimeout(() => void check(), FIRST_MS);

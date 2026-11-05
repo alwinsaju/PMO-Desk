@@ -170,6 +170,7 @@ export function detailsFor(app: Pick<AppListing, "id" | "tagline">): AppDetails 
 
 /** "184 MB", or what to say when there is nothing to download. */
 export function sizeLabel(app: Pick<AppListing, "url">, details: AppDetails): string {
-  if (details.sizeMb !== undefined) return `${details.sizeMb} MB`;
+  // A sample app has nothing to download: its figure is made up, so it is labelled as an example.
+  if (details.sizeMb !== undefined) return `${details.sizeMb} MB (example figure)`;
   return app.url ? "Nothing to download (opens the website)" : "Not listed";
 }

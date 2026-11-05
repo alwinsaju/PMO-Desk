@@ -1,7 +1,7 @@
 "use client";
 
 import { create } from "zustand";
-import { INSTALLING_MS, installLabel } from "./installFlow";
+import { INSTALLING_MS, installLabel, isDemoApp } from "./installFlow";
 import type { AppListing } from "./types";
 
 // Shared by every Install button (a card, the hero, the detail sheet), so they all show
@@ -19,7 +19,7 @@ function setInstalling(id: string, on: boolean) {
 
 /** Label, busy flag and click handler of one app's Install / Open button. */
 export function useAppInstall(
-  app: Pick<AppListing, "id">,
+  app: Pick<AppListing, "id" | "url">,
   isInstalled: boolean,
   onPrimaryAction: () => void,
 ) {
@@ -39,5 +39,9 @@ export function useAppInstall(
     }, INSTALLING_MS);
   }
 
-  return { installing, label: installLabel(installing, isInstalled), start };
+  return {
+    installing,
+    label: installLabel(installing, isInstalled, isDemoApp(app)),
+    start,
+  };
 }

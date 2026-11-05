@@ -7,6 +7,7 @@ import { cn } from "@/lib/cn";
 import { appIcons } from "./appCatalog";
 import { AppIconTile } from "./AppIconTile";
 import { InstallButton } from "./InstallButton";
+import { isDemoApp } from "./installFlow";
 import { wrapIndex } from "./storeLogic";
 import type { AppListing } from "./types";
 
@@ -52,8 +53,16 @@ export function AppHero({
           className="h-[76px] w-[76px] [&_svg]:h-9 [&_svg]:w-9"
         />
         <div className="min-w-0 flex-1 basis-56">
-          <h2 className="text-ink text-[24px] leading-tight font-bold tracking-[-0.02em]">
+          <h2 className="text-ink flex flex-wrap items-center gap-2 text-[24px] leading-tight font-bold tracking-[-0.02em]">
             {app.name}
+            {isDemoApp(app) && (
+              <span
+                title="A sample app: it does not do anything yet"
+                className="bg-chip text-ink-muted rounded-chip shrink-0 px-1.5 text-[10.5px] font-bold tracking-normal uppercase"
+              >
+                Demo
+              </span>
+            )}
           </h2>
           <p className="text-ink-soft mt-0.5 text-[14px]">{app.tagline}</p>
           <p className="text-ink-muted mt-0.5 text-[12.5px]">{app.developer}</p>

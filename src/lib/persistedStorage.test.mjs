@@ -6,6 +6,7 @@ import {
   SERVER_WRITE_DEBOUNCE_MS,
   createServerBackedStorage,
 } from "./persistedStorage.ts";
+import { getSaveStatus, retryDelayMs } from "./uiState/saveStatus.ts";
 
 function fakeLocal(initial = {}) {
   const map = new Map(Object.entries(initial));
@@ -203,6 +204,143 @@ describe("setItem", () => {
     storage.setItem("name", '{"n":1}');
     mock.timers.tick(SERVER_WRITE_DEBOUNCE_MS);
     assert.equal(local.map.get("name"), '{"n":1}');
+  });
+});
+
+describe("failed saves and restore preference", () => {
+  beforeEach(() => mock.timers.enable({ apis: ["setTimeout"] }));
+  afterEach(() => mock.timers.reset());
+
+  /** A server whose PUT answers with the given HTTP status; GET returns `value`. */
+  function statusServer({ value = null, updatedAt = null, putStatus = 200 } = {}) {
+    const state = { value, updatedAt, putStatus, puts: [] };
+    const fetch = async (url, init = {}) => {
+      if ((init.method ?? "GET") === "GET") {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            ok: true,
+            value: state.value,
+            updatedAt: state.updatedAt,
+          }),
+        };
+      }
+      if (init.method === "DELETE")
+        return { ok: true, status: 200, json: async () => ({}) };
+      state.puts.push(JSON.parse(init.body).value);
+      if (state.putStatus === "reject") throw new TypeError("network down");
+      const ok = state.putStatus < 400;
+      if (ok) state.value = JSON.parse(init.body).value;
+      return { ok, status: state.putStatus, json: async () => ({ ok }) };
+    };
+    return { fetch, state };
+  }
+
+  const settle = async () => {
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+  };
+
+  it("reports saving, then saved, once the server confirms", async () => {
+    const server = statusServer();
+    const { storage } = make("status-ok", { server, local: fakeLocal() });
+    storage.setItem("name", '{"n":1}');
+    assert.deepEqual(getSaveStatus("status-ok"), { state: "saving" });
+    mock.timers.tick(SERVER_WRITE_DEBOUNCE_MS);
+    await settle();
+    assert.deepEqual(getSaveStatus("status-ok"), { state: "saved" });
+  });
+
+  it("a 413 is an error that is not retried, and the local copy is kept", async () => {
+    const server = statusServer({ putStatus: 413 });
+    const local = fakeLocal();
+    const { storage } = make("status-big", { server, local });
+    storage.setItem("name", '{"n":1}');
+    mock.timers.tick(SERVER_WRITE_DEBOUNCE_MS);
+    await settle();
+    assert.deepEqual(getSaveStatus("status-big"), {
+      state: "error",
+      failure: "too-large",
+      willRetry: false,
+    });
+    assert.equal(local.map.get("name"), '{"n":1}');
+    assert.equal(JSON.parse(local.map.get("name.sync")).dirty, true);
+    mock.timers.tick(120_000);
+    await settle();
+    assert.equal(server.state.puts.length, 1);
+  });
+
+  it("a network failure is retried until the server accepts, then marked saved", async () => {
+    const server = statusServer({ putStatus: "reject" });
+    const local = fakeLocal();
+    const { storage } = make("status-retry", { server, local });
+    storage.setItem("name", '{"n":1}');
+    mock.timers.tick(SERVER_WRITE_DEBOUNCE_MS);
+    await settle();
+    assert.deepEqual(getSaveStatus("status-retry"), {
+      state: "error",
+      failure: "unreachable",
+      willRetry: true,
+    });
+    server.state.putStatus = 200;
+    mock.timers.tick(retryDelayMs(0));
+    await settle();
+    assert.deepEqual(getSaveStatus("status-retry"), { state: "saved" });
+    assert.deepEqual(server.state.value, { n: 1 });
+    assert.equal(JSON.parse(local.map.get("name.sync")).dirty, false);
+  });
+
+  it("a new edit replaces a waiting retry with the newest text", async () => {
+    const server = statusServer({ putStatus: "reject" });
+    const { storage } = make("status-newer", { server, local: fakeLocal() });
+    storage.setItem("name", '{"n":1}');
+    mock.timers.tick(SERVER_WRITE_DEBOUNCE_MS);
+    await settle();
+    server.state.putStatus = 200;
+    storage.setItem("name", '{"n":2}');
+    mock.timers.tick(SERVER_WRITE_DEBOUNCE_MS);
+    await settle();
+    mock.timers.tick(120_000);
+    await settle();
+    assert.deepEqual(server.state.value, { n: 2 });
+    assert.deepEqual(getSaveStatus("status-newer"), { state: "saved" });
+  });
+
+  it("keeps and re-sends the browser's newer unconfirmed copy on restart", async () => {
+    const mine = JSON.stringify({ state: { notes: ["big"] }, version: 1 });
+    const server = statusServer({
+      value: { state: { notes: ["old"] }, version: 1 },
+      updatedAt: 1000,
+    });
+    const local = fakeLocal({
+      name: mine,
+      "name.sync": JSON.stringify({ dirty: true, at: 2000 }),
+    });
+    const { storage } = make("restore-local", { server, local });
+    assert.equal(await storage.getItem("name"), mine);
+    mock.timers.tick(0);
+    await settle();
+    assert.deepEqual(server.state.value, JSON.parse(mine));
+  });
+
+  it("prefers the server when it was written after the unconfirmed local copy", async () => {
+    const server = statusServer({ value: { fromServer: true }, updatedAt: 5000 });
+    const local = fakeLocal({
+      name: '{"fromLocal":true}',
+      "name.sync": JSON.stringify({ dirty: true, at: 2000 }),
+    });
+    const { storage } = make("restore-server", { server, local });
+    assert.deepEqual(JSON.parse(await storage.getItem("name")), { fromServer: true });
+  });
+
+  it("prefers the server when the local copy was already confirmed", async () => {
+    const server = statusServer({ value: { fromServer: true }, updatedAt: 1000 });
+    const local = fakeLocal({
+      name: '{"fromLocal":true}',
+      "name.sync": JSON.stringify({ dirty: false, at: 9000 }),
+    });
+    const { storage } = make("restore-clean", { server, local });
+    assert.deepEqual(JSON.parse(await storage.getItem("name")), { fromServer: true });
   });
 });
 

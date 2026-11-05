@@ -67,7 +67,7 @@ export function AppDetailSheet({
         {details.does.length > 0 && (
           <section className="mt-4">
             <h3 className="text-ink-muted mb-1 text-[11.5px] font-bold tracking-[0.06em] uppercase">
-              What it does
+              {demo ? "What it would do" : "What it does"}
             </h3>
             <ul className="text-ink-soft list-disc space-y-0.5 pl-5 text-[14px]">
               {details.does.map((line) => (

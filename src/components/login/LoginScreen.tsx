@@ -19,6 +19,7 @@ import { Wallpaper } from "@/components/desktop/Wallpaper";
 import { useDockBadgeStore } from "@/components/taskbar/dockBadgeStore";
 import { usePreferences } from "@/lib/preferences/preferencesStore";
 import { useUserIdentity } from "./userIdentityStore";
+import { welcomeLine } from "@/lib/shell/userIdentity";
 
 /** "9:41" — the locale's own hour/minute formatting, minus the AM/PM marker
  *  (at this size it just adds noise; the date line carries the context). */
@@ -149,6 +150,10 @@ export function LoginScreen({ isUnlocking, onUnlock, onExitComplete }: LoginScre
     continueRef.current?.focus();
   }, []);
   const identity = useUserIdentity((s) => s.identity);
+  const welcome = welcomeLine(
+    identity.name,
+    useUserIdentity((s) => s.firstUse),
+  );
   useEffect(() => {
     void useUserIdentity.getState().load();
   }, []);
@@ -329,7 +334,7 @@ export function LoginScreen({ isUnlocking, onUnlock, onExitComplete }: LoginScre
             </AvatarPrimitive.Root>
           </span>
           <div className="text-center [text-shadow:0_2px_14px_rgba(40,30,80,0.3)]">
-            {identity.name && <p className="text-[13px] text-white/85">Welcome back</p>}
+            {welcome && <p className="text-[13px] text-white/85">{welcome}</p>}
             <p className="text-xl font-semibold">{identity.name || "Welcome"}</p>
           </div>
 

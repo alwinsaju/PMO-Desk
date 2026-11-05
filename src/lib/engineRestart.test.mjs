@@ -43,6 +43,13 @@ describe("busyTasks / probeEngine", () => {
     assert.deepEqual(busyTasks({ ok: false }), []);
   });
 
+  it("does not count a run that only waits for a review", () => {
+    assert.deepEqual(
+      busyTasks([{ id: "r", displayName: "R", state: "awaiting_review" }]),
+      [],
+    );
+  });
+
   it("is read-only and reports unreachable", async () => {
     const down = fakeFetch({ [`GET ${API}/tasks`]: new Error("ECONNREFUSED") });
     assert.deepEqual(await probeEngine(down, API), { reachable: false });
