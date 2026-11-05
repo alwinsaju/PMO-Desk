@@ -20,7 +20,14 @@ export async function removeWithUndo(
       label: "Undo",
       run: () =>
         void state
-          .save([{ id: record.id, values: record.values, todoId: record.todoId }])
+          .save([
+            {
+              id: record.id,
+              values: record.values,
+              todoId: record.todoId,
+              createdAt: record.createdAt,
+            },
+          ])
           .then((back) => {
             if (!back.ok) toast({ tone: "danger", message: back.reason });
           }),

@@ -1,6 +1,13 @@
 "use client";
 
-import { Fragment, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  Fragment,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
 import {
   Button,
   Dialog,
@@ -13,6 +20,7 @@ import { buildMailto } from "@/lib/pmo/chaser";
 import { recordAlert } from "@/lib/registers/alerts";
 import { formSections } from "@/lib/registers/layout";
 import {
+  applyFieldChange,
   defaultValues,
   fieldErrors,
   recordTitle,
@@ -45,6 +53,8 @@ export interface ExtrasContext {
   record: RegisterRecord | null;
   /** Save the record as it is now (used by panels that act on a saved record). */
   saveNow: () => Promise<RegisterRecord | null>;
+  /** Change fields whose new value a panel has already saved itself (e.g. a count of to-dos made), so closing the form does not ask about them. */
+  commit: (partial: Values) => void;
 }
 
 export function AlertChip({
@@ -82,6 +92,7 @@ export function RecordDialog({
   renderExtras,
   initialValues,
   onDuplicate,
+  repair = false,
 }: {
   def: RegisterDef;
   record: RegisterRecord | null;
@@ -94,12 +105,24 @@ export function RecordDialog({
   initialValues?: Values;
   /** Duplicate: the parent opens a new, unsaved record with these values. */
   onDuplicate?: (values: Values) => void;
+  /** The record is one that fails the checks: saving fixes it in place. It cannot be deleted, duplicated or turned into a to-do from here. */
+  repair?: boolean;
 }) {
   const today = todayIso();
   const [values, setValues] = useState<Values>(() => ({
     ...defaultValues(def, today),
     ...(record?.values ?? initialValues ?? {}),
   }));
+  /** What the form held when it opened, key by key, to tell whether anything was typed. */
+  const baseline = useRef<Values>(values);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const dirty = Object.keys(values).some(
+    (key) => JSON.stringify(values[key]) !== JSON.stringify(baseline.current[key]),
+  );
+  const commit = (partial: Values) => {
+    baseline.current = { ...baseline.current, ...partial };
+    setValues((cur) => ({ ...cur, ...partial }));
+  };
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<{ reason: string; detail?: string } | null>(null);
   const [attempted, setAttempted] = useState(false);
@@ -137,6 +160,11 @@ export function RecordDialog({
     first?.focus({ preventScroll: true });
   };
 
+  const requestClose = () => {
+    if (dirty && !busy) setConfirmDiscard(true);
+    else onClose();
+  };
+
   const saveNow = async (): Promise<RegisterRecord | null> => {
     const check = sanitizeValues(def, values);
     if (!check.ok) {
@@ -155,6 +183,7 @@ export function RecordDialog({
       setError({ reason: reply.reason, detail: reply.detail });
       return null;
     }
+    baseline.current = values;
     return (
       reply.items.find((i) => i.id === record?.id) ??
       [...reply.items].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0] ??
@@ -164,6 +193,24 @@ export function RecordDialog({
 
   const save = async () => {
     if (await saveNow()) onClose();
+  };
+
+  /** Enter in a one-line box saves, like the Save button; in a multi-line box, a list or a button it keeps its usual meaning. */
+  const submitOnEnter = (event: KeyboardEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement;
+    if (
+      event.key !== "Enter" ||
+      event.shiftKey ||
+      event.nativeEvent.isComposing ||
+      target.tagName !== "INPUT" ||
+      ["checkbox", "radio", "button", "submit"].includes(
+        (target as HTMLInputElement).type,
+      )
+    ) {
+      return;
+    }
+    event.preventDefault();
+    if (!busy) void save();
   };
 
   const remove = async () => {
@@ -218,7 +265,7 @@ export function RecordDialog({
   const canChase = record !== null && chaser?.ok === true;
 
   return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
+    <Dialog open onOpenChange={(open) => !open && requestClose()}>
       <DialogContent className="flex max-h-[calc(100dvh-2rem)] max-w-[720px] flex-col">
         <DialogTitle>
           {record ? `Edit ${def.noun}` : `Add ${def.noun}`}
@@ -234,6 +281,7 @@ export function RecordDialog({
         {/* Only the fields scroll; the buttons below stay in view. */}
         <div
           ref={bodyRef}
+          onKeyDown={submitOnEnter}
           className="scroll-thin -mx-2 mt-3 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-2 py-1"
         >
           {sections.map((section) => (
@@ -247,7 +295,11 @@ export function RecordDialog({
                     <FieldInput
                       field={field}
                       value={values[field.key]}
-                      onChange={(v) => setValues((cur) => ({ ...cur, [field.key]: v }))}
+                      onChange={(v) =>
+                        setValues((cur) =>
+                          applyFieldChange(def, cur, field.key, v, today),
+                        )
+                      }
                       people={names}
                       projects={projects}
                       error={problems[field.key]}
@@ -265,9 +317,9 @@ export function RecordDialog({
             </fieldset>
           ))}
           {renderExtras && (
-            <div>{renderExtras({ values, setValues, record, saveNow })}</div>
+            <div>{renderExtras({ values, setValues, record, saveNow, commit })}</div>
           )}
-          {record && <RecordHistory def={def} recordId={record.id} />}
+          {record && !repair && <RecordHistory def={def} recordId={record.id} />}
         </div>
         {error && (
           <p role="alert" className="text-red mt-2 text-[13px]">
@@ -281,8 +333,25 @@ export function RecordDialog({
             )}
           </p>
         )}
+        {confirmDiscard && (
+          <div
+            role="alertdialog"
+            aria-label="Discard your changes?"
+            className="bg-amber-soft rounded-control mt-2 flex shrink-0 flex-wrap items-center gap-2 px-3 py-2 text-[13px]"
+          >
+            <span className="text-ink flex-1 font-medium">
+              You have typed changes that are not saved. Close without saving them?
+            </span>
+            <Button size="sm" variant="outline" onClick={() => setConfirmDiscard(false)}>
+              Keep editing
+            </Button>
+            <Button size="sm" variant="destructive-quiet" onClick={onClose}>
+              Discard changes
+            </Button>
+          </div>
+        )}
         <div className="mt-4 flex shrink-0 flex-wrap items-center gap-2">
-          {record && (
+          {record && !repair && (
             <Button
               variant="destructive-quiet"
               size="sm"
@@ -293,6 +362,7 @@ export function RecordDialog({
             </Button>
           )}
           {record &&
+            !repair &&
             !record.todoId &&
             def.extras !== "governance" &&
             def.extras !== "minutes" && (
@@ -318,7 +388,7 @@ export function RecordDialog({
           >
             Copy as text
           </Button>
-          {record && onDuplicate && (
+          {record && !repair && onDuplicate && (
             <Button
               variant="outline"
               size="sm"
@@ -341,7 +411,7 @@ export function RecordDialog({
                 : `Fix the ${problemCount} marked fields to save.`}
             </span>
           )}
-          <Button variant="outline" onClick={onClose}>
+          <Button variant="outline" onClick={requestClose}>
             Cancel
           </Button>
           <Button disabled={busy} onClick={() => void save()}>

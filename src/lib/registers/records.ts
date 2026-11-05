@@ -1,8 +1,11 @@
 // Reading, checking and listing register records. Pure: shared by the page and the server.
+import { csvSafeCell } from "../pmo/todoExport.ts";
 import { isIsoDate } from "../staff/dates.ts";
+import { normaliseMonth } from "./month.ts";
 import {
   MAX_LONGTEXT,
   MAX_TEXT,
+  MAX_URL,
   type FieldDef,
   type FieldValue,
   type RegisterDef,
@@ -19,13 +22,25 @@ export function newRecordId(): string {
 
 export const RECORD_ID = /^rg_[0-9a-f]{12}$/;
 
-const clean = (v: unknown, max: number): string =>
-  typeof v === "string"
-    ? v
-        .replace(/\u0000/g, "")
-        .trim()
-        .slice(0, max)
-    : "";
+const tidy = (v: unknown): string =>
+  typeof v === "string" ? v.replace(/\u0000/g, "").trim() : "";
+
+const clean = (v: unknown, max: number): string => tidy(v).slice(0, max);
+
+/** Text up to `max` characters. Too long is refused (never cut silently), except when reading a saved file (`lenient`). */
+function limited(
+  field: FieldDef,
+  raw: unknown,
+  max: number,
+  lenient: boolean,
+): { value: string } | { error: string } {
+  const text = tidy(raw);
+  if (text.length <= max) return { value: text };
+  if (lenient) return { value: text.slice(0, max) };
+  return {
+    error: `${field.label} is too long: ${text.length.toLocaleString("en")} characters, at most ${max.toLocaleString("en")}.`,
+  };
+}
 
 /** The values a new record starts with. */
 export function defaultValues(
@@ -41,7 +56,24 @@ export function defaultValues(
   return values;
 }
 
+/** A web address people can open: http or https, with a host after exactly two slashes and no name or password in it. */
 export const isHttpUrl = (value: string): boolean => {
+  if (!/^https?:\/\/[^/\s?#\\]/i.test(value)) return false;
+  try {
+    const url = new URL(value);
+    return (
+      (url.protocol === "https:" || url.protocol === "http:") &&
+      url.hostname !== "" &&
+      url.username === "" &&
+      url.password === ""
+    );
+  } catch {
+    return false;
+  }
+};
+
+/** What a saved link had to pass before the host check was added; used when reading a file so old links stay. */
+const isLegacyUrl = (value: string): boolean => {
   try {
     const url = new URL(value);
     return url.protocol === "https:" || url.protocol === "http:";
@@ -53,13 +85,27 @@ export const isHttpUrl = (value: string): boolean => {
 function coerce(
   field: FieldDef,
   raw: unknown,
+  lenient: boolean,
 ): { value: FieldValue } | { error: string } {
   switch (field.type) {
-    case "text":
+    case "text": {
+      if (field.format === "month") {
+        const text = clean(raw, MAX_TEXT);
+        if (text === "") return { value: "" };
+        const month = normaliseMonth(text);
+        if (month) return { value: month };
+        return lenient
+          ? { value: text }
+          : {
+              error: `${field.label} must be a month like 2026-03 (“Nov 2026” works too).`,
+            };
+      }
+      return limited(field, raw, MAX_TEXT, lenient);
+    }
     case "person":
-      return { value: clean(raw, MAX_TEXT) };
+      return limited(field, raw, MAX_TEXT, lenient);
     case "longtext":
-      return { value: clean(raw, MAX_LONGTEXT) };
+      return limited(field, raw, MAX_LONGTEXT, lenient);
     case "select": {
       const text = clean(raw, MAX_TEXT);
       if (text === "") return { value: "" };
@@ -70,6 +116,9 @@ function coerce(
     case "date": {
       const text = clean(raw, 10);
       if (text === "") return { value: "" };
+      if (/^0\d{3}-/.test(text)) {
+        return { error: `${field.label} needs a year from 1000 on, like 2026-03-10.` };
+      }
       return isIsoDate(text)
         ? { value: text }
         : { error: `${field.label} is not a real date (use year-month-day).` };
@@ -80,22 +129,33 @@ function coerce(
       if (!Number.isFinite(n) || Math.abs(n) > 1e12) {
         return { error: `${field.label} must be a number.` };
       }
+      if (!lenient && field.integer && !Number.isInteger(n)) {
+        return { error: `${field.label} must be a whole number.` };
+      }
       if (
         (field.min !== undefined && n < field.min) ||
         (field.max !== undefined && n > field.max)
       ) {
-        return {
-          error: `${field.label} must be between ${field.min ?? "any"} and ${field.max ?? "any"}.`,
-        };
+        const range =
+          field.min !== undefined && field.max !== undefined
+            ? `between ${field.min} and ${field.max}`
+            : field.min !== undefined
+              ? `at least ${field.min}`
+              : `at most ${field.max}`;
+        return { error: `${field.label} must be ${range}.` };
       }
       return { value: n };
     }
     case "url": {
-      const text = clean(raw, 500);
+      const long = limited(field, raw, MAX_URL, lenient);
+      if ("error" in long) return long;
+      const text = long.value;
       if (text === "") return { value: "" };
-      return isHttpUrl(text)
+      return (lenient ? isLegacyUrl(text) : isHttpUrl(text))
         ? { value: text }
-        : { error: `${field.label} must be a web address starting with https://.` };
+        : {
+            error: `${field.label} must be a web address starting with http:// or https:// and a site name.`,
+          };
     }
     case "tags": {
       const list = Array.isArray(raw)
@@ -119,10 +179,13 @@ interface FieldProblem {
   message: string;
 }
 
-/** Every problem with the input, in field order, each tied to the field to mark; the cleaned values alongside. */
+/** Every problem with the input, in field order, each tied to the field to mark; the cleaned values alongside.
+ *  `lenient` is for reading a saved file: rules added after a record was saved (a longer text, the month format,
+ *  the cross-field rules) do not fail it. Wrong select options, numbers and dates still do. */
 function checkValues(
   def: RegisterDef,
   input: unknown,
+  lenient = false,
 ): { values: Record<string, FieldValue>; problems: FieldProblem[] } {
   const raw =
     typeof input === "object" && input !== null && !Array.isArray(input)
@@ -131,7 +194,7 @@ function checkValues(
   const values: Record<string, FieldValue> = {};
   const problems: FieldProblem[] = [];
   for (const field of def.fields) {
-    const result = coerce(field, raw[field.key]);
+    const result = coerce(field, raw[field.key], lenient);
     if ("error" in result) {
       problems.push({ key: field.key, message: result.error });
       continue;
@@ -143,7 +206,7 @@ function checkValues(
       problems.push({ key: field.key, message: `${field.label} is required.` });
     }
   }
-  const range = problems.length === 0 ? crossCheck(def, values) : null;
+  const range = problems.length === 0 && !lenient ? crossCheck(def, values) : null;
   if (range) problems.push(range);
   return { values, problems };
 }
@@ -152,8 +215,9 @@ function checkValues(
 export function sanitizeValues(
   def: RegisterDef,
   input: unknown,
+  lenient = false,
 ): { ok: true; values: Record<string, FieldValue> } | { ok: false; reason: string } {
-  const { values, problems } = checkValues(def, input);
+  const { values, problems } = checkValues(def, input, lenient);
   return problems.length > 0
     ? { ok: false, reason: problems[0].message }
     : { ok: true, values };
@@ -174,30 +238,67 @@ function crossCheck(
   if (def.id === "capacity" && values.from && values.to && values.to < values.from) {
     return { key: "to", message: "The end date cannot be before the start date." };
   }
-  if (
-    def.id === "sla" &&
-    values.resolvedOn &&
-    values.received &&
-    values.resolvedOn < values.received
-  ) {
-    return {
-      key: "resolvedOn",
-      message: "Resolved on cannot be before it was received.",
-    };
+  if (def.id === "sla") {
+    if (values.resolvedOn && values.received && values.resolvedOn < values.received) {
+      return {
+        key: "resolvedOn",
+        message: "Resolved on cannot be before it was received.",
+      };
+    }
+    if (values.status === "Open" && values.resolvedOn) {
+      return {
+        key: "resolvedOn",
+        message:
+          "This item is still Open: clear Resolved on, or set the status to Resolved.",
+      };
+    }
+    if (values.status === "Resolved" && !values.resolvedOn) {
+      return {
+        key: "resolvedOn",
+        message: "Add the day it was resolved, or set the status back to Open.",
+      };
+    }
   }
   return null;
 }
 
-/** A whole record from what the page sent; keeps the id, creation time and to-do link of an existing one. */
+/** The form's side effects of changing one field: an SLA item set to Resolved gets today as its resolved day,
+ *  and one set back to Open loses it, so the two never disagree. Returns the values to use. */
+export function applyFieldChange(
+  def: RegisterDef,
+  values: Record<string, FieldValue>,
+  key: string,
+  value: FieldValue,
+  today: string,
+): Record<string, FieldValue> {
+  const next = { ...values, [key]: value };
+  if (def.id === "sla" && key === "status") {
+    if (value === "Resolved" && !next.resolvedOn) next.resolvedOn = today;
+    if (value === "Open") next.resolvedOn = "";
+  }
+  return next;
+}
+
+const asStamp = (value: unknown, now: string): string | null =>
+  typeof value === "string" &&
+  /^\d{4}-\d{2}-\d{2}T/.test(value) &&
+  Number.isFinite(Date.parse(value)) &&
+  Date.parse(value) <= Date.parse(now)
+    ? value
+    : null;
+
+/** A whole record from what the page sent; keeps the id, creation time and to-do link of an existing one.
+ *  A new record may bring its own `createdAt` (an Undo of a delete restores the original time). */
 export function sanitizeRecord(
   def: RegisterDef,
   input: unknown,
   now: string,
   existing?: RegisterRecord,
+  lenient = false,
 ): { ok: true; record: RegisterRecord } | { ok: false; reason: string } {
   const raw =
     typeof input === "object" && input !== null ? (input as Record<string, unknown>) : {};
-  const parsed = sanitizeValues(def, raw.values);
+  const parsed = sanitizeValues(def, raw.values, lenient);
   if (!parsed.ok) return parsed;
   const id =
     existing?.id ??
@@ -210,12 +311,31 @@ export function sanitizeRecord(
     ok: true,
     record: {
       id,
-      createdAt: existing?.createdAt ?? now,
+      createdAt: existing?.createdAt ?? asStamp(raw.createdAt, now) ?? now,
       updatedAt: now,
       values: parsed.values,
       ...(todoId ? { todoId } : {}),
     },
   };
+}
+
+export const CONFIG_MIN = 1;
+export const CONFIG_MAX = 365;
+
+/** Why these settings cannot be saved (every number must be a whole number of days), or null when they can. */
+export function configProblem(def: RegisterDef, input: unknown): string | null {
+  const raw =
+    typeof input === "object" && input !== null ? (input as Record<string, unknown>) : {};
+  for (const [key, fallback] of Object.entries(def.config ?? {})) {
+    if (typeof fallback !== "number" || raw[key] === undefined) continue;
+    const value = raw[key];
+    const n = typeof value === "number" ? value : Number(String(value).trim());
+    const blank = value === "" || value === null || String(value).trim() === "";
+    if (blank || !Number.isInteger(n) || n < CONFIG_MIN || n > CONFIG_MAX) {
+      return `${key.toUpperCase()} days must be a whole number from ${CONFIG_MIN} to ${CONFIG_MAX}.`;
+    }
+  }
+  return null;
 }
 
 export function sanitizeConfig(
@@ -274,7 +394,10 @@ export function filterRecords(
   const query = (filter.query ?? "").trim().toLowerCase();
   const match = Object.entries(filter.match ?? {});
   return items.filter((item) => {
-    if (!filter.includeClosed && !isOpen(def, item)) return false;
+    // Picking a status in the filter is asking for those records, closed or not.
+    const askedFor =
+      !!filter.status && !!def.statusKey && textOf(item, def.statusKey) === filter.status;
+    if (!filter.includeClosed && !askedFor && !isOpen(def, item)) return false;
     if (filter.status && def.statusKey && textOf(item, def.statusKey) !== filter.status) {
       return false;
     }
@@ -317,20 +440,24 @@ export function projectSuggestions(items: readonly RegisterRecord[]): string[] {
   return [...seen.values()].sort((a, b) => a.localeCompare(b));
 }
 
-/** Rows for a CSV: a header, then every record's fields in definition order. */
+/** Rows for a CSV: a header, then every record's fields in definition order. Text that a spreadsheet would run
+ *  as a formula (starting = + - @) is made safe; numbers are left as numbers. */
 export function csvRows(def: RegisterDef, items: readonly RegisterRecord[]): string[][] {
   return [
     def.fields.map((f) => f.label),
     ...items.map((item) =>
       def.fields.map((f) => {
         const v = item.values[f.key];
-        return Array.isArray(v)
-          ? v.join("; ")
-          : v === true
-            ? "yes"
-            : v === false
-              ? "no"
-              : String(v ?? "");
+        if (typeof v === "number") return String(v);
+        return csvSafeCell(
+          Array.isArray(v)
+            ? v.join("; ")
+            : v === true
+              ? "yes"
+              : v === false
+                ? "no"
+                : String(v ?? ""),
+        );
       }),
     ),
   ];

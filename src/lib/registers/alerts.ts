@@ -1,6 +1,7 @@
 // What needs attention in a register record: late, soon or worth noting. Pure; each tool's rule
 // is a small function over its own fields. The same code feeds the list, the toolkit and the Dashboard.
-import { addDays, daysBetween, formatDayMonth } from "../staff/dates.ts";
+import { addDays, daysBetween } from "../staff/dates.ts";
+import { dateLabel } from "./cells.ts";
 import { flagOf, isOpen, numberOf, textOf } from "./records.ts";
 import type { FieldValue, RecordAlert, RegisterDef, RegisterRecord } from "./types.ts";
 
@@ -35,9 +36,11 @@ export function slaDue(
 function slaAlert(record: RegisterRecord, ctx: AlertContext): RecordAlert | null {
   const due = slaDue(record, ctx.config);
   if (!due) return null;
+  const status = textOf(record, "status");
   const resolved = textOf(record, "resolvedOn");
-  if (resolved) {
-    return resolved > due
+  // A resolved day only counts on a Resolved item; a Resolved item with no day cannot be judged late.
+  if (status === "Resolved") {
+    return resolved && resolved > due
       ? {
           level: "info",
           text: `Resolved ${plural(daysBetween(due, resolved), "day")} late`,
@@ -79,7 +82,7 @@ function renewalAlert(record: RegisterRecord, ctx: AlertContext): RecordAlert | 
     };
   }
   if (toNotice <= 30) {
-    return { level: "soon", text: `Give notice by ${formatDayMonth(deadline)}` };
+    return { level: "soon", text: `Give notice by ${dateLabel(deadline, ctx.today)}` };
   }
   const toRenewal = daysBetween(ctx.today, renewal);
   return toRenewal <= 90
@@ -277,6 +280,10 @@ export interface RegisterSummary {
   open: number;
   late: number;
   soon: number;
+  /** Records in the file that fail the checks and need repair (left out of the counts above). Only present when there are some. */
+  invalid?: number;
+  /** The file could not be read at all. Only present then. */
+  unreadable?: boolean;
 }
 
 export function summarise(

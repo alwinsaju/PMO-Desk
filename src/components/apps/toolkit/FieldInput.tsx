@@ -2,6 +2,7 @@
 
 import { useId } from "react";
 import { FormField, Input } from "@/components/ui";
+import { fieldLimit, lengthHint } from "@/lib/registers/limits";
 import type { FieldDef, FieldValue } from "@/lib/registers/types";
 import { NativeSelect, TextArea } from "../pmo-todo-app/parts";
 
@@ -38,7 +39,12 @@ export function FieldInput({
       )}
     </>
   );
-  const frame = { label, error, showErrorNow };
+  const frame = {
+    label,
+    error,
+    showErrorNow,
+    hint: lengthHint(text.trim().length, fieldLimit(field)),
+  };
   // A suggestion list is only a hint: the box still takes any text.
   const suggestions =
     field.type === "person" ? people : field.suggest === "projects" ? projects : null;

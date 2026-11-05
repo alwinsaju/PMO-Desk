@@ -27,8 +27,12 @@ export interface FieldDef {
   /** For numbers: the smallest and largest allowed. */
   min?: number;
   max?: number;
+  /** For numbers: whole numbers only. */
+  integer?: boolean;
   /** For text fields: where the form's name suggestions come from. Suggestions only; any text is still accepted and nothing is checked against them. */
   suggest?: "projects";
+  /** For text fields: "month" reads what is typed as yyyy-mm ("Nov 2026" is saved as 2026-11) and refuses anything else. */
+  format?: "month";
 }
 
 export type RuleId =
@@ -82,9 +86,24 @@ export interface RegisterRecord {
   todoId?: string;
 }
 
+/** A record in the file that does not pass today's checks. It stays in the file untouched until it is repaired or removed. */
+export interface InvalidRecord {
+  /** The record's id; for an entry without a usable id, a key made from its content. Used to repair or remove it. */
+  key: string;
+  /** The record's id when it has a usable one (it can then be repaired in the form), else null. */
+  id: string | null;
+  title: string;
+  /** Plain reason, e.g. "Category must be one of: ...". */
+  reason: string;
+  /** The entry exactly as it is in the file. */
+  raw: unknown;
+}
+
 export interface RegisterFile {
   items: RegisterRecord[];
   config: Record<string, FieldValue>;
+  /** Only present when the file holds entries that fail the checks. */
+  invalid?: InvalidRecord[];
 }
 
 export type AlertLevel = "late" | "soon" | "info";
@@ -97,3 +116,4 @@ export interface RecordAlert {
 export const MAX_RECORDS = 5000;
 export const MAX_TEXT = 200;
 export const MAX_LONGTEXT = 4000;
+export const MAX_URL = 2000;

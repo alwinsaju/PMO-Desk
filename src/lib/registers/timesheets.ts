@@ -55,6 +55,13 @@ export interface SubmittedMatch {
   unmatched: string[];
 }
 
+const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/** True when `part` is in `line` as whole words: "ann lee" is not found in "joann lee". */
+const hasWhole = (line: string, part: string): boolean =>
+  part !== "" &&
+  new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegex(part)}(?![\\p{L}\\p{N}])`, "u").test(line);
+
 /** Which people a pasted list names: by full name (first last or last, first) or by email. */
 export function matchSubmitted(
   text: string,
@@ -70,9 +77,9 @@ export function matchSubmitted(
       const [first = "", ...rest] = name.split(" ");
       const flipped = rest.length ? `${rest.join(" ")}, ${first}` : name;
       return (
-        line.includes(name) ||
-        line.includes(flipped) ||
-        (p.email !== "" && line.includes(p.email.toLowerCase()))
+        hasWhole(line, name) ||
+        hasWhole(line, flipped) ||
+        (p.email !== "" && hasWhole(line, p.email.toLowerCase()))
       );
     });
     if (hit) matched.add(hit.name);

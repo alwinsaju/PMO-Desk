@@ -54,11 +54,11 @@ export function RecordCards({
               <button
                 type="button"
                 data-record-open
-                className="text-ink focus-ring text-left text-[14px] font-semibold underline-offset-2 hover:underline"
+                className="text-ink focus-ring text-left text-[14px] font-semibold [overflow-wrap:anywhere] underline-offset-2 hover:underline"
                 onClick={() => onEdit(record)}
                 aria-label={`Open ${recordTitle(def, record)}`}
               >
-                {cellText(titleField, record.values[titleKey]) ||
+                {cellText(titleField, record.values[titleKey], ctx.today) ||
                   recordTitle(def, record)}
               </button>
             </div>

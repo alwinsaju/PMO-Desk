@@ -242,7 +242,13 @@ export function ToolkitApp({ windowId }: { windowId: string }) {
                           data-testid={`tool-count-${tool.id}`}
                         >
                           <Badge variant={summary?.open ? "accent" : "neutral"}>
-                            {summary ? `${summary.open} open` : "…"}
+                            {!summary
+                              ? "…"
+                              : summary.unreadable
+                                ? "Cannot be read"
+                                : registerById(tool.id)?.statusKey
+                                  ? `${summary.open} open`
+                                  : `${summary.total} in all`}
                           </Badge>
                           {summary && summary.late > 0 && (
                             <Badge variant="danger">{summary.late} late</Badge>
@@ -250,6 +256,12 @@ export function ToolkitApp({ windowId }: { windowId: string }) {
                           {summary && summary.soon > 0 && (
                             <Badge variant="warning">{summary.soon} soon</Badge>
                           )}
+                          {summary?.unreadable && (
+                            <Badge variant="danger">Open it for help</Badge>
+                          )}
+                          {summary && summary.invalid ? (
+                            <Badge variant="warning">{summary.invalid} to repair</Badge>
+                          ) : null}
                         </span>
                       </span>
                     </button>

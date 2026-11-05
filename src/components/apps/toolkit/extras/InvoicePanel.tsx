@@ -27,23 +27,26 @@ export function InvoicePanel({ def, state, today }: PanelProps) {
         />
       </label>
       <span className="text-ink-muted text-[12.5px]" data-testid="month-end-line">
-        {check.ready} ready · {check.blocked} blocked ·{" "}
-        {check.daysLeft >= 0
-          ? `${check.daysLeft} day${check.daysLeft === 1 ? "" : "s"} to month-end`
-          : "month-end has passed"}
+        {!check.valid
+          ? "Pick a month to see which invoices are ready."
+          : `${check.ready} ready · ${check.blocked} blocked · ${
+              check.daysLeft >= 0
+                ? `${check.daysLeft} day${check.daysLeft === 1 ? "" : "s"} to month-end`
+                : "month-end has passed"
+            }`}
       </span>
       <Button
         variant="outline"
         size="sm"
-        disabled={check.ready + check.blocked === 0}
+        disabled={!check.valid || check.ready + check.blocked === 0}
         onClick={() => setOpen(true)}
       >
         See what is missing
       </Button>
-      {open && (
+      {open && check.valid && (
         <ReportDialog
-          title={`Invoices for ${month}`}
-          subject={`Invoice readiness: ${month}`}
+          title={`Invoices for ${check.month}`}
+          subject={`Invoice readiness: ${check.month}`}
           text={check.text}
           onClose={() => setOpen(false)}
         />

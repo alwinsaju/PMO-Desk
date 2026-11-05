@@ -6,6 +6,7 @@ import { cellText } from "@/lib/registers/cells";
 import { cellTone, personInitials } from "@/lib/registers/cellStyle";
 import { isOpen, recordTitle, textOf } from "@/lib/registers/records";
 import type { RegisterDef, RegisterRecord } from "@/lib/registers/types";
+import { todayIso } from "@/lib/staff/dates";
 
 /** One value of a record, shared by the table and the card view: RAG badge, type chip,
  *  owner with initials, link, or plain text. */
@@ -19,12 +20,12 @@ export function RecordCell({
   fieldKey: string;
 }) {
   const field = def.fields.find((f) => f.key === fieldKey);
-  const text = cellText(field, record.values[fieldKey]);
+  const text = cellText(field, record.values[fieldKey], todayIso());
   if (!text) {
     return (
       <>
         <span aria-hidden className="text-ink-faint">
-          —
+          â€”
         </span>
         <span className="sr-only">Not set</span>
       </>
@@ -32,13 +33,13 @@ export function RecordCell({
   }
   if (field?.type === "person") {
     return (
-      <span className="inline-flex items-center gap-1.5">
+      <span className="inline-flex max-w-full items-center gap-1.5">
         <Avatar
           size="sm"
-          className="h-6 w-6 text-[10px]"
+          className="h-6 w-6 shrink-0 text-[10px]"
           fallback={personInitials(text)}
         />
-        {text}
+        <span className="min-w-0 [overflow-wrap:anywhere]">{text}</span>
       </span>
     );
   }
@@ -48,14 +49,19 @@ export function RecordCell({
         href={textOf(record, "url")}
         target="_blank"
         rel="noopener noreferrer"
-        className="text-info underline"
+        title={textOf(record, "url")}
+        className="text-info [overflow-wrap:anywhere] underline"
       >
         {text}
       </a>
     );
   }
   const tone = cellTone(def, fieldKey, text);
-  return tone ? <Badge variant={tone}>{text}</Badge> : text;
+  return tone ? (
+    <Badge variant={tone}>{text}</Badge>
+  ) : (
+    <span className="[overflow-wrap:anywhere]">{text}</span>
+  );
 }
 
 /** The per-record actions: the tool's one-click stamp, the link, and Edit / Delete. */

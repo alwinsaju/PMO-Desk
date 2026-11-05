@@ -111,7 +111,14 @@ export const REGISTERS: readonly RegisterDef[] = [
         placeholder:
           "Paste the notes. Lines like “Action: …” or “Priya to send the deck Fri” become to-dos.",
       },
-      { key: "actions", label: "To-dos made", type: "number", default: 0 },
+      {
+        key: "actions",
+        label: "To-dos made",
+        type: "number",
+        default: 0,
+        min: 0,
+        integer: true,
+      },
     ],
     titleKey: "title",
     columns: ["date", "title", "attendees", "actions"],
@@ -302,6 +309,7 @@ export const REGISTERS: readonly RegisterDef[] = [
         default: 5,
         min: 0,
         max: 90,
+        integer: true,
       },
       {
         key: "status",
@@ -353,6 +361,7 @@ export const REGISTERS: readonly RegisterDef[] = [
         default: 30,
         min: 1,
         max: 730,
+        integer: true,
       },
       { key: "lastContact", label: "Last contact", type: "date" },
       {
@@ -400,6 +409,7 @@ export const REGISTERS: readonly RegisterDef[] = [
         default: 60,
         min: 0,
         max: 730,
+        integer: true,
       },
       { key: "value", label: "Value", type: "text" },
       // Milestone and payment dates (ops-4). All OPTIONAL and never required: stored vendor records
@@ -481,7 +491,13 @@ export const REGISTERS: readonly RegisterDef[] = [
     fields: [
       { key: "invoice", label: "Invoice", type: "text", required: true },
       { key: "client", label: "Client or vendor", type: "text" },
-      { key: "month", label: "Month", type: "text", placeholder: "2026-03" },
+      {
+        key: "month",
+        label: "Month",
+        type: "text",
+        format: "month",
+        placeholder: "2026-03",
+      },
       { key: "amount", label: "Amount", type: "text" },
       { key: "poNumber", label: "PO number", type: "text" },
       {

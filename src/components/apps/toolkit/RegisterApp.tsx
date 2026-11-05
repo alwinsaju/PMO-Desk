@@ -11,6 +11,8 @@ import {
 } from "react";
 import { SquaresFourIcon, TableIcon } from "@phosphor-icons/react";
 import { Button, EmptyState, IconButton, Input } from "@/components/ui";
+import { InvalidRecords } from "./InvalidRecords";
+import { UnreadableTool } from "./UnreadableTool";
 import { toolApps } from "@/components/taskbar/pinnedApps";
 import { toast } from "@/lib/notifications/toastStore";
 import { recordAlert, summarise } from "@/lib/registers/alerts";
@@ -107,6 +109,23 @@ export function RegisterApp({
   const [heat, setHeat] = useState<HeatSelection | null>(null);
   /** The values of a record being duplicated: opens an unsaved new record with them. */
   const [copyOf, setCopyOf] = useState<Values | null>(null);
+  /** A saved record that fails the checks, open in the form to be fixed. */
+  const [repairing, setRepairing] = useState<RegisterRecord | null>(null);
+  /** Where focus was when a dialog opened, so it goes back there when the dialog closes. */
+  const openerRef = useRef<HTMLElement | null>(null);
+  const openDialog = (target: RegisterRecord | "new") => {
+    openerRef.current = document.activeElement as HTMLElement | null;
+    setEditing(target);
+  };
+  const closeDialog = () => {
+    setEditing(null);
+    setCopyOf(null);
+    setRepairing(null);
+    requestAnimationFrame(() => {
+      const el = openerRef.current;
+      if (el?.isConnected) el.focus();
+    });
+  };
   /** Ticked records (every tool has the boxes) and the open confirmations. */
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [confirmingTodos, setConfirmingTodos] = useState(false);
@@ -216,32 +235,49 @@ export function RegisterApp({
   };
   const panelProps: PanelProps = { def, state, today, people };
 
+  if (!state.loaded && state.error) {
+    return (
+      <div
+        data-window-id={windowId}
+        data-testid={`tool-${def.id}`}
+        className="flex h-full w-full flex-col"
+      >
+        <UnreadableTool
+          title={def.title}
+          blurb={def.blurb}
+          error={state.error}
+          onRetry={state.reload}
+        />
+      </div>
+    );
+  }
+
   return (
     <div
       data-window-id={windowId}
       data-testid={`tool-${def.id}`}
-      className="flex h-full w-full flex-col"
+      className="scroll-thin flex h-full w-full flex-col overflow-y-auto"
     >
       <div className="flex flex-wrap items-center gap-2 px-6 pt-1 pb-2">
         <div className="min-w-48 flex-1">
           <p className="text-ink-muted text-[13px]">{def.blurb}</p>
           <p className="text-ink-soft mt-1 text-[12.5px]" data-testid="register-summary">
-            {summary.open} open
+            {def.statusKey ? `${summary.open} open` : `${summary.total} in all`}
             {summary.late > 0 && (
               <span className="text-red font-semibold"> · {summary.late} late</span>
             )}
             {summary.soon > 0 && (
               <span className="text-amber font-semibold"> · {summary.soon} soon</span>
             )}
-            {" · "}
-            {summary.total} in all
+            {def.statusKey && ` · ${summary.total} in all`}
           </p>
         </div>
-        <Button size="sm" onClick={() => setEditing("new")}>
+        <Button size="sm" onClick={() => openDialog("new")}>
           Add {def.noun}
         </Button>
       </div>
 
+      <InvalidRecords def={def} state={state} onRepair={setRepairing} />
       {def.extras === "sla" && <SlaPanel {...panelProps} />}
       {def.extras === "changes" && <ChangesPanel {...panelProps} />}
       {def.extras === "invoice" && <InvoicePanel {...panelProps} />}
@@ -378,7 +414,7 @@ export function RegisterApp({
       <div
         ref={listRef}
         onKeyDown={handleListKey}
-        className="scroll-thin min-h-0 flex-1 overflow-auto px-6 pb-6"
+        className="scroll-thin min-h-56 flex-1 overflow-auto px-6 pb-6"
       >
         {state.error && (
           <p role="alert" className="text-red text-[13px]">
@@ -392,7 +428,7 @@ export function RegisterApp({
             headline={`No ${def.title} entries yet`}
             description={def.blurb}
             action={
-              <Button size="sm" onClick={() => setEditing("new")}>
+              <Button size="sm" onClick={() => openDialog("new")}>
                 Add your first {def.firstNoun ?? def.noun}
               </Button>
             }
@@ -461,11 +497,11 @@ export function RegisterApp({
                           <button
                             type="button"
                             data-record-open
-                            className="text-ink text-left font-semibold underline-offset-2 hover:underline"
-                            onClick={() => setEditing(record)}
+                            className="text-ink text-left font-semibold [overflow-wrap:anywhere] underline-offset-2 hover:underline"
+                            onClick={() => openDialog(record)}
                             aria-label={`Open ${recordTitle(def, record)}`}
                           >
-                            {cellText(fieldOf(key), record.values[key]) ||
+                            {cellText(fieldOf(key), record.values[key], today) ||
                               recordTitle(def, record)}
                           </button>
                         ) : (
@@ -480,7 +516,7 @@ export function RegisterApp({
                       <RecordActions
                         def={def}
                         record={record}
-                        onEdit={() => setEditing(record)}
+                        onEdit={() => openDialog(record)}
                         onDelete={() => void removeRecord(record)}
                         onStamp={() => void stamp(record)}
                       />
@@ -496,7 +532,7 @@ export function RegisterApp({
             def={def}
             records={shown}
             ctx={ctx}
-            onEdit={setEditing}
+            onEdit={openDialog}
             onDelete={(record) => void removeRecord(record)}
             onStamp={(record) => void stamp(record)}
             selection={selection}
@@ -511,7 +547,7 @@ export function RegisterApp({
           state={state}
           people={people}
           names={names}
-          onClose={() => setEditing(null)}
+          onClose={closeDialog}
           renderExtras={renderExtras}
           onDuplicate={(values) => {
             setEditing(null);
@@ -527,8 +563,19 @@ export function RegisterApp({
           state={state}
           people={people}
           names={names}
-          onClose={() => setCopyOf(null)}
+          onClose={closeDialog}
           renderExtras={renderExtras}
+        />
+      )}
+      {repairing && (
+        <RecordDialog
+          def={def}
+          record={repairing}
+          repair
+          state={state}
+          people={people}
+          names={names}
+          onClose={closeDialog}
         />
       )}
       {confirmingTodos && (

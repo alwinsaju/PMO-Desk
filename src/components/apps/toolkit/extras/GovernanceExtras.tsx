@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Button } from "@/components/ui";
 import { toast } from "@/lib/notifications/toastStore";
 import { prepStart } from "@/lib/registers/alerts";
+import { foldIcs } from "@/lib/registers/icsFold";
 import type { Person } from "@/lib/registers/timesheets";
 import type { RegisterRecord } from "@/lib/registers/types";
 import { addDays, formatDayMonth, todayIso } from "@/lib/staff/dates";
@@ -42,7 +43,7 @@ function CalendarExport({ state }: { state: RegisterState }) {
   const save = () => {
     const stamp = new Date().toISOString().replace(/[-:]/g, "").slice(0, 15) + "Z";
     const { ics, count: n } = governanceIcs(state.items, today, stamp);
-    downloadCalendar("governance-calendar.ics", ics);
+    downloadCalendar("governance-calendar.ics", foldIcs(ics));
     toast({
       tone: "success",
       message: `Saved ${n} upcoming meeting${n === 1 ? "" : "s"} as a calendar file.`,
@@ -92,6 +93,13 @@ function PrepExtras({
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The open form keeps the record as it was when it opened, so "made" is remembered here.
+  const [madeHere, setMadeHere] = useState(false);
+  const running = useRef(false);
+  const progress = useRef<{ done: number; firstId: string | null }>({
+    done: 0,
+    firstId: null,
+  });
   const record: RegisterRecord | null = ctx.record;
   const date = typeof ctx.values.date === "string" ? ctx.values.date : "";
   const title = typeof ctx.values.title === "string" ? ctx.values.title : "";
@@ -103,7 +111,7 @@ function PrepExtras({
       </p>
     );
   }
-  if (record.todoId) {
+  if (record.todoId || madeHere) {
     return (
       <p className="text-ink-muted text-[12.5px]" data-testid="prep-made">
         Prep to-dos were made for this meeting.
@@ -112,41 +120,57 @@ function PrepExtras({
   }
 
   const make = async () => {
+    if (running.current) return;
     if (!date) {
       setError("Give the meeting a date first.");
       return;
     }
+    running.current = true;
     setBusy(true);
     setError(null);
-    const start = prepStart({ ...record, values: ctx.values });
-    let firstId: string | null = null;
-    for (const step of GOVERNANCE_STEPS(title, date, start, todayIso())) {
-      const made = await createTodoFrom(
+    try {
+      const start = prepStart({ ...record, values: ctx.values });
+      const steps = GOVERNANCE_STEPS(title, date, start, todayIso());
+      // A step that was made before a failure is not made again on a retry.
+      for (let i = progress.current.done; i < steps.length; i += 1) {
+        const step = steps[i]!;
+        const made = await createTodoFrom(
+          {
+            title: step.title,
+            description: `For the meeting on ${formatDayMonth(date)}.`,
+            owner: null,
+            dueAt: step.dueAt,
+            tags: ["governance"],
+          },
+          people,
+        );
+        if (!made.ok) {
+          setError(made.reason);
+          return;
+        }
+        progress.current.done = i + 1;
+        progress.current.firstId ??= made.todoId;
+      }
+      const reply = await state.save([
         {
-          title: step.title,
-          description: `For the meeting on ${formatDayMonth(date)}.`,
-          owner: null,
-          dueAt: step.dueAt,
-          tags: ["governance"],
+          id: record.id,
+          values: ctx.values,
+          todoId: progress.current.firstId ?? undefined,
         },
-        people,
-      );
-      if (!made.ok) {
-        setError(made.reason);
-        setBusy(false);
+      ]);
+      if (!reply.ok) {
+        setError(
+          `${reply.reason} The to-dos were made; press the button again to save that.`,
+        );
         return;
       }
-      firstId ??= made.todoId;
+      ctx.commit(ctx.values);
+      setMadeHere(true);
+      toast({ tone: "success", message: "Made the prep to-dos in PMO To-Do." });
+    } finally {
+      running.current = false;
+      setBusy(false);
     }
-    const reply = await state.save([
-      { id: record.id, values: ctx.values, todoId: firstId ?? undefined },
-    ]);
-    setBusy(false);
-    if (!reply.ok) {
-      setError(reply.reason);
-      return;
-    }
-    toast({ tone: "success", message: "Made the prep to-dos in PMO To-Do." });
   };
 
   return (
