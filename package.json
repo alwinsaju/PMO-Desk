@@ -1,6 +1,6 @@
 {
   "name": "ai-os",
-  "version": "6.0.2",
+  "version": "6.0.3",
   "description": "A desktop workspace where a human and AI agent work together.",
   "private": true,
   "main": "desktop/main.cjs",

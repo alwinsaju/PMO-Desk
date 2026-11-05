@@ -235,7 +235,7 @@ pnpm desktop:package
 The command first builds the private Python the installer carries (`pnpm runtime:python`; it needs any
 Python 3.9+ with pip on this machine and network access the first time, and reuses its download cache after).
 See `scripts/build-python-runtime.py` for how it is pinned. The installer is built from the working tree, so the gitignored files the tasks need (`tasks/*/templates`, `tasks/*/config`, `tasks/shared/roster-reference`, `tasks/shared/roster/Names.xlsx`) must be present on the machine that builds it; a fresh clone does not have them. The installer is written to
-`release/PMO Desk Setup 6.0.2.exe`. Run it
+`release/PMO Desk Setup 6.0.3.exe`. Run it
 once to install PMO Desk under `%LOCALAPPDATA%\Programs\PMO Desk` (or select a
 different folder in the installer). The installer wizard is branded to match the app (dark welcome and finish pages; the artwork is redrawn from `package.json`'s version by `pnpm installer:art` (part of `pnpm desktop:package`, needs Pillow, fonttools and brotli) into `build/installer/`). It creates Start-menu and
 desktop shortcuts; pin either to the Windows taskbar. The installed app does
