@@ -221,7 +221,7 @@ test("records: values are cleaned to their field type, with plain refusals", () 
   );
 });
 
-test("records: links need a real host and no password; dates before year 1000 are explained", () => {
+test("records: links need a real host and no password; years 0001 to 0999 are real days", () => {
   assert.equal(isHttpUrl("https:///x"), false);
   assert.equal(isHttpUrl("https://user:pw@example.com/"), false);
   assert.equal(isHttpUrl("https://"), false);
@@ -236,15 +236,16 @@ test("records: links need a real host and no password; dates before year 1000 ar
     sanitizeValues(def("doclinks"), { title: "x", url: "https:///x" }, true).ok,
     true,
   );
-  assert.match(
-    sanitizeValues(def("raid"), {
-      kind: "Risk",
-      title: "x",
-      status: "Open",
-      dueDate: "0001-01-01",
-    }).reason,
-    /needs a year from 1000 on/,
-  );
+  // Years 0001 to 0999 are real days (the shared isIsoDate misreads 0001 to 0099, so records.ts checks them itself).
+  const day = (dueDate) =>
+    sanitizeValues(def("raid"), { kind: "Risk", title: "x", status: "Open", dueDate });
+  assert.equal(day("0001-01-01").ok, true);
+  assert.equal(day("0099-12-31").ok, true);
+  assert.equal(day("0004-02-29").ok, true, "year 4 is a leap year");
+  assert.equal(day("0001-02-29").ok, false);
+  assert.equal(day("0000-01-01").ok, false);
+  assert.equal(day("2026-02-30").ok, false);
+  assert.equal(day("2026-02-28").ok, true);
 });
 
 test("records: fieldErrors names every bad field, in the form's terms", () => {

@@ -30,6 +30,8 @@ import {
 import { duplicateValues } from "@/lib/registers/duplicate";
 import { suggestSpecFor } from "@/lib/registers/registerSuggest";
 import { recordText } from "@/lib/registers/recordText";
+import { afterSave, versionFields, type Seen } from "@/lib/registers/versionChain";
+import { recordWarnings } from "@/lib/registers/warnings";
 import { todoSeed } from "@/lib/registers/reports";
 import type { FieldValue, RegisterDef, RegisterRecord } from "@/lib/registers/types";
 import { todayIso } from "@/lib/staff/dates";
@@ -44,6 +46,7 @@ import { createTodoFrom } from "./todoBridge";
 import { useProjectNames } from "./useProjectNames";
 import { emailOf } from "./usePeople";
 import type { RegisterState } from "./useRegister";
+import type { RegisterReply } from "./registersApi";
 
 export type Values = Record<string, FieldValue>;
 
@@ -53,6 +56,11 @@ export interface ExtrasContext {
   record: RegisterRecord | null;
   /** Save the record as it is now (used by panels that act on a saved record). */
   saveNow: () => Promise<RegisterRecord | null>;
+  /** Save the open record with exactly these values. It sends the version this form last saw and remembers the one the server returns, so a panel and the form's own Save never refuse each other. */
+  saveRecord: (
+    values: Values,
+    todoId?: string,
+  ) => Promise<RegisterReply<{ items: RegisterRecord[] }>>;
   /** Change fields whose new value a panel has already saved itself (e.g. a count of to-dos made), so closing the form does not ask about them. */
   commit: (partial: Values) => void;
 }
@@ -123,6 +131,11 @@ export function RecordDialog({
     baseline.current = { ...baseline.current, ...partial };
     setValues((cur) => ({ ...cur, ...partial }));
   };
+  /** The version of the saved record this form last saw: the one it opened with, then the one each save here returned. */
+  const seen = useRef<Seen>({
+    base: record?.updatedAt || undefined,
+    todoId: record?.todoId,
+  });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<{ reason: string; detail?: string } | null>(null);
   const [attempted, setAttempted] = useState(false);
@@ -130,6 +143,10 @@ export function RecordDialog({
   const me = useMyFirstName();
   const projects = useProjectNames(def.fields.some((f) => f.suggest === "projects"));
   const problems = useMemo(() => fieldErrors(def, values), [def, values]);
+  const warnings = useMemo(
+    () => recordWarnings(def, values, state.items, record?.id ?? null, today),
+    [def, values, state.items, record?.id, today],
+  );
   const problemCount = Object.keys(problems).length;
   const sections = useMemo(() => formSections(def), [def]);
   // Change requests (impact note) and lessons (Category) get a "Suggest" button; no other register does.
@@ -165,6 +182,19 @@ export function RecordDialog({
     else onClose();
   };
 
+  const saveRecord: ExtrasContext["saveRecord"] = async (vals, todoId) => {
+    const reply = await state.save([
+      {
+        id: record?.id,
+        values: vals,
+        ...versionFields(seen.current, record !== null, todoId),
+      },
+    ]);
+    if (reply.ok && record)
+      seen.current = afterSave(seen.current, record.id, reply.items);
+    return reply;
+  };
+
   const saveNow = async (): Promise<RegisterRecord | null> => {
     const check = sanitizeValues(def, values);
     if (!check.ok) {
@@ -175,9 +205,7 @@ export function RecordDialog({
     }
     setBusy(true);
     setError(null);
-    const reply = await state.save([
-      { id: record?.id, values: check.values, todoId: record?.todoId },
-    ]);
+    const reply = await saveRecord(check.values);
     setBusy(false);
     if (!reply.ok) {
       setError({ reason: reply.reason, detail: reply.detail });
@@ -232,9 +260,7 @@ export function RecordDialog({
       setError({ reason: made.reason });
       return;
     }
-    const reply = await state.save([
-      { id: saved.id, values: saved.values, todoId: made.todoId },
-    ]);
+    const reply = await saveRecord(saved.values, made.todoId);
     setBusy(false);
     if (!reply.ok) setError({ reason: reply.reason, detail: reply.detail });
     else {
@@ -303,6 +329,7 @@ export function RecordDialog({
                       people={names}
                       projects={projects}
                       error={problems[field.key]}
+                      warning={warnings[field.key]}
                       showErrorNow={attempted}
                     />
                     {suggestSpec?.placement === "after-field" &&
@@ -317,7 +344,9 @@ export function RecordDialog({
             </fieldset>
           ))}
           {renderExtras && (
-            <div>{renderExtras({ values, setValues, record, saveNow, commit })}</div>
+            <div>
+              {renderExtras({ values, setValues, record, saveNow, saveRecord, commit })}
+            </div>
           )}
           {record && !repair && <RecordHistory def={def} recordId={record.id} />}
         </div>

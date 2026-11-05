@@ -15,6 +15,7 @@ export function FieldInput({
   people,
   projects = [],
   error,
+  warning,
   showErrorNow,
 }: {
   field: FieldDef;
@@ -24,6 +25,8 @@ export function FieldInput({
   /** Project names suggested for a field with `suggest: "projects"`. */
   projects?: readonly string[];
   error?: string;
+  /** A soft problem shown in amber under the field; the record can still be saved. */
+  warning?: string;
   showErrorNow?: boolean;
 }) {
   const listId = useId();
@@ -43,7 +46,11 @@ export function FieldInput({
     label,
     error,
     showErrorNow,
-    hint: lengthHint(text.trim().length, fieldLimit(field)),
+    hint: warning ? (
+      <span className="text-amber font-medium">{warning}</span>
+    ) : (
+      lengthHint(text.trim().length, fieldLimit(field))
+    ),
   };
   // A suggestion list is only a hint: the box still takes any text.
   const suggestions =

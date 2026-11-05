@@ -86,13 +86,10 @@ export function MinutesExtras({
       const savedCount =
         typeof saved.values.actions === "number" ? saved.values.actions : 0;
       const total = savedCount + doneLines.length;
-      const reply = await state.save([
-        {
-          id: record.id,
-          values: { ...saved.values, actions: total },
-          todoId: saved.todoId,
-        },
-      ]);
+      const reply = await ctx.saveRecord(
+        { ...saved.values, actions: total },
+        saved.todoId,
+      );
       if (reply.ok) ctx.commit({ actions: total });
       else {
         ctx.setValues({ ...ctx.values, actions: madeBefore + doneLines.length });

@@ -19,6 +19,8 @@ export interface RecordInput {
   todoId?: string;
   /** Only for putting a deleted record back (Undo): its original creation time. */
   createdAt?: string;
+  /** The `updatedAt` of the record as the sender last saw it. The server refuses the write when the stored record is newer. */
+  baseUpdatedAt?: string;
 }
 
 async function call<T extends object>(

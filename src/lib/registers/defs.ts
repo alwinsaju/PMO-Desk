@@ -153,6 +153,7 @@ export const REGISTERS: readonly RegisterDef[] = [
     columns: ["week", "person", "status", "chasedOn"],
     sortKey: "week",
     sortDir: "desc",
+    rule: "timesheet",
     custom: "timesheets",
   },
   {

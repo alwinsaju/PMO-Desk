@@ -190,6 +190,11 @@ export interface RegisterChanges {
 
 const MAX_BATCH = 500;
 
+export const CHANGED_ELSEWHERE =
+  "This was changed elsewhere since you opened it. Close it and open it again to see the latest, then redo your change.";
+export const DELETED_ELSEWHERE =
+  "This was deleted elsewhere since you opened it. Close it and reload the list.";
+
 /** Apply a batch of changes: records to add or replace, ids to remove, new settings. Returns the whole register. */
 export function applyRegisterChanges(
   def: RegisterDef,
@@ -232,6 +237,17 @@ export function applyRegisterChanges(
       for (const input of changes.upsert) {
         const id = (input as { id?: unknown })?.id;
         const existing = typeof id === "string" ? byId.get(id) : undefined;
+        const inInvalid = typeof id === "string" && invalid.some((i) => i.key === id);
+        // Only the edit form sends the version it opened; an API or seed write without one is never refused.
+        const base = (input as { baseUpdatedAt?: unknown })?.baseUpdatedAt;
+        if (typeof base === "string" && base !== "") {
+          if (existing && existing.updatedAt > base) {
+            throw new RegisterError(CHANGED_ELSEWHERE, 409);
+          }
+          if (!existing && !inInvalid && typeof id === "string") {
+            throw new RegisterError(DELETED_ELSEWHERE, 409);
+          }
+        }
         const repaired =
           existing || typeof id !== "string"
             ? undefined

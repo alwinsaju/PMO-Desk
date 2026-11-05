@@ -76,21 +76,13 @@ export function GovernanceExtras({
 }) {
   return (
     <div className="space-y-3">
-      <PrepExtras ctx={ctx} state={state} people={people} />
+      <PrepExtras ctx={ctx} people={people} />
       <CalendarExport state={state} />
     </div>
   );
 }
 
-function PrepExtras({
-  ctx,
-  state,
-  people,
-}: {
-  ctx: ExtrasContext;
-  state: RegisterState;
-  people: readonly Person[];
-}) {
+function PrepExtras({ ctx, people }: { ctx: ExtrasContext; people: readonly Person[] }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // The open form keeps the record as it was when it opened, so "made" is remembered here.
@@ -151,13 +143,10 @@ function PrepExtras({
         progress.current.done = i + 1;
         progress.current.firstId ??= made.todoId;
       }
-      const reply = await state.save([
-        {
-          id: record.id,
-          values: ctx.values,
-          todoId: progress.current.firstId ?? undefined,
-        },
-      ]);
+      const reply = await ctx.saveRecord(
+        ctx.values,
+        progress.current.firstId ?? undefined,
+      );
       if (!reply.ok) {
         setError(
           `${reply.reason} The to-dos were made; press the button again to save that.`,

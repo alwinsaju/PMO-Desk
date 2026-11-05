@@ -1,6 +1,5 @@
 // Reading, checking and listing register records. Pure: shared by the page and the server.
 import { csvSafeCell } from "../pmo/todoExport.ts";
-import { isIsoDate } from "../staff/dates.ts";
 import { normaliseMonth } from "./month.ts";
 import {
   MAX_LONGTEXT,
@@ -82,6 +81,23 @@ const isLegacyUrl = (value: string): boolean => {
   }
 };
 
+/** A real calendar day, years 0001 to 9999. `isIsoDate` (shared with the other apps) is left alone: it reads years
+ *  0001 to 0099 as 1901 to 1999 and so refuses them. The toolkit's own date maths (`addDays`, `daysBetween`) parses
+ *  the text and is right for those years, so a register may hold them; `setUTCFullYear` is exact for any year. */
+function isRealDate(text: string): boolean {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+  if (!m) return false;
+  const [year, month, day] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  if (year < 1) return false;
+  const date = new Date(0);
+  date.setUTCFullYear(year, month - 1, day);
+  return (
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day
+  );
+}
+
 function coerce(
   field: FieldDef,
   raw: unknown,
@@ -116,10 +132,7 @@ function coerce(
     case "date": {
       const text = clean(raw, 10);
       if (text === "") return { value: "" };
-      if (/^0\d{3}-/.test(text)) {
-        return { error: `${field.label} needs a year from 1000 on, like 2026-03-10.` };
-      }
-      return isIsoDate(text)
+      return isRealDate(text)
         ? { value: text }
         : { error: `${field.label} is not a real date (use year-month-day).` };
     }
@@ -237,6 +250,17 @@ function crossCheck(
 ): FieldProblem | null {
   if (def.id === "capacity" && values.from && values.to && values.to < values.from) {
     return { key: "to", message: "The end date cannot be before the start date." };
+  }
+  if (
+    def.id === "vendors" &&
+    values.startDate &&
+    values.renewalDate &&
+    values.renewalDate < values.startDate
+  ) {
+    return {
+      key: "renewalDate",
+      message: "The renewal or end date cannot be before the contract start.",
+    };
   }
   if (def.id === "sla") {
     if (values.resolvedOn && values.received && values.resolvedOn < values.received) {

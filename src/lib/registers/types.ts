@@ -36,7 +36,15 @@ export interface FieldDef {
 }
 
 export type RuleId =
-  "due" | "raid" | "sla" | "renewal" | "contact" | "event" | "invoice" | "rag";
+  | "due"
+  | "raid"
+  | "sla"
+  | "renewal"
+  | "contact"
+  | "event"
+  | "invoice"
+  | "rag"
+  | "timesheet";
 
 export interface RegisterDef {
   id: string;

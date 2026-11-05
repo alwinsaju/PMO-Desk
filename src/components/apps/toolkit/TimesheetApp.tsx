@@ -23,6 +23,8 @@ import { useTemplateText } from "../templates-app/useTemplateText";
 import { PersonChasersDialog } from "./PersonChasersDialog";
 import { ReportDialog } from "./ReportDialog";
 import { removeWithUndo } from "./removeWithUndo";
+import { AlertChip } from "./RecordDialog";
+import { recordAlert } from "@/lib/registers/alerts";
 import { UnreadableTool } from "./UnreadableTool";
 import { usePeople } from "./usePeople";
 import { useRegister } from "./useRegister";
@@ -280,6 +282,7 @@ export function TimesheetApp({ windowId }: { windowId: string }) {
                   <th className="border-line border-b px-2 py-2">Person</th>
                   <th className="border-line border-b px-2 py-2">Status</th>
                   <th className="border-line border-b px-2 py-2">Chased</th>
+                  <th className="border-line border-b px-2 py-2">Needs attention</th>
                   <th className="border-line border-b px-2 py-2">
                     <span className="sr-only">Actions</span>
                   </th>
@@ -309,6 +312,17 @@ export function TimesheetApp({ windowId }: { windowId: string }) {
                     </td>
                     <td className="text-ink-muted px-2 py-2">
                       {textOf(r, "chasedOn") ? formatDayMonth(textOf(r, "chasedOn")) : ""}
+                    </td>
+                    <td className="px-2 py-2">
+                      {(() => {
+                        const alert = recordAlert(timesheetDef, r, {
+                          today: todayIso(),
+                          config: {},
+                        });
+                        return alert ? (
+                          <AlertChip level={alert.level} text={alert.text} />
+                        ) : null;
+                      })()}
                     </td>
                     <td className="px-2 py-1.5 text-right">
                       <IconButton

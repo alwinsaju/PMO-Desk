@@ -1,29 +1,20 @@
 "use client";
 
-import {
-  useEffect,
-  useId,
-  useMemo,
-  useRef,
-  useState,
-  type KeyboardEvent,
-  type ReactNode,
-} from "react";
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { SquaresFourIcon, TableIcon } from "@phosphor-icons/react";
 import { Button, EmptyState, IconButton, Input } from "@/components/ui";
 import { InvalidRecords } from "./InvalidRecords";
+import { RecordList, type RecordListHandle } from "./RecordList";
 import { UnreadableTool } from "./UnreadableTool";
 import { toolApps } from "@/components/taskbar/pinnedApps";
 import { toast } from "@/lib/notifications/toastStore";
-import { recordAlert, summarise } from "@/lib/registers/alerts";
+import { summarise } from "@/lib/registers/alerts";
 import { canBulkTodos, lateWithoutTodo, splitSelection } from "@/lib/registers/bulkTodos";
-import { cellText, exportHint } from "@/lib/registers/cells";
+import { exportHint } from "@/lib/registers/cells";
 import { registerById } from "@/lib/registers/defs";
 import {
   csvRows,
   filterRecords,
-  isOpen,
-  recordTitle,
   sortRecords,
   statusCounts,
 } from "@/lib/registers/records";
@@ -40,14 +31,11 @@ import {
 } from "@/lib/ui/multiSelect";
 import { noSpellcheck } from "@/lib/ui/noSpellcheck";
 import { NativeSelect } from "../pmo-todo-app/parts";
-import { handleRowKey } from "../rowNav";
 import { readSetting, writeSetting } from "../staff-app/localSetting";
 import { HeatMap, type HeatSelection } from "./HeatMap";
 import { BulkDeleteDialog } from "./BulkDeleteDialog";
 import { BulkTodoDialog } from "./BulkTodoDialog";
-import { AlertChip, RecordDialog, type ExtrasContext, type Values } from "./RecordDialog";
-import { RecordCards } from "./RecordCards";
-import { RecordActions, RecordCell } from "./RecordParts";
+import { RecordDialog, type ExtrasContext, type Values } from "./RecordDialog";
 import { ChangesPanel } from "./extras/ChangesPanel";
 import { GovernanceExtras } from "./extras/GovernanceExtras";
 import { InvoicePanel } from "./extras/InvoicePanel";
@@ -111,10 +99,18 @@ export function RegisterApp({
   const [copyOf, setCopyOf] = useState<Values | null>(null);
   /** A saved record that fails the checks, open in the form to be fixed. */
   const [repairing, setRepairing] = useState<RegisterRecord | null>(null);
-  /** Where focus was when a dialog opened, so it goes back there when the dialog closes. */
-  const openerRef = useRef<HTMLElement | null>(null);
+  /** Where focus was when a dialog opened, so it goes back there when the dialog closes. In a long list the
+   *  row may not be drawn any more, so its record id is kept too. */
+  const openerRef = useRef<{ el: HTMLElement | null; id: string | null }>({
+    el: null,
+    id: null,
+  });
   const openDialog = (target: RegisterRecord | "new") => {
-    openerRef.current = document.activeElement as HTMLElement | null;
+    const el = document.activeElement as HTMLElement | null;
+    openerRef.current = {
+      el,
+      id: target === "new" ? null : target.id,
+    };
     setEditing(target);
   };
   const closeDialog = () => {
@@ -122,8 +118,9 @@ export function RegisterApp({
     setCopyOf(null);
     setRepairing(null);
     requestAnimationFrame(() => {
-      const el = openerRef.current;
+      const { el, id } = openerRef.current;
       if (el?.isConnected) el.focus();
+      else if (id) listHandle.current?.focusRecord(id);
     });
   };
   /** Ticked records (every tool has the boxes) and the open confirmations. */
@@ -186,24 +183,11 @@ export function RegisterApp({
   const shownIds = useMemo(() => shown.map((r) => r.id), [shown]);
   const allShownSelected = allSelected(selected, shownIds);
   const toggleAllShown = () => setSelected((cur) => toggleAll(cur, shownIds));
-  const selection = { selected, onToggle: toggleSelected };
-  const fieldOf = (key: string) => def.fields.find((f) => f.key === key);
   const ToolGlyph = toolApps.find((tool) => tool.id === def.id)?.icon;
   const noExport = exportHint(state.items.length, shown.length);
   const exportHintId = useId();
   const listRef = useRef<HTMLDivElement>(null);
-
-  /** J/K, Home/End and E on the records: each record's name button is the stop. */
-  const handleListKey = (event: KeyboardEvent<HTMLDivElement>) => {
-    const items = Array.from(
-      listRef.current?.querySelectorAll<HTMLElement>("[data-record-open]") ?? [],
-    );
-    const target = event.target as HTMLElement;
-    const row = target.closest("tr, li");
-    const current = row?.querySelector<HTMLElement>("[data-record-open]") ?? null;
-    handleRowKey(event, items, current);
-  };
-
+  const listHandle = useRef<RecordListHandle | null>(null);
   const removeRecord = async (record: RegisterRecord) => {
     const reply = await removeWithUndo(def, state, record);
     if (!reply.ok) toast({ tone: "danger", message: reply.reason });
@@ -411,11 +395,7 @@ export function RegisterApp({
         </div>
       )}
 
-      <div
-        ref={listRef}
-        onKeyDown={handleListKey}
-        className="scroll-thin min-h-56 flex-1 overflow-auto px-6 pb-6"
-      >
+      <div ref={listRef} className="scroll-thin min-h-56 flex-1 overflow-auto px-6 pb-6">
         {state.error && (
           <p role="alert" className="text-red text-[13px]">
             {state.error.reason}
@@ -448,94 +428,23 @@ export function RegisterApp({
             )}
           </p>
         )}
-        {shown.length > 0 && view === "table" && (
-          <table
-            className="w-full border-collapse text-left text-[13px]"
-            data-testid="register-table"
-          >
-            <thead>
-              <tr className="text-ink-muted text-[11.5px] font-bold tracking-[0.06em] uppercase">
-                <th className="border-line w-8 border-b px-2 py-2">
-                  <input
-                    type="checkbox"
-                    checked={allShownSelected}
-                    onChange={toggleAllShown}
-                    aria-label="Select all shown"
-                  />
-                </th>
-                {def.columns.map((key) => (
-                  <th key={key} className="border-line border-b px-2 py-2">
-                    {fieldOf(key)?.label}
-                  </th>
-                ))}
-                <th className="border-line border-b px-2 py-2">Needs attention</th>
-                <th className="border-line border-b px-2 py-2">
-                  <span className="sr-only">Actions</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {shown.map((record) => {
-                const alert = recordAlert(def, record, ctx);
-                return (
-                  <tr
-                    key={record.id}
-                    data-testid="register-row"
-                    className={`border-line hover:bg-chip group border-b ${isOpen(def, record) ? "" : "opacity-60"}`}
-                  >
-                    <td className="px-2 py-2 align-top">
-                      <input
-                        type="checkbox"
-                        checked={selected.has(record.id)}
-                        onChange={() => toggleSelected(record.id)}
-                        aria-label={`Select ${recordTitle(def, record)}`}
-                      />
-                    </td>
-                    {def.columns.map((key, index) => (
-                      <td key={key} className="px-2 py-2 align-top">
-                        {index === 0 ? (
-                          <button
-                            type="button"
-                            data-record-open
-                            className="text-ink text-left font-semibold [overflow-wrap:anywhere] underline-offset-2 hover:underline"
-                            onClick={() => openDialog(record)}
-                            aria-label={`Open ${recordTitle(def, record)}`}
-                          >
-                            {cellText(fieldOf(key), record.values[key], today) ||
-                              recordTitle(def, record)}
-                          </button>
-                        ) : (
-                          <RecordCell def={def} record={record} fieldKey={key} />
-                        )}
-                      </td>
-                    ))}
-                    <td className="px-2 py-2 align-top">
-                      {alert && <AlertChip level={alert.level} text={alert.text} />}
-                    </td>
-                    <td className="px-2 py-1.5 text-right align-top whitespace-nowrap">
-                      <RecordActions
-                        def={def}
-                        record={record}
-                        onEdit={() => openDialog(record)}
-                        onDelete={() => void removeRecord(record)}
-                        onStamp={() => void stamp(record)}
-                      />
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        )}
-        {shown.length > 0 && view === "cards" && (
-          <RecordCards
+        {shown.length > 0 && (
+          <RecordList
             def={def}
             records={shown}
             ctx={ctx}
-            onEdit={openDialog}
+            view={view}
+            scrollerRef={listRef}
+            handle={listHandle}
+            selection={{
+              selected,
+              onToggle: toggleSelected,
+              allSelected: allShownSelected,
+              onToggleAll: toggleAllShown,
+            }}
+            onOpen={openDialog}
             onDelete={(record) => void removeRecord(record)}
             onStamp={(record) => void stamp(record)}
-            selection={selection}
           />
         )}
       </div>

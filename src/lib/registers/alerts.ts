@@ -1,6 +1,6 @@
 // What needs attention in a register record: late, soon or worth noting. Pure; each tool's rule
 // is a small function over its own fields. The same code feeds the list, the toolkit and the Dashboard.
-import { addDays, daysBetween } from "../staff/dates.ts";
+import { addDays, daysBetween, mondayOf } from "../staff/dates.ts";
 import { dateLabel } from "./cells.ts";
 import { flagOf, isOpen, numberOf, textOf } from "./records.ts";
 import type { FieldValue, RecordAlert, RegisterDef, RegisterRecord } from "./types.ts";
@@ -245,6 +245,25 @@ function ragAlert(record: RegisterRecord, ctx: AlertContext): RecordAlert | null
     : null;
 }
 
+/** A timesheet row is late once its week is over: the Monday it starts on is before this week's Monday and it is
+ *  still Missing. Submitted, On leave and Excused rows are closed and never alert. The current and future weeks
+ *  are not late yet. */
+export function timesheetWeekIsLate(weekStart: string, today: string): boolean {
+  return weekStart !== "" && mondayOf(weekStart) < mondayOf(today);
+}
+
+function timesheetAlert(record: RegisterRecord, ctx: AlertContext): RecordAlert | null {
+  const week = textOf(record, "week");
+  if (textOf(record, "status") !== "Missing" || !timesheetWeekIsLate(week, ctx.today)) {
+    return null;
+  }
+  const weeks = Math.round(daysBetween(mondayOf(week), mondayOf(ctx.today)) / 7);
+  return {
+    level: "late",
+    text: `Missing for the week of ${dateLabel(mondayOf(week), ctx.today)} (${plural(weeks, "week")} ago)`,
+  };
+}
+
 /** The alert for one record, or null when it needs nothing. Closed records never alert (an SLA that was met late still notes it). */
 export function recordAlert(
   def: RegisterDef,
@@ -269,6 +288,8 @@ export function recordAlert(
       return invoiceAlert(record, ctx);
     case "rag":
       return ragAlert(record, ctx);
+    case "timesheet":
+      return timesheetAlert(record, ctx);
     default:
       return null;
   }
