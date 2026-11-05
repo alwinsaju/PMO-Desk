@@ -155,3 +155,36 @@ describe("applyFormat: table", () => {
     assert.ok(edit.text.endsWith(" this"));
   });
 });
+
+describe("applyFormat: pressing a button twice", () => {
+  it("Link on a link takes it back to its words instead of nesting", () => {
+    const first = applyFormat("hello", 0, 5, "link");
+    assert.equal(first.text, "[hello](https://)");
+    const second = applyFormat(first.text, first.start, first.end, "link");
+    assert.equal(second.text, "hello");
+    assert.equal(second.text.slice(second.start, second.end), "hello");
+  });
+  it("Link with the cursor inside the link text also unwraps", () => {
+    const edit = applyFormat("see [docs](https://a.b) now", 6, 6, "link");
+    assert.equal(edit.text, "see docs now");
+  });
+  it("Code block inside a block removes the fences instead of nesting", () => {
+    const first = applyFormat("code", 0, 4, "code");
+    assert.equal(first.text, "```\ncode\n```");
+    const second = applyFormat(first.text, first.start, first.end, "code");
+    assert.equal(second.text, "code");
+    assert.equal(second.text.slice(second.start, second.end), "code");
+  });
+  it("Code block unwraps an empty block and leaves other blocks alone", () => {
+    assert.equal(applyFormat("```\n```", 4, 4, "code").text, "");
+    const text = "```\na\n```\nmid\n```\nb\n```";
+    const edit = applyFormat(text, 5, 5, "code");
+    assert.equal(edit.text, "a\nmid\n```\nb\n```");
+  });
+  it("Table inside a table changes nothing", () => {
+    const first = applyFormat("", 0, 0, "table");
+    const second = applyFormat(first.text, first.start, first.end, "table");
+    assert.equal(second.text, first.text);
+    assert.equal(second.start, first.start);
+  });
+});

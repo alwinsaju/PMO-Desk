@@ -123,16 +123,10 @@ describe("pmoScorecard", () => {
       "sla",
       "stakeholders",
       "status-report",
+      "timesheets",
       "vendors",
     ]);
-    for (const none of [
-      "timesheets",
-      "decisions",
-      "lessons",
-      "minutes",
-      "capacity",
-      "doclinks",
-    ]) {
+    for (const none of ["decisions", "lessons", "minutes", "capacity", "doclinks"]) {
       assert.equal(
         card.rows.some((r) => r.id === none),
         false,
@@ -153,13 +147,13 @@ describe("pmoScorecard", () => {
     assert.deepEqual([by.raid.late, by.raid.soon, by.raid.state], [2, 1, "late"]);
     assert.equal(by.vendors.state, "soon");
     assert.equal(by.sla.state, "clear");
-    assert.deepEqual([card.late, card.soon, card.clear], [2, 2, 6]);
+    assert.deepEqual([card.late, card.soon, card.clear], [2, 2, 7]);
   });
 
   it("treats a register the summaries do not mention as clear", () => {
     const card = pmoScorecard({});
-    assert.equal(card.rows.length, 8);
-    assert.equal(card.clear, 8);
+    assert.equal(card.rows.length, 9);
+    assert.equal(card.clear, 9);
   });
 });
 

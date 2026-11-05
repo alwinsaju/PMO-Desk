@@ -92,6 +92,14 @@ export function closeTab(state: TabsState, id: string, freshId: string): TabsSta
 export const selectTab = (state: TabsState, id: string): TabsState =>
   state.tabs.some((t) => t.id === id) ? { ...state, activeId: id } : state;
 
+/** Moves to the next (+1) or previous (-1) tab, wrapping round. */
+export function cycleTab(state: TabsState, step: 1 | -1): TabsState {
+  const at = state.tabs.findIndex((t) => t.id === state.activeId);
+  if (at === -1 || state.tabs.length < 2) return state;
+  const next = (at + step + state.tabs.length) % state.tabs.length;
+  return { ...state, activeId: state.tabs[next].id };
+}
+
 /** Applies a change to one tab. */
 export function updateTab(
   state: TabsState,

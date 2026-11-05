@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { formSummary, gatePending, requiredQuestionsText } from "./formGate.ts";
+import {
+  formSummary,
+  gatePending,
+  preselectedNote,
+  requiredQuestionsText,
+} from "./formGate.ts";
 
 const schema = {
   fields: [
@@ -32,6 +37,18 @@ describe("requiredQuestionsText", () => {
   it("says all answered / none required at the edges", () => {
     assert.equal(requiredQuestionsText(0, 2), "All 2 required questions answered");
     assert.equal(requiredQuestionsText(0, 0), "No required questions");
+  });
+});
+
+describe("preselectedNote", () => {
+  it("is null when every pending question is empty", () => {
+    assert.equal(preselectedNote(["b", "c"], ["b", "c"]), null);
+  });
+  it("explains the gap between the header count and the Needs answer chip", () => {
+    assert.equal(
+      preselectedNote(["a", "b", "c", "d"], ["b", "d"]),
+      "2 empty, 2 preselected - Save to confirm",
+    );
   });
 });
 

@@ -148,7 +148,7 @@ model in detail.
 - **Per-launch engine token and instance id.** The server generates a random token and an
   instance id when it starts, and gives them to the engine it launches
   (`AI_OS_ENGINE_TOKEN`, `AI_OS_ENGINE_INSTANCE`). The engine rejects any request without
-  `X-AI-OS-Token` (only `GET /health` is open). The Tasks app fetches the token from this
+  `X-AI-OS-Token` (only `GET` and `HEAD` of `/health` are open). The Tasks app fetches the token from this
   app's own `/api/tasks-engine/token` route, which only answers its own origin. The desktop
   app adopts only an engine whose `/health` reports its instance id.
 - **Content-Security-Policy and headers** (`next.config.mjs`): `frame-ancestors 'none'`,
@@ -157,7 +157,13 @@ model in detail.
   private, loopback and link-local targets.
 - **Child processes** never inherit `NODE_TLS_REJECT_UNAUTHORIZED` or `PYTHON*` settings.
 - **Review gates**: the mail-sending tasks never send without an explicit approval, and the
-  PMO inbox never creates a to-do on its own.
+  PMO inbox never creates a to-do on its own. A task pack must contain at least one review or
+  confirm step or it is refused at install.
+- **Outlook/Excel safety switch**: set `AI_OS_TASKS_OFFICE=off` (for the app, or the engine you
+  start by hand) and every PowerShell step of a task, the ones that drive Outlook and Excel
+  (pivot, draft, send, refresh), is skipped with a line in the task's log, so a tester or a dev
+  machine can run the tasks without touching a mailbox. Python steps still run; the review
+  and completion messages say that Outlook was skipped. Unset, tasks behave as normal.
 - Dependencies are audited with `pnpm audit --prod`.
 
 ## Where data lives
@@ -229,7 +235,7 @@ pnpm desktop:package
 The command first builds the private Python the installer carries (`pnpm runtime:python`; it needs any
 Python 3.9+ with pip on this machine and network access the first time, and reuses its download cache after).
 See `scripts/build-python-runtime.py` for how it is pinned. The installer is built from the working tree, so the gitignored files the tasks need (`tasks/*/templates`, `tasks/*/config`, `tasks/shared/roster-reference`, `tasks/shared/roster/Names.xlsx`) must be present on the machine that builds it; a fresh clone does not have them. The installer is written to
-`release/PMO Desk Setup 6.0.2.exe`. Run it
+`release/PMO Desk Setup 6.0.3.exe`. Run it
 once to install PMO Desk under `%LOCALAPPDATA%\Programs\PMO Desk` (or select a
 different folder in the installer). The installer wizard is branded to match the app (dark welcome and finish pages; the artwork is redrawn from `package.json`'s version by `pnpm installer:art` (part of `pnpm desktop:package`, needs Pillow, fonttools and brotli) into `build/installer/`). It creates Start-menu and
 desktop shortcuts; pin either to the Windows taskbar. The installed app does
@@ -331,16 +337,17 @@ update pull requests for npm, pip and the workflow actions.
 
 All optional. The desktop shell sets most of them itself; set one only to override a default.
 
-| Variable                                                                                                                                                                                             | Purpose                                                                                                   |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `AI_OS_MODE`, `AI_OS_PROJECT_DIR`                                                                                                                                                                    | Desktop run mode and project folder (see _Getting fixes without reinstalling_)                            |
-| `AI_OS_ENGINE_TOKEN`, `AI_OS_ENGINE_INSTANCE`                                                                                                                                                        | Per-launch Tasks engine token and instance id; generated, never set by hand                               |
-| `AI_OS_TASKS_ENGINE_URL`, `AI_OS_TASKS_PYTHON`, `AI_OS_SKIP_TASKS_ENGINE`                                                                                                                            | Where the engine is, which Python runs it, or not to start it                                             |
-| `AI_OS_TASKS_DIR`, `AI_OS_TASKS_DATA_DIR`, `AI_OS_TASKS_SRC`                                                                                                                                         | Task definitions folder, writable data folder, and the source the working copy follows                    |
-| `AI_OS_PMO_DATA_DIR`, `AI_OS_PMO_INBOX_DIR`, `AI_OS_PMO_SCAN_MS`                                                                                                                                     | PMO data folder, inbox folder, inbox scan interval                                                        |
-| `AI_OS_STAFF_EXCHANGE_DIR`, `AI_OS_PTO_INBOX_DIR`, `AI_OS_PTO_SCAN_MS`                                                                                                                               | Staff Management sync and PTO mail folders; how often they are read in the background (ms, `off` to stop) |
-| `AI_OS_AI_MODEL_FILE`, `AI_OS_AI_NUM_CTX`, `AI_OS_AI_KEEP_ALIVE`, `AI_OS_AI_TIMEOUT_MS`, `AI_OS_AI_MAX_OUTPUT_TOKENS`, `AI_OS_AI_AUTOSTART`, `AI_OS_AI_PREWARM`, `AI_OS_OLLAMA_EXE`, `OLLAMA_MODELS` | Local AI runtime (model, context size, timeouts, start-up behaviour)                                      |
-| `AI_OS_FORCE_FIRST_TIME`, `AI_OS_FOLDER_NAME`                                                                                                                                                        | Re-open the first-time setup; name of the OneDrive folder it creates                                      |
+| Variable                                                                                                                                                                                             | Purpose                                                                                                                                                |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `AI_OS_MODE`, `AI_OS_PROJECT_DIR`                                                                                                                                                                    | Desktop run mode and project folder (see _Getting fixes without reinstalling_)                                                                         |
+| `AI_OS_ENGINE_TOKEN`, `AI_OS_ENGINE_INSTANCE`                                                                                                                                                        | Per-launch Tasks engine token and instance id; generated, never set by hand                                                                            |
+| `AI_OS_TASKS_ENGINE_URL`, `AI_OS_TASKS_PYTHON`, `AI_OS_SKIP_TASKS_ENGINE`                                                                                                                            | Where the engine is, which Python runs it, or not to start it                                                                                          |
+| `AI_OS_TASKS_OFFICE`                                                                                                                                                                                 | `off` (also `0`, `false`, `no`, `disabled`) turns every Outlook/Excel step of a task into a logged no-op, for testers and dev machines; unset = normal |
+| `AI_OS_TASKS_DIR`, `AI_OS_TASKS_DATA_DIR`, `AI_OS_TASKS_SRC`                                                                                                                                         | Task definitions folder, writable data folder, and the source the working copy follows                                                                 |
+| `AI_OS_PMO_DATA_DIR`, `AI_OS_PMO_INBOX_DIR`, `AI_OS_PMO_SCAN_MS`                                                                                                                                     | PMO data folder, inbox folder, inbox scan interval                                                                                                     |
+| `AI_OS_STAFF_EXCHANGE_DIR`, `AI_OS_PTO_INBOX_DIR`, `AI_OS_PTO_SCAN_MS`                                                                                                                               | Staff Management sync and PTO mail folders; how often they are read in the background (ms, `off` to stop)                                              |
+| `AI_OS_AI_MODEL_FILE`, `AI_OS_AI_NUM_CTX`, `AI_OS_AI_KEEP_ALIVE`, `AI_OS_AI_TIMEOUT_MS`, `AI_OS_AI_MAX_OUTPUT_TOKENS`, `AI_OS_AI_AUTOSTART`, `AI_OS_AI_PREWARM`, `AI_OS_OLLAMA_EXE`, `OLLAMA_MODELS` | Local AI runtime (model, context size, timeouts, start-up behaviour)                                                                                   |
+| `AI_OS_FORCE_FIRST_TIME`, `AI_OS_FOLDER_NAME`                                                                                                                                                        | Re-open the first-time setup; name of the OneDrive folder it creates                                                                                   |
 
 ARCHITECTURE.md has the details of each area.
 

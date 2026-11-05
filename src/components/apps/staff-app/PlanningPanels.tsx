@@ -29,11 +29,12 @@ import {
   swapAssignments,
   type SwapRequest,
 } from "@/lib/staff/leave";
-import { onCallDays, planOnCall } from "@/lib/staff/onCall";
+import { holidayDays, onCallDays, planOnCall } from "@/lib/staff/onCall";
 import { useRosterStore } from "@/lib/staff/rosterStore";
 import { leaveOn, newId } from "@/lib/staff/shifts";
 import { useStaffPrefs } from "@/lib/staff/staffPrefsStore";
 import { useStaffStore } from "@/lib/staff/staffStore";
+import { useActiveStaff } from "./tabActive";
 
 const SELECT =
   "rounded-control border-line bg-surface-elevated text-ink h-9 border px-2.5 text-[13px]";
@@ -53,8 +54,8 @@ function download(name: string, text: string, type: string) {
 
 /** Paid leave per person for the year, with the yearly allowance set here. */
 export function BalancesPanel() {
-  const employees = useStaffStore((s) => s.employees);
-  const timeOff = useStaffStore((s) => s.timeOff);
+  const employees = useActiveStaff((s) => s.employees);
+  const timeOff = useActiveStaff((s) => s.timeOff);
   const config = useRosterStore((s) => s.config);
   const allowance = useStaffPrefs((s) => s.ptoAllowance);
   const update = useStaffPrefs((s) => s.update);
@@ -157,7 +158,7 @@ export function BalancesPanel() {
 /** Ask to swap two days between two people; approving applies both changes to the roster (marked as swaps). */
 export function SwapsPanel() {
   const config = useRosterStore((s) => s.config);
-  const assignments = useStaffStore((s) => s.shifts);
+  const assignments = useActiveStaff((s) => s.shifts);
   const commit = useStaffStore((s) => s.commit);
   const swaps = useStaffPrefs((s) => s.swaps);
   const update = useStaffPrefs((s) => s.update);
@@ -308,8 +309,8 @@ export function SwapsPanel() {
 
 /** A fair weekend and holiday on-call rotation from the people you tick; leave is respected. */
 export function OnCallPanel() {
-  const employees = useStaffStore((s) => s.employees);
-  const timeOff = useStaffStore((s) => s.timeOff);
+  const employees = useActiveStaff((s) => s.employees);
+  const timeOff = useActiveStaff((s) => s.timeOff);
   const config = useRosterStore((s) => s.config);
   const [from, setFrom] = useState(todayIso());
   const [to, setTo] = useState(addDays(todayIso(), 55));
@@ -318,10 +319,11 @@ export function OnCallPanel() {
     () => employees.filter((e) => !e.excludeFromShiftRoster),
     [employees],
   );
-  const holidayDays = config.events
-    .filter((e) => e.kind === "holiday")
-    .map((e) => e.date);
-  const days = onCallDays(from, to, holidayDays);
+  const holidayList = useMemo(
+    () => holidayDays(config.events, from, to),
+    [config.events, from, to],
+  );
+  const days = onCallDays(from, to, holidayList);
   const chosen = people.filter((e) => picked.has(e.id));
   const plan = useMemo(
     () =>
@@ -638,9 +640,9 @@ export function HolidaysPanel() {
 
 /** Roster and time off as a spreadsheet file (CSV opens in Excel) or a calendar file. */
 export function ExportPanel() {
-  const employees = useStaffStore((s) => s.employees);
-  const assignments = useStaffStore((s) => s.shifts);
-  const timeOff = useStaffStore((s) => s.timeOff);
+  const employees = useActiveStaff((s) => s.employees);
+  const assignments = useActiveStaff((s) => s.shifts);
+  const timeOff = useActiveStaff((s) => s.timeOff);
   const config = useRosterStore((s) => s.config);
   const [from, setFrom] = useState(todayIso());
   const [days, setDays] = useState(28);
@@ -679,7 +681,7 @@ export function ExportPanel() {
             )
           }
         >
-          Roster (Excel / CSV)
+          Roster (CSV, opens in Excel)
         </Button>
         <Button
           variant="outline"
@@ -687,7 +689,7 @@ export function ExportPanel() {
             download("time-off.csv", toCsv(timeOffRows(timeOff, employees)), "text/csv")
           }
         >
-          Time off (Excel / CSV)
+          Time off (CSV, opens in Excel)
         </Button>
         <Button
           variant="outline"

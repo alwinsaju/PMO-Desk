@@ -9,6 +9,7 @@ import { resolveDataDir } from "../pmo/server/paths.ts";
 import { mergeChanges } from "./changes.ts";
 import {
   applyProfile,
+  displayName,
   EMPLOYEE_ID,
   employeeForSelf,
   findByEmail,
@@ -33,6 +34,9 @@ import {
 } from "./schema.ts";
 import type { OffboardUndo, RosterLink } from "./offboardUndo.ts";
 import { defaultRosterConfig } from "./rosterCatalog.ts";
+import { firstClash } from "./timeoff.ts";
+import { formatRange } from "./dates.ts";
+import { plainIssue, type IssueLike } from "./validationText.ts";
 import type {
   Employee,
   OffboardedEmployee,
@@ -164,7 +168,11 @@ export async function saveRoster(
   env: Env = process.env,
 ): Promise<RosterConfig> {
   const parsed = rosterConfigSchema.safeParse((body as { config?: unknown })?.config);
-  if (!parsed.success) throw new StaffError(firstIssue(parsed.error));
+  if (!parsed.success) {
+    throw new StaffError(
+      firstIssue(parsed.error, (body as { config?: unknown })?.config),
+    );
+  }
   const config = parsed.data as RosterConfig;
   return withLock(env, async () => {
     await checkLinks(config, env);
@@ -188,7 +196,7 @@ export async function importRoster(
   env: Env = process.env,
 ): Promise<{ config: RosterConfig; assignments: number }> {
   const parsed = rosterImportSchema.safeParse(body);
-  if (!parsed.success) throw new StaffError(firstIssue(parsed.error));
+  if (!parsed.success) throw new StaffError(firstIssue(parsed.error, body));
   const config = parsed.data.config as RosterConfig;
   const upsert = (parsed.data.upsert ?? []) as ShiftAssignment[];
   return withLock(env, async () => {
@@ -206,12 +214,8 @@ export async function importRoster(
   });
 }
 
-function firstIssue(error: {
-  issues: { message: string; path: PropertyKey[] }[];
-}): string {
-  const issue = error.issues[0];
-  const where = issue.path.length ? ` (${issue.path.join(".")})` : "";
-  return `${issue.message}${where}`;
+function firstIssue(error: { issues: readonly IssueLike[] }, body?: unknown): string {
+  return plainIssue(error, body);
 }
 
 async function removePhotos(ids: readonly string[], env: Env): Promise<void> {
@@ -306,8 +310,9 @@ const personKey = (p: Pick<Employee, "firstName" | "lastName">): string =>
   nameKey(`${p.firstName} ${p.lastName}`);
 
 /** Deleting someone for good also removes their shift roster entry and its shifts.
- *  Offboarding unlinked that entry, so it is found by name (in any order) among the
- *  unlinked ones, and never when someone else still on file has the same name.
+ *  Offboarding unlinked that entry and noted its id on the person, so it is found by that id
+ *  whatever either has been renamed since. Older records without the id fall back to the name
+ *  (in any order) among the unlinked entries, and never when someone else on file has it.
  *  Caller holds the lock. */
 async function dropRosterEntries(
   gone: readonly OffboardedEmployee[],
@@ -315,7 +320,10 @@ async function dropRosterEntries(
 ): Promise<void> {
   if (!gone.length) return;
   const ids = new Set(gone.map((p) => p.id));
-  const names = new Set(gone.map(personKey));
+  const memberIds = new Set(
+    gone.flatMap((p) => (p.rosterMemberId ? [p.rosterMemberId] : [])),
+  );
+  const names = new Set(gone.filter((p) => !p.rosterMemberId).map(personKey));
   const stillHere = new Set(
     [
       ...(await readCollection("employees", env)),
@@ -328,7 +336,8 @@ async function dropRosterEntries(
       .filter((m) =>
         m.employeeId
           ? ids.has(m.employeeId)
-          : names.has(nameKey(m.name)) && !stillHere.has(nameKey(m.name)),
+          : memberIds.has(m.id) ||
+            (names.has(nameKey(m.name)) && !stillHere.has(nameKey(m.name))),
       )
       .map((m) => m.id),
   );
@@ -360,7 +369,7 @@ export function applyChanges<K extends StaffKind>(
   return withLock(env, async () => {
     if (kind === "employees") {
       const parsed = employeeChangesSchema.safeParse(body);
-      if (!parsed.success) throw new StaffError(firstIssue(parsed.error));
+      if (!parsed.success) throw new StaffError(firstIssue(parsed.error, body));
       const current = await readCollection("employees", env);
       const stored = new Map(current.map((e) => [e.id, e]));
       const stamp = now();
@@ -395,7 +404,7 @@ export function applyChanges<K extends StaffKind>(
 
     if (kind === "offboarded") {
       const parsed = offboardedChangesSchema.safeParse(body);
-      if (!parsed.success) throw new StaffError(firstIssue(parsed.error));
+      if (!parsed.success) throw new StaffError(firstIssue(parsed.error, body));
       const current = await readCollection("offboarded", env);
       const stored = new Map(current.map((e) => [e.id, e]));
       const stamp = now();
@@ -410,6 +419,7 @@ export function applyChanges<K extends StaffKind>(
           createdAt: before.createdAt,
           updatedAt: stamp,
           offboardedAt: before.offboardedAt,
+          ...(before.rosterMemberId ? { rosterMemberId: before.rosterMemberId } : {}),
         };
       });
       const next = mergeChanges(current, { upsert, remove: parsed.data.remove });
@@ -425,7 +435,7 @@ export function applyChanges<K extends StaffKind>(
 
     const schema = kind === "shifts" ? shiftChangesSchema : timeOffChangesSchema;
     const parsed = schema.safeParse(body);
-    if (!parsed.success) throw new StaffError(firstIssue(parsed.error));
+    if (!parsed.success) throw new StaffError(firstIssue(parsed.error, body));
     const upsert = (parsed.data.upsert ?? []) as (ShiftAssignment | TimeOffRequest)[];
     if (kind === "shifts") {
       const members = new Set((await readRosterConfig(env)).members.map((m) => m.id));
@@ -441,6 +451,21 @@ export function applyChanges<K extends StaffKind>(
     const current = (await readCollection(kind, env)) as (
       ShiftAssignment | TimeOffRequest
     )[];
+    if (kind === "timeoff") {
+      const clash = firstClash(
+        upsert as TimeOffRequest[],
+        current as TimeOffRequest[],
+        parsed.data.remove,
+      );
+      if (clash) {
+        const person = (await readCollection("employees", env)).find(
+          (e) => e.id === clash.request.employeeId,
+        );
+        throw new StaffError(
+          `${person ? displayName(person) : "This person"} already has time off on ${formatRange(clash.other.startDate, clash.other.endDate)}. Change the dates or remove the other request first.`,
+        );
+      }
+    }
     const next = mergeChanges<ShiftAssignment | TimeOffRequest>(current, {
       upsert,
       remove: parsed.data.remove,
@@ -469,7 +494,7 @@ export async function moveEmployees(
   undo?: OffboardUndo;
 }> {
   const parsed = moveSchema.safeParse(body);
-  if (!parsed.success) throw new StaffError(firstIssue(parsed.error));
+  if (!parsed.success) throw new StaffError(firstIssue(parsed.error, body));
   const { action, ids } = parsed.data;
   const wanted = new Set(ids);
   return withLock(env, async () => {
@@ -484,9 +509,24 @@ export async function moveEmployees(
       if (leaving.length !== wanted.size) {
         throw new StaffError("That person is not on the roster.", 404);
       }
+      // Remember which shift roster entry each person had, by id, so deleting them for good
+      // finds it even if they or the entry were renamed while they were offboarded.
+      const memberOf = new Map(
+        (await readRosterConfig(env)).members.flatMap((m) =>
+          m.employeeId ? [[m.employeeId, m.id] as const] : [],
+        ),
+      );
       const nextOffboarded = [
         ...offboarded.filter((o) => !wanted.has(o.id)),
-        ...leaving.map((e) => ({ ...e, updatedAt: stamp, offboardedAt: stamp })),
+        ...leaving.map((e) => {
+          const rosterMemberId = memberOf.get(e.id);
+          return {
+            ...e,
+            updatedAt: stamp,
+            offboardedAt: stamp,
+            ...(rosterMemberId ? { rosterMemberId } : {}),
+          };
+        }),
       ];
       const nextEmployees = employees.filter((e) => !wanted.has(e.id));
       await writeCollection("offboarded", nextOffboarded, env);
@@ -512,6 +552,7 @@ export async function moveEmployees(
       ...returning.map((o) => {
         const back: Partial<OffboardedEmployee> = { ...o, updatedAt: stamp };
         delete back.offboardedAt;
+        delete back.rosterMemberId;
         return back as Employee;
       }),
     ];
@@ -662,7 +703,7 @@ export async function applyProfileSync(
   now: () => string = () => new Date().toISOString(),
 ): Promise<Employee> {
   const parsed = profileSchema.safeParse(body);
-  if (!parsed.success) throw new StaffError(firstIssue(parsed.error));
+  if (!parsed.success) throw new StaffError(firstIssue(parsed.error, body));
   const profile = parsed.data;
   return withLock(env, async () => {
     const people = await readCollection("employees", env);

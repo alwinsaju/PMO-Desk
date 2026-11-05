@@ -32,6 +32,8 @@ export interface RosterCellProps {
   weekStart: boolean;
   /** For screen readers and the tooltip: who and which day. */
   who: string;
+  /** The one cell of the grid that is a tab stop; the arrow keys reach the others. */
+  tabbable: boolean;
   onOpen: (rowKey: string, date: string, rect: DOMRect) => void;
 }
 
@@ -53,6 +55,7 @@ export const RosterCell = memo(function RosterCell({
   today,
   weekStart,
   who,
+  tabbable,
   onOpen,
 }: RosterCellProps) {
   const compact = view !== "week";
@@ -86,6 +89,10 @@ export const RosterCell = memo(function RosterCell({
     <td className={frame}>
       <button
         type="button"
+        data-roster-cell
+        data-row-key={rowKey}
+        data-date={date}
+        tabIndex={tabbable ? 0 : -1}
         title={title}
         aria-label={`${title}. Change`}
         onClick={(e) => onOpen(rowKey, date, e.currentTarget.getBoundingClientRect())}

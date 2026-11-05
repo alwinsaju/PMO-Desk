@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { CheckIcon, CopyIcon, EnvelopeSimpleIcon } from "@phosphor-icons/react";
 import {
   Button,
@@ -45,11 +45,16 @@ export function BlockedByField({
   apply: (patch: TodoPatch) => Promise<boolean>;
 }) {
   const state = blockedState(todo, all, today);
-  const candidates = all.filter(
-    (t) =>
-      t.status === "open" &&
-      !todo.blockedBy.includes(t.id) &&
-      !wouldCycle(todo.id, t.id, all),
+  // Every open to-do is tested for a loop, so keep the result until the list changes.
+  const candidates = useMemo(
+    () =>
+      all.filter(
+        (t) =>
+          t.status === "open" &&
+          !todo.blockedBy.includes(t.id) &&
+          !wouldCycle(todo.id, t.id, all),
+      ),
+    [all, todo.id, todo.blockedBy],
   );
   const dependents = dependentsOf(todo, all);
 

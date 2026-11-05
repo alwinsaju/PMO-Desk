@@ -8,6 +8,7 @@ import { undoOffboardMany, type OffboardUndo } from "@/lib/staff/offboardUndo";
 import { useRosterStore } from "@/lib/staff/rosterStore";
 import { useStaffPrefs } from "@/lib/staff/staffPrefsStore";
 import { useStaffStore } from "@/lib/staff/staffStore";
+import { CHECKLIST_TOAST_KEY, dismissToastByKey } from "./startedToast";
 
 type Result = { ok: true } | { ok: false; reason: string };
 
@@ -46,5 +47,6 @@ async function undoRemoveMany(ids: string[], undo: OffboardUndo) {
     ...p,
     checklists: dropUntouchedOffboarding(p.checklists, ids),
   }));
+  dismissToastByKey(CHECKLIST_TOAST_KEY);
   toast({ tone: "success", message: restoredMessage(ids.length) });
 }

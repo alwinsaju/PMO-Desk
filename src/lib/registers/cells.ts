@@ -1,19 +1,30 @@
 // How a record's value reads in a register table (see registers.test.mjs). Pure.
-import { formatDayMonth } from "../staff/dates.ts";
+import { formatDate, formatDayMonth } from "../staff/dates.ts";
 import type { FieldDef, FieldValue } from "./types.ts";
 
-/** The text for one cell; "" when the value is blank, so the table can show its dash. */
+/** "20 Oct", or "20 Oct 2027" when the date is not in the year of `today` (so 1 Jan 2000 is never read as this year). */
+export function dateLabel(iso: string, today?: string): string {
+  return today && iso.slice(0, 4) !== today.slice(0, 4)
+    ? formatDate(iso)
+    : formatDayMonth(iso);
+}
+
+/** The text for one cell; "" when the value is blank, so the table can show its dash. `today` adds the year to dates outside this year. */
 export function cellText(
   field: FieldDef | undefined,
   value: FieldValue | undefined,
+  today?: string,
 ): string {
   if (value === undefined || value === "") return "";
   if (Array.isArray(value)) return value.join(", ");
   if (typeof value === "boolean") return value ? "✓" : "";
-  if (field?.type === "date" && typeof value === "string") return formatDayMonth(value);
+  if (field?.type === "date" && typeof value === "string") return dateLabel(value, today);
   if (field?.type === "url" && typeof value === "string") {
     try {
-      return new URL(value).hostname;
+      const url = new URL(value);
+      const path = url.pathname === "/" ? "" : url.pathname;
+      const shown = `${url.hostname}${path}`;
+      return shown.length > 60 ? `${shown.slice(0, 57)}…` : shown;
     } catch {
       return value;
     }

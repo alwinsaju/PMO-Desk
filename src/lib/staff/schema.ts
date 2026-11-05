@@ -3,6 +3,7 @@
 import { z } from "zod";
 import { isIsoDate } from "./dates.ts";
 import { EMPLOYEE_ID } from "./employees.ts";
+import { BIRTHDAY_HINT, LIMITS, MAX_BATCH, isValidBirthday } from "./fieldRules.ts";
 import { TIME_OFF_ID } from "./timeoff.ts";
 import { assignmentId, MEMBER_ID } from "./shifts.ts";
 import { LOCATIONS, TIME_OFF_STATUSES, TIME_OFF_TYPES } from "./types.ts";
@@ -16,40 +17,40 @@ const stamp = z.string().max(40);
 
 export const employeeSchema = z.object({
   id: z.string().regex(EMPLOYEE_ID),
-  firstName: text(80),
-  lastName: text(80),
-  deloitteEmail: text(254).pipe(z.email()),
-  milestone: text(4).refine(
+  firstName: text(LIMITS.firstName),
+  lastName: text(LIMITS.lastName),
+  deloitteEmail: text(LIMITS.deloitteEmail).pipe(z.email()),
+  milestone: text(LIMITS.milestone).refine(
     (v) => v === "" || /^\d{4}$/.test(v),
     "Use a four-digit year.",
   ),
   rollOffDate: optionalDate,
   campus: z.boolean(),
   location: z.enum([...LOCATIONS, ""]),
-  homeOffice: text(),
-  level: text(60),
-  offering: text(),
-  op: text(),
-  team: text(),
-  phone: text(40),
-  skills: z.array(text(60)).max(60),
-  deloittePersonId: text(60),
-  takedaEmail: text(254).refine(
+  homeOffice: text(LIMITS.homeOffice),
+  level: text(LIMITS.level),
+  offering: text(LIMITS.offering),
+  op: text(LIMITS.op),
+  team: text(LIMITS.team),
+  phone: text(LIMITS.phone),
+  skills: z.array(text(LIMITS.skill)).max(LIMITS.skills),
+  deloittePersonId: text(LIMITS.deloittePersonId),
+  takedaEmail: text(LIMITS.takedaEmail).refine(
     (v) => v === "" || z.email().safeParse(v).success,
-    "Not an email.",
+    "Not a valid email address.",
   ),
   staffitStartDate: optionalDate,
   staffitEndDate: optionalDate,
   contractEndDate: optionalDate,
-  networkId: text(60),
-  workdayId: text(60),
-  gender: text(40),
-  clientManager: text(),
+  networkId: text(LIMITS.networkId),
+  workdayId: text(LIMITS.workdayId),
+  gender: text(LIMITS.gender),
+  clientManager: text(LIMITS.clientManager),
   birthday: z
     .string()
     .trim()
-    .max(10)
-    .refine((v) => v === "" || /^(\d{4}-)?\d{2}-\d{2}$/.test(v), "Use MM-DD.")
+    .max(LIMITS.birthday)
+    .refine(isValidBirthday, BIRTHDAY_HINT)
     .default(""),
   excludeFromShiftRoster: z.boolean().default(false),
   photoVersion: z.number().int().min(0),
@@ -58,7 +59,12 @@ export const employeeSchema = z.object({
   updatedAt: stamp,
 });
 
-export const offboardedSchema = employeeSchema.extend({ offboardedAt: stamp });
+/** `rosterMemberId`: the shift roster entry that was linked to the person when they left, so
+ *  deleting them for good finds it even if either was renamed since. */
+export const offboardedSchema = employeeSchema.extend({
+  offboardedAt: stamp,
+  rosterMemberId: z.string().regex(MEMBER_ID).optional(),
+});
 
 const slug = z
   .string()
@@ -205,7 +211,7 @@ export const timeOffSchema = z
   })
   .refine((r) => r.endDate >= r.startDate, "The end date is before the start date.");
 
-const changes = <T extends z.ZodType>(item: T, max = 2000) =>
+const changes = <T extends z.ZodType>(item: T, max = MAX_BATCH) =>
   z.object({
     upsert: z.array(item).max(max).optional(),
     remove: z.array(z.string().max(80)).max(max).optional(),
@@ -222,7 +228,7 @@ const optionalText = (max = 200) => z.string().trim().max(max).optional();
  *  which shift roster entries to link back to the people it returns (the undo of an offboard). */
 export const moveSchema = z.object({
   action: z.enum(["offboard", "restore"]),
-  ids: z.array(z.string().regex(EMPLOYEE_ID)).min(1).max(2000),
+  ids: z.array(z.string().regex(EMPLOYEE_ID)).min(1).max(MAX_BATCH),
   relink: z
     .array(
       z.object({

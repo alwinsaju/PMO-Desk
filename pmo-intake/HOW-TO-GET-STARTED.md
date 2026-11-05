@@ -24,8 +24,8 @@ the filter, retention, the Outlook script).
      reads it)
 3. The full path of the first one must be exactly
    `C:\Users\alsaju\OneDrive - Deloitte (O365D)\PMO-Inbox`. If yours is different, open
-   the app (step 2), click the gear, and read the **Inbox folder** line, then
-   change `inboxDir` in `config.json` (the Data folder line shows where).
+   the app (step 2), click the gear and, on the **Me** tab, change the **Inbox folder**
+   box (it checks the folder the same way the first-run setup does).
 4. Right-click `PMO-Inbox` and choose **Always keep on this device**, so
    OneDrive keeps the folder fully on disk (a file that only exists "in the
    cloud" cannot be read by the app).

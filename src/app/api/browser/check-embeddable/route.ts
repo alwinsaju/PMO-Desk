@@ -44,7 +44,7 @@ export async function GET(request: Request) {
     const reason = target ? refusalReason(target) : "That is not a web address.";
     const isLocal = Boolean(target) && /^https?:/i.test(target ?? "");
     return NextResponse.json(
-      { embeddable: false, reason },
+      { embeddable: false, reason, ...(isLocal ? { code: "private" } : {}) },
       { status: isLocal ? 200 : 400 },
     );
   }

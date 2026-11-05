@@ -21,7 +21,6 @@ export const MAX_HOLIDAY_LOCATION = 60;
  *  no control characters. Anything that is not text is empty ("not set"). */
 export function sanitizeHolidayLocation(value: unknown): string {
   if (typeof value !== "string") return "";
-  // eslint-disable-next-line no-control-regex
   const text = value.replace(/[\u0000-\u001f\u007f]/g, " ").slice(0, 200);
   return canonicalLocation(text).slice(0, MAX_HOLIDAY_LOCATION).trim();
 }

@@ -4,8 +4,11 @@ export interface Explanation {
   title: string;
   /** What to try, in order. */
   steps: string[];
-  /** The last meaningful line of the error, for support. */
+  /** The last meaningful line of the error, for support. May name folders: show it only behind "Show details". */
   technical: string;
+  /** What the task said in its own plain words (folders removed), when it stopped with a message rather than a
+   *  traceback: "Row 7: the Updated cell is text, not a date." */
+  message?: string;
 }
 
 interface Rule {
@@ -16,11 +19,67 @@ interface Rule {
 
 const RULES: Rule[] = [
   {
+    test: /The engine restarted while this task was running/i,
+    title: () => "The Tasks engine restarted while this task was running",
+    steps: () => [
+      "Nothing was sent. Press Retry: it carries on after the last step that finished.",
+    ],
+  },
+  {
     test: /PermissionError|being used by another process|Permission denied|sharing violation/i,
     title: () => "A file is open in another program",
     steps: () => [
       "Close any Excel workbook from this task (and the output folder, if it is open in a window).",
       "Press Retry. It carries on from the step that failed; finished steps are not repeated.",
+    ],
+  },
+  {
+    // openpyxl reports a missing sheet as KeyError: 'Worksheet <name> does not exist.'
+    test: /Worksheet (?:named )?['"]?([^'"\r\n]+?)['"]?(?: does not exist| not found)\.?['"]?/i,
+    title: (m) => `The sheet “${m[1].trim()}” was not found`,
+    steps: (m) => [
+      `Open the file and check that a sheet (tab at the bottom) is named exactly “${m[1].trim()}”.`,
+      "Fix the sheet name, or download the export again without renaming sheets, upload it and Retry.",
+    ],
+  },
+  {
+    test: /The export has no sheet called ["“]([^"”]+)["”]/i,
+    title: (m) => `The sheet “${m[1]}” was not found`,
+    steps: (m) => [
+      `Open the file and check that a sheet (tab at the bottom) is named exactly “${m[1]}”.`,
+      "Download the export again without renaming sheets, upload it and Retry.",
+    ],
+  },
+  {
+    test: /The export has no column called/i,
+    title: () => "A column the task needs is missing",
+    steps: () => [
+      "Download the export again from ServiceNow without removing or renaming columns.",
+      "Upload it and Retry.",
+    ],
+  },
+  {
+    test: /Unexpected column layout/i,
+    title: () => "The file's columns are not the ones this task expects",
+    steps: () => [
+      "Check that you uploaded the right export for this task (each task needs its own export).",
+      "Download the export again without renaming or removing columns, upload it and Retry.",
+    ],
+  },
+  {
+    test: /No previous monthly workbook/i,
+    title: () => "The previous monthly workbook is needed",
+    steps: () => [
+      "Upload last month's finished workbook in the “previous workbook” slot (the first run needs one).",
+      "Press Retry.",
+    ],
+  },
+  {
+    test: /AttributeError: 'str' object has no attribute '(?:year|month|day|date|strftime|isoformat)'|time data .* does not match format|Invalid isoformat|cannot convert .* to datetime|cell holds text .*not a date/i,
+    title: () => "A date column has text that is not a date",
+    steps: () => [
+      "In the export, check the date columns (for example Updated and Opened): every cell must be a real date, not typed text or a blank.",
+      "Fix those cells (or download the export again), upload it and Retry.",
     ],
   },
   {
@@ -60,7 +119,7 @@ const RULES: Rule[] = [
     title: () => "A Python component is missing",
     steps: () => [
       "This is a set-up problem, not a problem with your files.",
-      "Copy the details below and send them to whoever supports PMO Desk.",
+      "Open “Show details”, copy them and send them to whoever supports PMO Desk.",
     ],
   },
   {
@@ -68,7 +127,7 @@ const RULES: Rule[] = [
     title: () => "The step took too long",
     steps: () => [
       "Close other heavy programs (large Excel files, Outlook syncing) and Retry.",
-      "If it happens again, copy the details below for support.",
+      "If it happens again, open “Show details”, copy them and send them to support.",
     ],
   },
   {
@@ -76,7 +135,7 @@ const RULES: Rule[] = [
     title: () => "A file has characters the task cannot read",
     steps: () => [
       "Re-save the file from Excel as .xlsx and upload it again.",
-      "Retry. If it fails again, copy the details below for support.",
+      "Retry. If it fails again, open “Show details”, copy them and send them to support.",
     ],
   },
 ];
@@ -90,11 +149,30 @@ export function lastLine(error: string | null | undefined): string {
   return (lines.at(-1) ?? "").slice(0, 300);
 }
 
+/** Folder names on this computer are not for the headline: "C:\Users\a\input\x.xlsx" becomes "x.xlsx". */
+export function hidePaths(text: string): string {
+  return text.replace(/[A-Za-z]:[\\/](?:[^\\/:*?"<>|\r\n]+[\\/])*/g, "");
+}
+
+/** What a task script said in its own plain words (it stopped with a message, not a traceback). */
+function scriptMessage(text: string): string | null {
+  if (/Traceback|^\s*File "|\b\w*(?:Error|Exception)\b:/m.test(text)) return null;
+  const line = hidePaths(lastLine(text)).trim();
+  return line.length >= 8 ? line : null;
+}
+
+export interface ExplainOptions {
+  /** False for a task that takes no uploaded files: the fallback then does not tell people to check uploads. */
+  hasUploads?: boolean;
+}
+
 export function explainFailure(
   error: string | null | undefined,
   stepName?: string | null,
+  options: ExplainOptions = {},
 ): Explanation {
   const text = error ?? "";
+  const message = scriptMessage(text) ?? undefined;
   for (const rule of RULES) {
     const match = rule.test.exec(text);
     if (match) {
@@ -102,16 +180,20 @@ export function explainFailure(
         title: rule.title(match),
         steps: rule.steps(match),
         technical: lastLine(text),
+        message,
       };
     }
   }
   return {
     title: stepName ? `Something went wrong in “${stepName}”` : "Something went wrong",
     steps: [
-      "Check that the files you uploaded are the right ones and are not open in Excel.",
-      "Press Retry. If it fails again, copy the details below for support.",
+      options.hasUploads === false
+        ? "Close any workbook from this task that is open in Excel."
+        : "Check that the files you uploaded are the right ones and are not open in Excel.",
+      "Press Retry. If it fails again, open “Show details”, copy them and send them to support.",
     ],
     technical: lastLine(text),
+    message,
   };
 }
 

@@ -100,7 +100,7 @@ export const useNotesStore = create<NotesStoreState>()(
         const note: Note = {
           id: generateNoteId(),
           content,
-          updatedLabel: "Just now",
+          updatedAt: new Date().toISOString(),
         };
         set((state) => ({ notes: [note, ...state.notes] }));
         return note;
@@ -111,8 +111,8 @@ export const useNotesStore = create<NotesStoreState>()(
           notes: state.notes.map((note) => {
             if (note.id !== id) return note;
             return by === "assistant"
-              ? updateNoteByAssistant(note, content, "Just now")
-              : updateNoteByUser(note, content, "Just now");
+              ? updateNoteByAssistant(note, content, new Date().toISOString())
+              : updateNoteByUser(note, content, new Date().toISOString());
           }),
         }));
       },
@@ -138,7 +138,9 @@ export const useNotesStore = create<NotesStoreState>()(
       restoreRevision: (id) => {
         set((state) => ({
           notes: state.notes.map((note) =>
-            note.id === id ? restorePreviousRevision(note, "Just now") : note,
+            note.id === id
+              ? restorePreviousRevision(note, new Date().toISOString())
+              : note,
           ),
         }));
       },

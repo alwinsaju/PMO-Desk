@@ -86,7 +86,7 @@ def test_completed_run_appends_one_history_record(tmp_path):
     assert record["current_step_at_end"] == "noop"
     assert record["steps_completed"] == ["noop"]
     assert datetime.fromisoformat(record["started_at"]) <= datetime.fromisoformat(record["ended_at"])
-    # the run's fields clear at finalize so a later reject/reset stays silent
+    # the run's fields clear at finalize so a second reset has nothing left to record
     task = backend.tasks["task-a"]
     assert task.run_id is None and task.run_started_at is None
 
@@ -146,7 +146,7 @@ def test_retry_after_failure_appends_a_second_record(tmp_path):
     assert records[0]["run_id"] != records[1]["run_id"]
 
 
-def test_reject_after_review_gate_writes_no_record(tmp_path):
+def test_reject_after_review_gate_is_recorded_as_rejected(tmp_path):
     steps = [
         {"id": "build", "type": "python", "cmd": "scripts/noop.py"},
         {"id": "review_gate", "type": "review"},
@@ -160,9 +160,48 @@ def test_reject_after_review_gate_writes_no_record(tmp_path):
     resp = asyncio.run(backend.reject_task("task-a"))
 
     assert resp["ok"]
-    assert read_records(tmp_path / "history.jsonl") == []
+    (record,) = read_records(tmp_path / "history.jsonl")
+    assert record["outcome"] == "rejected"
+    assert record["current_step_at_end"] == "review_gate"
+    assert record["steps_completed"] == ["build"]
+    assert record["approvals"][-1]["kind"] == "reject" and record["approvals"][-1]["user"]
+    assert datetime.fromisoformat(record["ended_at"]) >= datetime.fromisoformat(record["started_at"])
     task = backend.tasks["task-a"]
-    assert task.run_id is None and task.run_started_at is None
+    assert task.run_id is None and task.run_started_at is None and task.approvals == []
+
+
+def test_reset_of_a_run_that_started_is_recorded_as_cancelled(tmp_path):
+    steps = [
+        {"id": "build", "type": "python", "cmd": "scripts/noop.py"},
+        {"id": "review_gate", "type": "review"},
+    ]
+    make_task_folder(tmp_path, "task-a", "task-a", steps=steps)
+    backend.discover_tasks()
+    drive_start("task-a")
+
+    assert asyncio.run(backend.reset_task("task-a"))["ok"]
+
+    (record,) = read_records(tmp_path / "history.jsonl")
+    assert record["outcome"] == "cancelled" and record["current_step_at_end"] == "review_gate"
+    assert [a["kind"] for a in record["approvals"]] == ["reset"]
+    # a second reset has no open run and adds nothing
+    assert asyncio.run(backend.reset_task("task-a"))["ok"]
+    assert len(read_records(tmp_path / "history.jsonl")) == 1
+
+
+def test_reset_after_a_failure_does_not_record_the_run_twice(tmp_path):
+    folder = tmp_path / "fail-task"
+    (folder / "scripts").mkdir(parents=True)
+    (folder / "scripts" / "boom.py").write_text("import sys; sys.exit(3)")
+    (folder / "task.json").write_text(json.dumps(
+        {"id": "fail-task", "steps": [{"id": "boom", "type": "python", "cmd": "scripts/boom.py"}]}
+    ))
+    backend.discover_tasks()
+    drive_start("fail-task")
+
+    assert asyncio.run(backend.reset_task("fail-task"))["ok"]
+
+    assert [r["outcome"] for r in read_records(tmp_path / "history.jsonl")] == ["failed"]
 
 
 def test_reset_without_started_run_writes_no_record(tmp_path):

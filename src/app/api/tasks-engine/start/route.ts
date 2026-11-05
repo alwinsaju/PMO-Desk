@@ -5,6 +5,7 @@ import path from "node:path";
 import { NextResponse } from "next/server";
 import { getEngineAuth } from "../../../../lib/tasks-engine/engineAuth.ts";
 import { explainEngineExit, type EngineStartFailure } from "../../../../lib/tasks-engine/startFailure.ts";
+import { START_TIMEOUT_MS, waitForEngine } from "../../../../lib/tasks-engine/waitForEngine.ts";
 import { resolvePython } from "../python";
 import {
   configuredEngineUrl,
@@ -40,10 +41,7 @@ export const dynamic = "force-dynamic";
 const ENGINE_DIR = path.join(process.cwd(), "tasks-engine");
 
 /** Bounded window to confirm the engine actually came up before giving up
- *  and reporting failure — long enough for a cold `uvicorn` boot, short
- *  enough that the frontend's loading screen never spins forever. */
-const START_TIMEOUT_MS = 60_000;
-const POLL_INTERVAL_MS = 750;
+ *  and reporting failure (see waitForEngine.ts for the polling interval). */
 const DESKTOP_MODE = process.env.AI_OS_DESKTOP_MODE === "1";
 
 /** Diagnostic output lives in the OS temp dir, not inside either project's
@@ -221,26 +219,30 @@ async function attemptStart(): Promise<StartResult> {
 
   console.log(`[tasks-engine] launching: ${pythonExe} ${engineArgs.join(" ")}`);
 
-  const deadline = Date.now() + START_TIMEOUT_MS;
-  while (Date.now() < deadline) {
-    if (spawnError) {
-      console.error(`[tasks-engine] spawn error: ${spawnError}`);
-      return { ok: false, reason: `Couldn't launch the engine: ${spawnError}` };
-    }
-    if (await isTasksEngine(url, getEngineAuth().instance)) {
-      rememberEngineUrl(url);
-      console.log(`[tasks-engine] engine is up at ${url}`);
-      return { ok: true, alreadyRunning: false, url };
-    }
-    // A non-zero exit before the port answers is fatal; the check above runs
-    // first so an exit that merely follows a successful boot is not.
-    if (exitCode !== null && exitCode !== 0) {
-      console.error(`[tasks-engine] process exited with code ${exitCode}`);
-      return { ok: false, ...explainEngineExit(exitCode, readLogTail()) };
-    }
-    await sleep(POLL_INTERVAL_MS);
+  const waited = await waitForEngine({
+    ready: () => isTasksEngine(url, getEngineAuth().instance),
+    fatal: () => {
+      if (spawnError) return `Couldn't launch the engine: ${spawnError}`;
+      // A non-zero exit before the port answers is fatal.
+      return exitCode !== null && exitCode !== 0 ? `exit:${exitCode}` : null;
+    },
+    sleep,
+    now: Date.now,
+  });
+  if (waited.status === "ready") {
+    rememberEngineUrl(url);
+    console.log(`[tasks-engine] engine is up at ${url} after ${waited.waitedMs} ms`);
+    return { ok: true, alreadyRunning: false, url };
   }
-
+  if (waited.status === "fatal") {
+    if (waited.reason.startsWith("exit:")) {
+      const code = Number(waited.reason.slice("exit:".length));
+      console.error(`[tasks-engine] process exited with code ${code}`);
+      return { ok: false, ...explainEngineExit(code, readLogTail()) };
+    }
+    console.error(`[tasks-engine] spawn error: ${spawnError}`);
+    return { ok: false, reason: waited.reason };
+  }
   console.error("[tasks-engine] timed out waiting for the engine to come up");
   return {
     ok: false,

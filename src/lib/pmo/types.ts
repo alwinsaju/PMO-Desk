@@ -675,6 +675,9 @@ export const ProposalSchema = z.object({
   todoId: z.string().nullable().optional(),
   /** The message was longer than the intake limit and only its start was kept. */
   messageShortened: z.boolean().nullish(),
+  /** The message was longer than the model reads at once: it saw the start and the
+   *  end only. The card says "Long message: the AI read the start and the end only". */
+  modelReadPartOnly: z.boolean().optional(),
   /** The sender's real text was under the quoted chain (bottom-posted or inline
    *  reply), so it was kept; the card says the request may be below the quote. */
   replyBelowQuote: z.boolean().optional(),

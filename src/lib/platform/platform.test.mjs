@@ -36,6 +36,14 @@ import { readZip, unsafeEntryName, writeZip, ZipError } from "./zip.ts";
 const enc = (s) => Buffer.from(s, "utf8");
 const dec = (b) => Buffer.from(b).toString("utf8");
 
+/** A zip whose last entry has a name writeZip would refuse (swapped in byte for byte, so the checksums still match). */
+function writeZipUnchecked(entries) {
+  const last = entries[entries.length - 1];
+  const placeholder = "q".repeat(last.name.length);
+  const zip = writeZip([...entries.slice(0, -1), { ...last, name: placeholder }]);
+  return Buffer.from(zip.toString("latin1").replaceAll(placeholder, last.name), "latin1");
+}
+
 async function tempDir() {
   return mkdtemp(path.join(os.tmpdir(), "aios-platform-"));
 }
@@ -311,6 +319,90 @@ test("backup: refuses a zip that is not a backup, or is built to escape", () => 
       .length,
     1,
   );
+});
+
+test("backup: refuses names Windows cannot store, including on ?check", () => {
+  const manifest = {
+    name: BACKUP_MANIFEST,
+    data: enc(JSON.stringify({ format: "ai-os-backup", version: 1 })),
+  };
+  const bad = [
+    "config.json:evil",
+    "todos/CON",
+    "todos/con.json",
+    "NUL.txt",
+    "aux",
+    "COM1",
+    "lpt9.log",
+    "todos/a.json.",
+    "todos/a.json ",
+    "todos/a?.json",
+    "todos/a<b>.json",
+    "a//b.json",
+  ];
+  for (const name of bad) {
+    assert.ok(unsafeEntryName(name), name);
+    assert.throws(
+      () => inspectBackup(writeZipUnchecked([manifest, { name, data: enc("x") }])),
+      ZipError,
+      name,
+    );
+  }
+  for (const name of [
+    "todos/console.json",
+    "com10.json",
+    "todos/a b.json",
+    "audit.jsonl",
+  ]) {
+    assert.equal(unsafeEntryName(name), null, name);
+  }
+  assert.throws(
+    () =>
+      inspectBackup(
+        writeZip([
+          manifest,
+          { name: "todos/A.json", data: enc("1") },
+          { name: "todos/a.json", data: enc("2") },
+        ]),
+      ),
+    /capital letters/,
+  );
+});
+
+test("backup: a write failure part-way rolls everything back", async () => {
+  const root = await tempDir();
+  try {
+    await seed(root);
+    const zip = await createBackup(root, { appVersion: "1" });
+    // A folder where the backup wants a file makes the move fail after the old files were set aside.
+    const clash = path.join(root, "todos", "td_aaaaaaaa.json");
+    await rm(clash);
+    await mkdir(clash);
+    await writeFile(path.join(clash, "inner.json"), "keep me");
+    const before = (await listBackupFiles(root)).map((f) => f.rel);
+    await assert.rejects(
+      restoreBackup(root, zip, {
+        appVersion: "1",
+        now: new Date("2026-03-06T10:00:00Z"),
+      }),
+      (error) => error instanceof ZipError && /nothing was changed/.test(error.message),
+    );
+    assert.deepEqual(
+      (await listBackupFiles(root)).map((f) => f.rel),
+      before,
+    );
+    assert.equal(await readFile(path.join(clash, "inner.json"), "utf8"), "keep me");
+    assert.equal(
+      await readFile(path.join(root, "audit.jsonl"), "utf8").then((t) => t.length > 0),
+      true,
+    );
+    // The working folder is gone and a safety copy exists.
+    const left = await readdir(path.join(root, "backups"));
+    assert.ok(!left.some((n) => n.startsWith(".restore-")));
+    assert.ok(left.some((n) => n.startsWith("before-restore-")));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test("export: JSON and CSV carry the data but not the private field", async () => {

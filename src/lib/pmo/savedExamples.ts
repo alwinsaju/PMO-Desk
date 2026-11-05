@@ -76,7 +76,6 @@ export const emptySavedExamples = (): SavedExamplesFile => ({
 const ID_PATTERN = /^ex_[0-9a-f]{8,40}$/;
 const DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 // Control characters other than tab and newline.
-// eslint-disable-next-line no-control-regex
 const CONTROL = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>

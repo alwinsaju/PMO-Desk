@@ -140,7 +140,7 @@ export function TasksApp({ windowId }: { windowId: string }) {
 
       <div className="px-6 pt-1 pb-2">
         <Tabs value={view} onValueChange={(v) => setView(v as TasksView)}>
-          <TabsList aria-label="Tasks views">
+          <TabsList aria-label="Tasks views" className="max-w-full overflow-x-auto">
             <TabsTrigger value="workflows">Workflows</TabsTrigger>
             <TabsTrigger value="history">History</TabsTrigger>
             <TabsTrigger value="schedule" count={queued || undefined}>
@@ -172,7 +172,10 @@ export function TasksApp({ windowId }: { windowId: string }) {
                 {counts.all === 1 ? "" : "s"}
               </p>
               <Tabs value={filter} onValueChange={(v) => setFilter(v as TaskFilter)}>
-                <TabsList aria-label="Filter workflows">
+                <TabsList
+                  aria-label="Filter workflows"
+                  className="max-w-full overflow-x-auto"
+                >
                   <TabsTrigger value="all">All</TabsTrigger>
                   <TabsTrigger value="needs" count={counts.needs}>
                     Needs you
@@ -191,7 +194,7 @@ export function TasksApp({ windowId }: { windowId: string }) {
                 Nothing here right now.
               </p>
             ) : (
-              <div className="grid auto-rows-[1fr] grid-cols-[repeat(auto-fill,minmax(300px,1fr))] content-start gap-4 px-6 pb-6">
+              <div className="grid auto-rows-[1fr] grid-cols-[repeat(auto-fill,minmax(min(300px,100%),1fr))] content-start gap-4 px-6 pb-6">
                 {visibleTasks.map((task, index) => (
                   <TaskCard
                     key={task.id}

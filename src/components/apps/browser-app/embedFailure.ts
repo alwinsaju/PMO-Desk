@@ -61,6 +61,16 @@ export function describeEmbedFailure({
         nextStep: "Retry, or open it in your default browser.",
         retryable: true,
       };
+    case "private":
+      return {
+        title: `${host} can't be shown inside PMO Desk`,
+        message:
+          "Addresses on this computer or on a private network can't be shown inside PMO Desk. Open it in your regular browser instead.",
+        cause:
+          "Addresses on this computer or on a private network can't be shown inside PMO Desk.",
+        nextStep: "Open it in your default browser.",
+        retryable: false,
+      };
     case "not-found":
       return {
         title: `Can't find ${host}`,
@@ -100,6 +110,31 @@ export function classifyWebviewError(
 }
 
 export type AddressSecurity = "secure" | "insecure" | "internal";
+
+const isLoopbackHost = (host: string) =>
+  host === "localhost" ||
+  host.endsWith(".localhost") ||
+  host.startsWith("127.") ||
+  host === "[::1]" ||
+  host === "0.0.0.0";
+
+const effectivePort = (url: URL) =>
+  url.port || (url.protocol === "https:" ? "443" : "80");
+
+/** True when `url` is this app's own address (same port on this computer). Opening it
+ *  "in the default browser" would only open another PMO Desk window, not the OS browser. */
+export function isOwnAddress(url: string, ownOrigin: string): boolean {
+  try {
+    const target = new URL(url);
+    const own = new URL(ownOrigin);
+    const sameHost =
+      target.hostname === own.hostname ||
+      (isLoopbackHost(target.hostname) && isLoopbackHost(own.hostname));
+    return sameHost && effectivePort(target) === effectivePort(own);
+  } catch {
+    return false;
+  }
+}
 
 /** The host part of a url for display, or the input when it does not parse. */
 export function hostnameOf(url: string): string {

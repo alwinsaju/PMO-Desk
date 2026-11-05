@@ -39,6 +39,8 @@ export interface ReviewRowView {
   fellBack: boolean;
   checkOriginal: boolean;
   replyBelowQuote: boolean;
+  /** The model read the start and the end of a very long message only. */
+  longMessage: boolean;
   duplicate: boolean;
   /** Show the status badge: only for a row that is not simply "ready". */
   showStatus: boolean;
@@ -63,6 +65,7 @@ export function reviewRowView(proposal: Proposal, nowMs: number): ReviewRowView 
     fellBack: structuringFellBack(proposal) && proposal.isActionable !== false,
     checkOriginal: ready && proposal.quoteVerified === false,
     replyBelowQuote: ready && !!proposal.replyBelowQuote,
+    longMessage: ready && !!proposal.modelReadPartOnly,
     duplicate: !!proposal.possibleDuplicateOf,
     showStatus: !(ready && proposal.isActionable !== false),
   };

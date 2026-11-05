@@ -33,6 +33,8 @@ const HELP: Record<string, string> = {
   networkId: "Optional.",
   workdayId: "Optional.",
   clientManager: "Optional.",
+  birthday:
+    "Optional. Month and day, for example 03-14 or 14 Mar. Used for birthday reminders.",
   excludeFromShiftRoster: "Optional. Yes keeps the person off the shift roster.",
 };
 

@@ -144,7 +144,11 @@ export function PersonTag({
 }) {
   return (
     <span className={cn("inline-flex min-w-0 items-center gap-1.5", className)}>
-      <Avatar aria-hidden className="h-5 w-5 text-[10px]" fallback={initials(name)} />
+      <Avatar
+        aria-hidden
+        className="h-5 w-5 text-[10px]"
+        fallback={initials(name ?? label ?? null)}
+      />
       <span className="min-w-0 truncate">{label ?? name ?? "Unassigned"}</span>
     </span>
   );
@@ -253,15 +257,23 @@ export function Field({
   label,
   children,
   className,
+  hint,
 }: {
   label: string;
   children: ReactNode;
   className?: string;
+  /** Small text on the right of the label (a character counter). */
+  hint?: string | null;
 }) {
   return (
     <label className={cn("flex min-w-0 flex-col gap-1.5", className)}>
-      <span className="text-ink-muted text-[11px] font-bold tracking-[0.08em] uppercase">
-        {label}
+      <span className="flex items-baseline justify-between gap-2">
+        <span className="text-ink-muted text-[11px] font-bold tracking-[0.08em] uppercase">
+          {label}
+        </span>
+        {hint && (
+          <span className="text-ink-muted text-[11.5px] tabular-nums">{hint}</span>
+        )}
       </span>
       {children}
     </label>

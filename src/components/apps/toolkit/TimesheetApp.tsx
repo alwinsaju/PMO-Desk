@@ -1,8 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Button, Input } from "@/components/ui";
+import { Button, IconButton, Input } from "@/components/ui";
+import { TrashIcon } from "@phosphor-icons/react";
 import { toast } from "@/lib/notifications/toastStore";
+import { registerById } from "@/lib/registers/defs";
 import { addDays, formatDayMonth, mondayOf, todayIso } from "@/lib/staff/dates";
 import {
   isSelf,
@@ -20,10 +22,15 @@ import { NativeSelect, TextArea } from "../pmo-todo-app/parts";
 import { useTemplateText } from "../templates-app/useTemplateText";
 import { PersonChasersDialog } from "./PersonChasersDialog";
 import { ReportDialog } from "./ReportDialog";
+import { removeWithUndo } from "./removeWithUndo";
+import { AlertChip } from "./RecordDialog";
+import { recordAlert } from "@/lib/registers/alerts";
+import { UnreadableTool } from "./UnreadableTool";
 import { usePeople } from "./usePeople";
 import { useRegister } from "./useRegister";
 
 const STATUSES = ["Missing", "Submitted", "On leave", "Excused"];
+const timesheetDef = registerById("timesheets")!;
 
 /** The timesheet chaser: who is expected for a week, who has filed, who is on leave, and one chaser for the rest. */
 export function TimesheetApp({ windowId }: { windowId: string }) {
@@ -68,11 +75,42 @@ export function TimesheetApp({ windowId }: { windowId: string }) {
   const seed = async (who: typeof people) => {
     setBusy(true);
     setNote(null);
+    const before = new Set(state.items.map((r) => r.id));
     const reply = await state.save(
       seedWeek(week, who, leave).map((values) => ({ values })),
     );
     setBusy(false);
-    if (!reply.ok) fail(reply.reason, reply.detail);
+    if (!reply.ok) {
+      fail(reply.reason, reply.detail);
+      return;
+    }
+    const added = reply.items.filter((r) => !before.has(r.id)).map((r) => r.id);
+    if (added.length === 0) return;
+    toast({
+      key: `undo-seed-${week}`,
+      message: `Added ${added.length} ${added.length === 1 ? "person" : "people"} to this week.`,
+      durationMs: 10_000,
+      action: {
+        label: "Undo",
+        run: () =>
+          void state.remove(added).then((back) => {
+            if (!back.ok) toast({ tone: "danger", message: back.reason });
+          }),
+      },
+    });
+  };
+
+  const removeRow = async (record: RegisterRecord) => {
+    const reply = await removeWithUndo(timesheetDef, state, record);
+    if (!reply.ok) fail(reply.reason);
+  };
+
+  const [adding, setAdding] = useState("");
+  const addOne = async () => {
+    const person = absent.find((p) => p.id === adding);
+    if (!person) return;
+    setAdding("");
+    await seed([person]);
   };
 
   const setStatus = async (record: RegisterRecord, status: string) => {
@@ -119,6 +157,23 @@ export function TimesheetApp({ windowId }: { windowId: string }) {
       toast({ tone: "success", message: `Marked ${missing.length} as chased today.` });
     else fail(reply.reason, reply.detail);
   };
+
+  if (!state.loaded && state.error) {
+    return (
+      <div
+        data-window-id={windowId}
+        data-testid="tool-timesheets"
+        className="flex h-full w-full flex-col"
+      >
+        <UnreadableTool
+          title={timesheetDef.title}
+          blurb={timesheetDef.blurb}
+          error={state.error}
+          onRetry={state.reload}
+        />
+      </div>
+    );
+  }
 
   return (
     <div
@@ -227,6 +282,10 @@ export function TimesheetApp({ windowId }: { windowId: string }) {
                   <th className="border-line border-b px-2 py-2">Person</th>
                   <th className="border-line border-b px-2 py-2">Status</th>
                   <th className="border-line border-b px-2 py-2">Chased</th>
+                  <th className="border-line border-b px-2 py-2">Needs attention</th>
+                  <th className="border-line border-b px-2 py-2">
+                    <span className="sr-only">Actions</span>
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -234,7 +293,7 @@ export function TimesheetApp({ windowId }: { windowId: string }) {
                   <tr
                     key={r.id}
                     data-testid="timesheet-row"
-                    className="border-line border-b"
+                    className="border-line group border-b"
                   >
                     <td className="px-2 py-2">{textOf(r, "person")}</td>
                     <td className="px-2 py-2">
@@ -254,10 +313,56 @@ export function TimesheetApp({ windowId }: { windowId: string }) {
                     <td className="text-ink-muted px-2 py-2">
                       {textOf(r, "chasedOn") ? formatDayMonth(textOf(r, "chasedOn")) : ""}
                     </td>
+                    <td className="px-2 py-2">
+                      {(() => {
+                        const alert = recordAlert(timesheetDef, r, {
+                          today: todayIso(),
+                          config: {},
+                        });
+                        return alert ? (
+                          <AlertChip level={alert.level} text={alert.text} />
+                        ) : null;
+                      })()}
+                    </td>
+                    <td className="px-2 py-1.5 text-right">
+                      <IconButton
+                        size="sm"
+                        variant="destructive-quiet"
+                        aria-label={`Remove ${textOf(r, "person")} from this week`}
+                        onClick={() => void removeRow(r)}
+                      >
+                        <TrashIcon />
+                      </IconButton>
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+            {absent.length > 0 && (
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <NativeSelect
+                  value={adding}
+                  onChange={(e) => setAdding(e.target.value)}
+                  aria-label="Person to add to this week"
+                  className="w-auto"
+                >
+                  <option value="">Add one person…</option>
+                  {absent.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </NativeSelect>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={busy || adding === ""}
+                  onClick={() => void addOne()}
+                >
+                  Add
+                </Button>
+              </div>
+            )}
             <div className="mt-4">
               <TextArea
                 rows={3}
@@ -313,6 +418,7 @@ export function TimesheetApp({ windowId }: { windowId: string }) {
           subject={chaser.subject}
           text={chaser.body}
           to={chaser.to.includes(";") ? undefined : chaser.to || undefined}
+          recipients={chaser.to.includes(";") ? chaser.to : undefined}
           onUse={chaserText.used}
           onClose={() => setChaserOpen(false)}
         />

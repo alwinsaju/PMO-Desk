@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { BLOCKED_ADDRESS_MESSAGE, resolveBrowserInput } from "./resolveBrowserInput.ts";
+import {
+  BLOCKED_ADDRESS_MESSAGE,
+  INVALID_ADDRESS_MESSAGE,
+  LOCAL_PATH_MESSAGE,
+  resolveBrowserInput,
+} from "./resolveBrowserInput.ts";
 
 describe("resolveBrowserInput", () => {
   it("treats blank input as empty", () => {
@@ -73,6 +78,38 @@ describe("resolveBrowserInput", () => {
 });
 
 describe("resolveBrowserInput edge cases", () => {
+  it("does not send local file or network-share paths to the search engine", () => {
+    for (const path of [
+      "C:\\Windows\\win.ini",
+      "c:/Users/me/secret.txt",
+      "\\\\10.0.0.1\\share",
+      "//server/share/file",
+    ]) {
+      assert.deepEqual(
+        resolveBrowserInput(path),
+        { kind: "blocked", reason: LOCAL_PATH_MESSAGE },
+        path,
+      );
+    }
+  });
+
+  it("does not search for something typed as an address but mistyped", () => {
+    for (const bad of [
+      "10.0.0.1:99999",
+      "example.com:99999/x",
+      "http:/host",
+      "https:example.com",
+      "999.1.1.1",
+    ]) {
+      assert.deepEqual(
+        resolveBrowserInput(bad),
+        { kind: "blocked", reason: INVALID_ADDRESS_MESSAGE },
+        bad,
+      );
+    }
+    assert.equal(resolveBrowserInput("http: is a protocol").kind, "search");
+  });
+
   it("encodes a space inside a bare host's path instead of searching", () => {
     assert.deepEqual(resolveBrowserInput("example.com/a b"), {
       kind: "url",

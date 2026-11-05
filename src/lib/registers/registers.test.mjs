@@ -177,14 +177,75 @@ test("records: values are cleaned to their field type, with plain refusals", () 
     ],
     [true, true, false],
   );
+  // Too long is refused with a count, never cut silently; a saved file is still read leniently.
   const long = sanitizeValues(raid, {
     kind: "Risk",
     title: "x".repeat(500),
     status: "Open",
     description: "y".repeat(9000),
   });
-  assert.equal(long.values.title.length, 200);
-  assert.equal(long.values.description.length, 4000);
+  assert.equal(long.ok, false);
+  assert.match(long.reason, /Title is too long: 500 characters, at most 200/);
+  assert.match(
+    fieldErrors(raid, {
+      kind: "Risk",
+      title: "x",
+      status: "Open",
+      description: "y".repeat(4001),
+    }).description,
+    /Description is too long: 4,001 characters, at most 4,000/,
+  );
+  const atLimit = sanitizeValues(raid, {
+    kind: "Risk",
+    title: "x".repeat(200),
+    status: "Open",
+    description: "y".repeat(4000),
+  });
+  assert.equal(atLimit.ok, true);
+  const cut = sanitizeValues(
+    raid,
+    { kind: "Risk", title: "x".repeat(500), status: "Open" },
+    true,
+  );
+  assert.equal(cut.values.title.length, 200);
+  // A link over the old 500-character cut is kept whole, up to 2,000.
+  const longUrl = `https://a.example/${"p".repeat(1500)}`;
+  assert.equal(
+    sanitizeValues(def("doclinks"), { title: "x", url: longUrl }).values.url,
+    longUrl,
+  );
+  assert.equal(
+    sanitizeValues(def("doclinks"), { title: "x", url: `${longUrl}${"p".repeat(600)}` })
+      .ok,
+    false,
+  );
+});
+
+test("records: links need a real host and no password; years 0001 to 0999 are real days", () => {
+  assert.equal(isHttpUrl("https:///x"), false);
+  assert.equal(isHttpUrl("https://user:pw@example.com/"), false);
+  assert.equal(isHttpUrl("https://"), false);
+  assert.equal(isHttpUrl("HTTP://EXAMPLE.COM/Path"), true);
+  assert.equal(isHttpUrl("https://localhost:3000/a?b=c#d"), true);
+  assert.match(
+    sanitizeValues(def("doclinks"), { title: "x", url: "https:///x" }).reason,
+    /web address/,
+  );
+  // An old saved link that would fail today still loads.
+  assert.equal(
+    sanitizeValues(def("doclinks"), { title: "x", url: "https:///x" }, true).ok,
+    true,
+  );
+  // Years 0001 to 0999 are real days (the shared isIsoDate misreads 0001 to 0099, so records.ts checks them itself).
+  const day = (dueDate) =>
+    sanitizeValues(def("raid"), { kind: "Risk", title: "x", status: "Open", dueDate });
+  assert.equal(day("0001-01-01").ok, true);
+  assert.equal(day("0099-12-31").ok, true);
+  assert.equal(day("0004-02-29").ok, true, "year 4 is a leap year");
+  assert.equal(day("0001-02-29").ok, false);
+  assert.equal(day("0000-01-01").ok, false);
+  assert.equal(day("2026-02-30").ok, false);
+  assert.equal(day("2026-02-28").ok, true);
 });
 
 test("records: fieldErrors names every bad field, in the form's terms", () => {
@@ -230,7 +291,17 @@ test("cells: blank values read as empty, dates and links are shortened, closed s
   assert.equal(cellText(undefined, true), "✓");
   assert.equal(cellText(undefined, false), "");
   const link = def("doclinks").fields.find((f) => f.key === "url");
-  assert.equal(cellText(link, "https://x.sharepoint.com/a/b"), "x.sharepoint.com");
+  assert.equal(cellText(link, "https://x.sharepoint.com/a/b"), "x.sharepoint.com/a/b");
+  assert.equal(cellText(link, "https://x.sharepoint.com/"), "x.sharepoint.com");
+  assert.equal(
+    cellText(link, "https://x.sharepoint.com/a?token=1"),
+    "x.sharepoint.com/a",
+  );
+  assert.equal(cellText(field("dueDate"), "2000-01-01", "2026-11-05"), "1 Jan 2000");
+  assert.equal(
+    cellText(field("dueDate"), "2026-03-10", "2026-11-05"),
+    formatDayMonth("2026-03-10"),
+  );
   assert.equal(exportHint(3, 2), null);
   assert.match(exportHint(0, 0), /Nothing to export yet/);
   assert.match(exportHint(4, 0), /no record matches/);
@@ -855,7 +926,7 @@ test("server: add, change, remove and keep settings, one file per register", asy
     const sla = def("sla");
     const cfg = await applyRegisterChanges(
       sla,
-      { config: { p1: 2, p2: "x" } },
+      { config: { p1: 2, p2: 3, p3: 5, p4: 10 } },
       env,
       clock,
     );
@@ -985,7 +1056,7 @@ test("server: summaries cover every tool and survive a damaged one", async () =>
     );
     assert.deepEqual(
       out.find((s) => s.id === "raid"),
-      { id: "raid", total: 0, open: 0, late: 0, soon: 0 },
+      { id: "raid", total: 0, open: 0, late: 0, soon: 0, unreadable: true },
     );
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -1085,7 +1156,7 @@ test("project field: optional free text on RAID, changes and SLA, suggested from
     REGISTERS.filter((d) => d.fields.some((f) => f.suggest)).map((d) => d.id),
     ["raid", "sla", "changes"],
   );
-  // Any text is accepted, whether or not it is a known project; it is trimmed and capped.
+  // Any text is accepted, whether or not it is a known project; it is trimmed, and a too-long one is refused.
   const raid = def("raid");
   const base = { kind: "Risk", title: "x", status: "Open" };
   assert.equal(sanitizeValues(raid, base).ok, true, "empty project is fine");
@@ -1094,9 +1165,9 @@ test("project field: optional free text on RAID, changes and SLA, suggested from
     sanitizeValues(raid, { ...base, project: "  Brand New Thing " }).values.project,
     "Brand New Thing",
   );
-  assert.equal(
-    sanitizeValues(raid, { ...base, project: "p".repeat(500) }).values.project.length,
-    200,
+  assert.match(
+    sanitizeValues(raid, { ...base, project: "p".repeat(500) }).reason,
+    /Project is too long/,
   );
   assert.deepEqual(fieldErrors(raid, base), {});
   // The search box finds a record by its project, case-insensitively.

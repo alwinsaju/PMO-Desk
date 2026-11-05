@@ -90,6 +90,27 @@ export function nextSteps(form: FirstRunForm): NextStep[] {
   ];
 }
 
+/** Why Next is switched off on a step, in plain words; null when it is on. The step's
+ *  own message (shown after pressing Next) covers an empty box, so only an entry the
+ *  server would refuse, or no domain yet, switches it off. */
+export function nextBlockedReason(
+  step: FirstRunStepId,
+  input: { emailProblem: string | null; invalidDomains: number; allowedDomains: number },
+): string | null {
+  if (step === "who" && input.emailProblem) {
+    return `Fix the email address to continue. ${input.emailProblem.replace(/\.?$/, ".")}`;
+  }
+  if (step === "domains") {
+    if (input.invalidDomains > 0) {
+      return "Fix or remove the domains marked above to continue.";
+    }
+    if (input.allowedDomains === 0) {
+      return "Enter at least one sender domain, for example company.com, to continue.";
+    }
+  }
+  return null;
+}
+
 /** The answers in the order of the steps, shown before Finish. */
 export function wizardSummary(form: FirstRunForm): SummaryRow[] {
   const others = splitList(form.otherNames, { commasOnly: true });

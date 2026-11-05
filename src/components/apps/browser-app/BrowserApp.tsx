@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import {
   ArrowClockwiseIcon,
   ArrowLeftIcon,
@@ -20,6 +20,7 @@ import {
   closeTab,
   createTabs,
   currentEntry,
+  cycleTab,
   entryAddress,
   goBack,
   goForward,
@@ -32,6 +33,7 @@ import {
   type Tab,
   type TabsState,
 } from "./browserTabs";
+import { browserShortcut } from "./browserShortcuts";
 import { TabStrip } from "./TabStrip";
 import { initialMockPage, mockPageMeta, type MockPageId } from "./mockPages";
 import { addressSecurity, hostnameOf } from "./embedFailure";
@@ -100,6 +102,7 @@ export function BrowserApp({ windowId }: { windowId: string }) {
     createTabs("tab-0", { kind: "mock", id: initialMockPage }),
   );
   const [recents, setRecents] = useState<RecentSite[]>([]);
+  const recentsRef = useRef<RecentSite[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const reloadTimeoutRef = useRef<number | null>(null);
   const addressRef = useRef<HTMLInputElement>(null);
@@ -110,7 +113,9 @@ export function BrowserApp({ windowId }: { windowId: string }) {
   const embedCacheRef = useRef<Map<string, boolean>>(new Map());
 
   useEffect(() => {
-    setRecents(parseRecents(readSetting(RECENTS_KEY)));
+    const saved = parseRecents(readSetting(RECENTS_KEY));
+    recentsRef.current = saved;
+    setRecents(saved);
     return () => {
       if (reloadTimeoutRef.current !== null) {
         window.clearTimeout(reloadTimeoutRef.current);
@@ -142,12 +147,15 @@ export function BrowserApp({ windowId }: { windowId: string }) {
   const changeActive = (change: (t: Tab) => Tab) =>
     setTabsState((s) => updateTab(s, s.activeId, change));
 
+  // Only a page that really opened counts as visited; refused and private addresses are not kept.
+  const rememberVisit = useCallback((url: string) => {
+    const list = addRecent(recentsRef.current, url, Date.now());
+    recentsRef.current = list;
+    setRecents(list);
+    writeSetting(RECENTS_KEY, JSON.stringify(list));
+  }, []);
+
   function navigate(next: NavEntry) {
-    if (next.kind === "url") {
-      const list = addRecent(recents, next.url, Date.now());
-      setRecents(list);
-      writeSetting(RECENTS_KEY, JSON.stringify(list));
-    }
     changeActive((t) => pushEntry(t, next));
   }
 
@@ -186,12 +194,18 @@ export function BrowserApp({ windowId }: { windowId: string }) {
     if (entry.kind === "url") changeActive(reloadTab);
   }
 
-  const handleEmbeddableResolved = useCallback((url: string, embeddable: boolean) => {
-    // Only successes are cached: a refusal's reason is shown from a fresh check.
-    if (embeddable) embedCacheRef.current.set(url, true);
-  }, []);
+  const handleEmbeddableResolved = useCallback(
+    (url: string, embeddable: boolean) => {
+      // Only successes are cached: a refusal's reason is shown from a fresh check.
+      if (!embeddable) return;
+      embedCacheRef.current.set(url, true);
+      rememberVisit(url);
+    },
+    [rememberVisit],
+  );
 
   const clearRecents = () => {
+    recentsRef.current = [];
     setRecents([]);
     writeSetting(RECENTS_KEY, "[]");
   };
@@ -254,8 +268,49 @@ export function BrowserApp({ windowId }: { windowId: string }) {
     );
   };
 
+  // Browser keys work wherever the focus is inside this window. Ctrl+W closes a tab while
+  // there are several (the window itself only when one is left) so a stray key press does
+  // not throw away every open page.
+  function handleShortcut(event: KeyboardEvent<HTMLDivElement>) {
+    const action = browserShortcut(event);
+    if (!action) return;
+    if (action === "close-tab" && tabsState.tabs.length < 2) return;
+    event.preventDefault();
+    event.stopPropagation();
+    switch (action) {
+      case "focus-address":
+        addressRef.current?.focus();
+        break;
+      case "back":
+        changeActive(goBack);
+        break;
+      case "forward":
+        changeActive(goForward);
+        break;
+      case "reload":
+        reload();
+        break;
+      case "new-tab":
+        setTabsState((s) => openTab(s, `tab-${nextTabId.current++}`, { kind: "newtab" }));
+        break;
+      case "next-tab":
+        setTabsState((s) => cycleTab(s, 1));
+        break;
+      case "previous-tab":
+        setTabsState((s) => cycleTab(s, -1));
+        break;
+      case "close-tab":
+        setTabsState((s) => closeTab(s, s.activeId, `tab-${nextTabId.current++}`));
+        break;
+    }
+  }
+
   return (
-    <div data-window-id={windowId} className="flex h-full w-full flex-col">
+    <div
+      data-window-id={windowId}
+      className="flex h-full w-full flex-col"
+      onKeyDown={handleShortcut}
+    >
       <TabStrip
         state={tabsState}
         onSelect={(id) => setTabsState((s) => selectTab(s, id))}

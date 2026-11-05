@@ -24,6 +24,7 @@ import { TERMS } from "@/lib/ui/terms";
 import { noSpellcheck } from "@/lib/ui/noSpellcheck";
 import { EmptyState, TONE_DOT } from "./parts";
 import { TimeOffCard } from "./TimeOffCard";
+import { useActiveStaff } from "./tabActive";
 import { TimeOffDialog } from "./TimeOffDialog";
 import { TimeOffDetailDialog } from "./TimeOffDetailDialog";
 import { ModelChip } from "./ModelChip";
@@ -44,8 +45,8 @@ export function TimeOffTab({
   status: TimeOffStatus | "";
   onStatusChange: (status: TimeOffStatus | "") => void;
 }) {
-  const employees = useStaffStore((s) => s.employees);
-  const timeOff = useStaffStore((s) => s.timeOff);
+  const employees = useActiveStaff((s) => s.employees);
+  const timeOff = useActiveStaff((s) => s.timeOff);
   const commit = useStaffStore((s) => s.commit);
 
   const [query, setQuery] = useState("");
@@ -137,7 +138,7 @@ export function TimeOffTab({
         <section className={cn(CARD, "px-4 py-3.5")} aria-label="Time off by type">
           <h3 className="text-ink mb-3 text-[14px] font-bold">Time off request type</h3>
           <ul className="flex flex-col gap-2">
-            {stats.byType.slice(0, 4).map(({ type, count }) => (
+            {stats.byType.map(({ type, count }) => (
               <li key={type} className="flex items-center gap-3 text-[12.5px]">
                 <span className="text-ink-soft w-[104px] shrink-0 truncate font-medium">
                   {TIME_OFF_META[type].label}

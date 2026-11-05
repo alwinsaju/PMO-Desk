@@ -91,6 +91,8 @@ export function HistoryTab({
           <option value="all">Any outcome</option>
           <option value="completed">Completed</option>
           <option value="failed">Failed</option>
+          <option value="rejected">Rejected</option>
+          <option value="cancelled">Reset</option>
         </select>
         <select
           aria-label="Period"

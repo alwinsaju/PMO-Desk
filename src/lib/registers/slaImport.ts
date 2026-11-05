@@ -1,6 +1,7 @@
 // Pasting incidents into the SLA watcher: lines of "Number, Priority, Opened[, Title]" from a spreadsheet
 // or an export. Pure.
 import { isIsoDate } from "../staff/dates.ts";
+import { MAX_TEXT } from "./types.ts";
 
 export interface SlaRow {
   ref: string;
@@ -51,21 +52,30 @@ export function parseDay(text: string): string | null {
   return null;
 }
 
-/** "1 - Critical" and "P2" and "high" to P1..P4. */
+/** "1 - Critical" and "P2" and "high" to P1..P4. Words count as whole words: "urgentish" is not urgent. */
 export function parsePriority(text: string): SlaRow["priority"] | null {
   const t = text.trim().toLowerCase();
   const digit = /^(?:p)?([1-4])\b/.exec(t);
   if (digit) return `P${digit[1]}` as SlaRow["priority"];
-  if (/critical|urgent/.test(t)) return "P1";
-  if (/high/.test(t)) return "P2";
-  if (/moderate|medium/.test(t)) return "P3";
-  if (/low/.test(t)) return "P4";
+  if (/\b(critical|urgent)\b/.test(t)) return "P1";
+  if (/\bhigh\b/.test(t)) return "P2";
+  if (/\b(moderate|medium)\b/.test(t)) return "P3";
+  if (/\blow\b/.test(t)) return "P4";
   return null;
+}
+
+/** The text after "Added 5 items" for the lines that were left out: how many, and up to three different reasons. */
+export function skippedText(skipped: SlaImport["skipped"]): string {
+  if (skipped.length === 0) return "";
+  const reasons = [...new Set(skipped.map((s) => s.reason))];
+  const shown = reasons.slice(0, 3).join("; ");
+  return `; skipped ${skipped.length} (${shown}${reasons.length > 3 ? "; and more" : ""})`;
 }
 
 export function parseSlaRows(text: string): SlaImport {
   const rows: SlaRow[] = [];
   const skipped: SlaImport["skipped"] = [];
+  const seen = new Set<string>();
   for (const line of text.split(/\r?\n/)) {
     if (!line.trim()) continue;
     const cells = line.includes("\t") ? line.split("\t") : line.split(",");
@@ -77,10 +87,20 @@ export function parseSlaRows(text: string): SlaImport {
     if (/^(number|ref|reference|id)$/i.test(ref!)) continue;
     const priority = parsePriority(prio!);
     const received = parseDay(opened!);
-    if (!priority) skipped.push({ line, reason: `unknown priority “${prio}”` });
+    if (!ref) skipped.push({ line, reason: "no number in front" });
+    else if (!priority) skipped.push({ line, reason: `unknown priority “${prio}”` });
     else if (!received) skipped.push({ line, reason: `unknown date “${opened}”` });
-    else
-      rows.push({ ref: ref!, title: rest.join(", ").trim() || ref!, priority, received });
+    else if (seen.has(ref.toLowerCase())) {
+      skipped.push({ line, reason: `“${ref}” is listed twice` });
+    } else {
+      seen.add(ref.toLowerCase());
+      rows.push({
+        ref: ref.slice(0, MAX_TEXT),
+        title: (rest.join(", ").trim() || ref).slice(0, MAX_TEXT),
+        priority,
+        received,
+      });
+    }
   }
   return { rows, skipped };
 }

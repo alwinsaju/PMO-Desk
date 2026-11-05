@@ -255,3 +255,16 @@ export function formSummary(schema: FormSchema, pending: string[]): string {
   const required = schema.fields.filter((field) => field.required).length;
   return requiredQuestionsText(pending.length, required);
 }
+
+/** Why the header count and the "Needs answer" chip can differ: the header counts preselected suggestions
+ *  until they are saved, the chip only the questions that are still empty. Null when they agree. */
+export function preselectedNote(
+  shownPending: readonly string[],
+  emptyIds: readonly string[],
+): string | null {
+  const empty = new Set(emptyIds);
+  const preselected = shownPending.filter((id) => !empty.has(id)).length;
+  if (preselected === 0) return null;
+  const blank = shownPending.length - preselected;
+  return `${blank} empty, ${preselected} preselected - Save to confirm`;
+}

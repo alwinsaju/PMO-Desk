@@ -20,6 +20,7 @@ import {
   STATUS_META,
   TIME_OFF_META,
   createTimeOff,
+  employeeErrorOnly,
   newRequestId,
   validateTimeOff,
   type TimeOffErrors,
@@ -94,8 +95,7 @@ function TimeOffForm({
     () => validateTimeOff(draft, timeOff, ids),
     [draft, timeOff, ids],
   );
-  const errors: TimeOffErrors =
-    ranges.length > 0 ? { employeeId: found.employeeId } : found;
+  const errors: TimeOffErrors = ranges.length > 0 ? employeeErrorOnly(found) : found;
 
   async function save() {
     setSubmitted(true);

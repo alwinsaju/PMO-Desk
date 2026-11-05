@@ -370,6 +370,8 @@ export interface DraftSummary {
   cc: string[];
   subject: string;
   attachments: string[];
+  /** Warnings the task wrote for the person to read before sending. Absent when there are none. */
+  notes?: string[];
 }
 
 export interface DraftSummaryPayload {

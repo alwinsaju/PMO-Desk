@@ -1601,19 +1601,16 @@ describe("prompt v3: today, the app's clean-up, recurrence", () => {
     assert.equal(proposal.rawDraft.waitingOn, "Alwin Saju");
     assert.equal(proposal.rawDraft.actionItems.length, 2);
     // What the review form starts from.
-    assert.equal(proposal.draft.dueAt, null);
-    assert.equal(proposal.draft.dueBasis, "none");
-    assert.match(
-      proposal.draft.description,
-      /Stated deadline 2026-10-20 had already passed/,
-    );
+    assert.equal(proposal.draft.dueAt, "2026-10-20");
+    assert.equal(proposal.draft.dueBasis, "explicit");
+    assert.match(proposal.ai.adjustments.join(" "), /had already passed/);
     assert.equal(proposal.draft.priority, "normal");
     assert.equal(proposal.draft.waitingOn, null);
     assert.equal(proposal.draft.actionItems.length, 1);
     assert.equal(proposal.draft.actionItems[0].owner, "Alwin Saju / Karthik Rao");
     assert.deepEqual(proposal.draft.tags, ["a"]);
     assert.equal(proposal.ai.adjustments.length, 4);
-    assert.equal(effectiveDraft(proposal).dueAt, null);
+    assert.equal(effectiveDraft(proposal).dueAt, "2026-10-20");
   });
 
   it("a clean answer has an empty adjustments list and a draft equal to rawDraft", async () => {

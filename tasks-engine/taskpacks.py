@@ -22,6 +22,7 @@ import json
 import re
 import shutil
 import stat
+import unicodedata
 import zipfile
 from io import BytesIO
 from pathlib import Path, PurePosixPath
@@ -35,6 +36,8 @@ MAX_FILE_BYTES = 5 * 1024 * 1024
 MAX_TOTAL_BYTES = 25 * 1024 * 1024
 ALLOWED_EXTENSIONS = frozenset({".json", ".py", ".ps1", ".md", ".txt", ".html", ".htm", ".csv", ".png", ".jpg", ".svg"})
 STEP_TYPES = frozenset({"python", "powershell", "review", "confirm"})
+# A pack must stop for a person at least once: the Tasks app promises that no task runs through unattended.
+GATE_STEP_TYPES = frozenset({"review", "confirm"})
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,48}[a-z0-9]$")
 # Where a pack may ask for input files to be placed, relative to its own folder.
 INPUT_DEST_ROOTS = ("input/", "config/")
@@ -58,6 +61,8 @@ def unsafe_name(name: str) -> str | None:
         return f"the entry name {name!r} uses a backslash"
     if name.startswith("/") or re.match(r"^[A-Za-z]:", name):
         return f"the entry name {name!r} is an absolute path"
+    if ":" in name:
+        return f"the entry name {name!r} has a colon, which Windows reads as a hidden data stream"
     if any(part in ("", ".", "..") for part in name.split("/")):
         return f"the entry name {name!r} climbs out of the folder"
     return None
@@ -80,6 +85,7 @@ def _read_entries(data: bytes) -> dict[str, bytes]:
     if len(infos) > MAX_FILES:
         raise PackError(f"The pack has {len(infos)} files; the limit is {MAX_FILES}.")
     entries: dict[str, bytes] = {}
+    seen_folded: set[str] = set()
     total = 0
     for info in infos:
         bad = unsafe_name(info.filename)
@@ -87,6 +93,10 @@ def _read_entries(data: bytes) -> dict[str, bytes]:
             raise PackError(f"Refused: {bad}.")
         if info.filename in entries:
             raise PackError(f"Refused: {info.filename!r} appears twice.")
+        # Windows treats Scripts/a.py and scripts/A.py as one file, so the second would overwrite the first.
+        if info.filename.casefold() in seen_folded:
+            raise PackError(f"Refused: {info.filename!r} has the same name as another file apart from capital letters.")
+        seen_folded.add(info.filename.casefold())
         if info.flag_bits & 0x1:
             raise PackError("Encrypted packs are not supported.")
         if stat.S_ISLNK(info.external_attr >> 16):
@@ -133,6 +143,11 @@ def _check_task(task: dict, pack_id: str, listed: set[str]) -> list[dict]:
             if not isinstance(args, list) or not all(isinstance(a, str) for a in args):
                 raise PackError(f"Step {step['id']!r} has arguments that are not text.")
         summary.append({"id": step["id"], "type": step["type"], "cmd": cmd if isinstance(cmd, str) else None})
+    if not any(s["type"] in GATE_STEP_TYPES for s in summary):
+        raise PackError(
+            "This task has no review or confirm step, so it could run to the end (and send an email) without "
+            "anyone checking it first. Add a “review” or “confirm” step before the last step."
+        )
     for item in task.get("inputs", []) if isinstance(task.get("inputs"), list) else []:
         dest = item.get("dest") if isinstance(item, dict) else None
         rel = _relative_inside(dest, "An input")
@@ -162,8 +177,13 @@ def inspect_pack(data: bytes) -> dict:
     if not isinstance(pack_id, str) or not ID_RE.match(pack_id):
         raise PackError("The pack's id must be lower-case letters, digits and hyphens (3 to 50 characters).")
     name = manifest.get("name")
-    if not isinstance(name, str) or not name.strip() or len(name) > 80:
+    if not isinstance(name, str):
         raise PackError("The pack has no name.")
+    name = clean_title(name)
+    if not name:
+        raise PackError("The pack has no name.")
+    if len(name) > 80:
+        raise PackError("The pack's name is longer than 80 characters.")
     listed = manifest.get("files")
     if not isinstance(listed, dict) or TASK_FILE not in listed:
         raise PackError("pack.json must list task.json and every other file with its checksum.")
@@ -187,9 +207,11 @@ def inspect_pack(data: bytes) -> dict:
     except ValueError as exc:
         raise PackError("task.json is damaged.") from exc
     steps = _check_task(task, pack_id, present)
+    shown = task.get("displayName")
     return {
         "id": pack_id,
-        "name": name.strip(),
+        "name": name,
+        "displayName": clean_title(shown) if isinstance(shown, str) and clean_title(shown) else name,
         "packVersion": str(manifest.get("packVersion", ""))[:20],
         "fingerprint": fingerprint_of(manifest),
         "files": files,
@@ -198,6 +220,34 @@ def inspect_pack(data: bytes) -> dict:
         "_entries": entries,
         "_manifest": manifest,
     }
+
+
+def clean_title(text: str) -> str:
+    """A display name as people see it: control and invisible formatting characters (such as a
+    right-to-left override that makes a name read backwards) removed, spaces collapsed."""
+    visible = "".join(c for c in text if unicodedata.category(c) not in ("Cc", "Cf"))
+    return " ".join(visible.split())
+
+
+def title_key(text: str) -> str:
+    return clean_title(text).casefold()
+
+
+def find_title_clash(info: dict, taken: dict[str, list[str]], builtin_ids: set[str]) -> str | None:
+    """Plain message when the pack's name (or its task's title) is already used by another task, else None.
+    `taken` maps a task id to the titles it shows; the pack's own id (an upgrade) is ignored."""
+    mine = {title_key(info["name"]), title_key(info["displayName"])}
+    for other_id, titles in taken.items():
+        if other_id == info["id"]:
+            continue
+        for title in titles:
+            if title_key(title) in mine:
+                kind = "a built-in task" if other_id in builtin_ids else "a pack that is already installed"
+                return (
+                    f"A task called “{clean_title(title)}” already exists ({kind}). "
+                    "Give this pack a different name so the two cannot be mixed up."
+                )
+    return None
 
 
 def public_info(info: dict) -> dict:
@@ -262,7 +312,7 @@ def list_packs(packs_root: Path) -> list[dict]:
             out.append(
                 {
                     "id": manifest["id"],
-                    "name": manifest["name"],
+                    "name": clean_title(str(manifest["name"])),
                     "packVersion": str(manifest.get("packVersion", ""))[:20],
                     "fingerprint": fingerprint_of(manifest),
                 }

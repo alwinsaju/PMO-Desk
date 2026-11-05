@@ -6,6 +6,7 @@ import {
   allowsFraming,
   checkEmbeddable,
   inspectEmbeddable,
+  isCertificateError,
   isPrivateAddress,
   parseCheckableUrl,
   refusalReason,
@@ -331,7 +332,78 @@ describe("inspectEmbeddable", () => {
       "framing",
     );
     assert.equal(await code({ dns, pages: {} }), "unreachable");
-    assert.equal(await code({ dns: { "a.example": ["10.0.0.5"] } }), undefined);
+    assert.equal(await code({ dns: { "a.example": ["10.0.0.5"] } }), "private");
+  });
+
+  it("tries the frame when only the certificate chain is untrusted (TLS inspection)", async () => {
+    const tlsFailure = () => {
+      const error = new TypeError("fetch failed");
+      error.cause = Object.assign(
+        new Error("self-signed certificate in certificate chain"),
+        {
+          code: "SELF_SIGNED_CERT_IN_CHAIN",
+        },
+      );
+      return error;
+    };
+    const calls = [];
+    const d = {
+      resolve: async () => ["8.8.8.8"],
+      fetchHead: async (u) => {
+        calls.push(u);
+        throw tlsFailure();
+      },
+    };
+    assert.deepEqual(await inspectEmbeddable(url("https://a.example/"), d), {
+      embeddable: true,
+      unverified: true,
+    });
+    assert.equal(await checkEmbeddable(url("https://a.example/"), d), true);
+  });
+
+  it("still refuses private addresses when the certificate is the problem", async () => {
+    const d = {
+      resolve: async () => ["10.0.0.5"],
+      fetchHead: async () => {
+        throw Object.assign(new Error("x"), { code: "SELF_SIGNED_CERT_IN_CHAIN" });
+      },
+    };
+    const verdict = await inspectEmbeddable(url("https://a.example/"), d);
+    assert.equal(verdict.embeddable, false);
+    assert.match(verdict.reason, /private network/i);
+    const literal = await inspectEmbeddable(url("https://169.254.169.254/"), d);
+    assert.equal(literal.embeddable, false);
+  });
+
+  it("re-checks the next hop's address before trusting a certificate error there", async () => {
+    const d = {
+      resolve: async (host) => (host === "a.example" ? ["8.8.8.8"] : ["127.0.0.1"]),
+      fetchHead: async (u) => {
+        if (u === "https://a.example/") {
+          return reply(302, { location: "https://evil.example/" });
+        }
+        throw Object.assign(new Error("x"), { code: "CERT_HAS_EXPIRED" });
+      },
+    };
+    const verdict = await inspectEmbeddable(url("https://a.example/"), d);
+    assert.equal(verdict.embeddable, false);
+  });
+
+  it("does not treat other network failures as certificate problems", async () => {
+    assert.equal(isCertificateError(new Error("ECONNREFUSED")), false);
+    assert.equal(
+      isCertificateError(Object.assign(new Error("x"), { code: "ECONNRESET" })),
+      false,
+    );
+    assert.equal(isCertificateError(null), false);
+    const d = {
+      resolve: async () => ["8.8.8.8"],
+      fetchHead: async () => {
+        throw new TypeError("fetch failed", { cause: { code: "ETIMEDOUT" } });
+      },
+    };
+    const verdict = await inspectEmbeddable(url("https://a.example/"), d);
+    assert.equal(verdict.code, "unreachable");
   });
 
   it("gives up after too many redirects", async () => {

@@ -28,6 +28,7 @@ import { useStaffStore } from "@/lib/staff/staffStore";
 import type { Employee } from "@/lib/staff/types";
 import { toast } from "@/lib/notifications/toastStore";
 import { ConfirmDialog, DASH, EmployeeAvatar, LocationChip, TonePill } from "./parts";
+import { CHECKLIST_TOAST_KEY, dismissToastByKey } from "./startedToast";
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -129,6 +130,7 @@ async function undoRemove(id: string, name: string, undo: OffboardUndo) {
         !(c.employeeId === id && c.kind === "offboarding" && progressOf(c).done === 0),
     ),
   }));
+  dismissToastByKey(CHECKLIST_TOAST_KEY);
   toast({ tone: "success", message: `${name} is back on the roster.` });
 }
 

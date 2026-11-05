@@ -15,6 +15,7 @@ import {
   noteTitle,
   noteListEntry,
   noteDateLabel,
+  noteSaveIndicator,
   notePreview,
   orderNotes,
   pushRevision,
@@ -27,8 +28,13 @@ import {
   undoNoticeText,
   updateNoteByAssistant,
   updateNoteByUser,
+  visibleNotes,
   wordCount,
+  SPELLCHECK_MAX_CHARS,
+  spellcheckEnabled,
 } from "./notesLogic.ts";
+
+const AT = "2026-11-05T09:30:00.000Z";
 
 const note = (id, content = id, extra = {}) => ({
   id,
@@ -93,7 +99,86 @@ describe("noteListEntry / noteDateLabel", () => {
   });
   it("hides the date of sample notes only", () => {
     assert.equal(noteDateLabel({ sample: true, updatedLabel: "Aug 25, 2026" }), "");
-    assert.equal(noteDateLabel({ updatedLabel: "Just now" }), "Just now");
+    assert.equal(noteDateLabel({ updatedLabel: "Aug 25, 2026" }), "Aug 25, 2026");
+  });
+  it("says the date is unknown for the old fixed 'Just now' label", () => {
+    assert.equal(noteDateLabel({ updatedLabel: "Just now" }), "Date unknown");
+    assert.equal(noteDateLabel({}), "Date unknown");
+    assert.equal(noteDateLabel({ updatedAt: "garbage" }), "Date unknown");
+  });
+  it("formats a real timestamp relative to now", () => {
+    const now = new Date(2026, 10, 5, 15, 0, 0);
+    const at = (...parts) => new Date(...parts).toISOString();
+    const label = (iso) => noteDateLabel({ updatedAt: iso }, now);
+    assert.equal(label(at(2026, 10, 5, 14, 59, 40)), "Just now");
+    assert.equal(label(at(2026, 10, 5, 9, 5)), "Today, 09:05");
+    assert.equal(label(at(2026, 10, 4, 23, 30)), "Yesterday, 23:30");
+    assert.equal(label(at(2026, 9, 20, 8, 0)), "Oct 20, 08:00");
+    assert.equal(label(at(2025, 11, 31, 8, 0)), "Dec 31, 2025");
+  });
+  it("is real: an edit stamps the time and drops the old label", () => {
+    const edited = updateNoteByUser(
+      note("a", "x", { updatedLabel: "Just now" }),
+      "y",
+      AT,
+    );
+    assert.equal(edited.updatedAt, AT);
+    assert.equal(edited.updatedLabel, undefined);
+  });
+});
+
+describe("noteSaveIndicator", () => {
+  it("says Saved only when the server has the text", () => {
+    assert.equal(noteSaveIndicator({ state: "saving" }).text, "Saving…");
+    assert.equal(noteSaveIndicator({ state: "saved" }).kind, "saved");
+  });
+  it("explains each failure in plain words", () => {
+    const big = noteSaveIndicator({
+      state: "error",
+      failure: "too-large",
+      willRetry: false,
+    });
+    assert.equal(big.kind, "error");
+    assert.match(big.detail, /too big/);
+    const down = noteSaveIndicator({
+      state: "error",
+      failure: "unreachable",
+      willRetry: true,
+    });
+    assert.equal(down.kind, "error");
+    assert.match(down.text, /retrying/);
+    const refused = noteSaveIndicator({
+      state: "error",
+      failure: "rejected",
+      willRetry: false,
+    });
+    assert.equal(refused.text, "Not saved");
+  });
+});
+
+describe("visibleNotes", () => {
+  const list = Array.from({ length: 10 }, (_, i) => ({ id: String(i) }));
+  it("shows the first page and counts what is hidden", () => {
+    const { shown, hidden } = visibleNotes(list, 4, null);
+    assert.equal(shown.length, 4);
+    assert.equal(hidden, 6);
+  });
+  it("widens to include the selected note", () => {
+    const { shown, hidden } = visibleNotes(list, 4, "6");
+    assert.equal(shown.length, 7);
+    assert.equal(hidden, 3);
+    assert.equal(visibleNotes(list, 50, null).hidden, 0);
+  });
+});
+
+describe("derived note data is cached per note", () => {
+  it("still reflects a replaced note", () => {
+    const a = note("a", "alpha #one");
+    assert.deepEqual(tagCounts([a]), [{ tag: "one", count: 1 }]);
+    assert.equal(noteMatchesText(a, "ALPHA"), true);
+    const b = { ...a, content: "beta #two" };
+    assert.deepEqual(tagCounts([b]), [{ tag: "two", count: 1 }]);
+    assert.equal(noteMatchesText(b, "alpha"), false);
   });
 });
 
@@ -110,28 +195,28 @@ describe("revisions", () => {
   });
   it("assistant update saves the previous body; restore brings it back", () => {
     const original = note("n", "old body");
-    const updated = updateNoteByAssistant(original, "new body", "Just now");
+    const updated = updateNoteByAssistant(original, "new body", AT);
     assert.equal(updated.content, "new body");
     assert.deepEqual(updated.revisions, ["old body"]);
     assert.equal(canRestoreRevision(updated), true);
-    const restored = restorePreviousRevision(updated, "Just now");
+    const restored = restorePreviousRevision(updated, AT);
     assert.equal(restored.content, "old body");
     assert.deepEqual(restored.revisions, []);
     assert.equal(canRestoreRevision(restored), false);
   });
   it("restore with no history is a no-op", () => {
     const n = note("n");
-    assert.equal(restorePreviousRevision(n, "Just now"), n);
+    assert.equal(restorePreviousRevision(n, AT), n);
   });
   it("assistant update with identical content is a no-op", () => {
     const n = note("n", "same");
-    assert.equal(updateNoteByAssistant(n, "same", "Just now"), n);
+    assert.equal(updateNoteByAssistant(n, "same", AT), n);
   });
   it("a user edit keeps revisions and clears the sample flag", () => {
     const edited = updateNoteByUser(
       note("n", "a", { sample: true, revisions: ["r"] }),
       "b",
-      "Just now",
+      AT,
     );
     assert.equal(edited.sample, undefined);
     assert.deepEqual(edited.revisions, ["r"]);
@@ -248,7 +333,7 @@ describe("pinning and ordering", () => {
     );
   });
   it("keeps the pin when a person edits the note", () => {
-    const edited = updateNoteByUser(note("a", "x", { pinned: true }), "y", "Just now");
+    const edited = updateNoteByUser(note("a", "x", { pinned: true }), "y", AT);
     assert.equal(edited.pinned, true);
   });
 });
@@ -333,5 +418,13 @@ describe("text filter", () => {
       filterNotes(notes, "home", "").map((n) => n.id),
       ["b"],
     );
+  });
+});
+
+describe("spellcheckEnabled", () => {
+  it("keeps the spell checker for normal notes and turns it off for huge ones", () => {
+    assert.equal(spellcheckEnabled("a short note"), true);
+    assert.equal(spellcheckEnabled("x".repeat(SPELLCHECK_MAX_CHARS)), true);
+    assert.equal(spellcheckEnabled("x".repeat(SPELLCHECK_MAX_CHARS + 1)), false);
   });
 });

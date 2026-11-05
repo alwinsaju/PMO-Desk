@@ -19,6 +19,33 @@ const MAX_REJECTED_SHOWN = 50;
 
 export const SCAN_INTERVAL_MS = 15_000;
 
+/** The few numbers behind the dock badge (GET /api/pmo/state?summary=1): never builds the
+ *  whole state, and reads the to-dos from the store's unchanged-folder cache. */
+export async function buildSummary(pmo: Pmo): Promise<{
+  ok: true;
+  summary: true;
+  serverTime: string;
+  today: string;
+  attention: PmoState["attention"];
+}> {
+  const [config, todos] = await Promise.all([
+    pmo.store.loadConfig(),
+    pmo.store.listTodosShared(),
+  ]);
+  const now = pmo.now();
+  return {
+    ok: true,
+    summary: true,
+    serverTime: now.toISOString(),
+    today: istDate(now, config.reminders.timeZone),
+    attention: attentionSummary(
+      todos.filter((todo) => todo.status === "open"),
+      now,
+      config.reminders,
+    ),
+  };
+}
+
 export async function buildState(
   pmo: Pmo,
   deps: {
@@ -30,8 +57,8 @@ export async function buildState(
   const { store, ingestor, worker } = pmo;
   const [config, proposals, todos, quarantine, parked, runtime] = await Promise.all([
     store.loadConfig(),
-    store.listProposals(),
-    store.listTodos(),
+    store.listProposalsShared(),
+    store.listTodosShared(),
     store.listQuarantine(),
     store.listRejectedFiles(MAX_ATTENTION_NAMES),
     deps.runtime(),

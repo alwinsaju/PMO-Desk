@@ -18,6 +18,7 @@ export function ReportDialog({
   subject,
   text,
   to,
+  recipients,
   onUse,
   onClose,
 }: {
@@ -26,11 +27,21 @@ export function ReportDialog({
   subject: string;
   text: string;
   to?: string;
+  /** Several addresses (semicolon-separated). A mail link takes one address only, so these get a Copy button and a hint. */
+  recipients?: string;
   /** Called when the text is copied or opened as a mail (the Templates app notes which template made it). */
   onUse?: () => void;
   onClose: () => void;
 }) {
   const mail = buildMailto({ to, subject, body: text });
+  const copyAddresses = async () => {
+    try {
+      await navigator.clipboard.writeText(recipients ?? "");
+      toast({ tone: "success", message: "Copied the addresses." });
+    } catch {
+      toast({ tone: "danger", message: "Could not copy to the clipboard." });
+    }
+  };
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(text);
@@ -60,9 +71,20 @@ export function ReportDialog({
           {!mail.ok && (
             <span className="text-ink-muted mr-auto text-[12px]">{mail.reason}</span>
           )}
+          {recipients && !to && (
+            <span className="text-ink-muted mr-auto text-[12px]">
+              The mail opens without recipients: copy the addresses and paste them into
+              To.
+            </span>
+          )}
           <Button variant="outline" onClick={onClose}>
             Close
           </Button>
+          {recipients && !to && (
+            <Button variant="outline" onClick={() => void copyAddresses()}>
+              Copy addresses
+            </Button>
+          )}
           <Button variant="outline" onClick={() => void copy()}>
             Copy
           </Button>

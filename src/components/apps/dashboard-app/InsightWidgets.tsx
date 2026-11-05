@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import {
   CalendarCheckIcon,
   ChartBarIcon,
@@ -28,6 +29,7 @@ import {
   type Health,
   type Pipeline,
   type TodayItem,
+  type TodaySummary,
   type Workload,
 } from "@/lib/dashboard/insights";
 import { Chip } from "../pmo-todo-app/parts";
@@ -37,55 +39,80 @@ const Line = ({ children }: { children: React.ReactNode }) => (
   <li className="text-ink-soft text-[13px] leading-snug">{children}</li>
 );
 
-/** Everything that needs you today in one ordered list; each row has an Open button for the app behind it. */
+/** Everything that needs you today in one ordered list, most urgent first; each row has an Open button for the
+ *  app behind it. The count in the header is the dock badge's number (same function), and rows beyond the
+ *  first few are one click away. */
 export function TodayWidget({
-  items,
+  summary,
+  needsYou,
   onOpen,
 }: {
-  items: TodayItem[];
+  summary: TodaySummary;
+  needsYou: { total: number; meaning: string | null };
   onOpen: (appId: TodayItem["appId"]) => void;
 }) {
+  const [expanded, setExpanded] = useState(false);
+  const items = expanded ? summary.items : summary.items.slice(0, TODAY_VISIBLE);
+  const hidden = summary.total - items.length;
   return (
     <Widget
       title="Today"
       icon={SunIcon}
-      count={items.length || undefined}
+      count={needsYou.total || undefined}
       testId="today-widget"
     >
-      {items.length === 0 ? (
+      {summary.total === 0 ? (
         <Empty>Nothing needs you right now.</Empty>
       ) : (
-        <ol className="flex flex-col divide-y divide-[var(--color-line)]">
-          {items.map((item, i) => (
-            <li
-              key={`${item.kind}-${i}`}
-              className="flex items-center gap-3 py-1.5 first:pt-0 last:pb-0"
-            >
-              <span
-                aria-hidden
-                className={cn(
-                  "h-2 w-2 shrink-0 rounded-full",
-                  TONE_DOT[TODAY_TONE[item.kind]],
-                )}
-              />
-              <span className="text-ink min-w-0 flex-1 text-[13px] leading-snug">
-                {item.text}
-              </span>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => onOpen(item.appId)}
-                aria-label={`Open ${TODAY_APP_LABEL[item.appId]}: ${item.text}`}
+        <>
+          <ol className="flex flex-col divide-y divide-[var(--color-line)]">
+            {items.map((item, i) => (
+              <li
+                key={`${item.kind}-${i}`}
+                className="flex items-center gap-3 py-1.5 first:pt-0 last:pb-0"
               >
-                Open
-              </Button>
-            </li>
-          ))}
-        </ol>
+                <span
+                  aria-hidden
+                  className={cn(
+                    "h-2 w-2 shrink-0 rounded-full",
+                    TONE_DOT[TODAY_TONE[item.kind]],
+                  )}
+                />
+                <span className="text-ink min-w-0 flex-1 text-[13px] leading-snug">
+                  {item.text}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onOpen(item.appId)}
+                  aria-label={`Open ${TODAY_APP_LABEL[item.appId]}: ${item.text}`}
+                >
+                  Open
+                </Button>
+              </li>
+            ))}
+          </ol>
+          {(hidden > 0 || expanded) && summary.total > TODAY_VISIBLE && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="mt-2"
+              aria-expanded={expanded}
+              onClick={() => setExpanded((v) => !v)}
+            >
+              {expanded ? "Show fewer" : `+${hidden} more`}
+            </Button>
+          )}
+        </>
+      )}
+      {needsYou.meaning && (
+        <p className="text-ink-muted mt-2 text-[12px]">Dock badge: {needsYou.meaning}</p>
       )}
     </Widget>
   );
 }
+
+const TODAY_VISIBLE = 10;
 
 const TONE_DOT: Record<RowTone, string> = {
   danger: "bg-red",

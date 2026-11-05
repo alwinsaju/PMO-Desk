@@ -45,11 +45,18 @@ export function chaserValues(input: ChaserValuesInput): Record<string, string> {
     waited: waiting
       ? waiting.quietDays > 0
         ? plural(waiting.quietDays, "working day")
-        : plural(waiting.calendarDays, "day")
+        : waiting.calendarDays > 0
+          ? plural(waiting.calendarDays, "day")
+          : "less than a day"
       : "a while",
     my_name: input.myName,
   };
 }
+
+/** The name to sign a message with: the first name in the settings, as written
+ *  ("Qa Tester", not "Qa"). Empty when none is set. */
+export const myFullName = (me: Pick<PmoConfig["me"], "names">): string =>
+  (me.names[0] ?? "").replace(/\s+/g, " ").trim();
 
 /** A chaser written from a template: subject, recipient and message. */
 export function chaserFromTemplate(

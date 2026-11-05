@@ -10,7 +10,7 @@ import type { RegisterSummary } from "../registers/alerts.ts";
 import { REGISTERS, registerById } from "../registers/defs.ts";
 import { isOpen, textOf } from "../registers/records.ts";
 import type { FieldValue, RegisterDef, RegisterRecord } from "../registers/types.ts";
-import type { ReportStatusRow, RunLike } from "./summary.ts";
+import { isDeliberateStop, type ReportStatusRow, type RunLike } from "./summary.ts";
 
 type Prefs = Pick<ReminderPrefs, "timeZone" | "workDays" | "chaserDays">;
 
@@ -98,55 +98,82 @@ const RANK: Record<TodayKind, number> = {
   away: 6,
 };
 
-export function todayList(input: TodayInput, limit = 10): TodayItem[] {
-  const out: TodayItem[] = [];
+export interface TodaySummary {
+  /** The first `limit` rows, most urgent first. */
+  items: TodayItem[];
+  /** Every row there is, shown or not. */
+  total: number;
+  /** Rows beyond the limit ("+N more"). */
+  more: number;
+}
+
+const days = (n: number) => `${n} day${n === 1 ? "" : "s"}`;
+
+/** Every Today row, most urgent first: by kind, and among late to-dos the longest overdue first. */
+export function todaySummary(input: TodayInput, limit = 10): TodaySummary {
+  const out: { item: TodayItem; late: number }[] = [];
+  const add = (item: TodayItem, late = 0) => out.push({ item, late });
   const open = input.todos.filter((t) => t.status === "open");
   for (const t of open) {
-    if (t.dueAt && t.dueAt < input.today)
-      out.push({
-        kind: "overdue",
-        text: `Overdue ${daysBetween(t.dueAt, input.today)} day(s): ${t.title}`,
-        appId: "pmo-todo",
-      });
-    else if (t.dueAt === input.today)
-      out.push({ kind: "due-today", text: `Due today: ${t.title}`, appId: "pmo-todo" });
+    if (t.dueAt && t.dueAt < input.today) {
+      const late = daysBetween(t.dueAt, input.today);
+      add(
+        {
+          kind: "overdue",
+          text: `Overdue by ${days(late)}: ${t.title}`,
+          appId: "pmo-todo",
+        },
+        late,
+      );
+    } else if (t.dueAt === input.today)
+      add({ kind: "due-today", text: `Due today: ${t.title}`, appId: "pmo-todo" });
     const so = signoffSummary(t, input.now, input.prefs);
     if (so && so.overdue)
-      out.push({
+      add({
         kind: "signoff",
         text: `Chase the sign-off${so.approver ? ` from ${so.approver}` : ""}: ${t.title}`,
         appId: "pmo-todo",
       });
   }
   for (const name of input.tasksNeedingYou)
-    out.push({ kind: "task", text: `${name} needs you`, appId: "tasks" });
+    add({ kind: "task", text: `${name} needs you`, appId: "tasks" });
   for (const c of input.contracts ?? [])
-    out.push({
+    add({
       kind: c.level === "late" ? "contract-late" : "contract-soon",
       text: `${c.vendor} contract: ${c.text}`,
       appId: "vendors",
     });
   if (input.pendingLeave > 0)
-    out.push({
+    add({
       kind: "leave",
       text: `${input.pendingLeave} leave request${input.pendingLeave === 1 ? "" : "s"} to decide`,
       appId: "staff",
     });
   if (input.reviewCount > 0)
-    out.push({
+    add({
       kind: "review",
       text: `${input.reviewCount} message${input.reviewCount === 1 ? "" : "s"} in the review queue`,
       appId: "pmo-todo",
     });
   if (input.awayToday.length > 0)
-    out.push({
+    add({
       kind: "away",
       text: `Out today: ${input.awayToday.slice(0, 4).join(", ")}${input.awayToday.length > 4 ? ` and ${input.awayToday.length - 4} more` : ""}`,
       appId: "staff",
     });
-  return out.sort((a, b) => RANK[a.kind] - RANK[b.kind]).slice(0, limit);
+  const sorted = out.sort(
+    (a, b) => RANK[a.item.kind] - RANK[b.item.kind] || b.late - a.late,
+  );
+  return {
+    items: sorted.slice(0, limit).map((e) => e.item),
+    total: sorted.length,
+    more: Math.max(0, sorted.length - limit),
+  };
 }
 
+export function todayList(input: TodayInput, limit = 10): TodayItem[] {
+  return todaySummary(input, limit).items;
+}
 // --- workload and aging ---------------------------------------------------------------------
 
 export interface Workload {
@@ -261,6 +288,7 @@ export function reportHealth(
 ): Health {
   const tasks = rows.map((row) => {
     const runs = [...(histories[row.id] ?? [])]
+      .filter((r) => !isDeliberateStop(r.outcome))
       .sort((a, b) => Date.parse(b.ended_at) - Date.parse(a.ended_at))
       .slice(0, 5);
     const failing = row.tone === "danger";
@@ -473,13 +501,15 @@ export function weekOverWeek(input: {
 
 // --- briefing and badges --------------------------------------------------------------------
 
+/** `total` is the real number of Today rows when `items` is only the first few of them. */
 export function briefingText(
   items: readonly TodayItem[],
   greeting = "Good morning",
+  total = items.length,
 ): string {
-  if (items.length === 0) return `${greeting}. Nothing needs you right now.`;
+  if (total === 0) return `${greeting}. Nothing needs you right now.`;
   const lines = items.slice(0, 5).map((i) => `• ${i.text}`);
-  return `${greeting}. ${items.length} thing${items.length === 1 ? "" : "s"} for today:\n${lines.join("\n")}`;
+  return `${greeting}. ${total} thing${total === 1 ? "" : "s"} for today:\n${lines.join("\n")}`;
 }
 
 export interface BriefingSettings {

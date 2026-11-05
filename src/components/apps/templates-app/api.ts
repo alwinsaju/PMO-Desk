@@ -9,7 +9,8 @@ const BASE = "/api/templates";
 const TIMEOUT_MS = 10_000;
 
 export type Reply<T extends object = object> =
-  ({ ok: true } & T) | { ok: false; reason: string; fields?: Record<string, string> };
+  | ({ ok: true } & T)
+  | { ok: false; reason: string; fields?: Record<string, string>; code?: "corrupt" };
 
 async function call<T extends object>(
   path: string,
@@ -38,6 +39,8 @@ export interface LibraryPayload {
   targets: TemplateTarget[];
   starters: Starter[];
   dir: string;
+  /** A note when the library file held entries that had to be left out. */
+  warning: string | null;
 }
 
 export const fetchLibrary = () => call<LibraryPayload>("");
@@ -46,6 +49,15 @@ export const createTemplate = (input: TemplateInput) =>
 export const saveTemplate = (id: string, input: TemplateInput) =>
   call<{ template: Template; displaced: Displaced[] }>(`/${id}`, "PUT", input);
 export const deleteTemplate = (id: string) => call(`/${id}`, "DELETE");
+export const restoreBuiltInTemplates = () =>
+  call<{ added: number; rebuilt: boolean; backup: string | null }>(
+    "/restore-built-in",
+    "POST",
+    {},
+  );
+/** Undo of a delete: the template comes back as it was. */
+export const undeleteTemplate = (template: Template) =>
+  call<{ template: Template; leftBehind: string[] }>("/undelete", "POST", { template });
 
 /** The template a task or app uses, or null (also when the server cannot be reached,
  *  so the caller simply keeps its own wording). */

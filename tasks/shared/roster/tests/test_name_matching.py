@@ -2,6 +2,8 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import name_matching
@@ -45,3 +47,27 @@ def test_load_roster_returns_stripped_names_and_available_emails(monkeypatch):
 
     assert roster_names == ["Ada Lovelace", "Grace Hopper"]
     assert email_by_roster_name == {"Ada Lovelace": "ada@example.com"}
+
+
+def _roster_with(monkeypatch, rows):
+    workbook = FakeWorkbook(FakeSheet(rows))
+    monkeypatch.setattr(
+        name_matching,
+        "openpyxl",
+        SimpleNamespace(load_workbook=lambda *_args, **_kwargs: workbook),
+        raising=False,
+    )
+
+
+def test_load_roster_refuses_a_roster_without_any_email(monkeypatch):
+    _roster_with(monkeypatch, [["Full Name", "Email"], ["Ada Lovelace", None], ["Grace Hopper", ""]])
+
+    with pytest.raises(SystemExit, match="no email addresses"):
+        name_matching.load_roster("Names.xlsx")
+
+
+def test_load_roster_refuses_an_empty_roster(monkeypatch):
+    _roster_with(monkeypatch, [["Full Name", "Email"]])
+
+    with pytest.raises(SystemExit, match="no names"):
+        name_matching.load_roster("Names.xlsx")

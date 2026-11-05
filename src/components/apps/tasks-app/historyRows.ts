@@ -13,7 +13,9 @@ export interface HistoryRow {
   key: string;
   run: HistoryRun;
   taskName: string;
-  pill: { label: string; tone: "success" | "danger" };
+  pill: { label: string; tone: "success" | "danger" | "neutral" };
+  /** One plain sentence for a run that was rejected or reset; null for completed and failed runs. */
+  note: string | null;
   duration: string;
   output: RunOutput | null;
 }
@@ -41,20 +43,45 @@ export function outputForRun(
   return best?.output ?? null;
 }
 
+/** The status pill and the plain sentence for how a run ended. Rejected and reset runs are not failures. */
+export function outcomeInfo(outcome: string): {
+  label: string;
+  tone: "success" | "danger" | "neutral";
+  note: string | null;
+} {
+  switch (outcome) {
+    case "failed":
+      return { label: "Failed", tone: "danger", note: null };
+    case "rejected":
+      return {
+        label: "Rejected",
+        tone: "neutral",
+        note: "You rejected this run at the review step. Nothing was sent.",
+      };
+    case "cancelled":
+      return {
+        label: "Reset",
+        tone: "neutral",
+        note: "This run was reset before it finished. Nothing was sent.",
+      };
+    default:
+      return { label: "Completed", tone: "success", note: null };
+  }
+}
+
 export function historyRows(
   runs: readonly HistoryRun[],
   tasks: readonly Pick<Task, "id" | "notifications">[],
 ): HistoryRow[] {
   const byId = new Map(tasks.map((t) => [t.id, t]));
   return runs.map((run) => {
-    const failed = run.outcome === "failed";
+    const info = outcomeInfo(run.outcome);
     return {
       key: `${run.task_id}:${run.run_id}`,
       run,
       taskName: run.task_name ?? run.task_id,
-      pill: failed
-        ? { label: "Failed", tone: "danger" }
-        : { label: "Completed", tone: "success" },
+      pill: { label: info.label, tone: info.tone },
+      note: info.note,
       duration: formatDuration(durationMs(run)),
       output: outputForRun(run, byId.get(run.task_id)?.notifications ?? []),
     };

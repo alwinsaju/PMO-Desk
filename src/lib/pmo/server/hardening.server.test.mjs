@@ -639,6 +639,9 @@ describe("D-12: retention archives old decided items, and polls re-parse nothing
 
     const file = path.join(dataDir, "todos", "td_5eed000003.json");
     const changed = await readJsonFile(file);
+    // A record rewritten in place by another program is noticed at the next recheck of the
+    // folder (30 s); ask for the recheck now.
+    pmo.store.listTrustMs = 0;
     await writeFile(file, JSON.stringify({ ...changed, title: "Edited elsewhere" }));
     const third = await poll();
     assert.equal(reads(), afterFirst + 1, "exactly the changed file is parsed again");

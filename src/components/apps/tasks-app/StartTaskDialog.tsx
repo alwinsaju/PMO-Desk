@@ -26,6 +26,7 @@ import { cn } from "@/lib/cn";
 import { FILE_SIZE, formatBytes } from "@/lib/format";
 import { getInputs, prepare, saveParams, uploadInput } from "./api";
 import { FileKindIcon } from "./FileKindIcon";
+import { focusDialogItself } from "./dialogFocus";
 import { fileKind, inputKind, requirementChecklist } from "./inputChecklist";
 import { SectionLabel, SeverityChip } from "./GateParts";
 import {
@@ -52,11 +53,12 @@ import {
   validateFile,
   type SelectChoice,
 } from "./startForm";
-import { refusalText } from "./taskPresenter";
+import { plainReason, refusalText } from "./taskPresenter";
 import { stillNeededText } from "./stillNeeded";
 import { readWorkbookSheets } from "./readWorkbook";
 import {
   checkSheets,
+  fileProblems,
   compareSnapshots,
   comparisonText,
   pushSnapshot,
@@ -67,6 +69,8 @@ import {
   type RunSnapshot,
 } from "@/lib/tasks/inputCheck";
 import { dryRunPlan } from "@/lib/tasks/dryRun";
+import { hidePaths } from "@/lib/tasks/failureExplainer";
+import { joinList } from "@/lib/tasks/listText";
 import { getDesktopBridge } from "@/lib/pmo/desktopBridge";
 import { useTasksPrefs } from "@/lib/tasks/tasksPrefsStore";
 import type { ActionResult, InputStatus, OptionsFile, Task, TaskInputDef } from "./types";
@@ -115,6 +119,7 @@ export function StartTaskDialog({
   // What reading each chosen export found (non-blocking), and its snapshot, which becomes the
   // comparison base once the run starts.
   const [fileChecks, setFileChecks] = useState<Record<string, InputCheck>>({});
+  const [startAnyway, setStartAnyway] = useState(false);
   const [comparisons, setComparisons] = useState<Record<string, Comparison>>({});
   const pendingSnapshots = useRef<Record<string, RunSnapshot>>({});
   // Guards async results from a previous opening of the dialog, and (for
@@ -164,6 +169,7 @@ export function StartTaskDialog({
     setStarting(false);
     setStartError(null);
     setFileChecks({});
+    setStartAnyway(false);
     setComparisons({});
     pendingSnapshots.current = {};
     void getInputs(task.id).then((reply) => {
@@ -188,10 +194,18 @@ export function StartTaskDialog({
     if (!reply.ok || !reply.options) {
       setOptions(null);
       setCheck("failed");
+      // Folder names on this computer are not for the form; the full text is in the task's log.
       setCheckError(
-        [reply.reason ?? "The check didn't produce any options.", reply.stderr_tail]
-          .filter(Boolean)
-          .join("\n"),
+        hidePaths(
+          [
+            reply.reason
+              ? plainReason(reply.reason)
+              : "The check didn't produce any options.",
+            reply.stderr_tail,
+          ]
+            .filter(Boolean)
+            .join("\n"),
+        ),
       );
       return;
     }
@@ -224,6 +238,13 @@ export function StartTaskDialog({
       return rest;
     });
     setBusy((b) => ({ ...b, [input.id]: true }));
+    setStartAnyway(false);
+    // The reading of an earlier file must not stay on screen beside this one.
+    setFileChecks((c) => {
+      const rest = { ...c };
+      delete rest[input.id];
+      return rest;
+    });
     // Read the export on this computer while it uploads: a wrong sheet or a missing column is better
     // found now than after a failed run. It only warns; the upload goes ahead either way.
     const rule = ruleFor(task.id, input.id);
@@ -264,7 +285,10 @@ export function StartTaskDialog({
     if (session.current !== mine) return;
     setBusy((b) => ({ ...b, [input.id]: false }));
     if (!reply.ok) {
-      setFileErrors((e) => ({ ...e, [input.id]: reply.reason ?? "The upload failed." }));
+      setFileErrors((e) => ({
+        ...e,
+        [input.id]: reply.reason ? plainReason(reply.reason) : "The upload failed.",
+      }));
       return;
     }
     useTasksPrefs.getState().update((t) => ({
@@ -327,14 +351,25 @@ export function StartTaskDialog({
 
   const problems = options?.problems ?? [];
   const sourceLine = holidaySourceLine(options);
+  const wrongFiles = fileProblems(
+    fileChecks,
+    Object.fromEntries(files.map((f) => [f.id, f.label.replace(/\s*\(.*$/, "")])),
+  );
   const canStart =
-    loadState === "ready" && missing.length === 0 && !uploading && !starting;
+    loadState === "ready" &&
+    missing.length === 0 &&
+    !uploading &&
+    !starting &&
+    (wrongFiles.length === 0 || startAnyway);
   const plan = useMemo(() => dryRunPlan(task, statuses), [task, statuses]);
   const lastFiles = useTasksPrefs((s) => s.lastFiles);
 
   return (
     <Dialog open={open} onOpenChange={(next) => !starting && onOpenChange(next)}>
-      <DialogContent className="scroll-thin flex max-h-[85vh] max-w-xl flex-col overflow-y-auto px-[30px] pt-7 pb-6">
+      <DialogContent
+        onOpenAutoFocus={focusDialogItself}
+        className="scroll-thin flex max-h-[85vh] max-w-xl flex-col overflow-y-auto px-[30px] pt-7 pb-6"
+      >
         <DialogTitle>Run {task.displayName}</DialogTitle>
         <DialogDescription>{startDescription(task)}</DialogDescription>
 
@@ -427,10 +462,11 @@ export function StartTaskDialog({
                       ? "Inputs checked."
                       : ready
                         ? "Check the files to see which cycles can be built."
-                        : `Upload ${afterIds
-                            .filter((id) => !isPresent(statuses, id))
-                            .map((id) => files.find((f) => f.id === id)?.label ?? id)
-                            .join(" and ")} first.`}
+                        : `Upload ${joinList(
+                            afterIds
+                              .filter((id) => !isPresent(statuses, id))
+                              .map((id) => files.find((f) => f.id === id)?.label ?? id),
+                          )} first.`}
                 </p>
                 {check === "failed" && checkError && (
                   <pre className="rounded-control bg-red-soft text-red px-3.5 py-2.5 font-mono text-[11.5px] whitespace-pre-wrap">
@@ -512,6 +548,30 @@ export function StartTaskDialog({
                   </li>
                 ))}
               </ul>
+            </div>
+          )}
+          {wrongFiles.length > 0 && (
+            <div
+              role="alert"
+              data-testid="wrong-file-warning"
+              className="rounded-control bg-amber-soft text-ink px-3.5 py-2.5 text-[12.5px]"
+            >
+              <p className="font-semibold">
+                A file you chose does not look like the one this task needs:
+              </p>
+              <ul className="mt-1 list-disc pl-5">
+                {wrongFiles.map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ul>
+              <label className="mt-2 flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={startAnyway}
+                  onChange={(e) => setStartAnyway(e.target.checked)}
+                />
+                I have checked the file; start anyway
+              </label>
             </div>
           )}
           <div className="flex items-center justify-end gap-2">

@@ -7,8 +7,10 @@ import { afterEach, beforeEach, describe, it } from "node:test";
 import {
   MAX_BODY_BYTES,
   isUiStateKey,
+  maxBodyBytesFor,
   parsePutBody,
   readUiState,
+  readUiStateWithTime,
   removeUiState,
   uiStatePath,
   writeUiState,
@@ -134,6 +136,19 @@ describe("removeUiState", () => {
   });
 });
 
+describe("readUiStateWithTime", () => {
+  it("returns the value with the time it was written, or nulls", async () => {
+    assert.deepEqual(await readUiStateWithTime("notes", env), {
+      value: null,
+      updatedAt: null,
+    });
+    await writeUiState("notes", { a: 1 }, env);
+    const read = await readUiStateWithTime("notes", env);
+    assert.deepEqual(read.value, { a: 1 });
+    assert.ok(Math.abs(read.updatedAt - Date.now()) < 60_000);
+  });
+});
+
 describe("parsePutBody", () => {
   it("accepts { value: object | array }", () => {
     assert.deepEqual(parsePutBody('{"value":{"a":1}}'), { ok: true, value: { a: 1 } });
@@ -151,6 +166,20 @@ describe("parsePutBody", () => {
     const text = JSON.stringify({ value: { blob: "é".repeat(MAX_BODY_BYTES / 2) } });
     assert.ok(text.length < MAX_BODY_BYTES);
     assert.equal(parsePutBody(text).status, 413);
+  });
+
+  it("gives notes a larger limit than other keys, with a clear refusal beyond it", () => {
+    assert.equal(maxBodyBytesFor("preferences"), MAX_BODY_BYTES);
+    assert.ok(maxBodyBytesFor("notes") >= 8 * MAX_BODY_BYTES);
+    const twoMb = JSON.stringify({ value: { blob: "x".repeat(2 * MAX_BODY_BYTES) } });
+    assert.equal(parsePutBody(twoMb, maxBodyBytesFor("preferences")).status, 413);
+    assert.equal(parsePutBody(twoMb, maxBodyBytesFor("notes")).ok, true);
+    const huge = JSON.stringify({
+      value: { blob: "x".repeat(maxBodyBytesFor("notes")) },
+    });
+    const refused = parsePutBody(huge, maxBodyBytesFor("notes"));
+    assert.equal(refused.status, 413);
+    assert.match(refused.reason, /limit 16 MB/);
   });
 
   it("rejects non-JSON and wrong shapes with 400", () => {

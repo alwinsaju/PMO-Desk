@@ -46,6 +46,10 @@ export interface StaffState {
   timeOff: TimeOffRequest[];
   /** People moved off the roster; other apps do not see them. */
   offboarded: OffboardedEmployee[];
+  /** What the server has confirmed, without the edits still on their way. Things that start
+   *  by themselves for new people (checklists) read these, so a failed add leaves nothing behind. */
+  savedEmployees: Employee[];
+  savedOffboarded: OffboardedEmployee[];
   status: StaffStatus;
   /** Reads all collections from the server. Skipped while an edit is in flight. */
   load: () => Promise<void>;
@@ -86,14 +90,21 @@ const pending: { [K in StaffKind]: StaffChanges<Collections[K]>[] } = {
   timeoff: [],
   offboarded: [],
 };
+/** People being removed from the roster whose offboard is still on its way to the server:
+ *  they leave the screen at once, in one state change, and come back if the server refuses. */
+const departing = new Set<string>();
 
-function visible(): Pick<StaffState, "employees" | "shifts" | "timeOff" | "offboarded"> {
+function visible(): Pick<
+  StaffState,
+  "employees" | "shifts" | "timeOff" | "offboarded" | "savedEmployees" | "savedOffboarded"
+> {
   const lay = <K extends StaffKind>(kind: K): Collections[K][] =>
     pending[kind].reduce<Collections[K][]>(
       (items, changes) => mergeChanges(items, changes),
       confirmed[kind],
     );
-  const employees = lay("employees");
+  const laid = lay("employees");
+  const employees = departing.size > 0 ? laid.filter((e) => !departing.has(e.id)) : laid;
   // A person who is gone takes their time off with them (their shift roster entry
   // stays, unlinked, so its shifts are kept).
   const people = new Set(employees.map((e) => e.id));
@@ -102,6 +113,8 @@ function visible(): Pick<StaffState, "employees" | "shifts" | "timeOff" | "offbo
     shifts: lay("shifts"),
     timeOff: lay("timeoff").filter((r) => people.has(r.employeeId)),
     offboarded: lay("offboarded"),
+    savedEmployees: confirmed.employees,
+    savedOffboarded: confirmed.offboarded,
   };
 }
 
@@ -150,6 +163,10 @@ export const useStaffStore = create<StaffState>()((set, get) => {
   // Runs after every earlier write to either list, and before any later one.
   const move = (action: "offboard" | "restore", ids: string[], relink?: RosterLink[]) => {
     inFlight++;
+    if (action === "offboard") {
+      for (const id of ids) departing.add(id);
+      set(visible());
+    }
     const run = async (): Promise<StaffResult & { undo?: OffboardUndo }> => {
       try {
         const response = await fetch("/api/staff/offboard", {
@@ -181,6 +198,7 @@ export const useStaffStore = create<StaffState>()((set, get) => {
         return { ok: false, reason: OFFLINE };
       } finally {
         inFlight--;
+        if (action === "offboard") for (const id of ids) departing.delete(id);
         set(visible());
       }
     };
@@ -196,6 +214,8 @@ export const useStaffStore = create<StaffState>()((set, get) => {
     shifts: [],
     timeOff: [],
     offboarded: [],
+    savedEmployees: [],
+    savedOffboarded: [],
     status: "idle",
 
     load: async () => {

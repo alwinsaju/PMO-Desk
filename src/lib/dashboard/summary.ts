@@ -213,6 +213,11 @@ export interface RunLike {
   error: string | null;
 }
 
+/** A run the person ended on purpose (rejected at the review step, or reset): not a failure. */
+export function isDeliberateStop(outcome: string): boolean {
+  return outcome === "rejected" || outcome === "cancelled";
+}
+
 export interface SavedReportLike {
   title: string;
   period: { label: string; startDay: string; endDay: string };
@@ -290,6 +295,13 @@ function taskStatus(
       needsYou: false,
     };
   const when = describeInstant(lastRun.ended_at || lastRun.started_at, timeZone);
+  if (isDeliberateStop(lastRun.outcome))
+    return {
+      tone: "neutral",
+      status: lastRun.outcome === "rejected" ? "Rejected" : "Stopped",
+      detail: when,
+      needsYou: false,
+    };
   return lastRun.outcome === "completed"
     ? { tone: "success", status: "Completed", detail: when, needsYou: false }
     : {

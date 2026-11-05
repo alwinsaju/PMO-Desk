@@ -335,6 +335,14 @@ describe("saving the inbox choice", () => {
         /Documents/,
       ],
       ["the install folder", "C:\\Program Files\\PMO Desk", /PMO Desk itself/],
+      ["C:\\Windows", "C:\\Windows", /Windows or program folder/],
+      ["C:\\Windows\\System32", "c:/windows/system32/", /Windows or program folder/],
+      [
+        "Program Files (x86)",
+        "D:\\Program Files (x86)\\Foo",
+        /Windows or program folder/,
+      ],
+      ["ProgramData", "C:\\ProgramData", /Windows or program folder/],
       [
         "inside the data folder",
         "C:\\Users\\pat\\AppData\\Local\\PMO Desk\\pmo\\inbox",

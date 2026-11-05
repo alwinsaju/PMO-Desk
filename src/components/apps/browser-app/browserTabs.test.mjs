@@ -7,6 +7,7 @@ import {
   closeTab,
   createTabs,
   currentEntry,
+  cycleTab,
   entryAddress,
   goBack,
   goForward,
@@ -65,6 +66,22 @@ describe("tabs", () => {
     s = updateTab(s, "b", (t) => pushEntry(t, url("https://example.com/")));
     assert.equal(activeTab(s).history.length, 2);
     assert.equal(s.tabs[0].history.length, 1);
+  });
+});
+
+describe("cycleTab", () => {
+  it("moves to the next or previous tab and wraps round", () => {
+    let s = createTabs("a", home);
+    s = openTab(s, "b", home);
+    s = openTab(s, "c", home);
+    assert.equal(s.activeId, "c");
+    assert.equal(cycleTab(s, 1).activeId, "a");
+    assert.equal(cycleTab(s, -1).activeId, "b");
+    assert.equal(cycleTab(selectTab(s, "a"), -1).activeId, "c");
+  });
+  it("does nothing with a single tab", () => {
+    const s = createTabs("a", home);
+    assert.equal(cycleTab(s, 1), s);
   });
 });
 

@@ -2,6 +2,7 @@
 
 import { useId } from "react";
 import { FormField, Input } from "@/components/ui";
+import { fieldLimit, lengthHint } from "@/lib/registers/limits";
 import type { FieldDef, FieldValue } from "@/lib/registers/types";
 import { NativeSelect, TextArea } from "../pmo-todo-app/parts";
 
@@ -14,6 +15,7 @@ export function FieldInput({
   people,
   projects = [],
   error,
+  warning,
   showErrorNow,
 }: {
   field: FieldDef;
@@ -23,6 +25,8 @@ export function FieldInput({
   /** Project names suggested for a field with `suggest: "projects"`. */
   projects?: readonly string[];
   error?: string;
+  /** A soft problem shown in amber under the field; the record can still be saved. */
+  warning?: string;
   showErrorNow?: boolean;
 }) {
   const listId = useId();
@@ -38,7 +42,16 @@ export function FieldInput({
       )}
     </>
   );
-  const frame = { label, error, showErrorNow };
+  const frame = {
+    label,
+    error,
+    showErrorNow,
+    hint: warning ? (
+      <span className="text-amber font-medium">{warning}</span>
+    ) : (
+      lengthHint(text.trim().length, fieldLimit(field))
+    ),
+  };
   // A suggestion list is only a hint: the box still takes any text.
   const suggestions =
     field.type === "person" ? people : field.suggest === "projects" ? projects : null;

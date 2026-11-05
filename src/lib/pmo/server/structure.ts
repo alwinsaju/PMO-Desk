@@ -268,7 +268,11 @@ export class StructuringWorker {
     }
     const config = await this.store.loadConfig();
     const intake = raw.intake;
-    const { text: bodyText, replyBelowQuote } = prepareForModelDetailed(intake);
+    const {
+      text: bodyText,
+      replyBelowQuote,
+      truncated,
+    } = prepareForModelDetailed(intake);
 
     // Thread-aware branch: the message belongs to an open to-do.
     if (claimed.update) {
@@ -385,6 +389,7 @@ ${bodyText}`,
             subject: intake.subject,
             bodyText,
             sender: { name: intake.sender.name, address: intake.sender.address },
+            attachmentCount: intake.attachments.length,
           });
           return { task, grounded, rawDraft, draft, adjustments, fallback };
         });
@@ -405,6 +410,7 @@ ${bodyText}`,
             structuring: c.fallback ? "fallback" : "ok",
             quoteVerified: c.grounded.verified,
             replyBelowQuote: replyBelowQuote || undefined,
+            modelReadPartOnly: truncated || undefined,
             part: total > 1 ? { index, total } : null,
             possibleDuplicateOf: twin == null ? null : idOf(twin),
             ai: {

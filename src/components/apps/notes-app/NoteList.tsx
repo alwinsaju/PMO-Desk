@@ -1,16 +1,17 @@
 "use client";
 
+import { memo, useState } from "react";
 import { PushPinIcon, TrashIcon } from "@phosphor-icons/react";
-import { IconButton, Input, ScrollArea } from "@/components/ui";
+import { Button, IconButton, Input, ScrollArea } from "@/components/ui";
 import { noSpellcheck } from "@/lib/ui/noSpellcheck";
 import { cn } from "@/lib/cn";
 import {
-  filterNotes,
+  LIST_PAGE_SIZE,
   noteDateLabel,
   noteListEntry,
   noteTags,
   noteTitle,
-  orderNotes,
+  visibleNotes,
   type Note,
 } from "./notesLogic";
 
@@ -92,22 +93,25 @@ export function TagFilter({
   );
 }
 
-function NoteRow({
+const NoteRow = memo(function NoteRow({
   note,
   selected,
+  now,
   onSelect,
   onDelete,
   onTogglePin,
 }: {
   note: Note;
   selected: boolean;
-  onSelect: () => void;
-  onDelete: () => void;
-  onTogglePin: () => void;
+  /** Re-renders the row when the minute changes so "Just now" and "Today" stay true. */
+  now: number;
+  onSelect: (id: string) => void;
+  onDelete: (id: string) => void;
+  onTogglePin: (id: string) => void;
 }) {
   const { title, preview } = noteListEntry(note.content);
   const tags = noteTags(note.content);
-  const meta = [noteDateLabel(note), ...tags.map((t) => `#${t}`)]
+  const meta = [noteDateLabel(note, new Date(now)), ...tags.map((t) => `#${t}`)]
     .filter(Boolean)
     .join(" · ");
   return (
@@ -122,7 +126,7 @@ function NoteRow({
     >
       <button
         type="button"
-        onClick={onSelect}
+        onClick={() => onSelect(note.id)}
         className="rounded-control focus-ring flex min-w-0 flex-col gap-0.5 px-3 pt-[10px] text-left"
       >
         {/* line-clamp, not `truncate`: nowrap would make the ScrollArea's measuring wrapper as wide as the longest note. */}
@@ -167,7 +171,7 @@ function NoteRow({
             variant="ghost"
             size="sm"
             shape="round"
-            onClick={onTogglePin}
+            onClick={() => onTogglePin(note.id)}
             className="text-ink-muted h-[26px] w-[26px]"
           >
             <PushPinIcon size={14} weight={note.pinned ? "fill" : "regular"} />
@@ -177,7 +181,7 @@ function NoteRow({
             variant="ghost"
             size="sm"
             shape="round"
-            onClick={onDelete}
+            onClick={() => onDelete(note.id)}
             className="text-ink-muted hover:bg-red-soft hover:text-red h-[26px] w-[26px]"
           >
             <TrashIcon size={14} />
@@ -186,36 +190,51 @@ function NoteRow({
       </div>
     </li>
   );
-}
+});
 
-/** The sidebar list: pinned notes first, then the rest, narrowed by the active tag and the text filter. */
+/** The sidebar list: pinned notes first, then the rest, already narrowed by the active tag and the
+ *  text filter. Only the first page of rows is drawn (thousands of rows make the window crawl). */
 export function NoteList({
-  notes,
+  pinned,
+  others,
+  total,
   selectedId,
-  tag,
-  query,
+  resetKey,
+  now,
   onSelect,
   onDelete,
   onTogglePin,
 }: {
-  notes: Note[];
+  pinned: Note[];
+  others: Note[];
+  /** All notes, before filtering. */
+  total: number;
   selectedId: string | null;
-  tag: string | null;
-  /** Text typed in the filter box; blank shows every note. */
-  query: string;
+  /** Changes when the filters change, so the list goes back to its first page. */
+  resetKey: string;
+  now: number;
   onSelect: (id: string) => void;
   onDelete: (id: string) => void;
   onTogglePin: (id: string) => void;
 }) {
-  const { pinned, others } = orderNotes(filterNotes(notes, tag, query));
+  const [limit, setLimit] = useState(LIST_PAGE_SIZE);
+  const [seenKey, setSeenKey] = useState(resetKey);
+  if (seenKey !== resetKey) {
+    setSeenKey(resetKey);
+    setLimit(LIST_PAGE_SIZE);
+  }
+  const { shown, hidden } = visibleNotes([...pinned, ...others], limit, selectedId);
+  const shownPinned = shown.filter((n) => n.pinned);
+  const shownOthers = shown.filter((n) => !n.pinned);
   const row = (note: Note) => (
     <NoteRow
       key={note.id}
       note={note}
       selected={note.id === selectedId}
-      onSelect={() => onSelect(note.id)}
-      onDelete={() => onDelete(note.id)}
-      onTogglePin={() => onTogglePin(note.id)}
+      now={now}
+      onSelect={onSelect}
+      onDelete={onDelete}
+      onTogglePin={onTogglePin}
     />
   );
   const heading = (text: string) => (
@@ -229,16 +248,28 @@ export function NoteList({
   return (
     <ScrollArea className="min-h-0 flex-1">
       <ul className="flex flex-col gap-1 px-2.5 pb-3">
-        {pinned.length > 0 && heading("Pinned")}
-        {pinned.map(row)}
-        {pinned.length > 0 && others.length > 0 && heading("Notes")}
-        {others.map(row)}
-        {notes.length === 0 && (
+        {shownPinned.length > 0 && heading("Pinned")}
+        {shownPinned.map(row)}
+        {shownPinned.length > 0 && shownOthers.length > 0 && heading("Notes")}
+        {shownOthers.map(row)}
+        {hidden > 0 && (
+          <li className="flex justify-center px-3 py-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => setLimit(shown.length + LIST_PAGE_SIZE)}
+            >
+              Show {Math.min(hidden, LIST_PAGE_SIZE)} more ({hidden} hidden)
+            </Button>
+          </li>
+        )}
+        {total === 0 && (
           <li className="text-ink-faint px-3 py-8 text-center text-[13px]">
             No notes yet.
           </li>
         )}
-        {notes.length > 0 && pinned.length + others.length === 0 && (
+        {total > 0 && pinned.length + others.length === 0 && (
           <li className="text-ink-faint px-3 py-8 text-center text-[13px]">
             No note matches this filter.
           </li>

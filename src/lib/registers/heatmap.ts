@@ -15,6 +15,8 @@ export interface Heatmap {
   /** One array per row, highest first. */
   cells: HeatCell[][];
   total: number;
+  /** Open records the grid cannot place because one of the two fields is blank. */
+  unplaced: number;
 }
 
 /** Open records counted per (row, column) of the definition's `heat` fields; null without one. */
@@ -49,5 +51,6 @@ export function heatmap(
     cols: colOptions,
     cells,
     total: cells.flat().reduce((sum, c) => sum + c.count, 0),
+    unplaced: open.length - cells.flat().reduce((sum, c) => sum + c.count, 0),
   };
 }

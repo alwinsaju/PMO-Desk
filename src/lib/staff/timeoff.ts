@@ -52,6 +52,64 @@ export type TimeOffErrors = Partial<
   Record<"employeeId" | "startDate" | "endDate", string>
 >;
 
+/** Keep only the employee error (the dates come from a pasted list). The result has no
+ *  keys at all when the employee is fine, so "no errors" checks work. */
+export function employeeErrorOnly(errors: TimeOffErrors): TimeOffErrors {
+  return errors.employeeId ? { employeeId: errors.employeeId } : {};
+}
+
+/** The overlap rule used by the server: a request clashes with an earlier one of the same person. */
+export function findOverlap(
+  request: TimeOffRequest,
+  others: readonly TimeOffRequest[],
+): TimeOffRequest | undefined {
+  return others.find(
+    (r) =>
+      r.id !== request.id &&
+      r.employeeId === request.employeeId &&
+      r.status !== "rejected" &&
+      request.status !== "rejected" &&
+      overlaps(r, request),
+  );
+}
+
+/** The first new or moved request that lands on days its person already has time off (rejected requests
+ *  never count, and neither does one that only changed its reason or decision). The server refuses
+ *  these, so the screen's own check cannot be bypassed. */
+export function firstClash(
+  incoming: readonly TimeOffRequest[],
+  current: readonly TimeOffRequest[],
+  removed: readonly string[] = [],
+): { request: TimeOffRequest; other: TimeOffRequest } | undefined {
+  const before = new Map(current.map((r) => [r.id, r]));
+  const gone = new Set(removed);
+  const byPerson = new Map<string, Map<string, TimeOffRequest>>();
+  const place = (r: TimeOffRequest) => {
+    let list = byPerson.get(r.employeeId);
+    if (!list) byPerson.set(r.employeeId, (list = new Map()));
+    list.set(r.id, r);
+  };
+  for (const r of current) if (!gone.has(r.id)) place(r);
+  for (const r of incoming) {
+    const prev = before.get(r.id);
+    const unchanged =
+      prev !== undefined &&
+      prev.employeeId === r.employeeId &&
+      prev.startDate === r.startDate &&
+      prev.endDate === r.endDate &&
+      (prev.status === "rejected") === (r.status === "rejected");
+    if (!unchanged && r.status !== "rejected") {
+      const other = findOverlap(r, [...(byPerson.get(r.employeeId)?.values() ?? [])]);
+      if (other) return { request: r, other };
+    }
+    // A request that moved to another person leaves the old person's list.
+    if (prev && prev.employeeId !== r.employeeId)
+      byPerson.get(prev.employeeId)?.delete(r.id);
+    place(r);
+  }
+  return undefined;
+}
+
 export function validateTimeOff(
   draft: TimeOffRequest,
   all: readonly TimeOffRequest[],

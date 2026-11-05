@@ -1,7 +1,12 @@
 // "Did the backlog report run this week?" and "why did the last run fail?", answered from
 // the Tasks engine's run history. Facts only: every state and date comes from the data.
 // Pure: the command bar fetches the history (the engine is called from the browser).
-import { lastLine, REPORT_TASKS, type RunLike } from "../dashboard/summary.ts";
+import {
+  isDeliberateStop,
+  lastLine,
+  REPORT_TASKS,
+  type RunLike,
+} from "../dashboard/summary.ts";
 import { describeInstant, localParts } from "../pmo/due.ts";
 import { addDays, dayName, formatDate, mondayOf } from "../staff/dates.ts";
 import { taskById } from "../tasks-engine/catalog.ts";
@@ -72,7 +77,7 @@ export function runInfoReply(
   let worst: { id: string; run: RunLike } | null = null;
   for (const id of candidates) {
     const last = data.histories[id]?.[0];
-    if (!last || last.outcome === "completed") continue;
+    if (!last || last.outcome === "completed" || isDeliberateStop(last.outcome)) continue;
     const at = Date.parse(last.ended_at || last.started_at);
     const best = worst
       ? Date.parse(worst.run.ended_at || worst.run.started_at)

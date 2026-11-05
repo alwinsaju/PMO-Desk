@@ -64,7 +64,7 @@ function InstallDialog({
           {replacing ? "Update" : "Install"} “{pack.name}”?
         </DialogTitle>
         <DialogDescription>
-          Version {pack.packVersion || "?"} · {pack.files.length} files ·{" "}
+          {pack.id} · Version {pack.packVersion || "?"} · {pack.files.length} files ·{" "}
           {kb(pack.totalBytes)}
         </DialogDescription>
         <div className="mt-3 flex flex-col gap-3">
@@ -73,8 +73,9 @@ function InstallDialog({
             className="bg-amber-soft text-ink rounded-control px-3 py-2 text-[13px]"
           >
             A task pack contains scripts that run on this computer with your access.
-            Install it only if you trust who made it. A task still stops at the review
-            step, but a script is code.
+            Install it only if you trust who made it. Every pack has to stop for your
+            review or confirmation at least once, but the scripts before and after that
+            point run without asking.
           </p>
           <Field label="Fingerprint (SHA-256)">
             <code
@@ -219,7 +220,7 @@ export function PacksTab({ onChanged }: { onChanged: () => void }) {
       )}
       {packs && packs.length > 0 && (
         <ul
-          className="grid grid-cols-[repeat(auto-fill,minmax(250px,1fr))] gap-4"
+          className="grid grid-cols-[repeat(auto-fill,minmax(min(250px,100%),1fr))] gap-4"
           aria-label="Installed packs"
         >
           {packs.map((pack) => (
@@ -242,8 +243,11 @@ export function PacksTab({ onChanged }: { onChanged: () => void }) {
                   >
                     {pack.name}
                   </span>
-                  <span className="text-ink-muted block truncate text-[12px]">
-                    {pack.fingerprint.slice(0, 16)}…
+                  <span
+                    className="text-ink-muted block truncate text-[12px]"
+                    title={`${pack.id} · ${pack.fingerprint}`}
+                  >
+                    {pack.id} · {pack.fingerprint.slice(0, 8)}…
                   </span>
                 </span>
                 <Badge variant="neutral">v{pack.packVersion || "?"}</Badge>

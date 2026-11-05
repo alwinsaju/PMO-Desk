@@ -20,6 +20,26 @@ export interface OnCallPlan {
   uncovered: string[];
 }
 
+/** Every day covered by the holidays (a multi-day holiday counts each of its days), limited to from..to. */
+export function holidayDays(
+  events: readonly { kind: string; date: string; endDate: string }[],
+  from: string,
+  to: string,
+): string[] {
+  const out = new Set<string>();
+  for (const event of events) {
+    if (event.kind !== "holiday") continue;
+    const last = event.endDate < to ? event.endDate : to;
+    // Bounded by the 366-day window below, so a very long event cannot stall the panel.
+    let day = event.date < from ? from : event.date;
+    for (let n = 0; day <= last && n < 366; n++) {
+      out.add(day);
+      day = addDays(day, 1);
+    }
+  }
+  return [...out].sort();
+}
+
 /** Weekend days in the range plus any extra days (holidays). */
 export function onCallDays(
   from: string,

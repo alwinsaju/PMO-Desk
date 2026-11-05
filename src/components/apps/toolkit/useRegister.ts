@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { FieldValue, RegisterRecord } from "@/lib/registers/types";
+import type { FieldValue, InvalidRecord, RegisterRecord } from "@/lib/registers/types";
+import { publishSummary } from "./publishSummary";
 import {
   changeRegister,
   fetchRegister,
@@ -13,6 +14,8 @@ const REFRESH_MS = 30_000;
 
 export interface RegisterState {
   items: RegisterRecord[];
+  /** Records in the file that fail the checks. They are kept as they are until repaired or removed. */
+  invalid: InvalidRecord[];
   config: Record<string, FieldValue>;
   loaded: boolean;
   error: { reason: string; detail?: string } | null;
@@ -26,6 +29,7 @@ export interface RegisterState {
 /** One register's records, loaded from the server and refreshed every half minute. */
 export function useRegister(id: string): RegisterState {
   const [items, setItems] = useState<RegisterRecord[]>([]);
+  const [invalid, setInvalid] = useState<InvalidRecord[]>([]);
   const [config, setConfig] = useState<Record<string, FieldValue>>({});
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<RegisterState["error"]>(null);
@@ -39,6 +43,7 @@ export function useRegister(id: string): RegisterState {
     if (writing.current > 0 || version.current !== started) return;
     if (reply.ok) {
       setItems(reply.items);
+      setInvalid(reply.invalid ?? []);
       setConfig(reply.config);
       setError(null);
       setLoaded(true);
@@ -60,8 +65,10 @@ export function useRegister(id: string): RegisterState {
       writing.current -= 1;
       if (reply.ok) {
         setItems(reply.items);
+        setInvalid(reply.invalid ?? []);
         setConfig(reply.config);
         setError(null);
+        publishSummary(id, reply);
       }
       return reply;
     },
@@ -70,6 +77,7 @@ export function useRegister(id: string): RegisterState {
 
   return {
     items,
+    invalid,
     config,
     loaded,
     error,

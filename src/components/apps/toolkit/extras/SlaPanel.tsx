@@ -2,14 +2,15 @@
 
 import { useState } from "react";
 import { Button, Input } from "@/components/ui";
-import { slaDue } from "@/lib/registers/alerts";
-import { isOpen, textOf } from "@/lib/registers/records";
-import { parseSlaRows } from "@/lib/registers/slaImport";
+import { recordAlert, slaDue } from "@/lib/registers/alerts";
+import { configProblem, isOpen, textOf } from "@/lib/registers/records";
+import { parseSlaRows, skippedText } from "@/lib/registers/slaImport";
 import { formatDayMonth } from "@/lib/staff/dates";
 import { TextArea } from "../../pmo-todo-app/parts";
 import type { PanelProps } from "../RegisterApp";
 
 const PRIORITIES = ["p1", "p2", "p3", "p4"] as const;
+const IMPORT_BATCH = 500;
 
 /** SLA days by priority, and a paste box for incidents (Number, Priority, Opened[, Title]). */
 export function SlaPanel({ def, state, today }: PanelProps) {
@@ -21,19 +22,28 @@ export function SlaPanel({ def, state, today }: PanelProps) {
   const [busy, setBusy] = useState(false);
 
   const current = (key: string) => String(days[key] ?? state.config[key] ?? "");
+  const ctx = { today, config: state.config };
+  // The same rule as the list's red chips and the tile: an open item with a Breached alert.
+  const breached = state.items.filter(
+    (i) => isOpen(def, i) && recordAlert(def, i, ctx)?.level === "late",
+  ).length;
   const open = state.items.filter((i) => isOpen(def, i));
-  const breached = open.filter((i) => {
-    const due = slaDue(i, state.config);
-    return due !== "" && due < today;
-  }).length;
 
   const saveDays = async () => {
-    setBusy(true);
     const next = Object.fromEntries(
-      PRIORITIES.map((k) => [k, Number(current(k))] as const),
+      PRIORITIES.map(
+        (k) => [k, current(k).trim() === "" ? "" : Number(current(k))] as const,
+      ),
     );
+    const problem = configProblem(def, next);
+    if (problem) {
+      setMessage({ tone: "error", text: problem });
+      return;
+    }
+    setBusy(true);
     const reply = await state.saveConfig(next);
     setBusy(false);
+    if (reply.ok) setDays({});
     setMessage(
       reply.ok
         ? { tone: "ok", text: "Saved. New SLA days apply to every item." }
@@ -56,28 +66,41 @@ export function SlaPanel({ def, state, today }: PanelProps) {
       return;
     }
     setBusy(true);
-    const reply = await state.save(
-      fresh.map((r) => ({
-        values: {
-          ref: r.ref,
-          title: r.title,
-          priority: r.priority,
-          received: r.received,
-          status: "Open",
-          resolvedOn: "",
-          owner: "",
-        },
-      })),
-    );
-    setBusy(false);
-    if (!reply.ok) {
-      setMessage({ tone: "error", text: reply.reason });
-      return;
+    // The server takes at most 500 records at a time, so a long paste goes in batches.
+    let added = 0;
+    for (let start = 0; start < fresh.length; start += IMPORT_BATCH) {
+      const batch = fresh.slice(start, start + IMPORT_BATCH);
+      const reply = await state.save(
+        batch.map((r) => ({
+          values: {
+            ref: r.ref,
+            title: r.title,
+            priority: r.priority,
+            received: r.received,
+            status: "Open",
+            resolvedOn: "",
+            owner: "",
+          },
+        })),
+      );
+      if (!reply.ok) {
+        setBusy(false);
+        setMessage({
+          tone: "error",
+          text:
+            added > 0
+              ? `Added ${added} of ${fresh.length}, then stopped: ${reply.reason}`
+              : reply.reason,
+        });
+        return;
+      }
+      added += batch.length;
     }
+    setBusy(false);
     setPaste("");
     setMessage({
       tone: "ok",
-      text: `Added ${fresh.length} item${fresh.length === 1 ? "" : "s"}${parsed.skipped.length ? `; skipped ${parsed.skipped.length} (${parsed.skipped[0]!.reason})` : ""}.`,
+      text: `Added ${added} item${added === 1 ? "" : "s"}${skippedText(parsed.skipped)}.`,
     });
   };
 
@@ -104,7 +127,9 @@ export function SlaPanel({ def, state, today }: PanelProps) {
             {key.toUpperCase()} (days)
             <Input
               type="number"
-              min={0}
+              min={1}
+              max={365}
+              step={1}
               value={current(key)}
               onChange={(e) => setDays((d) => ({ ...d, [key]: e.target.value }))}
               aria-label={`${key.toUpperCase()} SLA days`}

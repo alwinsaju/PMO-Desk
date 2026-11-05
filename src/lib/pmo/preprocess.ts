@@ -4,6 +4,19 @@
 import type { Intake } from "./types.ts";
 
 export const MAX_MODEL_CHARS = 12_000;
+/** Of a longer message the model reads this many characters from the start and the
+ *  rest from the end (the ask is as often in the last paragraph as in the first). */
+const HEAD_CHARS = 8_000;
+const TRUNCATION_MARKER = "\n[... the middle of the message was left out ...]\n";
+
+/** `text` cut to the model's limit, keeping its start and its end. */
+export function capHeadTail(text: string): { text: string; truncated: boolean } {
+  if (text.length <= MAX_MODEL_CHARS) return { text, truncated: false };
+  return {
+    text: `${text.slice(0, HEAD_CHARS)}${TRUNCATION_MARKER}${text.slice(text.length - (MAX_MODEL_CHARS - HEAD_CHARS))}`,
+    truncated: true,
+  };
+}
 
 const NAMED_ENTITIES: Record<string, string> = {
   nbsp: " ",
@@ -130,9 +143,8 @@ export interface QuotedChainResult {
 }
 
 /** Cuts the quoted reply chain (and ">"-quoted lines) when real text sits above
- *  it. When only a greeting does, the text below the marker is kept too, capped
- *  at the model's body limit. If that would leave nothing, the text is returned
- *  untouched. */
+ *  it. When only a greeting does, the text below the marker is kept too. If that
+ *  would leave nothing, the text is returned untouched. */
 export function analyseQuotedChain(text: string): QuotedChainResult {
   const lines = text.split("\n");
   let cut = lines.findIndex((_, i) => startsChain(lines, i));
@@ -146,10 +158,7 @@ export function analyseQuotedChain(text: string): QuotedChainResult {
   if (marked && !hasRealText(kept.split("\n"))) {
     const below = belowMarker(lines, cut);
     if (below !== "") {
-      const joined = (kept === "" ? below : `${kept}\n\n${below}`).slice(
-        0,
-        MAX_MODEL_CHARS,
-      );
+      const joined = kept === "" ? below : `${kept}\n\n${below}`;
       return { text: joined, replyBelowQuote: true };
     }
   }
@@ -171,19 +180,21 @@ export function dropNoise(text: string): string {
     );
 }
 
-/** Raw intake -> the text the model reads, and whether the reply was kept from
- *  under its quote. */
-export function prepareForModelDetailed(intake: Pick<Intake, "body">): QuotedChainResult {
+export interface PreparedMessage extends QuotedChainResult {
+  /** The message was longer than the model's limit: it read the start and the end only. */
+  truncated: boolean;
+}
+
+/** Raw intake -> the text the model reads, whether the reply was kept from
+ *  under its quote, and whether the middle had to be left out. */
+export function prepareForModelDetailed(intake: Pick<Intake, "body">): PreparedMessage {
   const { text: unquoted, replyBelowQuote } = analyseQuotedChain(displayText(intake));
-  let text = dropNoise(unquoted);
-  text = text
+  const cleaned = dropNoise(unquoted)
     .replace(/[ \t]+/g, " ")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
-  if (text.length > MAX_MODEL_CHARS) {
-    text = `${text.slice(0, MAX_MODEL_CHARS)}\n[... message truncated ...]`;
-  }
-  return { text, replyBelowQuote };
+  const { text, truncated } = capHeadTail(cleaned);
+  return { text, replyBelowQuote, truncated };
 }
 
 /** Raw intake -> the text the model reads. */

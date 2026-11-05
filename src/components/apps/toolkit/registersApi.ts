@@ -2,7 +2,7 @@
 // a value with a plain reason, never a throw.
 import { explainError } from "@/lib/platform/friendlyError";
 import type { RegisterSummary } from "@/lib/registers/alerts";
-import type { FieldValue, RegisterRecord } from "@/lib/registers/types";
+import type { FieldValue, InvalidRecord, RegisterRecord } from "@/lib/registers/types";
 
 export type RegisterReply<T extends object = object> =
   ({ ok: true } & T) | { ok: false; reason: string; detail?: string };
@@ -10,12 +10,17 @@ export type RegisterReply<T extends object = object> =
 export interface RegisterData {
   items: RegisterRecord[];
   config: Record<string, FieldValue>;
+  invalid?: InvalidRecord[];
 }
 
 export interface RecordInput {
   id?: string;
   values: Record<string, FieldValue>;
   todoId?: string;
+  /** Only for putting a deleted record back (Undo): its original creation time. */
+  createdAt?: string;
+  /** The `updatedAt` of the record as the sender last saw it. The server refuses the write when the stored record is newer. */
+  baseUpdatedAt?: string;
 }
 
 async function call<T extends object>(

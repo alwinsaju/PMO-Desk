@@ -165,6 +165,9 @@ export interface TimeOffRequest {
 export interface OffboardedEmployee extends Employee {
   /** ISO timestamp of when they were moved off the roster. */
   offboardedAt: string;
+  /** The shift roster entry they had when they left (it is unlinked while they are away), so
+   *  deleting them for good removes that entry even after a rename. */
+  rosterMemberId?: string;
 }
 
 export type StaffKind = "employees" | "shifts" | "timeoff" | "offboarded";

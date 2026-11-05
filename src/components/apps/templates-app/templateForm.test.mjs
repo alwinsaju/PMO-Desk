@@ -7,6 +7,7 @@ import {
   draftOf,
   filterPlaceholders,
   holderOf,
+  importSummary,
   insertAt,
   isDirty,
   offeredPlaceholders,
@@ -14,8 +15,12 @@ import {
   previewOf,
   problems,
   restoreInput,
+  restoreSummary,
+  saveBlockedMessage,
+  tagsSavedMessage,
   toInput,
   toggleWrap,
+  undoNotice,
   versionInput,
   withKind,
   wordingOf,
@@ -296,5 +301,86 @@ describe("copying the wording", () => {
     assert.equal(wordingOf({ kind: "email", subject: "  ", body: " Hi " }), "Hi");
     assert.equal(wordingOf({ kind: "email", subject: "S", body: "" }), "Subject: S");
     assert.equal(wordingOf({ kind: "email", subject: "", body: "" }), "");
+  });
+});
+
+describe("explaining a refused Save", () => {
+  it("puts the first problem in one line, in the order of the form", () => {
+    assert.equal(saveBlockedMessage({}), null);
+    assert.equal(
+      saveBlockedMessage({
+        body: "The message is empty.",
+        name: "Give the template a name.",
+      }),
+      "Not saved yet: Give the template a name.",
+    );
+    assert.equal(
+      saveBlockedMessage({ variants: "Check the other wording." }),
+      "Not saved yet: Check the other wording.",
+    );
+  });
+  it("reads the problems of a real form", () => {
+    const message = saveBlockedMessage(
+      problems({
+        ...blankDraft(),
+        body: "Hi {{zzz}}",
+        usedBy: ["task:weekly-aging-report"],
+        name: "N",
+      }),
+    );
+    assert.match(message, /\{\{zzz\}\}/);
+  });
+});
+
+describe("tags saved message", () => {
+  it("confirms, and explains what was cut", () => {
+    assert.equal(tagsSavedMessage(["a", "b"], ["a", "b"]), "Tags saved.");
+    assert.equal(tagsSavedMessage([], []), "Tags cleared.");
+    const many = Array.from({ length: 12 }, (_, i) => `t${i}`);
+    assert.match(tagsSavedMessage(many, many.slice(0, 8)), /8 kept.*at most 8 tags/);
+    assert.match(tagsSavedMessage(["x".repeat(50)], ["x".repeat(30)]), /shortened to 30/);
+    assert.equal(tagsSavedMessage(["A", "a"], ["A"]), "Tags saved.");
+  });
+});
+
+describe("undo notice", () => {
+  it("says which places stayed with the template that took them", () => {
+    assert.equal(undoNotice("Mine", []), "Brought back “Mine”.");
+    assert.match(undoNotice("Mine", ["a"]), /One place now uses another template/);
+    assert.match(undoNotice("Mine", ["a", "b"]), /2 places now use another template/);
+  });
+});
+
+describe("import and restore notes", () => {
+  it("counts imports and explains failures instead of hiding them", () => {
+    assert.equal(
+      importSummary(2, [], []),
+      "Imported 2 templates. None is used anywhere until you choose.",
+    );
+    assert.equal(
+      importSummary(
+        1,
+        [
+          "The library holds at most 100 templates.",
+          "The library holds at most 100 templates.",
+        ],
+        ["Dup"],
+      ),
+      "Imported 1 template; skipped Dup. 2 could not be added. The library holds at most 100 templates. None is used anywhere until you choose.",
+    );
+  });
+  it("says what restoring built-in templates did", () => {
+    assert.match(
+      restoreSummary({ added: 15, rebuilt: true, backup: "library.json.bak" }),
+      /fresh library.*library\.json\.bak/,
+    );
+    assert.match(
+      restoreSummary({ added: 0, rebuilt: false, backup: null }),
+      /already there/,
+    );
+    assert.match(
+      restoreSummary({ added: 1, rebuilt: false, backup: null }),
+      /Added back 1 built-in template\./,
+    );
   });
 });

@@ -32,6 +32,17 @@ export function groupTools<T extends { id: string }>(
   return groups.filter((group) => group.tools.length > 0);
 }
 
+/** The columns of the list and cards: the definition's, with the title column first, so the link that opens a
+ *  record reads as the record's name ("Open Vendor delay", not "Open Risk"). A definition without its title among
+ *  the columns is left as it is. */
+export function listColumns(def: RegisterDef): string[] {
+  const columns = [...def.columns];
+  const at = columns.indexOf(def.titleKey);
+  if (at <= 0) return columns;
+  columns.splice(at, 1);
+  return [def.titleKey, ...columns];
+}
+
 /** The form's sections: the definition's own groups, else What / Who / When / Details by field type. */
 export function formSections(def: RegisterDef): { title: string; fields: FieldDef[] }[] {
   if (def.formGroups) {

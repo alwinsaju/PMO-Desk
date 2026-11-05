@@ -12,6 +12,7 @@ import {
   needsFirstRun,
   splitList,
   loginNameHint,
+  modernTimeZone,
   nameToGoBy,
   stepProblems,
   suggestedFullName,
@@ -123,6 +124,19 @@ describe("timeZoneChoices", () => {
       "UTC",
     ]);
     assert.deepEqual(timeZoneChoices(["UTC"], ""), ["UTC"]);
+  });
+
+  it("lists the current names, not the legacy ones, without duplicates", () => {
+    assert.deepEqual(
+      timeZoneChoices(
+        ["Asia/Calcutta", "Asia/Kolkata", "Africa/Asmera", "America/Godthab"],
+        "Asia/Calcutta",
+      ),
+      ["Africa/Asmara", "America/Nuuk", "Asia/Kolkata"],
+    );
+    assert.equal(modernTimeZone("Asia/Calcutta"), "Asia/Kolkata");
+    assert.equal(modernTimeZone("Europe/London"), "Europe/London");
+    assert.equal(modernTimeZone("Mars/Olympus"), "Mars/Olympus");
   });
 });
 

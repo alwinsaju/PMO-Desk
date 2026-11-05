@@ -19,7 +19,7 @@ export async function templatesHandler(request: Request, run: Run): Promise<Resp
   } catch (error) {
     if (error instanceof TemplateError) {
       return NextResponse.json(
-        { ok: false, reason: error.message, fields: error.fields },
+        { ok: false, reason: error.message, fields: error.fields, code: error.code },
         { status: error.status },
       );
     }

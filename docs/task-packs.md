@@ -20,12 +20,31 @@ A pack is refused, with the reason in plain words, when:
   `.png .jpg .svg`);
 - the task uses a step type the engine does not know, runs a file that is not in the pack, or asks for an
   input to be placed anywhere but `input/` or `config/`;
-- its id belongs to a built-in task, or its task is running right now (for an update);
+- the task has **no `review` or `confirm` step**, so it could run to the end (and send an email) without a
+  person checking it. Every pack has to stop for you at least once;
+- two files differ only by capital letters (Windows would treat them as one), or a file name contains a
+  colon (a hidden data stream on Windows);
+- its name is longer than 80 characters, or (after hidden characters such as a right-to-left override are
+  removed, and ignoring capital letters) it is the same as the name of a built-in task or of a pack that is
+  already installed. The message names the task that already has that name;
+- its id belongs to a built-in task (this is checked before you are asked for the fingerprint), or its task is
+  running right now (for an update);
 - it is larger than 30 MB, has more than 200 files or unpacks to more than 25 MB.
 
 **A pack's scripts run on this computer with your access.** The checksums prove the pack was not changed
-after it was made, not that its author is trustworthy. Install packs only from people you trust. A task still
-stops at its review and confirm steps, but a script is code.
+after it was made, not that its author is trustworthy. Install packs only from people you trust. A task
+stops at its review and confirm steps, but the scripts before and after them run without asking, and a
+script is code.
+
+The installed packs are listed with their id and a short fingerprint, so two packs with the same name can be
+told apart.
+
+### Testing without touching Outlook or Excel
+
+Set `AI_OS_TASKS_OFFICE=off` before starting PMO Desk (or the Tasks engine) and every `powershell` step of
+every task, including a pack's, is skipped: it writes one line to the task's log and counts as done. Nothing is
+drafted, sent or recalculated, and the review and completion messages say so. `python` steps still run. Leave
+it unset on a real user's computer.
 
 An update keeps the pack's `input/`, `output/` and `config/` folders (your own files win over seeds in the new
 pack). **Remove** deletes the pack including those folders, and asks first.
@@ -58,3 +77,24 @@ It builds a pack from `tasks-engine/pack-templates/mailer/` and installs it. Eac
 4. you review it, then confirm; only then does `send_draft.ps1` send it.
 
 The wording and recipients are in the pack's `config/mail.json` and can be edited there.
+
+To and Cc must be email addresses separated by semicolons (`a@x.com; Name <b@x.com>`); the wizard refuses
+anything else. The email shows at most 500 table rows. A longer table gets a red line under it saying how many
+rows are shown, and the review and confirm dialogs show the same warning (turn on "attach the table" to send
+all rows).
+
+### Other behaviour worth knowing
+
+- Uploading a `.json` file (a task's settings) is refused if it is not valid JSON, and the file already on
+  disk is kept. When a good one replaces another, the previous one is kept beside it as `<name>.json.bak`.
+- A task can leave `"warnings": ["..."]` in `output/email-data.json`; the review and confirm dialogs show them
+  next to the recipients (the Aging and Backlog tasks use this for people with no email in the roster).
+- A finished run's output files are written to the run history, so the Open buttons and the History tab
+  still work after the engine restarts.
+- Rejecting a run at its review step, and a Force reset of a run that had started, are recorded in the
+  history (outcome `rejected` / `cancelled`, the step the run was at, and who did it and when, as an approval
+  stamp of kind `reject` / `reset`). The History tab shows them as "Rejected" and "Reset" and leaves them out
+  of the success rate. A reset of a task that is idle or already failed adds nothing.
+- The Run form checks the files you pick before Start (the shift roster workbook, the staff list, the team
+  roster, the Deployment workbook, the incident exports, the previous monthly workbook). A file that does not
+  look right is named, and Start stays off until you replace it or tick "start anyway".

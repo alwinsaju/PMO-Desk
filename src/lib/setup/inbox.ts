@@ -109,6 +109,8 @@ export interface InboxSafetyFacts {
   home: string;
   /** Folders that hold PMO Desk itself or its data; the folder and everything in it is refused. */
   protectedDirs?: string[];
+  /** Windows and program folders (from the environment); the folder and everything in it is refused. */
+  systemDirs?: string[];
   /** Other roots (OneDrive) whose Documents, Desktop and Downloads are refused too. */
   libraryRoots?: string[];
   /** The start of the text of up to `limit` `.json` files directly in `dir`. */
@@ -120,6 +122,9 @@ export const INBOX_SAMPLE_LIMIT = 40;
 const LIBRARY_FOLDERS = ["Documents", "Desktop", "Downloads"];
 const FIX =
   "Choose a dedicated folder for PMO messages, for example a new one named PMO-Inbox.";
+/** Windows' own folders, whatever the drive letter: never a place for PMO messages. */
+const SYSTEM_FOLDER =
+  /^[a-z]:\\(?:windows|program files|program files \(x86\)|programdata|\$recycle\.bin|system volume information|recovery)(?:\\|$)/;
 
 /** Case, slash direction and trailing separators ignored. */
 function comparable(value: string): string {
@@ -166,6 +171,15 @@ export function inboxFolderProblem(
         reason: `That folder belongs to PMO Desk itself (its program or data files). ${FIX}`,
       };
     }
+  }
+  for (const dir of [...(facts.systemDirs ?? [])]) {
+    const systemDir = comparable(dir);
+    if (systemDir && (folder === systemDir || folder.startsWith(`${systemDir}\\`))) {
+      return { reason: `That is a Windows or program folder. ${FIX}` };
+    }
+  }
+  if (SYSTEM_FOLDER.test(folder)) {
+    return { reason: `That is a Windows or program folder. ${FIX}` };
   }
   if (confirmNonEmpty) return null;
   const files = facts.sampleJsonFiles(chosen, INBOX_SAMPLE_LIMIT);

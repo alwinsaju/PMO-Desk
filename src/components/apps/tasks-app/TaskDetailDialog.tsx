@@ -36,6 +36,7 @@ import {
   statusSentence,
   stepLabel,
 } from "./taskPresenter";
+import { outcomeInfo } from "./historyRows";
 import { useGateData } from "./useGateData";
 import { useTaskRuns } from "./useTaskRuns";
 import { lastRunInfo, stepperItems, stepperSummary } from "./workflowView";
@@ -260,6 +261,13 @@ export const TaskDetailDialog = memo(function TaskDetailDialog({
                     Nothing is waiting on you right now. Questions, draft flags and
                     changes show up here when a run needs you.
                   </GateNote>
+                ) : !lastTask.steps.some((s) => s.id === "review_incidents") ? (
+                  // Only the monthly deck has an incident queue; a mailer's review is the Outlook draft.
+                  <GateNote>
+                    {lastTask.state === "awaiting_review"
+                      ? "Open the draft in Outlook (and the workbook, if the buttons above offer one) and check it. Then approve it or reject it."
+                      : "Nothing to review here. When a run needs you, what to check is shown here."}
+                  </GateNote>
                 ) : (
                   <ReviewPanel
                     taskId={lastTask.id}
@@ -318,7 +326,7 @@ function StepsSection({ task }: { task: Task }) {
       <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-3 text-[12px]">
         <h4 className="text-ink-muted font-bold tracking-[0.08em] uppercase">Steps</h4>
         <p className="text-ink-muted">
-          {stepperSummary(items)} · {lastRunInfo(runs, new Date()).text}
+          {stepperSummary(items)} · {lastRunInfo(runs, new Date(), task.state).text}
         </p>
       </div>
       <StepStepper items={items} />
@@ -425,14 +433,17 @@ function HistoryTab({ task }: { task: Task }) {
               className="border-line bg-card rounded-card border px-4 py-3 text-[13px]"
             >
               <p className="text-ink flex items-center gap-2 font-semibold">
-                <Badge variant={run.outcome === "completed" ? "success" : "danger"} dot>
-                  {run.outcome === "completed" ? "Completed" : "Failed"}
+                <Badge variant={outcomeInfo(run.outcome).tone} dot>
+                  {outcomeInfo(run.outcome).label}
                 </Badge>
               </p>
               <p className="text-ink-muted mt-1.5">
                 {new Date(run.started_at).toLocaleString()}
               </p>
-              {run.error && (
+              {outcomeInfo(run.outcome).note && (
+                <p className="text-ink mt-1">{outcomeInfo(run.outcome).note}</p>
+              )}
+              {run.error && run.outcome === "failed" && (
                 <p className="text-red mt-1 line-clamp-2 font-mono text-[11.5px]">
                   {run.error}
                 </p>

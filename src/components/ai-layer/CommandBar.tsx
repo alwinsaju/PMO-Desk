@@ -75,6 +75,7 @@ import type {
 import { useAgentStore } from "./agentStore";
 import { ACTION_HOLD_MS, EMPTY_STATE_NOTICE_MS, TASK_SETTLE_MS } from "./constants";
 import { answerTitle, placeholderFor } from "./barText";
+import { focusAfterAnswer } from "./answerFocus";
 import { postCommand } from "./commandClient";
 import {
   IDLE_THINKING,
@@ -306,6 +307,8 @@ export function CommandBar() {
   const lastNoticeRef = useRef<string | null>(null);
   const pillRef = useRef<HTMLFormElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  // What had keyboard focus when the last question was asked (the input is disabled while busy).
+  const returnFocusRef = useRef<HTMLElement | null>(null);
   // Steps still to run after the current one ("open Tasks, then what's overdue?").
   const chainRef = useRef<string[]>([]);
   const submitPromptRef = useRef<
@@ -407,6 +410,24 @@ export function CommandBar() {
   useEffect(() => {
     submitPromptRef.current = submitPrompt;
   });
+  // The input is disabled while a question is answered, so focus falls to the page: put it
+  // back in the bar (or on what had it) once the bar is free again. Declared before the
+  // chain effect so a pending chain step is still visible here and keeps the focus target.
+  useEffect(() => {
+    if (isBusy || chainRef.current.length > 0) return;
+    const previous = returnFocusRef.current;
+    returnFocusRef.current = null;
+    if (!previous) return;
+    const active = document.activeElement;
+    const bar = pillRef.current?.parentElement ?? null;
+    const decision = focusAfterAnswer({
+      focusLost: !active || active === document.body,
+      previousWasBar: previous === inputRef.current || Boolean(bar?.contains(previous)),
+      previousUsable: previous.isConnected && previous !== document.body,
+    });
+    if (decision === "bar") inputRef.current?.focus();
+    else if (decision === "previous") previous.focus();
+  }, [isBusy]);
   useEffect(() => {
     if (!isBusy && chainRef.current.length > 0) {
       const [next, ...rest] = chainRef.current;
@@ -701,6 +722,10 @@ export function CommandBar() {
     // Operate purely against whatever window happens to be focused right
     // now — a one-off, non-reactive read via getState(), not a subscribed
     // selector, since this only matters at the moment of submit.
+    if (!inChain) {
+      const active = document.activeElement;
+      returnFocusRef.current = active instanceof HTMLElement ? active : null;
+    }
     const windows = useWindowStore.getState().windows;
     const focused = Object.values(windows).find((w) => w.isFocused) ?? null;
 

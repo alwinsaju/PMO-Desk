@@ -20,12 +20,12 @@ import {
   newRosterPerson,
   hasErrors,
   initials,
-  isValidEmail,
   nameFromEmail,
   photoUrl,
   validateEmployee,
   type EmployeeErrors,
 } from "@/lib/staff/employees";
+import { MAX_BATCH, emailProblem } from "@/lib/staff/fieldRules";
 import { useStaffStore } from "@/lib/staff/staffStore";
 import {
   GENDERS,
@@ -150,14 +150,13 @@ function QuickAdd({
   const inputRef = useRef<HTMLInputElement>(null);
   useEffect(() => inputRef.current?.focus(), []);
   const problemWith = (email: string) =>
-    !isValidEmail(email)
-      ? "Not an email address."
-      : known.has(email.toLowerCase())
-        ? "Already on the roster; skipped."
-        : null;
+    emailProblem(email) ??
+    (known.has(email.toLowerCase()) ? "Already on the roster; skipped." : null);
   const fresh = emails.filter((email) => problemWith(email) === null);
+  const tooMany = fresh.length > MAX_BATCH;
 
   async function add() {
+    if (tooMany) return;
     setBusy(true);
     setError(null);
     const people = fresh.map((email) => employeeFromEmail(email));
@@ -216,9 +215,12 @@ function QuickAdd({
             </ol>
           </FormSection>
         </div>
-        {error && (
+        {(error || tooMany) && (
           <div className="mt-4">
-            <ErrorLine>{error}</ErrorLine>
+            <ErrorLine>
+              {error ??
+                `That is more than ${MAX_BATCH} people at once. Add them in smaller groups.`}
+            </ErrorLine>
           </div>
         )}
       </DialogScroll>
@@ -232,7 +234,7 @@ function QuickAdd({
         <Button variant="ghost" onClick={onClose}>
           Cancel
         </Button>
-        <Button disabled={n === 0 || busy} onClick={() => void add()}>
+        <Button disabled={n === 0 || busy || tooMany} onClick={() => void add()}>
           {n > 1 ? `Add ${n} people` : "Add employee"}
         </Button>
       </StickyFooter>
@@ -511,6 +513,8 @@ function EmployeeForm({
             <FormField
               label="Skills"
               hint="Type a skill and press Enter or a comma."
+              error={errors.skills}
+              showErrorNow
               className="sm:col-span-2"
             >
               {(control) => (

@@ -7,7 +7,9 @@ import {
   chaserDialogFields,
   chaserFromTemplate,
   chaserValues,
+  myFullName,
 } from "./templateValues.ts";
+import { staffAddressForWaitingOn } from "./chaserRecipient.ts";
 import { STARTERS, starterById } from "../templates/starters.ts";
 
 const todo = (over = {}, source = {}) => ({
@@ -131,6 +133,36 @@ describe("chaser values", () => {
     assert.equal(none.waited, "a while");
   });
 
+  it("never says 'waiting 0 days'", () => {
+    const today = chaserValues({
+      todo: waiting({ waitingSince: now.toISOString() }),
+      now,
+      prefs,
+      myName: "A",
+    });
+    assert.equal(today.waited, "less than a day");
+    const oneDay = chaserValues({
+      todo: waiting({ waitingSince: "2026-10-22T06:00:00.000Z" }),
+      now,
+      prefs,
+      myName: "A",
+    });
+    assert.equal(oneDay.waited, "1 working day");
+    const weekend = chaserValues({
+      todo: waiting({ waitingSince: "2026-10-24T06:00:00.000Z" }),
+      now: new Date("2026-10-25T06:00:00.000Z"),
+      prefs,
+      myName: "A",
+    });
+    assert.equal(weekend.waited, "1 day");
+  });
+
+  it("signs with the full name as configured", () => {
+    assert.equal(myFullName({ names: ["Qa Tester", "Qa"] }), "Qa Tester");
+    assert.equal(myFullName({ names: ["  Qa   Tester "] }), "Qa Tester");
+    assert.equal(myFullName({ names: [] }), "");
+  });
+
   it("a template with a blank subject or recipient keeps the app's own (regression)", () => {
     const values = chaserValues({ todo: waiting(), now, prefs, myName: "Alex" });
     const fallback = { subject: "Re: Release plan", to: "sam@example.com" };
@@ -163,6 +195,26 @@ describe("chaser values", () => {
     );
     assert.match(out.body, /Thanks,\nAlex$/);
     assert.ok(!out.body.includes("{{"));
+  });
+});
+
+describe("chaser recipient from Staff", () => {
+  const staff = [
+    { firstName: "Sam", lastName: "Rivera", deloitteEmail: "sam@x.com" },
+    { firstName: "Mia", lastName: "Chen", deloitteEmail: "mia@x.com" },
+    { firstName: "Mia", lastName: "Patel", deloitteEmail: "mia.p@x.com" },
+    { firstName: "Qa", lastName: "Tester", deloitteEmail: "qa@x.com" },
+  ];
+  it("finds the one person the to-do waits on", () => {
+    assert.equal(staffAddressForWaitingOn("Sam Rivera", staff), "sam@x.com");
+    assert.equal(staffAddressForWaitingOn("Sam", staff), "sam@x.com");
+    assert.equal(staffAddressForWaitingOn("Mia Chen (Finance)", staff), "mia@x.com");
+  });
+  it("gives nothing when nobody or several people fit, or it is me", () => {
+    assert.equal(staffAddressForWaitingOn("Mia", staff), null);
+    assert.equal(staffAddressForWaitingOn("the vendor team", staff), null);
+    assert.equal(staffAddressForWaitingOn(null, staff), null);
+    assert.equal(staffAddressForWaitingOn("Qa Tester", staff, ["QA@x.com"]), null);
   });
 });
 

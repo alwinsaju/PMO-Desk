@@ -1405,9 +1405,9 @@ describe("an optional kept file (Holiday Roster falls back to the reference file
   it("an absent optional kept file says the reference file is used; a required one keeps the old hint", () => {
     assert.equal(isOptionalFile(HOLIDAYS), true);
     assert.equal(isOptionalFile(ROSTER), false);
-    assert.equal(
+    assert.match(
       OPTIONAL_PERSIST_HINT,
-      "Not uploaded - the reference file will be used.",
+      /^Not uploaded - .*If a run says it is missing, upload it here\.$/,
     );
     assert.equal(emptyFileHint(HOLIDAYS), OPTIONAL_PERSIST_HINT);
     assert.equal(

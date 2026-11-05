@@ -68,6 +68,7 @@ export function personInitials(name: string): string {
   const words = name
     .split("@")[0]
     .split(/[\s._-]+/)
+    .map((w) => w.replace(/[^\p{L}\p{N}]/gu, ""))
     .filter(Boolean);
   if (words.length === 0) return "";
   const first = Array.from(words[0])[0];

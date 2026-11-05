@@ -80,9 +80,15 @@ export function searchItems(
 ): SearchItem[] {
   const words = norm(query).split(" ").filter(Boolean);
   if (words.length === 0) return items.filter((i) => i.kind === "app").slice(0, limit);
-  return items
+  const scored = items
     .map((item) => ({ item, score: scoreItem(item, words) }))
-    .filter((r) => r.score > 0)
+    .filter((r) => r.score > 0);
+  // A word found only in the small print (1 point each) is a weak match. When some
+  // other result matches by name or title, people who match only through their level or
+  // office text ("Ana" finding an Analyst) are left out.
+  const strong = scored.some((r) => r.score > words.length);
+  return scored
+    .filter((r) => !(strong && r.item.kind === "person" && r.score <= words.length))
     .sort(
       (a, b) =>
         b.score - a.score ||

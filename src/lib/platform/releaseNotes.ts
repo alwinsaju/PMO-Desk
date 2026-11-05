@@ -15,6 +15,54 @@ export interface Release {
 /** Newest first. Add a release here when the version in package.json goes up. */
 export const RELEASES: readonly Release[] = [
   {
+    version: "6.0.3",
+    title: "PMO Desk 6.0.3",
+    groups: [
+      {
+        title: "Your data",
+        items: [
+          'Notes no longer lose text silently: a note save the computer refuses now says "Not saved" instead of "Saved", your copy is kept and retried, and notes up to 16 MB can be saved. Notes show their real last-edited time, and Undo works after the toolbar buttons.',
+          "Restoring a backup checks every file name first and puts your current data back if anything goes wrong part-way.",
+          "A Toolkit record that cannot be read is listed with the reason and kept, instead of being hidden and deleted on the next save.",
+          "Very long notes no longer make PMO Desk take minutes to close.",
+        ],
+      },
+      {
+        title: "PMO To-Do and the AI",
+        items: [
+          'Due dates the AI reads from an email ("by Friday", "by yesterday") are checked against the calendar, and a deadline that has already passed stays as the due date so the to-do shows as overdue.',
+          "A very long email is read from both ends, and the card says when only part was read.",
+          "Drafts no longer name you as owner of a message that is not a task, or invent an attachment. You can change the inbox folder in PMO settings.",
+          "The To-Do list draws only what is on screen and refreshes far more cheaply, so a few hundred to-dos stay quick.",
+        ],
+      },
+      {
+        title: "Staff",
+        items: [
+          'Time off for several dates at once ("5-7 Nov, 12 Nov") now saves.',
+          "Adding people tells you which email is wrong instead of failing the whole batch; removing a thousand people takes a second; the directory and the roster grid are faster and the roster grid works with the arrow keys.",
+          "Overlapping time off is refused with a clear message, Birthday is part of the CSV, and checks run on imports before anything is saved.",
+        ],
+      },
+      {
+        title: "PMO Toolkit",
+        items: [
+          "Long lists stay quick. Over-long entries are refused with a character count instead of being cut. Making to-dos from minutes or a meeting cannot create duplicates.",
+          "Past missing timesheet weeks now count as late, SLA and invoice checks agree with the tiles, and a record changed elsewhere is not overwritten without a warning.",
+          "CSV exports from every tool are safe to open in Excel.",
+        ],
+      },
+      {
+        title: "Tasks and other apps",
+        items: [
+          "Failures are explained in plain words, with file paths behind Show details. A wrong file is caught before Start. A rejected or reset run is recorded in History and is not counted as a failure.",
+          "A mailer pack must have a review step, and the engine can be told not to touch Outlook or Excel (AI_OS_TASKS_OFFICE=off) for testing.",
+          "Templates can be restored from a damaged library, the Dashboard shows the true count of what needs you, the Browser works on networks that inspect HTTPS, and the Dashboard PDF fits one page.",
+        ],
+      },
+    ],
+  },
+  {
     version: "6.0.2",
     title: "PMO Desk 6.0.2",
     groups: [

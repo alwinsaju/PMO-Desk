@@ -126,10 +126,37 @@ export function refusalReason(value: string): string | null {
   return isLoopbackAddress(parsed.hostname) ? LOOPBACK_REASON : PRIVATE_REASON;
 }
 
-export type EmbedFailureCode = "framing" | "unreachable" | "not-found";
+export type EmbedFailureCode = "framing" | "unreachable" | "not-found" | "private";
 
 export type EmbedVerdict =
-  { embeddable: true } | { embeddable: false; reason: string; code?: EmbedFailureCode };
+  | { embeddable: true; unverified?: true }
+  | { embeddable: false; reason: string; code?: EmbedFailureCode };
+
+const CERTIFICATE_CODES = new Set([
+  "SELF_SIGNED_CERT_IN_CHAIN",
+  "DEPTH_ZERO_SELF_SIGNED_CERT",
+  "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+  "UNABLE_TO_GET_ISSUER_CERT",
+  "UNABLE_TO_GET_ISSUER_CERT_LOCALLY",
+  "CERT_HAS_EXPIRED",
+  "CERT_NOT_YET_VALID",
+  "CERT_UNTRUSTED",
+  "ERR_TLS_CERT_ALTNAME_INVALID",
+]);
+
+/** True when a fetch failed only because this process does not trust the site's
+ *  certificate chain. Node does not read the Windows certificate store, so on a
+ *  network that re-signs HTTPS (a company proxy) every https site fails this
+ *  way although the browser itself accepts it. */
+export function isCertificateError(error: unknown): boolean {
+  let current: unknown = error;
+  for (let depth = 0; depth < 5 && current; depth++) {
+    const { code, cause } = current as { code?: unknown; cause?: unknown };
+    if (typeof code === "string" && CERTIFICATE_CODES.has(code)) return true;
+    current = cause;
+  }
+  return false;
+}
 
 const NOT_FOUND_REASON = "That address could not be found. Check the spelling.";
 
@@ -141,7 +168,10 @@ async function hostRefusal(
   const host = url.hostname.replace(/^\[|\]$/g, "");
   if (isIP(host) !== 0) {
     if (!isPrivateAddress(host)) return null;
-    return { reason: isLoopbackAddress(host) ? LOOPBACK_REASON : PRIVATE_REASON };
+    return {
+      reason: isLoopbackAddress(host) ? LOOPBACK_REASON : PRIVATE_REASON,
+      code: "private",
+    };
   }
   let addresses: string[];
   try {
@@ -152,7 +182,10 @@ async function hostRefusal(
   if (addresses.length === 0) return { reason: NOT_FOUND_REASON, code: "not-found" };
   const bad = addresses.find((a) => isPrivateAddress(a));
   if (bad === undefined) return null;
-  return { reason: isLoopbackAddress(bad) ? LOOPBACK_REASON : PRIVATE_REASON };
+  return {
+    reason: isLoopbackAddress(bad) ? LOOPBACK_REASON : PRIVATE_REASON,
+    code: "private",
+  };
 }
 /**
  * Mirrors the two real-world signals appCatalog.ts's comments name:
@@ -197,7 +230,11 @@ export async function inspectEmbeddable(
     let res: Response;
     try {
       res = await deps.fetchHead(current.toString());
-    } catch {
+    } catch (error) {
+      // The host passed the address checks above; only the header check is
+      // missing. Let the browser frame decide instead of reporting a false
+      // "can't reach". Certificate checking is not turned off anywhere.
+      if (isCertificateError(error)) return { embeddable: true, unverified: true };
       return {
         embeddable: false,
         reason: "The site could not be reached.",

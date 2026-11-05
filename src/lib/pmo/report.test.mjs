@@ -444,10 +444,12 @@ describe("what the report contains", () => {
       owner: { name: null, email: "pat@example.com", isMe: null },
     });
     const b = todo({ title: "Nobody", owner: { name: " ", email: null, isMe: null } });
-    const data = build([a, b]);
+    const c = todo({ title: "Mine", owner: { name: null, email: null, isMe: true } });
+    const data = build([a, b, c]);
     const owners = Object.fromEntries(data.inProgress.map((i) => [i.title, i.owner]));
     assert.equal(owners["(untitled)"], "pat@example.com");
     assert.equal(owners.Nobody, "Unassigned");
+    assert.equal(owners.Mine, "Me");
     const odd = {
       ...config,
       reminders: { ...config.reminders, timeZone: "Mars/Olympus" },

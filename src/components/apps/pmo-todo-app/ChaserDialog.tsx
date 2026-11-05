@@ -11,8 +11,9 @@ import {
   Input,
 } from "@/components/ui";
 import { buildMailto, defaultChaserSubject } from "@/lib/pmo/chaser";
-import { chaserDialogFields, chaserValues } from "@/lib/pmo/templateValues";
-import { myFirstName } from "@/lib/pmo/signoffRequest";
+import { staffAddressForWaitingOn } from "@/lib/pmo/chaserRecipient";
+import { chaserDialogFields, chaserValues, myFullName } from "@/lib/pmo/templateValues";
+import { useEmployees } from "@/lib/staff/staffStore";
 import type { ChaserJob, PmoConfig, ReminderPrefs, Todo } from "@/lib/pmo/types";
 import { discardChaser, startChaser } from "./api";
 import { ErrorLine, Field, Note, ScrollBody, TextArea } from "./parts";
@@ -63,6 +64,9 @@ export function ChaserDialog({
   const textRef = useRef<HTMLTextAreaElement>(null);
   const [variant, setVariant] = useState<string | null>(null);
   const template = useAssignedTemplate("app:pmo-todo:chaser", open, variant);
+  const staff = useEmployees();
+  // The model's guess comes from the original message; Staff fills the gap when it found nobody.
+  const staffTo = staffAddressForWaitingOn(todo.waitingOn, staff, me.emails) ?? "";
 
   // Seed the editable fields once per finished draft (not on every poll, which
   // would overwrite what the person is typing).
@@ -70,7 +74,7 @@ export function ChaserDialog({
     setSeededFor(job.id);
     setText(job.text ?? "");
     setSubject(job.subject ?? "");
-    setTo(job.to ?? "");
+    setTo(job.to || staffTo);
     setCopied(false);
   }
 
@@ -82,9 +86,9 @@ export function ChaserDialog({
         todo,
         now: new Date(nowIso),
         prefs: reminders,
-        myName: myFirstName(me),
+        myName: myFullName(me),
       }),
-      { subject: defaultChaserSubject(todo), to: job?.to ?? "" },
+      { subject: defaultChaserSubject(todo), to: job?.to || staffTo },
     );
     setText(written.body);
     setSubject(written.subject);
@@ -99,7 +103,7 @@ export function ChaserDialog({
     if (job?.status !== "ready") return;
     setText(job.text ?? "");
     setSubject(job.subject ?? "");
-    setTo(job.to ?? "");
+    setTo(job.to || staffTo);
     setFromTemplate(false);
     setSeededFor(job.id);
     setCopied(false);

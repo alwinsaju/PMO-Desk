@@ -5,7 +5,7 @@ import { fetchTasks } from "@/components/apps/tasks-app/api";
 import { fetchState } from "@/components/apps/pmo-todo-app/api";
 import { openOrFocusBuiltInApp } from "@/components/taskbar/launchBuiltInApp";
 import { useDashboardPrefs } from "@/lib/dashboard/dashboardPrefsStore";
-import { briefingDue, briefingText, todayList } from "@/lib/dashboard/insights";
+import { briefingDue, briefingText, todaySummary } from "@/lib/dashboard/insights";
 import { toast } from "@/lib/notifications/toastStore";
 import { localParts } from "@/lib/pmo/due";
 import { reviewCount } from "@/components/apps/pmo-todo-app/queueView";
@@ -61,7 +61,7 @@ export function BriefingBackground() {
           members: config.members,
           events: config.events,
         });
-        const items = todayList({
+        const summary = todaySummary({
           todos: pmo?.todos ?? [],
           today: pmo ? localParts(now, pmo.config.reminders.timeZone).day : today,
           now,
@@ -79,7 +79,7 @@ export function BriefingBackground() {
             .map((t) => t.displayName),
           awayToday: peopleAway(away),
         });
-        const text = briefingText(items);
+        const text = briefingText(summary.items, undefined, summary.total);
         useDashboardPrefs.getState().update((p) => ({ ...p, briefingDay: today }));
         toast({
           key: "briefing",

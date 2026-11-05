@@ -25,7 +25,7 @@ import {
   type PmoState,
 } from "@/lib/pmo/types";
 import { malformedConfigEntries } from "@/lib/pmo/configHealth";
-import { updateConfig } from "./api";
+import { setInboxFolder, updateConfig } from "./api";
 import { DOMAIN_NOUN, EMAIL_NOUN } from "./listFeedbackView";
 import { ListFeedback } from "./ListFeedback";
 import {
@@ -264,12 +264,8 @@ export function SettingsDialog({
                 </span>
               </Section>
 
-              <Section title="Where things are (read only)">
-                <PathRow
-                  label="Inbox folder"
-                  value={state.ingest.inboxDir}
-                  note="Where the flows, the Outlook script and Paste drop files. Change inboxDir in config.json (applies on the next scan), unless the environment variable AI_OS_PMO_INBOX_DIR is set."
-                />
+              <Section title="Where things are">
+                <InboxFolderRow current={state.ingest.inboxDir} onChanged={onSettled} />
                 <PathRow
                   label="Data folder"
                   value={state.dataDir}
@@ -602,6 +598,104 @@ function CheckRow({
         )}
       </span>
     </label>
+  );
+}
+
+function InboxFolderRow({
+  current,
+  onChanged,
+}: {
+  current: string;
+  onChanged: () => void;
+}) {
+  const [value, setValue] = useState(current);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  const [needsConfirmation, setNeedsConfirmation] = useState(false);
+
+  // Follow the stored folder after a save or a change made elsewhere.
+  useEffect(() => setValue(current), [current]);
+
+  async function save(confirm: boolean) {
+    setBusy(true);
+    setMessage(null);
+    try {
+      const reply = await setInboxFolder(value, confirm);
+      if (reply.ok) {
+        setNeedsConfirmation(false);
+        setMessage({
+          ok: true,
+          text: "Saved. PMO Desk will read this folder on the next scan.",
+        });
+        onChanged();
+      } else {
+        setNeedsConfirmation(reply.needsConfirmation === true);
+        setMessage({ ok: false, text: reply.reason });
+      }
+    } catch {
+      setMessage({ ok: false, text: "Could not reach the app server." });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const changed = value.trim() !== current;
+  return (
+    <div className="flex flex-col gap-1.5">
+      <label
+        htmlFor="pmo-inbox-folder"
+        className="text-ink-muted text-[11px] font-bold tracking-[0.08em] uppercase"
+      >
+        Inbox folder
+      </label>
+      <div className="flex items-center gap-2">
+        <Input
+          id="pmo-inbox-folder"
+          value={value}
+          disabled={busy}
+          spellCheck={false}
+          className="min-w-0 flex-1 font-mono text-[12px]"
+          onChange={(event) => {
+            setValue(event.target.value);
+            setMessage(null);
+            setNeedsConfirmation(false);
+          }}
+        />
+        <Button
+          variant="secondary"
+          size="sm"
+          disabled={busy || !changed || !value.trim()}
+          onClick={() => void save(false)}
+        >
+          Change folder
+        </Button>
+      </div>
+      <span className="text-ink-muted text-[12px] leading-relaxed">
+        Where the flows, the Outlook script and Paste drop files. Use the full path of a
+        folder that already exists and is only for PMO messages. Applies on the next scan,
+        unless the environment variable AI_OS_PMO_INBOX_DIR is set.
+      </span>
+      {message &&
+        (message.ok ? (
+          <span role="status" className="text-success text-[12.5px] font-semibold">
+            {message.text}
+          </span>
+        ) : (
+          <ErrorLine>{message.text}</ErrorLine>
+        ))}
+      {needsConfirmation && (
+        <div>
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={busy}
+            onClick={() => void save(true)}
+          >
+            Use this folder anyway
+          </Button>
+        </div>
+      )}
+    </div>
   );
 }
 

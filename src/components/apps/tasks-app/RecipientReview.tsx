@@ -62,6 +62,7 @@ export function RecipientReview({
   const attach = summary
     ? attachmentWarning(summary.attachments.map((name) => ({ name })))
     : null;
+  const notes = summary?.notes ?? [];
 
   return (
     <>
@@ -75,17 +76,19 @@ export function RecipientReview({
           </li>
         ))}
       </ul>
-      {(warnings.length > 0 || attach) && (
+      {(warnings.length > 0 || attach || notes.length > 0) && (
         <ul
           data-testid="recipient-warnings"
           className="bg-amber-soft text-amber rounded-control mt-3 flex flex-col gap-1.5 px-3 py-2.5 text-[12.5px] font-medium"
         >
-          {[...warnings.map((w) => w.text), ...(attach ? [attach] : [])].map((text) => (
-            <li key={text} className="flex items-start gap-2">
-              <WarningIcon size={14} weight="fill" className="mt-0.5 shrink-0" />
-              <span className="break-words">{text}</span>
-            </li>
-          ))}
+          {[...notes, ...warnings.map((w) => w.text), ...(attach ? [attach] : [])].map(
+            (text) => (
+              <li key={text} className="flex items-start gap-2">
+                <WarningIcon size={14} weight="fill" className="mt-0.5 shrink-0" />
+                <span className="break-words">{text}</span>
+              </li>
+            ),
+          )}
         </ul>
       )}
     </>

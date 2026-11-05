@@ -5,6 +5,7 @@ import { Button, IconButton, Input } from "@/components/ui";
 import { CHECKPOINT_TEMPLATE_LIST } from "@/lib/pmo/checkpointTemplates";
 import { PRIORITIES, RECURRENCE_MAX, type TodoDraft } from "@/lib/pmo/types";
 import { Chip, Field, Segmented, TextArea } from "./parts";
+import { TITLE_MAX, titleCounter } from "./titleLimit";
 
 interface DraftFormProps {
   draft: TodoDraft;
@@ -23,11 +24,11 @@ export function DraftForm({ draft, onChange, dueBasis, disabled }: DraftFormProp
 
   return (
     <div className="flex flex-col gap-3.5">
-      <Field label="Title">
+      <Field label="Title" hint={titleCounter(draft.title.length)}>
         <Input
           value={draft.title}
           disabled={disabled}
-          maxLength={200}
+          maxLength={TITLE_MAX}
           onChange={(event) => set({ title: event.target.value })}
         />
       </Field>
@@ -86,7 +87,12 @@ export function DraftForm({ draft, onChange, dueBasis, disabled }: DraftFormProp
               onChange={(event) => set({ dueAt: event.target.value || null })}
             />
             {draft.dueAt && dueBasis === "inferred" && (
-              <Chip className="shrink-0">guessed</Chip>
+              <Chip
+                className="shrink-0"
+                title="The AI suggested this date; the message does not state it exactly."
+              >
+                suggested
+              </Chip>
             )}
           </div>
         </Field>
@@ -156,6 +162,7 @@ export function DraftForm({ draft, onChange, dueBasis, disabled }: DraftFormProp
               value={item.text}
               disabled={disabled}
               maxLength={200}
+              aria-label={`Action item ${index + 1}`}
               onChange={(event) =>
                 set({
                   actionItems: draft.actionItems.map((existing, i) =>

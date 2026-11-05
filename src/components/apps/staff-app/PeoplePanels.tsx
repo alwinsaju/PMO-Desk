@@ -31,6 +31,8 @@ import {
 } from "@/lib/staff/people";
 import { useStaffPrefs } from "@/lib/staff/staffPrefsStore";
 import { useStaffStore } from "@/lib/staff/staffStore";
+import { useActiveStaff } from "./tabActive";
+import { CHECKLIST_TOAST_KEY } from "./startedToast";
 import type { Employee } from "@/lib/staff/types";
 import { PersonName } from "@/components/people/PersonName";
 import { useMyFirstName } from "@/components/people/useMyFirstName";
@@ -43,7 +45,7 @@ import { distribution, tagWeight } from "@/lib/staff/insightsData";
 
 /** Roll-off and contract ends in the next 30 days, birthdays and anniversaries in the next 14. */
 export function PeoplePanel() {
-  const employees = useStaffStore((s) => s.employees);
+  const employees = useActiveStaff((s) => s.employees);
   const me = useMyFirstName();
   const birthdayText = useTemplateText("app:staff:birthday");
   const anniversaryText = useTemplateText("app:staff:anniversary");
@@ -156,8 +158,8 @@ const SKILL_WEIGHT = {
 
 /** Who has which skills, and who can cover a skill on a day (people on approved leave are listed apart). */
 export function SkillsPanel() {
-  const employees = useStaffStore((s) => s.employees);
-  const timeOff = useStaffStore((s) => s.timeOff);
+  const employees = useActiveStaff((s) => s.employees);
+  const timeOff = useActiveStaff((s) => s.timeOff);
   const [query, setQuery] = useState("");
   const [day, setDay] = useState(todayIso());
   const matrix = useMemo(() => skillsMatrix(employees), [employees]);
@@ -292,7 +294,7 @@ export function SkillsPanel() {
 
 /** The client managers, their teams and the people in each, as a tree. */
 export function OrgPanel() {
-  const employees = useStaffStore((s) => s.employees);
+  const employees = useActiveStaff((s) => s.employees);
   const chart = useMemo(() => orgChart(employees), [employees]);
   if (chart.length === 0) {
     return <p className="text-ink-muted text-[13px]">The directory is empty.</p>;
@@ -391,8 +393,9 @@ function TeamBranch({ team, people }: { team: string; people: Employee[] }) {
  * offboarding ones for people moved to the Offboarded list. Ticking is saved on this computer.
  */
 export function ChecklistsPanel() {
-  const employees = useStaffStore((s) => s.employees);
-  const offboarded = useStaffStore((s) => s.offboarded);
+  // Only people the server has saved start a checklist: an add that fails leaves none behind.
+  const employees = useStaffStore((s) => s.savedEmployees);
+  const offboarded = useStaffStore((s) => s.savedOffboarded);
   const status = useStaffStore((s) => s.status);
   const lists = useStaffPrefs((s) => s.checklists);
   const update = useStaffPrefs((s) => s.update);
@@ -431,7 +434,8 @@ export function ChecklistsPanel() {
         seenEmployees: seen,
         checklists: [...p.checklists, ...made],
       }));
-      if (made.length > 0) toast({ ...startedText(made), tone: "info" });
+      if (made.length > 0)
+        toast({ ...startedText(made), tone: "info", key: CHECKLIST_TOAST_KEY });
     }
   }, [status, hydrated, employees, offboarded, update]);
 

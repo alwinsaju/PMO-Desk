@@ -62,6 +62,27 @@ describe("time off", () => {
     );
   });
 
+  it("leaves out a request that covers only a weekend, keeps one that touches a weekday", () => {
+    const out = whosOff({
+      ...base,
+      timeOff: [
+        leave(ana, "2026-11-07", "2026-11-08"),
+        leave(ben, "2026-11-06", "2026-11-08"),
+      ],
+    });
+    assert.deepEqual(
+      out.entries.map((e) => [e.name, e.start, e.end]),
+      [["Ben Cho", "2026-11-06", "2026-11-08"]],
+    );
+    // Asked about the weekend only, a longer leave that runs through it still shows.
+    const weekend = whosOff({
+      ...base,
+      from: "2026-11-07",
+      timeOff: [leave(ben, "2026-11-06", "2026-11-09")],
+    });
+    assert.deepEqual(peopleAway(weekend), ["Ben Cho"]);
+  });
+
   it("leaves out pending and rejected requests, unless pending is asked for", () => {
     const timeOff = [
       leave(ana, "2026-11-02", "2026-11-02", { status: "pending" }),

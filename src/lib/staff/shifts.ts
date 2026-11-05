@@ -816,6 +816,35 @@ export function fillWeek(
   );
 }
 
+/** What filling the week would do: the days it sets, the days already filled in that it would
+ *  replace (anything different, including Holiday and PTO days), and the change that undoes it. */
+export function planFillWeek(
+  index: ReadonlyMap<string, ShiftAssignment>,
+  monday: string,
+  memberId: string,
+  scheduleId: string,
+  def: ShiftDef,
+): {
+  fills: ShiftAssignment[];
+  replaced: ShiftAssignment[];
+  undo: { upsert: ShiftAssignment[]; remove: string[] };
+} {
+  const fills = fillWeek(monday, memberId, scheduleId, def);
+  const replaced: ShiftAssignment[] = [];
+  const remove: string[] = [];
+  for (const fill of fills) {
+    const before = index.get(fill.id);
+    if (!before) remove.push(fill.id);
+    // A day that already is exactly this shift has nothing to replace and nothing to undo.
+    else if (before.ref !== fill.ref || before.text || before.swap || before.note) {
+      replaced.push(before);
+    }
+  }
+  return { fills, replaced, undo: { upsert: replaced, remove } };
+}
+
+export type FillPlan = ReturnType<typeof planFillWeek>;
+
 // ---------------------------------------------------------------------------
 // Matching roster members to directory people
 // ---------------------------------------------------------------------------
@@ -851,10 +880,22 @@ export function autoLinkMembers(
   const linkedIds = new Set(
     members.map((m) => m.employeeId).filter((id): id is string => !!id),
   );
+  // One pass over the directory, so a roster of thousands of unlinked names stays fast.
+  const byName = new Map<string, Employee[]>();
+  for (const employee of employees) {
+    if (linkedIds.has(employee.id)) continue;
+    const key = nameTokens(displayName(employee)).join(" ");
+    if (!key) continue;
+    const list = byName.get(key);
+    if (list) list.push(employee);
+    else byName.set(key, [employee]);
+  }
   const changed: RosterMember[] = [];
   for (const member of members) {
     if (member.employeeId) continue;
-    const found = suggestLinks(member.name, employees, linkedIds);
+    const found = (byName.get(nameTokens(member.name).join(" ")) ?? []).filter(
+      (e) => !linkedIds.has(e.id),
+    );
     if (found.length === 1) {
       linkedIds.add(found[0].id);
       changed.push({ ...member, employeeId: found[0].id });

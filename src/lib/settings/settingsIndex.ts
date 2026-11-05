@@ -32,6 +32,8 @@ export interface SettingEntry {
   hint: string;
   /** Other words people may type. */
   keywords: string;
+  /** Set when the setting is not a row in this window: where to find it instead. */
+  elsewhere?: string;
 }
 
 const entry = (
@@ -42,6 +44,26 @@ const entry = (
   hint: string,
   keywords = "",
 ): SettingEntry => ({ id, tab, section, title, hint, keywords });
+
+const QUICK_SETTINGS = "Quick settings (the Settings button in the App Menu)";
+
+/** Settings that live in a menu or another app rather than in this window. They are found by
+ *  search and say where to go; choosing one does not jump. */
+const elsewhere = (
+  id: string,
+  where: string,
+  title: string,
+  hint: string,
+  keywords = "",
+): SettingEntry => ({
+  id,
+  tab: "general",
+  section: where,
+  title,
+  hint,
+  keywords,
+  elsewhere: where,
+});
 
 export const SETTINGS_INDEX: readonly SettingEntry[] = [
   entry(
@@ -284,6 +306,34 @@ export const SETTINGS_INDEX: readonly SettingEntry[] = [
     "Which version is running.",
     "about build",
   ),
+  elsewhere(
+    "hardware-acceleration",
+    QUICK_SETTINGS,
+    "Hardware acceleration",
+    "Richer visual effects; in the desktop app it also lets the graphics card help (restart to apply).",
+    "gpu graphics effects blur animation slow performance",
+  ),
+  elsewhere(
+    "quick-capture",
+    QUICK_SETTINGS,
+    "Quick capture hotkey",
+    "Ctrl+Shift+Space brings PMO Desk forward from any program, ready for a new to-do. Desktop app only.",
+    "global shortcut keyboard capture todo",
+  ),
+  elsewhere(
+    "fast-model",
+    QUICK_SETTINGS,
+    "Fast AI model",
+    "Switches the local AI to a lighter model that answers faster on a computer without a graphics card.",
+    "ai assistant gemma qwen speed slow lighter careful",
+  ),
+  elsewhere(
+    "keep-running-in-tray",
+    "PMO To-Do > Settings > Reminders",
+    "Keep running in the tray",
+    "Closing the window hides PMO Desk to the system tray so reminders still fire. Desktop app only.",
+    "tray system tray icon background close minimise minimize quit reminders",
+  ),
 ];
 
 const norm = (text: string): string =>
@@ -325,6 +375,8 @@ export function searchSettings(
 
 /** "General › Lock screen and desktop". */
 export const pathOf = (item: SettingEntry): string =>
-  item.section === TAB_TITLES[item.tab]
-    ? TAB_TITLES[item.tab]
-    : `${TAB_TITLES[item.tab]} › ${item.section}`;
+  item.elsewhere
+    ? item.elsewhere
+    : item.section === TAB_TITLES[item.tab]
+      ? TAB_TITLES[item.tab]
+      : `${TAB_TITLES[item.tab]} › ${item.section}`;

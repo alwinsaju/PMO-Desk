@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { installLabel, installedToast, isDemoApp, removedToast } from "./installFlow.ts";
+import {
+  demoOpenToast,
+  installLabel,
+  installedToast,
+  isDemoApp,
+  removedToast,
+} from "./installFlow.ts";
 
 const real = { id: "gmail", name: "Gmail", url: "https://mail.google.com/" };
 const demo = { id: "taskflow", name: "TaskFlow" };
@@ -11,6 +17,11 @@ describe("installLabel", () => {
     assert.equal(installLabel(true, false), "Installing…");
     assert.equal(installLabel(false, true), "Open");
     assert.equal(installLabel(true, true), "Installing…");
+  });
+  it("never says Open for a demo app: an installed demo reads Remove", () => {
+    assert.equal(installLabel(false, true, true), "Remove");
+    assert.equal(installLabel(false, false, true), "Install");
+    assert.equal(installLabel(true, true, true), "Installing…");
   });
 });
 
@@ -42,6 +53,15 @@ describe("installedToast", () => {
   });
   it("uses a key so a quick second install replaces the toast", () => {
     assert.equal(installedToast(real, () => {}).key, "app-install:gmail");
+  });
+});
+
+describe("demoOpenToast", () => {
+  it("explains there is nothing to open and offers no action that removes it", () => {
+    const t = demoOpenToast(demo);
+    assert.match(t.title, /demo app/i);
+    assert.match(t.message, /nothing to open/i);
+    assert.equal(t.action, undefined);
   });
 });
 

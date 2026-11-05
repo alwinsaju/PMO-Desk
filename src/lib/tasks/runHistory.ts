@@ -16,7 +16,7 @@ export function formatDuration(ms: number): string {
 }
 
 export interface HistoryFilter {
-  outcome: "all" | "completed" | "failed";
+  outcome: "all" | "completed" | "failed" | "rejected" | "cancelled";
   text: string;
   taskId: string | null;
   /** Only runs that ended within this many days. */
@@ -61,7 +61,7 @@ export interface HistorySummary {
   total: number;
   completed: number;
   failed: number;
-  /** Completed share, 0–100; null with no runs. */
+  /** Completed share of the runs that finished or failed (rejected and reset runs are not counted), 0–100; null with none. */
   successPercent: number | null;
   medianMs: number | null;
 }
@@ -69,12 +69,13 @@ export interface HistorySummary {
 export function summarizeRuns(runs: readonly HistoryRun[]): HistorySummary {
   const completed = runs.filter((r) => r.outcome === "completed");
   const failed = runs.filter((r) => r.outcome === "failed").length;
+  const finished = completed.length + failed;
   const times = completed.map(durationMs).sort((a, b) => a - b);
   return {
     total: runs.length,
     completed: completed.length,
     failed,
-    successPercent: runs.length ? Math.round((completed.length / runs.length) * 100) : null,
+    successPercent: finished ? Math.round((completed.length / finished) * 100) : null,
     medianMs: times.length ? times[Math.floor(times.length / 2)] : null,
   };
 }

@@ -7,8 +7,11 @@ import { afterEach, beforeEach, describe, it } from "node:test";
 import {
   addTemplate,
   readTemplates,
+  readTemplatesChecked,
   removeTemplate,
   resolveTemplate,
+  restoreBuiltIn,
+  restoreDeleted,
   saveTemplate,
   templatesDir,
   TemplateError,
@@ -69,6 +72,111 @@ describe("the first read", () => {
       return true;
     });
     assert.equal(await readFile(fileOf(), "utf8"), "{ not json");
+  });
+});
+
+describe("recovering a damaged or thin library", () => {
+  it("rebuilds an unreadable file from the built-in templates and keeps a .bak copy", async () => {
+    await mkdir(templatesDir(env), { recursive: true });
+    await writeFile(fileOf(), "{ not json", "utf8");
+    await assert.rejects(readTemplates(env, NOW), (error) => error.code === "corrupt");
+    const result = await restoreBuiltIn(env, NOW);
+    assert.equal(result.rebuilt, true);
+    assert.equal(result.added, STARTERS.length);
+    assert.equal(result.backup, "library.json.bak");
+    assert.equal(await readFile(`${fileOf()}.bak`, "utf8"), "{ not json");
+    assert.equal((await readTemplates(env, NOW)).templates.length, STARTERS.length);
+  });
+
+  it("never overwrites an earlier .bak when the file breaks again", async () => {
+    await mkdir(templatesDir(env), { recursive: true });
+    await writeFile(`${fileOf()}.bak`, "first", "utf8");
+    await writeFile(fileOf(), "second broken", "utf8");
+    const result = await restoreBuiltIn(env, NOW);
+    assert.match(result.backup, /^library\.json\.bak-\d+$/);
+    assert.equal(await readFile(`${fileOf()}.bak`, "utf8"), "first");
+  });
+
+  it("adds back built-in templates that are gone, without touching the rest", async () => {
+    const before = await readTemplates(env, NOW);
+    const aging = before.templates.find((t) => t.starterId === "aging-report-email");
+    await removeTemplate(aging.id, env, NOW);
+    const mine = await addTemplate(
+      draft({ name: "Mine", usedBy: ["task:weekly-aging-report"] }),
+      env,
+      NOW,
+    );
+    const result = await restoreBuiltIn(env, NOW);
+    assert.equal(result.rebuilt, false);
+    assert.equal(result.added, 1);
+    const after = await readTemplates(env, NOW);
+    const back = after.templates.find((t) => t.starterId === "aging-report-email");
+    assert.ok(back);
+    // The place stays with the template that has it now.
+    assert.equal(back.usedBy.includes("task:weekly-aging-report"), false);
+    assert.equal(
+      (await resolveTemplate("task:weekly-aging-report", env)).id,
+      mine.template.id,
+    );
+    assert.equal((await restoreBuiltIn(env, NOW)).added, 0);
+  });
+
+  it("refills a library that was emptied by hand", async () => {
+    await mkdir(templatesDir(env), { recursive: true });
+    await writeFile(fileOf(), JSON.stringify({ version: 1, templates: [] }), "utf8");
+    assert.equal((await restoreBuiltIn(env, NOW)).added, STARTERS.length);
+  });
+
+  it("keeps a copy and says so when a hand edit left entries unusable", async () => {
+    await readTemplates(env, NOW);
+    const onDisk = JSON.parse(await readFile(fileOf(), "utf8"));
+    onDisk.templates.push({ id: "bad id", name: "x", kind: "email" });
+    await writeFile(fileOf(), JSON.stringify(onDisk), "utf8");
+    const read = await readTemplatesChecked(env, NOW);
+    assert.match(read.warning, /1 entry .*left out/);
+    assert.match(read.warning, /library\.json\.bak/);
+    assert.equal(read.library.templates.length, STARTERS.length);
+    assert.equal((await readFile(`${fileOf()}.bak`, "utf8")).includes("bad id"), true);
+    assert.equal((await readTemplatesChecked(env, NOW)).warning !== null, true);
+  });
+});
+
+describe("undoing a delete", () => {
+  it("brings the template back as it was, but not places another template took", async () => {
+    const { template: mine } = await addTemplate(
+      draft({ name: "Mine", usedBy: ["task:weekly-aging-report"] }),
+      env,
+      NOW,
+    );
+    const { template: edited } = await saveTemplate(
+      mine.id,
+      draft({ name: "Mine v2", usedBy: ["task:weekly-aging-report"] }),
+      env,
+      NOW,
+    );
+    await removeTemplate(mine.id, env, NOW);
+    const other = await addTemplate(
+      draft({ name: "Replacement", usedBy: ["task:weekly-aging-report"] }),
+      env,
+      NOW,
+    );
+    const back = await restoreDeleted({ template: edited }, env, NOW);
+    assert.equal(back.template.id, mine.id);
+    assert.equal(back.template.createdAt, mine.createdAt);
+    assert.equal(back.template.history.length, 1);
+    assert.deepEqual(back.leftBehind, ["task:weekly-aging-report"]);
+    assert.deepEqual(back.template.usedBy, []);
+    assert.equal(
+      (await resolveTemplate("task:weekly-aging-report", env)).id,
+      other.template.id,
+    );
+  });
+
+  it("refuses a template that is already there or is not a template", async () => {
+    const { template } = await addTemplate(draft({ usedBy: [] }), env, NOW);
+    await assert.rejects(restoreDeleted({ template }, env, NOW), /already back/);
+    await assert.rejects(restoreDeleted({ template: 5 }, env, NOW), TemplateError);
+    await assert.rejects(restoreDeleted(null, env, NOW), TemplateError);
   });
 });
 

@@ -5,6 +5,8 @@ import { FileXlsIcon, WarningCircleIcon } from "@phosphor-icons/react";
 import { Button, Dialog, DialogContent } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { parseRosterRows, planImport, type ImportResult } from "@/lib/staff/employees";
+import { parseCsv } from "@/lib/staff/csvRead";
+import { MAX_BATCH } from "@/lib/staff/fieldRules";
 import { employeeTemplate } from "@/lib/staff/importTemplates";
 import { useStaffStore } from "@/lib/staff/staffStore";
 import { TemplateDownloadButton } from "../TemplateDownloadButton";
@@ -54,9 +56,12 @@ function ImportBody({ onClose }: { onClose: () => void }) {
     if (file.size > MAX_FILE_BYTES) return setError("That file is larger than 10 MB.");
     setBusy(true);
     try {
-      const sheets = await readWorkbookSheets(file);
-      const parsed = sheets
-        .map((sheet) => parseRosterRows(sheet.data))
+      const isCsv = /\.csv$/i.test(file.name) || file.type === "text/csv";
+      const grids: (readonly unknown[])[][] = isCsv
+        ? [parseCsv(await file.text())]
+        : (await readWorkbookSheets(file)).map((sheet) => sheet.data);
+      const parsed = grids
+        .map((grid) => parseRosterRows(grid))
         .find((candidate) => candidate.headerFound);
       if (!parsed) {
         setError(
@@ -66,7 +71,7 @@ function ImportBody({ onClose }: { onClose: () => void }) {
         setResult(parsed);
       }
     } catch {
-      setError("That file could not be read. Is it an .xlsx workbook?");
+      setError("That file could not be read. Is it an .xlsx workbook or a .csv file?");
     } finally {
       setBusy(false);
     }
@@ -89,6 +94,7 @@ function ImportBody({ onClose }: { onClose: () => void }) {
   }
 
   const count = plan?.upserts.length ?? 0;
+  const tooMany = count > MAX_BATCH;
   return (
     <>
       <DialogHead
@@ -123,7 +129,7 @@ function ImportBody({ onClose }: { onClose: () => void }) {
                 <FileXlsIcon size={28} className="text-accent-ink shrink-0" />
                 <span className="min-w-0">
                   <span className="text-ink block truncate text-[14px] font-semibold">
-                    {fileName || "Choose a workbook (.xlsx)"}
+                    {fileName || "Choose a workbook (.xlsx) or a CSV file"}
                   </span>
                   <span className="text-ink-muted text-[12.5px]">
                     {busy && !result
@@ -135,7 +141,7 @@ function ImportBody({ onClose }: { onClose: () => void }) {
               <input
                 ref={fileRef}
                 type="file"
-                accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 className="hidden"
                 onChange={(e) => take(e.target.files)}
               />
@@ -171,13 +177,31 @@ function ImportBody({ onClose }: { onClose: () => void }) {
                     <ul className="text-ink-muted list-disc pl-5 text-[12.5px]">
                       {result.skipped.slice(0, 5).map((skip) => (
                         <li key={skip.row}>
-                          Row {skip.row}: {skip.reason}
+                          Row {skip.row} is skipped: {skip.reason}
                         </li>
                       ))}
                       {result.skipped.length > 5 && (
-                        <li>and {result.skipped.length - 5} more</li>
+                        <li>and {result.skipped.length - 5} more skipped rows</li>
                       )}
                     </ul>
+                  )}
+                  {result.notes.length > 0 && (
+                    <ul className="text-ink-muted list-disc pl-5 text-[12.5px]">
+                      {result.notes.slice(0, 5).map((note) => (
+                        <li key={`${note.row}-${note.reason}`}>
+                          Row {note.row}: {note.reason}
+                        </li>
+                      ))}
+                      {result.notes.length > 5 && (
+                        <li>and {result.notes.length - 5} more notes</li>
+                      )}
+                    </ul>
+                  )}
+                  {tooMany && (
+                    <p role="alert" className="text-red text-[13px]">
+                      This file has {plan.upserts.length} people. PMO Desk imports up to{" "}
+                      {MAX_BATCH} at a time: split the workbook into smaller files.
+                    </p>
                   )}
                 </>
               ) : (
@@ -201,7 +225,7 @@ function ImportBody({ onClose }: { onClose: () => void }) {
         <Button variant="ghost" onClick={onClose}>
           Cancel
         </Button>
-        <Button disabled={count === 0 || busy} onClick={() => void run()}>
+        <Button disabled={count === 0 || busy || tooMany} onClick={() => void run()}>
           {count > 0 ? `Import ${count} ${count === 1 ? "person" : "people"}` : "Import"}
         </Button>
       </StickyFooter>

@@ -182,7 +182,8 @@ export const PERSIST_HINT = "Upload once; it stays on file for future runs.";
 
 /** Helper line under an empty OPTIONAL persist drop zone (a file the task can
  *  do without, e.g. the Holiday Roster, which falls back to a reference copy). */
-export const OPTIONAL_PERSIST_HINT = "Not uploaded - the reference file will be used.";
+export const OPTIONAL_PERSIST_HINT =
+  "Not uploaded - a file kept from an earlier run or the built-in reference is used. If a run says it is missing, upload it here.";
 
 /** True for a file input the task can run without. */
 export function isOptionalFile(input: Pick<TaskInputDef, "required">): boolean {

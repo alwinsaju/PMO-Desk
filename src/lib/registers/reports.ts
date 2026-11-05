@@ -11,6 +11,7 @@ import {
   projectKey,
 } from "./projectDigest.ts";
 import { isOpen, recordTitle, textOf } from "./records.ts";
+import { normaliseMonth } from "./month.ts";
 import type { RegisterDef, RegisterRecord } from "./types.ts";
 
 const RAG_ORDER = ["Green", "Amber", "Red"] as const;
@@ -159,6 +160,8 @@ export function changeSummary(
 
 export interface MonthEndCheck {
   month: string;
+  /** False when `month` is not a month (the box was cleared or half typed): nothing is counted then. */
+  valid: boolean;
   ready: number;
   blocked: number;
   daysLeft: number;
@@ -171,19 +174,26 @@ const lastDayOfMonth = (month: string): string => {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
 };
 
-/** For one month (yyyy-mm): which unsent invoices can go and what holds the others back. */
+/** For one month (yyyy-mm): which unsent invoices can go and what holds the others back. Invoices whose Month
+ *  was typed another way ("Nov 2026", "2026-3") count for that month too. */
 export function monthEndCheck(
   invoices: readonly RegisterRecord[],
   def: RegisterDef,
   month: string,
   today: string,
 ): MonthEndCheck {
-  const mine = invoices.filter((i) => textOf(i, "month") === month && isOpen(def, i));
+  const key = normaliseMonth(month);
+  if (!key) {
+    return { month, valid: false, ready: 0, blocked: 0, daysLeft: 0, text: "" };
+  }
+  const mine = invoices.filter(
+    (i) => normaliseMonth(textOf(i, "month")) === key && isOpen(def, i),
+  );
   const blocked = mine.filter((i) => invoiceBlockers(i).length > 0);
   const ready = mine.length - blocked.length;
-  const daysLeft = daysBetween(today, lastDayOfMonth(month));
+  const daysLeft = daysBetween(today, lastDayOfMonth(key));
   const lines = [
-    `Invoices for ${month}: ${ready} ready, ${blocked.length} blocked`,
+    `Invoices for ${key}: ${ready} ready, ${blocked.length} blocked`,
     daysLeft >= 0
       ? `${daysLeft} day${daysLeft === 1 ? "" : "s"} to month-end.`
       : "Month-end has passed.",
@@ -193,7 +203,8 @@ export function monthEndCheck(
     ),
   ];
   return {
-    month,
+    month: key,
+    valid: true,
     ready,
     blocked: blocked.length,
     daysLeft,

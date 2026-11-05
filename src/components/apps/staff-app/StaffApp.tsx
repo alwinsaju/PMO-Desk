@@ -10,6 +10,7 @@ import { InsightsTab } from "./InsightsTab";
 import { OffboardedTab } from "./OffboardedTab";
 import { ShiftRoster } from "./ShiftRoster";
 import { useStaffNav } from "./staffNavStore";
+import { TabActiveContext } from "./tabActive";
 import { TimeOffTab } from "./TimeOffTab";
 
 const PANEL = "flex min-h-0 flex-1 flex-col data-[state=inactive]:hidden";
@@ -71,16 +72,24 @@ export function StaffApp({ windowId }: { windowId: string }) {
           <DirectoryTab />
         </TabsContent>
         <TabsContent value="shifts" forceMount className={PANEL}>
-          <ShiftRoster />
+          <TabActiveContext value={tab === "shifts"}>
+            <ShiftRoster />
+          </TabActiveContext>
         </TabsContent>
         <TabsContent value="timeoff" forceMount className={PANEL}>
-          <TimeOffTab status={timeOffStatus} onStatusChange={setTimeOffStatus} />
+          <TabActiveContext value={tab === "timeoff"}>
+            <TimeOffTab status={timeOffStatus} onStatusChange={setTimeOffStatus} />
+          </TabActiveContext>
         </TabsContent>
         <TabsContent value="offboarded" forceMount className={PANEL}>
-          <OffboardedTab />
+          <TabActiveContext value={tab === "offboarded"}>
+            <OffboardedTab />
+          </TabActiveContext>
         </TabsContent>
         <TabsContent value="insights" forceMount className={PANEL}>
-          <InsightsTab />
+          <TabActiveContext value={tab === "insights"}>
+            <InsightsTab />
+          </TabActiveContext>
         </TabsContent>
       </Tabs>
     </div>

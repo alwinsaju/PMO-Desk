@@ -14,6 +14,7 @@ import { leaveBalance, leaveReply } from "@/lib/staff/leave";
 import { useRosterStore } from "@/lib/staff/rosterStore";
 import { useStaffPrefs } from "@/lib/staff/staffPrefsStore";
 import { useStaffStore } from "@/lib/staff/staffStore";
+import { useActiveStaff } from "./tabActive";
 import { dayCount, TIME_OFF_META } from "@/lib/staff/timeoff";
 import type { TimeOffRequest } from "@/lib/staff/types";
 import { PersonName } from "@/components/people/PersonName";
@@ -22,9 +23,9 @@ import { useTemplateText } from "../templates-app/useTemplateText";
 
 /** The shared inputs that capacity and leave logic read. */
 export function useCapacityInput(): CapacityInput {
-  const employees = useStaffStore((s) => s.employees);
-  const assignments = useStaffStore((s) => s.shifts);
-  const timeOff = useStaffStore((s) => s.timeOff);
+  const employees = useActiveStaff((s) => s.employees);
+  const assignments = useActiveStaff((s) => s.shifts);
+  const timeOff = useActiveStaff((s) => s.timeOff);
   const config = useRosterStore((s) => s.config);
   return useMemo(
     () => ({
@@ -153,6 +154,7 @@ export function LeaveApprovals({ limit }: { limit?: number }) {
                   <Button
                     size="sm"
                     disabled={busy === r.id}
+                    aria-label={`Approve ${person ? displayName(person) : "this request"}, ${formatRange(r.startDate, r.endDate)}`}
                     onClick={() => void decide(r, "approved")}
                   >
                     <CheckIcon size={13} weight="bold" />
@@ -162,6 +164,7 @@ export function LeaveApprovals({ limit }: { limit?: number }) {
                     size="sm"
                     variant="outline"
                     disabled={busy === r.id}
+                    aria-label={`Reject ${person ? displayName(person) : "this request"}, ${formatRange(r.startDate, r.endDate)}`}
                     onClick={() => void decide(r, "rejected")}
                   >
                     <XIcon size={13} weight="bold" />

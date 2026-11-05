@@ -35,6 +35,14 @@ export function firstNameFromAccount(account: string | null | undefined): string
   return titleCase(word);
 }
 
+/** The small line above the name on the lock screen. "Welcome back" only makes sense once
+ *  someone has set the app up; on a brand-new profile it is a plain "Welcome". `firstUse` is
+ *  the PMO first-run signal (setup not complete); no line when there is no name to greet. */
+export function welcomeLine(name: string, firstUse: boolean): string {
+  if (!name) return "";
+  return firstUse ? "Welcome" : "Welcome back";
+}
+
 export function initialsOf(name: string): string {
   const words = name.split(/\s+/).filter(Boolean);
   if (words.length === 0) return "";

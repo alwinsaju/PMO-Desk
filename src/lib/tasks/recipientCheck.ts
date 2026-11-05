@@ -6,11 +6,15 @@ export interface Recipients {
 }
 
 export interface RecipientWarning {
-  kind: "changed" | "external";
+  kind: "changed" | "external" | "invalid";
   text: string;
 }
 
 const norm = (s: string) => s.trim().toLowerCase();
+
+/** An entry must be one address ("a@b.com" or "Name <a@b.com>"), not text with something else hidden in it. */
+export const looksLikeAddress = (entry: string): boolean =>
+  /^(?:[^<>@;]*<)?[^\s<>@;,]+@[^\s<>@;,]+\.[A-Za-z]{2,}>?$/.test(entry.trim());
 
 const domainOf = (address: string): string => {
   const m = /@([^>\s;]+)>?$/.exec(address.trim());
@@ -45,6 +49,13 @@ export function checkRecipients(
   internal: ReadonlySet<string>,
 ): RecipientWarning[] {
   const warnings: RecipientWarning[] = [];
+  const invalid = [...current.to, ...current.cc].filter((a) => a.trim() && !looksLikeAddress(a));
+  if (invalid.length) {
+    warnings.push({
+      kind: "invalid",
+      text: `Not a clear email address: ${[...new Set(invalid)].join(", ")}. Check the recipients in Outlook.`,
+    });
+  }
   if (previous) {
     for (const [label, before, after] of [
       ["To", previous.to, current.to],

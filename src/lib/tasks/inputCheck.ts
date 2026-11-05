@@ -11,13 +11,41 @@ export interface SheetRule {
   required: string[];
   /** The first columns must be exactly these (the backlog report checks this). */
   leading?: string[];
+  /** For files whose header is not on row 1 and whose sheet has no fixed name (the staff roster): the
+   *  first sheet must have, within the first `rows` rows, one header from every group (letters and
+   *  digits only, any case). `sheet` is then only a label. */
+  headerScan?: { rows: number; groups: string[][]; describe: string };
 }
 
 const NUMBER_ETC = ["Number", "Assigned to", "Updated"];
+// Names.xlsx as the mailers read it (Sheet1: Full Name, Email). Without the Email column nobody can be addressed.
+const ROSTER_RULE: SheetRule = { sheet: "Sheet1", required: ["Full Name", "Email"] };
+// The shift roster workbook both roster tasks read (layout is checked by the task itself).
+const SHIFT_ROSTER_RULE: SheetRule = { sheet: "PDT Operate", required: [] };
 
-/** Per `taskId:inputId`. Only the incident exports have rules; other files are just checked as readable. */
+/** Per `taskId:inputId`. Only some uploads have rules; other files are just checked as readable. */
 export const INPUT_RULES: Record<string, SheetRule> = {
   "weekly-aging-report:incident": { sheet: "Page 1", required: NUMBER_ETC },
+  "weekly-aging-report:roster": ROSTER_RULE,
+  "weekly-backlog-report:roster": ROSTER_RULE,
+  "monthly-report-deck:roster": ROSTER_RULE,
+  "monthly-report-deck:history": { sheet: "Incidents", required: ["Number"] },
+  "deployment-dep-weekend-mailer:roster": ROSTER_RULE,
+  "deployment-dep-weekend-mailer:workbook": { sheet: "Deployment", required: [] },
+  "shift-roster:roster": SHIFT_ROSTER_RULE,
+  "december-disconnect:roster": SHIFT_ROSTER_RULE,
+  "december-disconnect:staff": {
+    sheet: "Staff",
+    required: [],
+    headerScan: {
+      rows: 15,
+      groups: [
+        ["team", "team name", "section"],
+        ["full name", "name", "employee name", "first name"],
+      ],
+      describe: "a Team column and a name column",
+    },
+  },
   "weekly-backlog-report:incident": {
     sheet: "Page 1",
     required: ["Number", "Requested for", "Opened", "Assigned to"],
@@ -64,17 +92,55 @@ const headerIndex = (header: unknown[]): Map<string, number> => {
 /** How old the newest "Updated" may be before the export looks stale. */
 export const STALE_DAYS = 14;
 
+const alnum = (v: unknown) =>
+  text(v)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+
+function checkHeaderScan(
+  sheets: readonly SheetData[],
+  scan: NonNullable<SheetRule["headerScan"]>,
+): InputCheck {
+  const sheet = sheets[0];
+  if (!sheet) return { ok: false, problems: ["The workbook has no sheets."], warnings: [], rows: 0 };
+  const top = sheet.data.slice(0, scan.rows);
+  const at = top.findIndex((row) => {
+    const heads = new Set(row.map(alnum));
+    return scan.groups.every((group) => group.some((name) => heads.has(name)));
+  });
+  if (at < 0) {
+    return {
+      ok: false,
+      problems: [
+        `No header row with ${scan.describe} was found in the first ${scan.rows} rows of “${sheet.sheet}”. Check this is the right workbook.`,
+      ],
+      warnings: [],
+      rows: 0,
+    };
+  }
+  const rows = sheet.data.slice(at + 1).filter((r) => r.some((c) => text(c) !== "")).length;
+  return {
+    ok: rows > 0,
+    problems: rows > 0 ? [] : ["The sheet has no rows below the header."],
+    warnings: [],
+    rows,
+  };
+}
+
 export function checkSheets(
   sheets: readonly SheetData[],
   rule: SheetRule,
   now: Date,
 ): InputCheck {
+  if (rule.headerScan) return checkHeaderScan(sheets, rule.headerScan);
   const sheet = sheets.find((s) => s.sheet === rule.sheet);
   if (!sheet) {
+    const has = sheets.map((s) => `“${s.sheet}”`).slice(0, 5);
     return {
       ok: false,
       problems: [
-        `There is no sheet called “${rule.sheet}”. Download the export again without renaming it.`,
+        `There is no sheet called “${rule.sheet}”${has.length ? ` (this file has ${has.join(", ")})` : ""}. Check this is the right file, and that its sheet was not renamed.`,
       ],
       warnings: [],
       rows: 0,
@@ -118,6 +184,16 @@ export function checkSheets(
     if (dupes > 0) warnings.push(`${dupes} incident number${dupes > 1 ? "s appear" : " appears"} more than once.`);
   }
   return { ok: problems.length === 0, problems, warnings, rows };
+}
+
+/** The problems that mean the wrong file was probably chosen, one line per file: "Label: problem". */
+export function fileProblems(
+  checks: Readonly<Record<string, InputCheck | undefined>>,
+  labels: Readonly<Record<string, string>>,
+): string[] {
+  return Object.entries(checks).flatMap(([id, check]) =>
+    (check?.problems ?? []).map((problem) => `${labels[id] ?? id}: ${problem}`),
+  );
 }
 
 /** One incident, as much as the comparison needs. */

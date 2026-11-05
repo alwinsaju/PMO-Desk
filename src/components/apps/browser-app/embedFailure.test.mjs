@@ -4,6 +4,7 @@ import {
   addressSecurity,
   classifyWebviewError,
   describeEmbedFailure,
+  isOwnAddress,
 } from "./embedFailure.ts";
 
 describe("describeEmbedFailure", () => {
@@ -66,8 +67,14 @@ describe("describeEmbedFailure", () => {
       true,
     );
   });
+  it("says a private or loopback address cannot be shown, without Retry", () => {
+    const f = describeEmbedFailure({ host: "10.0.0.5", code: "private" });
+    assert.match(f.title, /can't be shown inside PMO Desk/);
+    assert.equal(f.retryable, false);
+    assert.match(f.nextStep, /default browser/i);
+  });
   it("gives every failure a cause and a next step for the error card", () => {
-    for (const code of ["framing", "unreachable", "not-found", undefined]) {
+    for (const code of ["framing", "unreachable", "not-found", "private", undefined]) {
       const f = describeEmbedFailure({ host: "a.com", code });
       assert.ok(f.cause.length > 0 && f.nextStep.length > 0, String(code));
     }
@@ -91,6 +98,21 @@ describe("classifyWebviewError", () => {
     assert.equal(classifyWebviewError("ERR_BLOCKED_BY_RESPONSE"), "framing");
     assert.equal(classifyWebviewError("something else"), undefined);
     assert.equal(classifyWebviewError(undefined), undefined);
+  });
+});
+
+describe("isOwnAddress", () => {
+  const own = "http://127.0.0.1:3456";
+  it("recognises the app's own address under any loopback name", () => {
+    assert.equal(isOwnAddress("http://127.0.0.1:3456/", own), true);
+    assert.equal(isOwnAddress("http://localhost:3456/x?y=1", own), true);
+    assert.equal(isOwnAddress("http://[::1]:3456/", own), true);
+  });
+  it("is false for other ports and other sites", () => {
+    assert.equal(isOwnAddress("http://127.0.0.1:3000/", own), false);
+    assert.equal(isOwnAddress("https://example.com/", own), false);
+    assert.equal(isOwnAddress("not a url", own), false);
+    assert.equal(isOwnAddress("http://localhost/", own), false);
   });
 });
 

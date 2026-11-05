@@ -694,13 +694,15 @@ def test_force_reset_stops_the_run_in_flight_and_it_cannot_touch_the_next_run(tm
 
     old_proc = asyncio.run(scenario())
 
-    # The stale run left no trace: no failure, no completed steps, no history
-    # record, nothing in the log, and the task is free to be run again.
+    # The stale run left no failure, no completed steps and nothing in the log, and the task is free to
+    # be run again. The reset itself is recorded (outcome "cancelled", the step that was in flight).
     assert task.state == "resting"
     assert task.error is None
     assert task.completed_steps == set()
     assert task.step_output == []
-    assert not backend.HISTORY_FILE.exists()
+    (record,) = backend._read_history()
+    assert record["outcome"] == "cancelled" and record["current_step_at_end"] == "pivot"
+    assert [a["kind"] for a in record["approvals"]] == ["reset"]
     assert not any(n["kind"] == "task.failed" for n in task.notifications)
 
 

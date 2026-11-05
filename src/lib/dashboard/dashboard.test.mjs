@@ -281,6 +281,23 @@ describe("report status", () => {
     assert.match(rows[1].detail, /No file$/);
   });
 
+  it("a run the person rejected or reset is not shown as a failure", () => {
+    const rows = status(
+      [task("weekly-aging-report", "resting"), task("weekly-backlog-report", "resting")],
+      {
+        "weekly-aging-report": [run("rejected")],
+        "weekly-backlog-report": [run("cancelled")],
+      },
+    );
+    assert.deepEqual(
+      rows.map((r) => [r.status, r.tone, r.needsYou]),
+      [
+        ["Rejected", "neutral", false],
+        ["Stopped", "neutral", false],
+      ],
+    );
+  });
+
   it("adds the PMO weekly report: up to date once last week is covered", () => {
     const saved = (endDay) => [
       {

@@ -9,7 +9,9 @@ import {
 import { Button, Input } from "@/components/ui";
 import { openOrFocusBuiltInApp } from "@/components/taskbar/launchBuiltInApp";
 import { useDashboardPrefs } from "@/lib/dashboard/dashboardPrefsStore";
+import { exportToast } from "@/lib/dashboard/exportOutcome";
 import { exportElement } from "@/lib/dashboard/exportView";
+import { refreshRegisterSummaries } from "@/lib/dashboard/refreshRegisterSummaries";
 import {
   agingBuckets,
   contractTodayAlerts,
@@ -17,7 +19,7 @@ import {
   portfolioRag,
   reportHealth,
   signoffPipeline,
-  todayList,
+  todaySummary,
   workloadByOwner,
 } from "@/lib/dashboard/insights";
 import { useRegisterSummaries } from "@/components/apps/toolkit/summariesStore";
@@ -31,6 +33,7 @@ import {
 } from "@/lib/dashboard/layout";
 import { awayWindow, openTodos, overdueChasers } from "@/lib/dashboard/summary";
 import { updatedLabel } from "@/lib/dashboard/updatedLabel";
+import { useNeedsYouTotal } from "@/lib/dashboard/useNeedsYouTotal";
 import { toast } from "@/lib/notifications/toastStore";
 import { noSpellcheck } from "@/lib/ui/noSpellcheck";
 import { usePreferences } from "@/lib/preferences/preferencesStore";
@@ -106,6 +109,7 @@ export function DashboardApp({ windowId }: { windowId: string }) {
 
   const prefs = state?.config.reminders;
   const timeZone = prefs?.timeZone ?? "Asia/Kolkata";
+  const needsYou = useNeedsYouTotal();
   const reports = useReportStatuses(now, timeZone);
   const today = prefs ? localParts(now, prefs.timeZone).day : todayIso(now);
 
@@ -149,19 +153,22 @@ export function DashboardApp({ windowId }: { windowId: string }) {
     if (!state || !prefs) return null;
     const needing = (reports.rows ?? []).filter((r) => r.needsYou).map((r) => r.name);
     return {
-      today: todayList({
-        todos: state.todos,
-        today,
-        now,
-        prefs,
-        pendingLeave: timeOff.filter((r) => r.status === "pending").length,
-        reviewCount: reviewCount(state.queue),
-        tasksNeedingYou: needing,
-        awayToday,
-        contracts: vendors.data
-          ? contractTodayAlerts(vendors.data.items, today, vendors.data.config)
-          : [],
-      }),
+      today: todaySummary(
+        {
+          todos: state.todos,
+          today,
+          now,
+          prefs,
+          pendingLeave: timeOff.filter((r) => r.status === "pending").length,
+          reviewCount: reviewCount(state.queue),
+          tasksNeedingYou: needing,
+          awayToday,
+          contracts: vendors.data
+            ? contractTodayAlerts(vendors.data.items, today, vendors.data.config)
+            : [],
+        },
+        Number.POSITIVE_INFINITY,
+      ),
       workload: workloadByOwner(state.todos, today),
       aging: agingBuckets(state.todos, now),
       pipeline: signoffPipeline(state.todos, now, prefs),
@@ -188,6 +195,7 @@ export function DashboardApp({ windowId }: { windowId: string }) {
   const refresh = () => {
     refetch();
     setRegisterRefresh((n) => n + 1);
+    void refreshRegisterSummaries();
     setUpdatedAt(new Date());
   };
   const openStaffTimeOff = () => {
@@ -202,14 +210,16 @@ export function DashboardApp({ windowId }: { windowId: string }) {
   const exportAs = async (format: "png" | "pdf") => {
     const el = captureRef.current;
     if (!el) return;
-    const saved = await exportElement(el, format, `dashboard-${today}`);
-    if (saved) toast({ tone: "success", message: `Saved ${saved}` });
+    const outcome = await exportElement(el, format, `dashboard-${today}`);
+    const message = exportToast(outcome, format);
+    if (message) toast(message);
   };
 
   const cards: Record<WidgetId, ReactNode> = {
     today: insights && (
       <TodayWidget
-        items={insights.today}
+        summary={insights.today}
+        needsYou={needsYou}
         onOpen={(appId) => openOrFocusBuiltInApp(appId)}
       />
     ),
@@ -276,7 +286,9 @@ export function DashboardApp({ windowId }: { windowId: string }) {
   };
 
   const shown = visibleWidgets(shownLayout).filter((id) => cards[id]);
+  // Nothing to take a picture of while every card is hidden.
   const canExport = Boolean(getDesktopBridge()?.view);
+  const hasCards = shown.length > 0;
 
   return (
     <div data-window-id={windowId} className="@container flex h-full w-full flex-col">
@@ -306,11 +318,21 @@ export function DashboardApp({ windowId }: { windowId: string }) {
             </Button>
             {canExport && (
               <>
-                <Button variant="outline" size="sm" onClick={() => void exportAs("png")}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={!hasCards}
+                  onClick={() => void exportAs("png")}
+                >
                   <CameraIcon size={14} />
                   PNG
                 </Button>
-                <Button variant="outline" size="sm" onClick={() => void exportAs("pdf")}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={!hasCards}
+                  onClick={() => void exportAs("pdf")}
+                >
                   PDF
                 </Button>
               </>

@@ -25,6 +25,7 @@ import { useStaffPrefs } from "@/lib/staff/staffPrefsStore";
 import { useStaffStore } from "@/lib/staff/staffStore";
 import type { OffboardedEmployee } from "@/lib/staff/types";
 import { EmployeeDialog } from "./EmployeeDialog";
+import { useActiveStaff } from "./tabActive";
 import {
   ConfirmDialog,
   DASH,
@@ -49,7 +50,7 @@ function offboardedOn(person: OffboardedEmployee): string {
 
 /** People who left the roster: still on file, hidden from every other app. */
 export function OffboardedTab() {
-  const offboarded = useStaffStore((s) => s.offboarded);
+  const offboarded = useActiveStaff((s) => s.offboarded);
   const status = useStaffStore((s) => s.status);
   const commit = useStaffStore((s) => s.commit);
   const restore = useStaffStore((s) => s.restore);
