@@ -24,7 +24,9 @@ A pack is refused, with the reason in plain words, when:
   person checking it. Every pack has to stop for you at least once;
 - two files differ only by capital letters (Windows would treat them as one), or a file name contains a
   colon (a hidden data stream on Windows);
-- its name is longer than 80 characters or contains hidden characters (such as a right-to-left override);
+- its name is longer than 80 characters, or (after hidden characters such as a right-to-left override are
+  removed, and ignoring capital letters) it is the same as the name of a built-in task or of a pack that is
+  already installed. The message names the task that already has that name;
 - its id belongs to a built-in task (this is checked before you are asked for the fingerprint), or its task is
   running right now (for an update);
 - it is larger than 30 MB, has more than 200 files or unpacks to more than 25 MB.
@@ -89,3 +91,10 @@ all rows).
   next to the recipients (the Aging and Backlog tasks use this for people with no email in the roster).
 - A finished run's output files are written to the run history, so the Open buttons and the History tab
   still work after the engine restarts.
+- Rejecting a run at its review step, and a Force reset of a run that had started, are recorded in the
+  history (outcome `rejected` / `cancelled`, the step the run was at, and who did it and when, as an approval
+  stamp of kind `reject` / `reset`). The History tab shows them as "Rejected" and "Reset" and leaves them out
+  of the success rate. A reset of a task that is idle or already failed adds nothing.
+- The Run form checks the files you pick before Start (the shift roster workbook, the staff list, the team
+  roster, the Deployment workbook, the incident exports, the previous monthly workbook). A file that does not
+  look right is named, and Start stays off until you replace it or tick "start anyway".

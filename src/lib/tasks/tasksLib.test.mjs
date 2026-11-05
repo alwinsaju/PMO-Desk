@@ -30,6 +30,7 @@ import {
   comparisonText,
   pushSnapshot,
   ruleFor,
+  fileProblems,
   snapshotFrom,
   sparkline,
 } from "./inputCheck.ts";
@@ -247,6 +248,41 @@ describe("input check and comparison", () => {
     const noCol = [{ sheet: "Page 1", data: [["Number"], ["INC1"]] }];
     assert.match(checkSheets(noCol, rule, now).problems[0], /Assigned to, Updated/);
     assert.match(checkSheets(sheet([]), rule, now).problems.join(" "), /no rows/);
+  });
+  it("catches the wrong file for the shift roster, the December staff list and the previous monthly workbook", () => {
+    const shift = ruleFor("december-disconnect", "roster");
+    assert.equal(ruleFor("shift-roster", "roster"), shift);
+    const incidentExport = [{ sheet: "Page 1", data: [["Number", "Assigned to"], ["INC1", "Pat"]] }];
+    const wrong = checkSheets(incidentExport, shift, now);
+    assert.equal(wrong.ok, false);
+    assert.match(wrong.problems[0], /no sheet called “PDT Operate” \(this file has “Page 1”\)/);
+    assert.equal(checkSheets([{ sheet: "PDT Operate", data: [["x"], ["y"]] }], shift, now).ok, true);
+
+    const staff = ruleFor("december-disconnect", "staff");
+    const good = [
+      { sheet: "Roster", data: [["Report"], [], ["Full Name", "Team", "Location"], ["Ann", "DS", "UK"]] },
+    ];
+    assert.equal(checkSheets(good, staff, now).ok, true);
+    assert.equal(checkSheets(good, staff, now).rows, 1);
+    assert.match(checkSheets(incidentExport, staff, now).problems[0], /Team column and a name column/);
+    const noRows = [{ sheet: "Roster", data: [["First Name", "Last Name", "Section"]] }];
+    assert.match(checkSheets(noRows, staff, now).problems[0], /no rows below the header/);
+    assert.equal(checkSheets([], staff, now).ok, false);
+
+    const history = ruleFor("monthly-report-deck", "history");
+    assert.equal(checkSheets(incidentExport, history, now).ok, false);
+    assert.equal(
+      checkSheets([{ sheet: "Incidents", data: [["Number"], ["INC1"]] }], history, now).ok,
+      true,
+    );
+  });
+  it("lists the files that look wrong, with their names", () => {
+    const bad = { ok: false, problems: ["There is no sheet called “X”."], warnings: [], rows: 0 };
+    const good = { ok: true, problems: [], warnings: [], rows: 3 };
+    assert.deepEqual(fileProblems({ roster: bad, staff: good, other: undefined }, { roster: "Shift roster workbook" }), [
+      "Shift roster workbook: There is no sheet called “X”.",
+    ]);
+    assert.deepEqual(fileProblems({}, {}), []);
   });
   it("warns about a stale export and repeated numbers", () => {
     const rule = ruleFor("weekly-aging-report", "incident");

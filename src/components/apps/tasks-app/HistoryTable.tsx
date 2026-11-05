@@ -7,6 +7,7 @@ import { cn } from "@/lib/cn";
 import { explainFailure } from "@/lib/tasks/failureExplainer";
 import { OpenOutputLink } from "./OpenOutputLink";
 import type { HistoryRow } from "./historyRows";
+import { approvalVerb } from "./taskPresenter";
 
 const HEAD = "px-4 py-2.5 text-[11.5px] font-bold tracking-[0.06em] uppercase";
 
@@ -36,6 +37,7 @@ function RunDetails({ row }: { row: HistoryRow }) {
           <p className="text-ink-muted font-mono text-[11.5px]">{help.technical}</p>
         </>
       )}
+      {row.note && <p className="text-ink">{row.note}</p>}
       <p className="text-ink-muted">
         Steps finished: {run.steps_completed.join(", ") || "none"}
       </p>
@@ -43,8 +45,7 @@ function RunDetails({ row }: { row: HistoryRow }) {
         <ul className="text-ink-soft">
           {approvals.map((a) => (
             <li key={`${a.step}-${a.at}`}>
-              {a.kind === "send" ? "Confirmed" : "Approved"} “{a.step}” by {a.user} at{" "}
-              {when(a.at)}
+              {approvalVerb(a.kind)} “{a.step}” by {a.user} at {when(a.at)}
             </li>
           ))}
         </ul>

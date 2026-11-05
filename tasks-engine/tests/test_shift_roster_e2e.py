@@ -612,9 +612,14 @@ def test_tampered_snapshot_blocks_send_and_a_changed_draft_fails_finalize(env, c
     assert refused["ok"] is False and [b["kind"] for b in refused["blocking"]] == ["SNAPSHOT_TAMPERED"]
     assert task_json(c)["state"] == "awaiting_send"
     assert not env.p("output/final").exists() and not env.p("output/backups").exists()
-    # reset: no run record for an abandoned run, inputs and chosen cycle are kept
+    # reset: the abandoned run IS recorded now (outcome "cancelled", the step it was at, who and when);
+    # inputs and the chosen cycle are kept
     assert post(c, "/reset") == {"ok": True}
-    assert task_json(c)["state"] == "resting" and history(c) == []
+    assert task_json(c)["state"] == "resting"
+    (reset_run,) = history(c)
+    assert reset_run["outcome"] == "cancelled" and reset_run["current_step_at_end"] == "confirm_diff"
+    assert [a["kind"] for a in reset_run["approvals"]] == ["approve", "approve", "reset"]
+    assert all(a["user"] == OS_USER for a in reset_run["approvals"])
     assert get(c, "/inputs")["params"] == {"cycle": CYCLE}
 
     # run 2: a clean run up to the diff gate (the stale answers file is gone: asked again)
@@ -640,8 +645,9 @@ def test_tampered_snapshot_blocks_send_and_a_changed_draft_fails_finalize(env, c
     assert sha(env.p("input/roster.xlsx")) == master_sha
     assert env.p("config/rotation-config.json").read_bytes() == env.config_before
     assert not env.p("config/backups").exists()
-    # the failed run is recorded once, with the approver stamps of the clicks that happened
-    runs = history(c)
+    # the failed run is recorded once, with the approver stamps of the clicks that happened (the earlier
+    # reset is its own "cancelled" record)
+    runs = [r for r in history(c) if r["outcome"] != "cancelled"]
     assert len(runs) == 1 and runs[0]["outcome"] == "failed" and runs[0]["current_step_at_end"] == "finalize"
     assert "changed after you confirmed" in runs[0]["error"]
     assert [a["kind"] for a in runs[0]["approvals"]] == ["approve", "approve", "send"]

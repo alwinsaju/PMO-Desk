@@ -222,13 +222,26 @@ export function gateActionLabel(gate: PanelGate): string {
       : "Review changes";
 }
 
+/** Plain verb for an approval stamp: approve, send (confirm), reject and reset are all recorded. */
+export function approvalVerb(kind: string): string {
+  switch (kind) {
+    case "send":
+      return "Confirmed";
+    case "reject":
+      return "Rejected";
+    case "reset":
+      return "Reset";
+    default:
+      return "Approved";
+  }
+}
+
 /** Human line for an approval row in the History tab. */
 export function describeApproval(
   approval: { kind: string; user: string },
   stepName: string,
 ): string {
-  const verb = approval.kind === "send" ? "Confirmed" : "Approved";
-  return `${verb}: ${stepName} — ${approval.user}`;
+  return `${approvalVerb(approval.kind)}: ${stepName} — ${approval.user}`;
 }
 
 /** How many ids/messages a refusal line names before "+N more". */

@@ -58,6 +58,7 @@ import { stillNeededText } from "./stillNeeded";
 import { readWorkbookSheets } from "./readWorkbook";
 import {
   checkSheets,
+  fileProblems,
   compareSnapshots,
   comparisonText,
   pushSnapshot,
@@ -118,6 +119,7 @@ export function StartTaskDialog({
   // What reading each chosen export found (non-blocking), and its snapshot, which becomes the
   // comparison base once the run starts.
   const [fileChecks, setFileChecks] = useState<Record<string, InputCheck>>({});
+  const [startAnyway, setStartAnyway] = useState(false);
   const [comparisons, setComparisons] = useState<Record<string, Comparison>>({});
   const pendingSnapshots = useRef<Record<string, RunSnapshot>>({});
   // Guards async results from a previous opening of the dialog, and (for
@@ -167,6 +169,7 @@ export function StartTaskDialog({
     setStarting(false);
     setStartError(null);
     setFileChecks({});
+    setStartAnyway(false);
     setComparisons({});
     pendingSnapshots.current = {};
     void getInputs(task.id).then((reply) => {
@@ -235,6 +238,7 @@ export function StartTaskDialog({
       return rest;
     });
     setBusy((b) => ({ ...b, [input.id]: true }));
+    setStartAnyway(false);
     // The reading of an earlier file must not stay on screen beside this one.
     setFileChecks((c) => {
       const rest = { ...c };
@@ -347,8 +351,16 @@ export function StartTaskDialog({
 
   const problems = options?.problems ?? [];
   const sourceLine = holidaySourceLine(options);
+  const wrongFiles = fileProblems(
+    fileChecks,
+    Object.fromEntries(files.map((f) => [f.id, f.label.replace(/\s*\(.*$/, "")])),
+  );
   const canStart =
-    loadState === "ready" && missing.length === 0 && !uploading && !starting;
+    loadState === "ready" &&
+    missing.length === 0 &&
+    !uploading &&
+    !starting &&
+    (wrongFiles.length === 0 || startAnyway);
   const plan = useMemo(() => dryRunPlan(task, statuses), [task, statuses]);
   const lastFiles = useTasksPrefs((s) => s.lastFiles);
 
@@ -536,6 +548,30 @@ export function StartTaskDialog({
                   </li>
                 ))}
               </ul>
+            </div>
+          )}
+          {wrongFiles.length > 0 && (
+            <div
+              role="alert"
+              data-testid="wrong-file-warning"
+              className="rounded-control bg-amber-soft text-ink px-3.5 py-2.5 text-[12.5px]"
+            >
+              <p className="font-semibold">
+                A file you chose does not look like the one this task needs:
+              </p>
+              <ul className="mt-1 list-disc pl-5">
+                {wrongFiles.map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ul>
+              <label className="mt-2 flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={startAnyway}
+                  onChange={(e) => setStartAnyway(e.target.checked)}
+                />
+                I have checked the file; start anyway
+              </label>
             </div>
           )}
           <div className="flex items-center justify-end gap-2">

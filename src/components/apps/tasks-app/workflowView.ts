@@ -1,5 +1,6 @@
 // What a workflow card and the Details stepper show: icon, last run, step statuses. Pure.
 import { durationMs, formatDuration } from "../../../lib/tasks/runHistory.ts";
+import { outcomeInfo } from "./historyRows.ts";
 import { computeStepStatuses, stepLabel, type StepStatus } from "./taskPresenter.ts";
 import type { HistoryRun, Task } from "./types.ts";
 
@@ -61,13 +62,10 @@ export function lastRunInfo(
       text: state && state !== "resting" ? "First run in progress" : "Not run yet",
     };
   }
-  const failed = run.outcome === "failed";
+  const info = outcomeInfo(run.outcome);
   const when = relativeTime(run.ended_at, now);
-  const took = failed ? "" : ` · ${formatDuration(durationMs(run))}`;
-  return {
-    tone: failed ? "danger" : "success",
-    text: `${failed ? "Failed" : "Completed"} ${when}${took}`,
-  };
+  const took = info.label === "Completed" ? ` · ${formatDuration(durationMs(run))}` : "";
+  return { tone: info.tone, text: `${info.label} ${when}${took}` };
 }
 
 export interface StepperItem {

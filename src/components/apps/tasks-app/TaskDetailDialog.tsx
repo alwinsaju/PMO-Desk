@@ -36,6 +36,7 @@ import {
   statusSentence,
   stepLabel,
 } from "./taskPresenter";
+import { outcomeInfo } from "./historyRows";
 import { useGateData } from "./useGateData";
 import { useTaskRuns } from "./useTaskRuns";
 import { lastRunInfo, stepperItems, stepperSummary } from "./workflowView";
@@ -432,14 +433,17 @@ function HistoryTab({ task }: { task: Task }) {
               className="border-line bg-card rounded-card border px-4 py-3 text-[13px]"
             >
               <p className="text-ink flex items-center gap-2 font-semibold">
-                <Badge variant={run.outcome === "completed" ? "success" : "danger"} dot>
-                  {run.outcome === "completed" ? "Completed" : "Failed"}
+                <Badge variant={outcomeInfo(run.outcome).tone} dot>
+                  {outcomeInfo(run.outcome).label}
                 </Badge>
               </p>
               <p className="text-ink-muted mt-1.5">
                 {new Date(run.started_at).toLocaleString()}
               </p>
-              {run.error && (
+              {outcomeInfo(run.outcome).note && (
+                <p className="text-ink mt-1">{outcomeInfo(run.outcome).note}</p>
+              )}
+              {run.error && run.outcome === "failed" && (
                 <p className="text-red mt-1 line-clamp-2 font-mono text-[11.5px]">
                   {run.error}
                 </p>

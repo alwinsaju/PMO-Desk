@@ -346,7 +346,9 @@ def test_reset_and_reject_do_not_clean(tmp_path):
 
     asyncio.run(go())
     assert names_under(folder, "input") == before
-    assert not (tmp_path / "history.jsonl").exists() or not history(tmp_path)
+    # neither ended run cleaned anything up, and each is recorded as what it was (not as completed)
+    assert [r["outcome"] for r in history(tmp_path)] == ["rejected", "cancelled"]
+    assert all("cleanup" not in r for r in history(tmp_path))
 
 
 def test_error_then_retry_success_cleans_once_at_the_end(tmp_path):

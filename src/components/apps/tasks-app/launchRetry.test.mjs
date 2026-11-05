@@ -52,7 +52,7 @@ describe("runEngineLaunch", () => {
     const h = harness([reply(404), reply(404), reply(503), ready]);
     const out = await runEngineLaunch(h.deps);
     assert.equal(out.status, "ready");
-    assert.deepEqual(h.sleeps, [500, 1000, 2000]);
+    assert.deepEqual(h.sleeps, [250, 500, 1000]);
     assert.deepEqual(
       h.retries.map((r) => [r.attempt, r.detail]),
       [

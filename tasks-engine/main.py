@@ -174,7 +174,8 @@ class Task:
 
     def apply_manifest(self, manifest: dict):
         """Manifest-derived fields (name, steps, inputs, prepare, cleanup)."""
-        self.display_name = manifest.get("displayName", self.id)
+        shown = manifest.get("displayName", self.id)
+        self.display_name = taskpacks.clean_title(shown) or self.id if isinstance(shown, str) else shown
         self.steps = manifest["steps"]
         # Platform additions (all optional).
         inputs = manifest.get("inputs")
@@ -987,9 +988,9 @@ async def reject_task(task_id: str):
         return {"ok": False, "reason": "unknown task"}
     if task.state != "awaiting_review":
         return {"ok": False, "reason": f"task is {task.state}"}
-    # A rejected run writes no record - outcomes are only completed/failed.
-    task.run_id = None
-    task.run_started_at = None
+    # The run ends here, but not silently: who rejected it, when, and at which step is kept.
+    _stamp_approval(task, "reject")
+    _finalize_run_record(task, "rejected", "Rejected at the review step.")
     task.approvals = []
     set_state(task, "resting", current_step=None, entry_id=None)
     return {"ok": True}
@@ -1022,6 +1023,11 @@ async def reset_task(task_id: str):
     # Force reset can arrive while a run is still inside a step: end that run
     # for real, or it keeps going next to the next one (see _cancel_run).
     await asyncio.to_thread(_cancel_run, task)
+    # A run that had started leaves a record (who reset it, when, and the step that was in flight);
+    # a reset from a resting or already-recorded (error) task has no open run and writes nothing.
+    if task.run_started_at is not None:
+        _stamp_approval(task, "reset")
+        _finalize_run_record(task, "cancelled", "Reset before the run finished.")
     task.completed_steps.clear()
     task.run_id = None
     task.run_started_at = None
@@ -2445,6 +2451,24 @@ def _installed_pack_ids() -> set[str]:
     return {p["id"] for p in taskpacks.list_packs(PACKS_ROOT)}
 
 
+def _titles_in_use() -> tuple[dict[str, list[str]], set[str]]:
+    """Every title a person sees today: {task id: [titles]} and which ids are built-in tasks."""
+    packs = {p["id"]: p["name"] for p in taskpacks.list_packs(PACKS_ROOT)}
+    taken: dict[str, list[str]] = {}
+    for task_id, task in tasks.items():
+        taken[task_id] = [task.display_name, *([packs[task_id]] if task_id in packs else [])]
+    for pack_id, name in packs.items():
+        taken.setdefault(pack_id, [name])
+    return taken, set(tasks) - set(packs)
+
+
+def _refuse_duplicate_title(info: dict) -> None:
+    taken, builtin = _titles_in_use()
+    clash = taskpacks.find_title_clash(info, taken, builtin)
+    if clash:
+        raise taskpacks.PackError(clash)
+
+
 def _install_pack(data: bytes, fingerprint: str) -> dict:
     """Validate, install and load a pack. An upgrade of a task that is mid-run is refused."""
     info = taskpacks.inspect_pack(data)
@@ -2452,6 +2476,7 @@ def _install_pack(data: bytes, fingerprint: str) -> dict:
     existing = tasks.get(info["id"])
     if existing is not None and info["id"] in pack_ids and existing.state != "resting":
         raise taskpacks.PackError("Finish or reset this task before installing a new version of it.")
+    _refuse_duplicate_title(info)
     result = taskpacks.install_pack(data, PACKS_ROOT, set(tasks) - pack_ids, fingerprint)
     tasks.pop(info["id"], None)
     try:
@@ -2474,6 +2499,7 @@ async def inspect_task_pack(request: Request):
         info = taskpacks.inspect_pack(await _pack_body(request))
         if info["id"] in set(tasks) - _installed_pack_ids():
             raise taskpacks.PackError(f"{info['id']!r} is already a built-in task, so a pack cannot replace it.")
+        _refuse_duplicate_title(info)
     except taskpacks.PackError as exc:
         return _pack_refusal(exc)
     return {"ok": True, "pack": taskpacks.public_info(info), "installed": info["id"] in _installed_pack_ids()}

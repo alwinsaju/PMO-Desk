@@ -812,9 +812,13 @@ def test_rule_breaking_edits_block_send_and_a_changed_draft_fails_finalize(env, 
     assert not env.p("output/final").exists() and not env.p("output/audit").exists()
     assert env.rotation.read_bytes() == env.rotation_before and not (env.rotation.parent / "backups").exists()
     # reject does not exist at the confirm gate: Reset ("Start over" in the app) is the way out of a
-    # blocked confirm step; an abandoned run leaves no record, inputs and the window choice are kept
+    # blocked confirm step; the abandoned run is recorded as "cancelled" (step, who, when), inputs and
+    # the window choice are kept
     assert post(c, "/reset") == {"ok": True}
-    assert task_json(c)["state"] == "resting" and history(c) == []
+    assert task_json(c)["state"] == "resting"
+    (reset_run,) = history(c)
+    assert reset_run["outcome"] == "cancelled" and reset_run["current_step_at_end"] == "confirm_diff"
+    assert [a["kind"] for a in reset_run["approvals"]] == ["approve", "approve", "reset"]
     assert get(c, "/inputs")["params"] == {"window": WINDOW}
 
     # run 2: the stale answers are gone (asked again) and the earlier drafts are archived, not destroyed
@@ -843,8 +847,9 @@ def test_rule_breaking_edits_block_send_and_a_changed_draft_fails_finalize(env, 
     assert not env.p("output/final").exists() and not env.p("output/audit").exists()
     assert env.rotation.read_bytes() == env.rotation_before and not (env.rotation.parent / "backups").exists()
     assert {n: sha(env.p(f"config/{n}")) for n in env.config_hashes} == env.config_hashes
-    # the failed run is recorded once with the approver stamps of the clicks that happened
-    runs = history(c)
+    # the failed run is recorded once with the approver stamps of the clicks that happened (the earlier
+    # reset is its own "cancelled" record)
+    runs = [r for r in history(c) if r["outcome"] != "cancelled"]
     assert len(runs) == 1 and runs[0]["outcome"] == "failed" and runs[0]["current_step_at_end"] == "finalize"
     assert "analytics draft was changed after you confirmed" in runs[0]["error"]
     assert not NAME_RE.search(runs[0]["error"])

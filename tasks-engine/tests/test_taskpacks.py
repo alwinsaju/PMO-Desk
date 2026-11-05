@@ -182,8 +182,41 @@ def test_the_pack_name_must_be_plain_and_short():
 
     refused(named("x" * 81), "longer than 80")
     refused(named("   "), "no name")
-    refused(named("Shift \u202eRoster"), "hidden characters")
+    refused(named("\u202e\u200b"), "no name")
+    # hidden direction/format characters are stripped, not kept
+    assert taskpacks.inspect_pack(named("Shift \u202eRoster\u200b"))["name"] == "Shift Roster"
     assert taskpacks.inspect_pack(named("Shift Roster"))["name"] == "Shift Roster"
+
+
+def test_a_pack_cannot_reuse_a_builtin_title_or_an_installed_packs_name(client, tmp_path):
+    def named(pack_id, name):
+        task = {**TASK, "id": pack_id, "displayName": name}
+        entries = files(**{"task.json": json.dumps(task).encode()})
+        manifest = {
+            "format": taskpacks.FORMAT, "version": 1, "id": pack_id, "name": name, "packVersion": "1",
+            "files": {k: hashlib.sha256(v).hexdigest() for k, v in entries.items()},
+        }
+        return raw_zip(entries, manifest=manifest)
+
+    engine.tasks["shift-roster"] = engine.Task({"id": "shift-roster", "displayName": "Shift Roster", "steps": []}, tmp_path)
+    # case, spacing and hidden characters make no difference
+    reply = client.post("/task-packs/inspect", content=named("my-roster", "  SHIFT \u202eroster "))
+    assert reply.status_code == 400
+    assert "A task called “Shift Roster” already exists (a built-in task)" in reply.json()["reason"]
+
+    first = named("first-pack", "Weekly QA")
+    fp = taskpacks.inspect_pack(first)["fingerprint"]
+    assert client.post(f"/task-packs/install?fingerprint={fp}", content=first).json()["ok"] is True
+    other = named("second-pack", "weekly qa")
+    clash = client.post("/task-packs/inspect", content=other)
+    assert clash.status_code == 400 and "already installed" in clash.json()["reason"]
+    fp2 = taskpacks.inspect_pack(other)["fingerprint"]
+    assert client.post(f"/task-packs/install?fingerprint={fp2}", content=other).status_code == 400
+    assert "second-pack" not in engine.tasks
+    # an update of the same pack keeps its own name, and the list shows id and version
+    assert client.post(f"/task-packs/install?fingerprint={fp}", content=first).json()["ok"] is True
+    (listed,) = client.get("/task-packs").json()["packs"]
+    assert listed["id"] == "first-pack" and listed["name"] == "Weekly QA" and listed["packVersion"] == "1"
 
 
 def test_inspect_refuses_a_builtin_id_before_anyone_types_a_fingerprint(client):

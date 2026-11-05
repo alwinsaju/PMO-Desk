@@ -3,7 +3,14 @@ import { describe, it } from "node:test";
 import { historyRows, outputForRun } from "./historyRows.ts";
 import { requirementChecklist, fileKind, inputKind } from "./inputChecklist.ts";
 import { stripDays, stripRows, toggleWeekday } from "./scheduleStrip.ts";
-import { plainReason, refusalText, stepLabel } from "./taskPresenter.ts";
+import {
+  approvalVerb,
+  describeApproval,
+  plainReason,
+  refusalText,
+  stepLabel,
+} from "./taskPresenter.ts";
+import { summarizeRuns } from "../../../lib/tasks/runHistory.ts";
 import { lastRunInfo } from "./workflowView.ts";
 import { joinList } from "../../../lib/tasks/listText.ts";
 
@@ -19,6 +26,60 @@ describe("plain refusal reasons", () => {
     );
     assert.equal(plainReason("something else"), "something else");
     assert.match(refusalText({ ok: false, reason: "task is working" }), /running/);
+  });
+});
+
+describe("rejected and reset runs", () => {
+  const base = {
+    run_id: "r9",
+    task_id: "t",
+    task_name: "Task",
+    started_at: "2026-11-05T09:00:00Z",
+    ended_at: "2026-11-05T09:05:00Z",
+    current_step_at_end: "review_gate",
+    error: "Rejected at the review step.",
+    steps_completed: ["build"],
+  };
+  it("shows them with plain wording, not as completed or failed", () => {
+    const rejected = historyRows([{ ...base, outcome: "rejected" }], [])[0];
+    assert.deepEqual(rejected.pill, { label: "Rejected", tone: "neutral" });
+    assert.match(
+      rejected.note,
+      /rejected this run at the review step\. Nothing was sent/,
+    );
+    const reset = historyRows([{ ...base, outcome: "cancelled" }], [])[0];
+    assert.deepEqual(reset.pill, { label: "Reset", tone: "neutral" });
+    assert.match(reset.note, /reset before it finished/);
+    const done = historyRows([{ ...base, outcome: "completed" }], [])[0];
+    assert.equal(done.note, null);
+  });
+  it("names the card's last run correctly", () => {
+    const now = new Date("2026-11-05T10:00:00Z");
+    assert.match(
+      lastRunInfo([{ ...base, outcome: "rejected" }], now).text,
+      /^Rejected 55 min ago$/,
+    );
+    assert.match(lastRunInfo([{ ...base, outcome: "cancelled" }], now).text, /^Reset /);
+    assert.equal(lastRunInfo([{ ...base, outcome: "rejected" }], now).tone, "neutral");
+    assert.match(
+      lastRunInfo([{ ...base, outcome: "completed" }], now).text,
+      /^Completed .* · 5 min$/,
+    );
+  });
+  it("leaves them out of the success rate and says who did what", () => {
+    const completed = { ...base, outcome: "completed" };
+    const rejected = { ...base, run_id: "r10", outcome: "rejected" };
+    assert.equal(summarizeRuns([completed, rejected]).successPercent, 100);
+    assert.equal(summarizeRuns([rejected]).successPercent, null);
+    assert.equal(summarizeRuns([completed, rejected]).total, 2);
+    assert.equal(approvalVerb("reject"), "Rejected");
+    assert.equal(approvalVerb("reset"), "Reset");
+    assert.equal(approvalVerb("send"), "Confirmed");
+    assert.equal(approvalVerb("approve"), "Approved");
+    assert.equal(
+      describeApproval({ kind: "reject", user: "pat" }, "Your review"),
+      "Rejected: Your review — pat",
+    );
   });
 });
 

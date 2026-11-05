@@ -64,7 +64,7 @@ function InstallDialog({
           {replacing ? "Update" : "Install"} “{pack.name}”?
         </DialogTitle>
         <DialogDescription>
-          Version {pack.packVersion || "?"} · {pack.files.length} files ·{" "}
+          {pack.id} · Version {pack.packVersion || "?"} · {pack.files.length} files ·{" "}
           {kb(pack.totalBytes)}
         </DialogDescription>
         <div className="mt-3 flex flex-col gap-3">
@@ -220,7 +220,7 @@ export function PacksTab({ onChanged }: { onChanged: () => void }) {
       )}
       {packs && packs.length > 0 && (
         <ul
-          className="grid grid-cols-[repeat(auto-fill,minmax(250px,1fr))] gap-4"
+          className="grid grid-cols-[repeat(auto-fill,minmax(min(250px,100%),1fr))] gap-4"
           aria-label="Installed packs"
         >
           {packs.map((pack) => (

@@ -42,7 +42,7 @@ export interface LaunchDeps {
 
 export const LAUNCH_BUDGET_MS = 12_000;
 /** The last delay repeats until the budget is used up. */
-export const RETRY_DELAYS_MS: readonly number[] = [500, 1_000, 2_000, 3_000];
+export const RETRY_DELAYS_MS: readonly number[] = [250, 500, 1_000, 2_000];
 /** The route itself waits up to ~20 s for a cold engine; this only guards a hung request. */
 export const REQUEST_TIMEOUT_MS = 30_000;
 

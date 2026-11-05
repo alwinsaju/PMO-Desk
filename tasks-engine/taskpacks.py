@@ -177,12 +177,13 @@ def inspect_pack(data: bytes) -> dict:
     if not isinstance(pack_id, str) or not ID_RE.match(pack_id):
         raise PackError("The pack's id must be lower-case letters, digits and hyphens (3 to 50 characters).")
     name = manifest.get("name")
-    if not isinstance(name, str) or not name.strip():
+    if not isinstance(name, str):
         raise PackError("The pack has no name.")
-    if len(name.strip()) > 80:
+    name = clean_title(name)
+    if not name:
+        raise PackError("The pack has no name.")
+    if len(name) > 80:
         raise PackError("The pack's name is longer than 80 characters.")
-    if any(unicodedata.category(c) in ("Cc", "Cf") for c in name):
-        raise PackError("The pack's name has hidden characters (such as a right-to-left override).")
     listed = manifest.get("files")
     if not isinstance(listed, dict) or TASK_FILE not in listed:
         raise PackError("pack.json must list task.json and every other file with its checksum.")
@@ -206,9 +207,11 @@ def inspect_pack(data: bytes) -> dict:
     except ValueError as exc:
         raise PackError("task.json is damaged.") from exc
     steps = _check_task(task, pack_id, present)
+    shown = task.get("displayName")
     return {
         "id": pack_id,
-        "name": name.strip(),
+        "name": name,
+        "displayName": clean_title(shown) if isinstance(shown, str) and clean_title(shown) else name,
         "packVersion": str(manifest.get("packVersion", ""))[:20],
         "fingerprint": fingerprint_of(manifest),
         "files": files,
@@ -217,6 +220,34 @@ def inspect_pack(data: bytes) -> dict:
         "_entries": entries,
         "_manifest": manifest,
     }
+
+
+def clean_title(text: str) -> str:
+    """A display name as people see it: control and invisible formatting characters (such as a
+    right-to-left override that makes a name read backwards) removed, spaces collapsed."""
+    visible = "".join(c for c in text if unicodedata.category(c) not in ("Cc", "Cf"))
+    return " ".join(visible.split())
+
+
+def title_key(text: str) -> str:
+    return clean_title(text).casefold()
+
+
+def find_title_clash(info: dict, taken: dict[str, list[str]], builtin_ids: set[str]) -> str | None:
+    """Plain message when the pack's name (or its task's title) is already used by another task, else None.
+    `taken` maps a task id to the titles it shows; the pack's own id (an upgrade) is ignored."""
+    mine = {title_key(info["name"]), title_key(info["displayName"])}
+    for other_id, titles in taken.items():
+        if other_id == info["id"]:
+            continue
+        for title in titles:
+            if title_key(title) in mine:
+                kind = "a built-in task" if other_id in builtin_ids else "a pack that is already installed"
+                return (
+                    f"A task called “{clean_title(title)}” already exists ({kind}). "
+                    "Give this pack a different name so the two cannot be mixed up."
+                )
+    return None
 
 
 def public_info(info: dict) -> dict:
@@ -281,7 +312,7 @@ def list_packs(packs_root: Path) -> list[dict]:
             out.append(
                 {
                     "id": manifest["id"],
-                    "name": manifest["name"],
+                    "name": clean_title(str(manifest["name"])),
                     "packVersion": str(manifest.get("packVersion", ""))[:20],
                     "fingerprint": fingerprint_of(manifest),
                 }
