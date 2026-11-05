@@ -11,7 +11,7 @@ import {
   IconButton,
   Switch,
 } from "@/components/ui";
-import type { SavedExample } from "@/lib/pmo/savedExamples";
+import { exampleSourceLine } from "./savedExampleView";
 import {
   deleteSavedExample,
   fetchSavedExamples,
@@ -23,12 +23,6 @@ import { Chip, ErrorLine, Note, ScrollBody } from "./parts";
 interface SavedExamplesDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-}
-
-/** What the row shows for an example: its subject, else the start of its message. */
-export function exampleLabel(example: SavedExample): string {
-  const label = example.subject.trim() || example.message.replace(/\s+/g, " ").trim();
-  return label.length > 90 ? `${label.slice(0, 89).trimEnd()}…` : label;
 }
 
 /**
@@ -129,7 +123,7 @@ export function SavedExamplesDialog({ open, onOpenChange }: SavedExamplesDialogP
                       {example.title}
                     </span>
                     <span className="text-ink-muted truncate text-[12px]">
-                      From: {exampleLabel(example)}
+                      {exampleSourceLine(example)}
                     </span>
                     <span className="flex flex-wrap items-center gap-1.5">
                       <Chip>{example.priority}</Chip>

@@ -111,6 +111,10 @@ interface TemplateEditorProps {
   onDelete: () => void;
   onOpenExtras: () => void;
   onOpenVersions: () => void;
+  /** The list asked (E or Enter on a row) for focus to move into the first field. */
+  focusRequested?: boolean;
+  /** Called once the request has been acted on, so the next one is a new request. */
+  onFocusHandled?: () => void;
 }
 
 const KIND_OPTIONS = (["email", "report"] as const).map((value) => ({
@@ -137,12 +141,24 @@ export function TemplateEditor({
   onDelete,
   onOpenExtras,
   onOpenVersions,
+  focusRequested = false,
+  onFocusHandled,
 }: TemplateEditorProps) {
   const [draft, setDraft] = useState<Draft>(() => restoredDraft(template) ?? seed);
   // A draft kept from an earlier, unsaved edit was put back; say so and let it be dropped.
   const [restored, setRestored] = useState(() => draft !== seed && template !== null);
   const [attempted, setAttempted] = useState(false);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
+  const nameRef = useRef<HTMLInputElement>(null);
+
+  // Runs after this render is in the DOM (also for an editor that has just mounted for the
+  // template that was picked), so the field exists and is shown.
+  useEffect(() => {
+    if (!focusRequested) return;
+    nameRef.current?.focus();
+    onFocusHandled?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only a new request matters
+  }, [focusRequested]);
 
   const change = (next: Draft) => {
     setDraft(next);
@@ -365,6 +381,7 @@ export function TemplateEditor({
             <div className="grid grid-cols-1 gap-4 @xl:grid-cols-[minmax(0,1fr)_auto]">
               <Field label="Name">
                 <Input
+                  ref={nameRef}
                   value={draft.name}
                   maxLength={LIMITS.name}
                   placeholder="Aging report email"

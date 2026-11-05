@@ -44,6 +44,7 @@ import {
 } from "@/lib/pmo/pmoViews";
 import type { PmoState, Todo } from "@/lib/pmo/types";
 import { patchTodo } from "./api";
+import { appliedUndo } from "./bulkSelection";
 import { CONTENT_WIDTH, FilterPill, GUTTER_X, NativeSelect } from "./parts";
 import { TODO_FILTERS, TODO_SORTS, type TodoFilter, type TodoSort } from "./queueView";
 
@@ -304,21 +305,32 @@ export function ListTools({
   );
 }
 
-/** The bar that appears when to-dos are ticked: close, snooze, set priority, tag, cancel. */
+/** The bar that appears when to-dos are ticked: close, snooze, set priority, tag, cancel.
+ *  `selected` is only the ticked to-dos that are on screen (see bulkSelection.ts): every
+ *  action here, and its Undo, reaches those and nothing else. */
 export function BulkBar({
   selected,
+  summary,
   state,
   onClear,
+  onDone,
   onSettled,
 }: {
-  selected: Todo[];
+  selected: readonly Todo[];
+  /** "2 ticked", or "1 ticked (1 more hidden by the filter, not included)". */
+  summary: string;
   state: PmoState;
+  /** "Clear selection": unticks everything, hidden rows too. */
   onClear: () => void;
+  /** After an action: unticks the to-dos it was applied to (hidden ticks are kept). */
+  onDone: (ids: string[]) => void;
   onSettled: () => void;
 }) {
   const [tag, setTag] = useState("");
   const [busy, setBusy] = useState(false);
   const holidays = useHolidayDates(state.today);
+  // Everything ticked is hidden by the filter: nothing to act on until a tick is on screen.
+  const none = selected.length === 0;
 
   const run = async (action: BulkAction) => {
     const patches = bulkPatches(action, selected);
@@ -327,10 +339,17 @@ export function BulkBar({
       return;
     }
     const undo = bulkUndo(action, selected);
+    const ids = selected.map((t) => t.id);
     setBusy(true);
     try {
       const replies = await Promise.all(patches.map((p) => patchTodo(p.id, p.patch)));
       const failed = replies.filter((r) => !r.ok).length;
+      // Undo puts back only what really changed, not a patch the server refused.
+      const undoApplied = appliedUndo(
+        patches,
+        undo,
+        replies.map((r) => r.ok),
+      );
       toast({
         key: "bulk",
         tone: failed > 0 ? "warning" : "success",
@@ -341,10 +360,12 @@ export function BulkBar({
         action: {
           label: "Undo",
           run: () =>
-            void Promise.all(undo.map((p) => patchTodo(p.id, p.patch))).then(onSettled),
+            void Promise.all(undoApplied.map((p) => patchTodo(p.id, p.patch))).then(
+              onSettled,
+            ),
         },
       });
-      onClear();
+      onDone(ids);
       onSettled();
     } finally {
       setBusy(false);
@@ -366,16 +387,18 @@ export function BulkBar({
       className={cn(CONTENT_WIDTH, GUTTER_X, "pt-2.5")}
     >
       <div className="bg-accent-soft rounded-card flex flex-wrap items-center gap-2 px-3.5 py-2.5">
-        <span className="text-accent-ink mr-1 text-[13px] font-bold">
-          {selected.length} ticked
-        </span>
-        <Button size="sm" disabled={busy} onClick={() => void run({ type: "done" })}>
+        <span className="text-accent-ink mr-1 text-[13px] font-bold">{summary}</span>
+        <Button
+          size="sm"
+          disabled={busy || none}
+          onClick={() => void run({ type: "done" })}
+        >
           Mark done
         </Button>
         <Button
           size="sm"
           variant="outline"
-          disabled={busy}
+          disabled={busy || none}
           onClick={() => void run({ type: "snooze", until: tomorrow() })}
         >
           Snooze to tomorrow
@@ -383,7 +406,7 @@ export function BulkBar({
         <NativeSelect
           value=""
           aria-label="Set priority"
-          disabled={busy}
+          disabled={busy || none}
           className="max-w-32"
           onChange={(e) => {
             const priority = e.target.value as "high" | "normal" | "low";
@@ -400,9 +423,10 @@ export function BulkBar({
           aria-label="Tag the ticked to-dos"
           placeholder="Add a tag"
           className="w-32"
+          disabled={none}
           onChange={(e) => setTag(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && tag.trim()) {
+            if (e.key === "Enter" && tag.trim() && !none) {
               void run({ type: "tag", tag }).then(() => setTag(""));
             }
           }}
@@ -410,7 +434,7 @@ export function BulkBar({
         <Button
           size="sm"
           variant="ghost"
-          disabled={busy}
+          disabled={busy || none}
           onClick={() => void run({ type: "cancel" })}
         >
           Cancel them

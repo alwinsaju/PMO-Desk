@@ -70,6 +70,25 @@ describe("startingGeometry", () => {
     assert.ok(g.position.y <= 700 - 80 - 40, "above the command bar");
   });
 
+  it("brings a snapped window wholly back on screen in a narrower viewport (QA: Notes x=717 w=697 in 1014)", () => {
+    const rect = { x: 717, y: 88, width: 697, height: 560 };
+    const view = { width: 1014, height: 768 };
+    const g = start({ viewport: view, remembered: { notes: rect } });
+    assert.ok(g.position.x >= 12, "left edge inside");
+    assert.ok(g.position.x + g.size.width <= view.width - 12, "right edge inside");
+    assert.ok(g.position.y >= 88, "below the dock");
+    assert.ok(g.position.y + g.size.height <= view.height - 96, "above the command bar");
+    assert.deepEqual(g.size, { width: 697, height: 560 }, "size kept when it fits");
+  });
+
+  it("keeps a remembered rectangle that already fits exactly as saved", () => {
+    const rect = { x: 12, y: 88, width: 600, height: 400 };
+    assert.deepEqual(start({ remembered: { notes: rect } }), {
+      position: { x: 12, y: 88 },
+      size: { width: 600, height: 400 },
+    });
+  });
+
   it("cascades instead of landing on top of an open window of the same app", () => {
     const rect = { x: 200, y: 150, width: 800, height: 500 };
     const g = start({

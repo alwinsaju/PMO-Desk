@@ -84,32 +84,126 @@ describe("minimizeAll (Show desktop)", () => {
   });
 });
 
+const rectOf = (u) => ({ ...u.geometry.position, ...u.geometry.size });
+const overlap = (a, b) =>
+  Math.min(a.x + a.width, b.x + b.width) > Math.max(a.x, b.x) &&
+  Math.min(a.y + a.height, b.y + b.height) > Math.max(a.y, b.y);
+const area = (view) => ({
+  x: config.insets.side,
+  y: config.insets.top,
+  width: view.width - config.insets.side * 2,
+  height: view.height - config.insets.top - config.insets.bottom,
+});
+const inside = (r, a) =>
+  r.x >= a.x &&
+  r.y >= a.y &&
+  r.x + r.width <= a.x + a.width &&
+  r.y + r.height <= a.y + a.height;
+const stacked = (n, over = () => ({})) =>
+  record(
+    ...Array.from({ length: n }, (_, i) => win(`w${i}`, { zIndex: 100 + i, ...over(i) })),
+  );
+
 describe("tidyUpdates (Tidy windows)", () => {
-  it("places each visible window on the cascade in stacking order, one step each", () => {
+  it("returns the windows in stacking order, bottom first", () => {
     const windows = record(
       win("top", { zIndex: 103 }),
       win("bottom", { zIndex: 101 }),
       win("mid", { zIndex: 102 }),
     );
-    const out = tidyUpdates(windows, roomy, config, fit);
     assert.deepEqual(
-      out.map((u) => u.id),
+      tidyUpdates(windows, roomy, config, fit).map((u) => u.id),
       ["bottom", "mid", "top"],
     );
-    const [a, b, c] = out.map((u) => u.geometry.position);
-    assert.equal(b.x - a.x, 24);
-    assert.equal(c.x - b.x, 24);
-    assert.equal(b.y - a.y, 24);
   });
 
-  it("uses the per-app default size and ignores any saved rectangle", () => {
-    const windows = record(
-      win("d", { appId: "dashboard", zIndex: 100 }),
-      win("n", { appId: "notes", zIndex: 101 }),
+  it("puts a single window at its default size, centred", () => {
+    const [u] = tidyUpdates(stacked(1), roomy, config, fit);
+    assert.deepEqual(u.geometry.size, config.size);
+    assert.equal(
+      u.geometry.position.x,
+      Math.round((roomy.width - config.size.width) / 2),
     );
-    const [d, n] = tidyUpdates(windows, roomy, config, fit);
+  });
+
+  it("uses the per-app default size for a single window", () => {
+    const windows = record(win("d", { appId: "dashboard" }));
+    const [d] = tidyUpdates(windows, roomy, config, fit);
     assert.deepEqual(d.geometry.size, { width: 1240, height: 740 });
-    assert.deepEqual(n.geometry.size, config.size);
+  });
+
+  it("puts two windows side by side across the usable area", () => {
+    const [a, b] = tidyUpdates(stacked(2), roomy, config, fit).map(rectOf);
+    const full = area(roomy);
+    assert.equal(a.x, full.x);
+    assert.equal(a.y, full.y);
+    assert.equal(a.height, full.height);
+    assert.equal(b.height, full.height);
+    assert.ok(a.x + a.width < b.x, "a gap between the two");
+    assert.equal(b.x + b.width, full.x + full.width);
+    assert.equal(overlap(a, b), false);
+  });
+
+  it("tiles four windows in a 2x2 grid with no overlap, in stacking order", () => {
+    const out = tidyUpdates(stacked(4), roomy, config, fit).map(rectOf);
+    const full = area(roomy);
+    for (const r of out) assert.ok(inside(r, full));
+    for (let i = 0; i < 4; i++)
+      for (let j = i + 1; j < 4; j++) assert.equal(overlap(out[i], out[j]), false);
+    assert.equal(out[0].y, out[1].y);
+    assert.equal(out[2].y, out[3].y);
+    assert.ok(out[2].y > out[0].y + out[0].height - 1);
+    assert.ok(out[0].x < out[1].x && out[2].x < out[3].x);
+  });
+
+  it("tiles three windows as two on top and one across the bottom", () => {
+    const out = tidyUpdates(stacked(3), roomy, config, fit).map(rectOf);
+    const full = area(roomy);
+    for (const r of out) assert.ok(inside(r, full));
+    assert.equal(overlap(out[0], out[1]), false);
+    assert.equal(overlap(out[0], out[2]), false);
+    assert.equal(overlap(out[1], out[2]), false);
+    assert.equal(out[2].width, full.width);
+    assert.equal(out[2].x, full.x);
+  });
+
+  it("clearly separates three windows: no two start within 100 px of each other", () => {
+    const out = tidyUpdates(stacked(3), roomy, config, fit).map(rectOf);
+    for (let i = 0; i < 3; i++)
+      for (let j = i + 1; j < 3; j++) {
+        const far =
+          Math.abs(out[i].x - out[j].x) >= 100 || Math.abs(out[i].y - out[j].y) >= 100;
+        assert.ok(far, `windows ${i} and ${j} are almost on top of each other`);
+      }
+  });
+
+  it("keeps tiles inside a narrow viewport (the QA case: 1014 px wide)", () => {
+    const view = { width: 1014, height: 768 };
+    const full = area(view);
+    for (const count of [2, 3, 4]) {
+      for (const u of tidyUpdates(stacked(count), view, config, fit)) {
+        assert.ok(
+          inside(rectOf(u), full),
+          `${count} windows: ${JSON.stringify(rectOf(u))}`,
+        );
+      }
+    }
+  });
+
+  it("cascades more than four windows with a bigger step than a normal open", () => {
+    const out = tidyUpdates(stacked(5), roomy, config, fit);
+    const [a, b, c] = out.map((u) => u.geometry.position);
+    assert.equal(b.x - a.x, 48);
+    assert.equal(c.x - b.x, 48);
+    assert.equal(b.y - a.y, 48);
+  });
+
+  it("ignores any saved rectangle (the window's own position and size)", () => {
+    const windows = record(
+      win("a", { position: { x: 900, y: 900 }, size: { width: 400, height: 300 } }),
+    );
+    const [u] = tidyUpdates(windows, roomy, config, fit);
+    assert.deepEqual(u.geometry.size, config.size);
   });
 
   it("leaves minimised windows out", () => {
@@ -125,6 +219,16 @@ describe("tidyUpdates (Tidy windows)", () => {
     const [u] = tidyUpdates(windows, { width: 1000, height: 700 }, config, fit);
     assert.ok(u.geometry.size.width >= 1500);
     assert.ok(u.geometry.size.height >= 900);
+  });
+
+  it("never sizes a tiled window below its own minimum", () => {
+    const windows = stacked(2, (i) => ({
+      minSize: i === 0 ? { width: 900, height: 600 } : undefined,
+    }));
+    const view = { width: 1000, height: 800 };
+    const [a, b] = tidyUpdates(windows, view, config, fit);
+    assert.ok(a.geometry.size.width >= 900 && a.geometry.size.height >= 600);
+    assert.ok(b.geometry.size.width >= config.minSize.width);
   });
 
   it("wraps the cascade after cascadeWrap windows instead of walking off the screen", () => {
@@ -156,7 +260,8 @@ describe("applyTidy", () => {
     const out = applyTidy(windows, tidyUpdates(windows, roomy, config, fit));
     assert.equal(out.b.isMaximized, false);
     assert.equal(out.b.restoreBounds, undefined);
-    assert.deepEqual(out.a.size, config.size);
+    assert.deepEqual(out.a.position, { x: 12, y: 88 });
+    assert.ok(out.a.size.width < config.size.width, "tiled beside the other window");
     // Stacking and focus are untouched.
     assert.equal(out.b.zIndex, 101);
     assert.equal(out.b.isFocused, true);

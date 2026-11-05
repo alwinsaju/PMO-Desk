@@ -41,6 +41,10 @@ export interface RegisterDef {
   noun: string;
   /** What "Add your first ..." says in an empty list, where the general noun is too vague ("item" -> "risk"). */
   firstNoun?: string;
+  /** Optional. What follows "Add a" on the tool's plus button when `noun` is too vague for it ("item" -> "RAID item"). Falls back to `noun`. */
+  quickAddNoun?: string;
+  /** Optional. The date field that means "when this record was created or opened" (RAID raised on, SLA received, lesson date). A duplicate gets today in it instead of the original's date. */
+  createdKey?: string;
   blurb: string;
   fields: readonly FieldDef[];
   titleKey: string;

@@ -217,7 +217,12 @@ describe("slashSuggestions", () => {
       "/overdue",
       "/chasers",
     ]);
-    assert.ok(list.length <= 8);
+    // Every command is listed (no cap), /focus and /explain included.
+    assert.deepEqual(
+      list.map((s) => s.text.trim().slice(1)),
+      SLASH_COMMANDS.map((c) => c.name),
+    );
+    assert.ok(list.some((s) => s.text === "/focus "));
   });
 
   it("narrows to commands that start with what is typed, including aliases", () => {

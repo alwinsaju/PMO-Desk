@@ -98,7 +98,7 @@ command bar); it runs on drag/resize commit and, via the store's
 **Effects**: `windowFxMode` (`src/lib/displayFx.ts`) sets `data-fx-win` on each
 window — with more than 4 windows open the unfocused ones drop blur and the
 heavy shadow (tokens.css); the window being dragged/resized (`data-gesture`)
-alone gets `will-change: transform`. Lean mode paints window bodies opaque.
+alone gets `will-change: transform`. Window bodies are painted opaque in both modes (tokens.css `.glass-win`), so text of windows behind never shows through.
 The desktop shell reports `noHardwareAcceleration` (display-settings.cjs
 `describeGpu`); the Settings "Hardware acceleration" toggle is then disabled
 and lean is forced. Hardware acceleration is ON by default (a missing or corrupt

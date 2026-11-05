@@ -156,6 +156,43 @@ describe("modelStatus", () => {
     assert.doesNotMatch(status.detail + status.label, /cold|not loaded|warning/i);
   });
 
+  it("gives the chip in pieces so the screen can keep the model name whole", () => {
+    const asleep = modelStatus(
+      state({ runtime: { state: "asleep", model: "qwen3.5:4b", message: null } }),
+    );
+    assert.deepEqual(asleep.chipParts, {
+      label: "Model asleep",
+      model: "qwen3.5:4b",
+      extra: "",
+    });
+    const stub = modelStatus(
+      state({ runtime: { state: "stub", model: "stub", message: null } }),
+    );
+    assert.deepEqual(stub.chipParts, { label: "Test stub", model: "", extra: "" });
+    const now = Date.parse("2026-10-24T10:00:00Z");
+    const ready = modelStatus(
+      state({
+        runtime: {
+          state: "ready",
+          model: "m",
+          message: null,
+          unloadsAt: "2026-10-24T10:01:32Z",
+        },
+      }),
+      now,
+    );
+    assert.deepEqual(ready.chipParts, {
+      label: "Model ready",
+      model: "m",
+      extra: "1:32",
+    });
+    // The parts always add up to the chip text.
+    for (const status of [asleep, stub, ready]) {
+      const { label, model, extra } = status.chipParts;
+      assert.equal(status.chip, [label, model, extra].filter(Boolean).join(" · "));
+    }
+  });
+
   it("counts down to the unload while the model sits ready", () => {
     const now = Date.parse("2026-10-24T10:00:00Z");
     const ready = (unloadsAt) =>

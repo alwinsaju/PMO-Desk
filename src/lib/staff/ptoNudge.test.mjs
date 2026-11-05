@@ -116,6 +116,20 @@ describe("unseenIds and describePtoAlert", () => {
     assert.equal(describePtoAlert(reading, ["a"], range).kind, "approve");
   });
 
+  it("adds a small 'still reading' line to the approval card while the reader works", () => {
+    const busy = { ...alert, reading: true, waiting: 3 };
+    const copy = describePtoAlert(busy, ["a"], range);
+    assert.equal(copy.kind, "approve");
+    assert.equal(copy.reading, "Still reading 3 more...");
+    assert.equal(
+      describePtoAlert({ ...busy, waiting: 0 }, ["a"], range).reading,
+      "Still reading 1 more...",
+    );
+    // Idle, or the reading card was dismissed for this run: no extra line.
+    assert.equal(describePtoAlert(alert, ["a"], range).reading, undefined);
+    assert.equal(describePtoAlert(busy, ["a"], range, true).reading, undefined);
+  });
+
   it("lets the reading card be dismissed, but never the approval card", () => {
     const reading = { ...alert, reading: true, waiting: 3 };
     assert.equal(describePtoAlert(reading, [], range, true), null);

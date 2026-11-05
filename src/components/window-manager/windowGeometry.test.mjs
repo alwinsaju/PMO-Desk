@@ -3,6 +3,7 @@ import { test } from "node:test";
 import {
   clampToViewport,
   defaultWindowGeometry,
+  fitRectInsideViewport,
   fitRectToViewport,
   maximizedRect,
   windowTransform,
@@ -143,6 +144,45 @@ test("fitRectToViewport also pulls a stranded window back on screen", () => {
 test("fitRectToViewport returns the same object when nothing changes", () => {
   const r = rect(100, 100);
   assert.equal(fitRectToViewport(r, vp, fitCfg, min), r);
+});
+
+test("fitRectInsideViewport shifts a window that hangs off the right edge back inside", () => {
+  const view = { width: 1014, height: 768 };
+  const g = fitRectInsideViewport(rect(717, 100, 697, 400), view, fitCfg, min);
+  assert.equal(g.width, 697);
+  assert.equal(g.x, 1014 - 12 - 697);
+  assert.equal(g.y, 100);
+});
+
+test("fitRectInsideViewport respects the dock and command-bar insets vertically", () => {
+  const view = { width: 1280, height: 720 };
+  assert.equal(fitRectInsideViewport(rect(100, 0), view, fitCfg, min).y, 88);
+  const low = fitRectInsideViewport(rect(100, 700, 600, 400), view, fitCfg, min);
+  assert.equal(low.y, 720 - 96 - 400);
+});
+
+test("fitRectInsideViewport shrinks an oversized window but never below the minimum", () => {
+  const g = fitRectInsideViewport(
+    rect(0, 0, 1120, 680),
+    { width: 1024, height: 720 },
+    fitCfg,
+    min,
+  );
+  assert.deepEqual(g, { x: 12, y: 88, width: 1000, height: 720 - 88 - 96 });
+  const tiny = fitRectInsideViewport(
+    rect(500, 500, 1120, 680),
+    { width: 200, height: 200 },
+    fitCfg,
+    min,
+  );
+  assert.equal(tiny.width, 360);
+  assert.equal(tiny.height, 240);
+  assert.ok(Number.isFinite(tiny.x) && Number.isFinite(tiny.y));
+});
+
+test("fitRectInsideViewport returns the same object when the window already fits", () => {
+  const r = rect(100, 100);
+  assert.equal(fitRectInsideViewport(r, vp, fitCfg, min), r);
 });
 
 test("maximizedRect fills the viewport inside the keep-clear insets", () => {

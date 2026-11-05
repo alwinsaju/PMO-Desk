@@ -54,8 +54,8 @@ export interface WindowStoreState {
   /** "Show desktop": minimises every window in ONE update and focuses none. (Looping
    *  `minimizeWindow` would refocus another window after each call.) */
   minimizeAllWindows: () => void;
-  /** "Tidy windows": every visible window back on a fresh default cascade (default
-   *  geometry once per window), in ONE update. Focus and stacking are unchanged. */
+  /** "Tidy windows": every visible window tiled (2-4) or cascaded (more) inside the usable
+   *  area (see tidyUpdates), in ONE update. Focus and stacking are unchanged. */
   tidyWindows: () => void;
   /** Restoring a saved layout: put each window at its rectangle, shown and stacked in the order
    *  given (last in front), in ONE update. `minimizeOthers` minimises the rest; nothing is closed. */

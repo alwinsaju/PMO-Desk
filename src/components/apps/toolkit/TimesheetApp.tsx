@@ -5,6 +5,7 @@ import { Button, Input } from "@/components/ui";
 import { toast } from "@/lib/notifications/toastStore";
 import { addDays, formatDayMonth, mondayOf, todayIso } from "@/lib/staff/dates";
 import {
+  isSelf,
   matchSubmitted,
   personChasers,
   seedWeek,
@@ -13,6 +14,7 @@ import {
 import { textOf } from "@/lib/registers/records";
 import type { RegisterRecord } from "@/lib/registers/types";
 import { useMyFirstName } from "@/components/people/useMyFirstName";
+import { useMyIdentity } from "./useMyIdentity";
 import { CopyDetailsButton } from "@/components/platform/CopyDetailsButton";
 import { NativeSelect, TextArea } from "../pmo-todo-app/parts";
 import { useTemplateText } from "../templates-app/useTemplateText";
@@ -28,6 +30,7 @@ export function TimesheetApp({ windowId }: { windowId: string }) {
   const state = useRegister("timesheets");
   const { people, leave } = usePeople();
   const me = useMyFirstName();
+  const self = useMyIdentity();
   const [week, setWeek] = useState(() => mondayOf(todayIso()));
   const [paste, setPaste] = useState("");
   const [note, setNote] = useState<{ text: string; detail?: string } | null>(null);
@@ -55,8 +58,10 @@ export function TimesheetApp({ windowId }: { windowId: string }) {
     person: textOf(r, "person"),
     email: textOf(r, "email"),
   }));
-  const chaser = timesheetChaser(week, missingPeople, me, chaserText.fill);
-  const perPerson = personChasers(week, missingPeople, me, chaserText.fill);
+  // The combined email goes to everyone else who is missing, not to you.
+  const chaseRecipients = missingPeople.filter((m) => !isSelf(m, self));
+  const chaser = timesheetChaser(week, chaseRecipients, me, chaserText.fill);
+  const perPerson = personChasers(week, missingPeople, me, chaserText.fill, self);
 
   const fail = (reason: string, detail?: string) => setNote({ text: reason, detail });
 

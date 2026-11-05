@@ -12,7 +12,7 @@ import {
   riskScore,
 } from "./projectDigest.ts";
 import { statusReport } from "./reports.ts";
-import { personChasers, timesheetChaser } from "./timesheets.ts";
+import { isSelf, personChasers, timesheetChaser } from "./timesheets.ts";
 
 const NOW = "2026-03-05T10:00:00.000Z";
 const TODAY = "2026-03-05";
@@ -200,4 +200,47 @@ test("personChasers: one draft per person, addressed to them alone", () => {
   assert.match(drafts[0].body, /Sam$/);
   assert.equal(drafts[0].subject, timesheetChaser(monday, [missing[0]], "Sam").subject);
   assert.deepEqual(personChasers(monday, [], "Sam"), []);
+});
+
+test("personChasers: the signed-in person is left out, matched by email or whole name", () => {
+  const monday = "2026-03-02";
+  const missing = [
+    { person: "Qa Tester", email: "qa.tester@x.com" },
+    { person: "Ben Okafor", email: "ben@x.com" },
+    { person: "Mia Chen", email: "" },
+    { person: "Alex Roe", email: "ALEX.ROE@X.COM" },
+    { person: "Tester, Pat", email: "" },
+  ];
+  const self = { names: ["Qa Tester", "Pat Tester"], emails: ["alex.roe@x.com"] };
+  const drafts = personChasers(monday, missing, "Qa", undefined, self);
+  assert.deepEqual(
+    drafts.map((d) => d.person),
+    ["Ben Okafor", "Mia Chen"],
+  );
+  // Without an identity nobody is left out.
+  assert.equal(personChasers(monday, missing, "Qa").length, 5);
+  const nobody = { names: [], emails: [] };
+  assert.equal(personChasers(monday, missing, "Qa", undefined, nobody).length, 5);
+});
+
+test("isSelf: case-insensitive, and a first name alone never matches a longer name", () => {
+  const self = { names: ["Qa"], emails: ["me@x.com"] };
+  assert.equal(isSelf({ person: "Qa Tester", email: "" }, self), false);
+  assert.equal(isSelf({ person: "Qa Smith", email: "q@x.com" }, self), false);
+  assert.equal(isSelf({ person: "qa", email: "" }, self), true);
+  assert.equal(isSelf({ person: "Someone", email: " ME@X.com " }, self), true);
+  const full = { names: ["  qa   TESTER "], emails: [] };
+  assert.equal(isSelf({ person: "Qa Tester", email: "" }, full), true);
+  assert.equal(isSelf({ person: "Tester, Qa", email: "" }, full), true);
+  assert.equal(isSelf({ person: "Qa Tester Jr", email: "" }, full), false);
+  assert.equal(isSelf({ person: "", email: "" }, { names: [""], emails: [""] }), false);
+});
+
+test("personChasers: the sign-off matches the combined chaser (first name only, nothing invented)", () => {
+  const monday = "2026-03-02";
+  const person = { person: "Ben Okafor", email: "ben@x.com" };
+  const each = personChasers(monday, [person], "Qa")[0];
+  assert.equal(each.body, timesheetChaser(monday, [person], "Qa").body);
+  assert.match(each.body, /Thanks,\nQa$/);
+  assert.match(personChasers(monday, [person], "")[0].body, /Thanks,$/);
 });

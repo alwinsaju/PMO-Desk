@@ -590,9 +590,12 @@
   user-select: none !important;
 }
 
-/* Lean (default) mode: window bodies are fully opaque so text of windows
-   behind never ghosts through the translucent fill. */
-:root:not([data-fx="rich"]) .glass-win {
+/* Window bodies are fully opaque in BOTH modes so text of windows behind never
+   ghosts through the translucent fill. Rich mode used to blur that fill; since
+   release 6.0.2 it has no window blur (see globals.css), so without this rule
+   a 90% fill let the text behind show through crisply. The tint is kept by
+   painting --color-win over the opaque base. */
+.glass-win {
   background-color: var(--color-neutral-0);
   background-image: linear-gradient(var(--color-win), var(--color-win));
 }

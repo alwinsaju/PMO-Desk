@@ -1,14 +1,17 @@
 /**
  * Whole-desktop window actions from the dock menu: "Show desktop" (minimise everything)
- * and "Tidy windows" (put every visible window back on a fresh cascade). Pure and
+ * and "Tidy windows" (tile or cascade every visible window inside the usable area). Pure and
  * import-light so `pnpm test` can load it; windowStore.ts feeds it the live state and
  * writes the result in ONE store update (the same "commit once" rule as drag and resize).
  */
-import type {
-  FitConfig,
-  GeometryConfig,
-  Viewport,
-  WindowGeometry,
+import {
+  fitRectInsideViewport,
+  maximizedRect,
+  type FitConfig,
+  type GeometryConfig,
+  type Rect,
+  type Viewport,
+  type WindowGeometry,
 } from "./windowGeometry.ts";
 import { startingGeometry } from "./windowPlacement.ts";
 
@@ -47,12 +50,51 @@ export function minimizeAll<T extends Placed>(
   return next ?? windows;
 }
 
+/** Gap between tiles, and the cascade step once there are too many windows to tile. */
+const TILE_GAP = 12;
+export const TIDY_CASCADE_OFFSET = 48;
+/** Up to this many visible windows are tiled; more are cascaded. */
+export const MAX_TILED = 4;
+
+/** The tiles for `count` windows (2 to MAX_TILED) inside `area`, in stacking order: two side
+ *  by side; three as two on top and one across the bottom; four as a 2x2 grid. */
+export function tidyTiles(area: Rect, count: number): Rect[] {
+  const halfW = Math.floor((area.width - TILE_GAP) / 2);
+  const rightX = area.x + halfW + TILE_GAP;
+  if (count === 2) {
+    return [
+      { x: area.x, y: area.y, width: halfW, height: area.height },
+      { x: rightX, y: area.y, width: area.width - halfW - TILE_GAP, height: area.height },
+    ];
+  }
+  const topH = Math.floor((area.height - TILE_GAP) / 2);
+  const bottomY = area.y + topH + TILE_GAP;
+  const bottomH = area.height - topH - TILE_GAP;
+  const rightW = area.width - halfW - TILE_GAP;
+  const tiles: Rect[] = [
+    { x: area.x, y: area.y, width: halfW, height: topH },
+    { x: rightX, y: area.y, width: rightW, height: topH },
+  ];
+  if (count === 3) {
+    tiles.push({ x: area.x, y: bottomY, width: area.width, height: bottomH });
+  } else {
+    tiles.push(
+      { x: area.x, y: bottomY, width: halfW, height: bottomH },
+      { x: rightX, y: bottomY, width: rightW, height: bottomH },
+    );
+  }
+  return tiles;
+}
+
 /**
- * Where each visible window goes on "Tidy windows": the default geometry for its app
- * (the per-app default size, else the shared one), called once per window with the window's
- * place in the stack as the cascade index, so the topmost window ends up in front on the
- * last step. Saved rectangles are ignored on purpose (that is the point of tidying), a
- * window never goes below its own minimum size, and minimised windows are left alone.
+ * Where each visible window goes on "Tidy windows", in stacking order (bottom first), inside
+ * the usable area (the viewport minus the dock and command-bar insets): one window is centred
+ * at its default size; two sit side by side; three or four are tiled (2x2; with three the last
+ * spans the bottom); more are cascaded with a bigger step than a normal open, each at its app's
+ * default size, so every title bar can be reached. Saved rectangles are ignored on purpose
+ * (that is the point of tidying), a window never goes below its own minimum size (a tile that
+ * is too small grows and may overlap its neighbour), and minimised windows are left alone.
+ * Without a viewport (before hydration) everything is cascaded.
  */
 export function tidyUpdates(
   windows: Readonly<Record<string, Placed>>,
@@ -63,17 +105,47 @@ export function tidyUpdates(
   const visible = Object.values(windows)
     .filter((w) => !w.isMinimized)
     .sort((a, b) => a.zIndex - b.zIndex);
+  const tiles =
+    viewport && visible.length >= 2 && visible.length <= MAX_TILED
+      ? tidyTiles(maximizedRect(viewport, fit.insets), visible.length)
+      : null;
+  // The step only has to leave room for the windows that are really there.
+  const cascade = {
+    ...config,
+    cascadeOffset: visible.length > 1 ? TIDY_CASCADE_OFFSET : 0,
+    cascadeWrap: Math.max(1, Math.min(config.cascadeWrap, visible.length)),
+  };
   return visible.map((w, index) => {
+    const min = w.minSize ?? config.minSize;
+    const tile = tiles?.[index];
+    if (tile && viewport) {
+      const rect = fitRectInsideViewport(
+        {
+          ...tile,
+          width: Math.max(min.width, tile.width),
+          height: Math.max(min.height, tile.height),
+        },
+        viewport,
+        fit,
+        min,
+      );
+      return {
+        id: w.id,
+        geometry: {
+          position: { x: rect.x, y: rect.y },
+          size: { width: rect.width, height: rect.height },
+        },
+      };
+    }
     const base = startingGeometry({
       appId: w.appId,
       openCount: index,
       viewport,
-      config,
+      config: cascade,
       fit,
       remembered: {},
       sameAppOpen: false,
     });
-    const min = w.minSize ?? config.minSize;
     return {
       id: w.id,
       geometry: {

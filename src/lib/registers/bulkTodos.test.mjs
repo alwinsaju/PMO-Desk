@@ -127,8 +127,30 @@ test("makeTodosFor: a failed link is reported as a to-do made but not recorded",
   assert.equal(result.notDone, 1);
 });
 
-test("confirmLine: title, owner and review date", () => {
-  const r = rec({ title: "Env missing", owner: "Priya", dueDate: "2026-11-01" });
-  assert.equal(confirmLine(raid, r), "Env missing, owner Priya, review 2026-11-01");
-  assert.equal(confirmLine(raid, rec({ title: "Bare" })), "Bare");
+test("confirmLine: title, owner and review date as day and month", () => {
+  const r = rec({ title: "Env missing", owner: "Priya", dueDate: "2026-10-20" });
+  assert.equal(
+    confirmLine(raid, r, "2026-11-05"),
+    "Env missing, owner Priya, review 20 Oct",
+  );
+  assert.equal(confirmLine(raid, rec({ title: "Bare" }), "2026-11-05"), "Bare");
+});
+
+test("confirmLine: the year is shown when the date is not in the current year", () => {
+  const r = rec({ title: "Old", dueDate: "2025-12-31" });
+  assert.equal(confirmLine(raid, r, "2026-11-05"), "Old, review 31 Dec 2025");
+  const next = rec({ title: "Later", owner: "Sam", dueDate: "2027-01-04" });
+  assert.equal(
+    confirmLine(raid, next, "2026-11-05"),
+    "Later, owner Sam, review 4 Jan 2027",
+  );
+});
+
+test("confirmLine: text that is not a date is left as typed, and it works without a today", () => {
+  const r = rec({ title: "Odd", dueDate: "soon" });
+  assert.equal(confirmLine(raid, r, "2026-11-05"), "Odd, review soon");
+  assert.match(
+    confirmLine(raid, rec({ title: "X", dueDate: "2026-02-03" })),
+    /review 3 Feb( 2026)?$/,
+  );
 });

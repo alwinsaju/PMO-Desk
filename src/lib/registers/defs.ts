@@ -22,6 +22,8 @@ export const REGISTERS: readonly RegisterDef[] = [
     id: "raid",
     title: "RAID log",
     noun: "item",
+    quickAddNoun: "RAID item",
+    createdKey: "raisedOn",
     firstNoun: "risk",
     blurb:
       "Risks, assumptions, issues and dependencies, each with an owner, a review date and its age.",
@@ -90,6 +92,7 @@ export const REGISTERS: readonly RegisterDef[] = [
     id: "minutes",
     title: "Meeting minutes",
     noun: "meeting",
+    quickAddNoun: "set of minutes",
     blurb:
       "Keep the notes of a meeting and turn its action lines into to-dos you approve.",
     fields: [
@@ -183,6 +186,8 @@ export const REGISTERS: readonly RegisterDef[] = [
     id: "sla",
     title: "SLA watcher",
     noun: "item",
+    quickAddNoun: "SLA item",
+    createdKey: "received",
     blurb:
       "Items with a service level: which are on track, close to breaching or already late.",
     fields: [
@@ -274,6 +279,7 @@ export const REGISTERS: readonly RegisterDef[] = [
     id: "governance",
     title: "Governance calendar",
     noun: "meeting",
+    quickAddNoun: "governance meeting",
     blurb:
       "Steering committees, quarterly reviews and audits, with prep to-dos made for you.",
     fields: [
@@ -520,6 +526,7 @@ export const REGISTERS: readonly RegisterDef[] = [
     id: "status-report",
     title: "Status report builder",
     noun: "project",
+    quickAddNoun: "status report",
     blurb: "Keep each project's RAG status here and build the weekly report from it.",
     fields: [
       { key: "project", label: "Project", type: "text", required: true },
@@ -574,6 +581,7 @@ export const REGISTERS: readonly RegisterDef[] = [
     id: "lessons",
     title: "Lessons learned",
     noun: "lesson",
+    createdKey: "date",
     blurb:
       "Capture what went well, what did not and what to do next time, at project close.",
     fields: [

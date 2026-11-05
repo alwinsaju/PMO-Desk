@@ -256,7 +256,7 @@ export function ToolkitApp({ windowId }: { windowId: string }) {
                     {supportsQuickAdd(tool.id, REGISTER_IDS) && (
                       <IconButton
                         size="sm"
-                        aria-label={quickAddLabel(tool.title)}
+                        aria-label={quickAddLabel(tool.id, tool.title)}
                         data-testid={`tool-add-${tool.id}`}
                         onClick={() => openTool(tool.id, true)}
                         className="absolute right-1.5 bottom-1.5"

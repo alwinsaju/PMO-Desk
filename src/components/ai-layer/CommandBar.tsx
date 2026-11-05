@@ -798,6 +798,7 @@ export function CommandBar() {
     if (event.key === "Tab" && completions.length > 0 && !event.shiftKey) {
       event.preventDefault();
       setValue(completions[0]);
+      setNotice(null);
       return;
     }
     // Up / Down walk through earlier commands.
@@ -866,7 +867,8 @@ export function CommandBar() {
         aria-hidden={!showSuggestions}
         inert={!showSuggestions}
         className={cn(
-          "absolute bottom-[calc(100%+0.5rem)] left-1/2 flex w-max max-w-[94vw] -translate-x-1/2 flex-wrap justify-center gap-2",
+          // The "/" list shows every command: it wraps, and scrolls when the screen is short.
+          "absolute bottom-[calc(100%+0.5rem)] left-1/2 flex max-h-[min(50vh,20rem)] w-max max-w-[94vw] -translate-x-1/2 flex-wrap justify-center gap-2 overflow-y-auto",
           "ease-smooth transition-[opacity,transform] duration-[400ms]",
           showSuggestions
             ? "pointer-events-auto translate-y-0 opacity-100"
@@ -881,6 +883,7 @@ export function CommandBar() {
               onClick={() => {
                 if (complete) {
                   setValue(text);
+                  setNotice(null);
                   inputRef.current?.focus();
                 } else {
                   submitPrompt(text, false);
@@ -940,6 +943,8 @@ export function CommandBar() {
           value={value}
           onChange={(event) => {
             setValue(event.target.value);
+            // A hint about the old text ("There is no /bogus command") is stale once it changes.
+            setNotice(null);
             setHistoryIndex(-1);
           }}
           onKeyDown={handleInputKey}

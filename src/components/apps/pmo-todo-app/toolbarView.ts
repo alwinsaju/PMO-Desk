@@ -32,6 +32,10 @@ export interface ModelStatus {
    *  unloads) while the model is loaded and idle. Short on purpose: the chip shares
    *  a narrow row with the actions. */
   chip: string;
+  /** The chip in pieces, so the screen can shrink the label first and never cut the model
+   *  name: `chip` is these, non-empty ones, joined with " · ". `model` is "" when there is
+   *  none to show; `extra` is the "1 of 3" or the unload countdown, else "". */
+  chipParts: { label: string; model: string; extra: string };
   /** ISO time the loaded model unloads, while it is idle in memory; the toolbar
    *  ticks the countdown itself between polls. */
   unloadsAt: string | null;
@@ -102,6 +106,10 @@ export function modelStatus(
   if (structuring.total > 0 && !paused) {
     parts.push(`structuring ${structuring.position} of ${structuring.total}`);
   }
+  const extra =
+    (working && structuring.total > 1
+      ? `${structuring.position} of ${structuring.total}`
+      : countdown) ?? "";
   const progress =
     structuring.total > 0 && !paused
       ? `Structuring ${structuring.position} of ${structuring.total}`
@@ -112,15 +120,8 @@ export function modelStatus(
     detail: parts.join(" · "),
     busy: working,
     progress,
-    chip: [
-      label,
-      chipModel,
-      working && structuring.total > 1
-        ? `${structuring.position} of ${structuring.total}`
-        : countdown,
-    ]
-      .filter(Boolean)
-      .join(" · "),
+    chip: [label, chipModel, extra].filter(Boolean).join(" · "),
+    chipParts: { label, model: chipModel, extra },
     unloadsAt: !paused && runtime.state === "ready" ? (runtime.unloadsAt ?? null) : null,
   };
 }

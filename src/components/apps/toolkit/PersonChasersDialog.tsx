@@ -43,6 +43,12 @@ export function PersonChasersDialog({
           className="scroll-thin mt-3 max-h-[60vh] space-y-2 overflow-auto"
           data-testid="person-chasers"
         >
+          {chasers.length === 0 && (
+            <li className="text-ink-muted text-[13px]" data-testid="person-chasers-empty">
+              Nobody else is missing a timesheet. You are not listed: you do not chase
+              yourself.
+            </li>
+          )}
           {chasers.map((c) => {
             const mail = buildMailto({ to: c.email, subject: c.subject, body: c.body });
             return (

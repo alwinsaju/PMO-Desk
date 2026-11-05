@@ -1,6 +1,6 @@
 # PMO Desk roadmap
 
-Enhancement plan for PMO Desk, checked against the codebase. Generated 2026-11-04 from the audited roadmap page. All 45 items have since been built on four local branches (see [Build progress](#build-progress)); none has been looked at in a running app.
+Enhancement plan for PMO Desk, checked against the codebase. Generated 2026-11-04 from the audited roadmap page. All 45 items have since been built on four local branches (see [Build progress](#build-progress)); all were exercised live in the real desktop app on 2026-11-05, and the problems that found are fixed on the `qa-fixes` branch.
 
 ## How this was checked
 
@@ -88,9 +88,23 @@ These are gaps the build left on purpose. None of them is fixed.
 - **Existing template libraries** do not get the two new Toolkit templates (`ai-3`) automatically.
 - **Offboarded tab Restore** does not relink the shift roster entry (only the Undo toast does).
 
+## Live QA and fixes
+
+On 2026-11-05 a separate QA run drove the real desktop app (Playwright, a throwaway profile, no OneDrive variables) through all 45 items; its report is `C:\Projects\pmo-qa\QA-REPORT.md`. It found 34 items working as described, 10 with small defects and 1 failure. All of it is fixed on the `qa-fixes` branch:
+
+- **`q-16` (the one failure):** to-do bulk actions also changed ticked rows the filter hid. They now touch only rows on screen, the bar says "N more hidden by the filter, not included", and Undo covers exactly what changed.
+- **Labels and text:** `ui-18` plus-button labels use each register's noun with the right a/an ("Add an SLA item"); `ai-6` rows say "Subject", not "From"; `pm-5` confirmation dates read "20 Oct"; `q-18` quick-add toast says "(skipped a holiday)".
+- **Behaviour:** `q-10` Duplicate resets the created date (RAID Raised on, SLA Received, lesson date) to today; `ops-2` per-person chasers and the combined email leave you out; `q-20` the `/` menu lists all 15 commands and clears stale hints; `q-13` Tidy windows tiles 1 to 4 windows and cascades 5 or more by 48 px; `q-21` `E` and Enter in Templates move focus into the editor; `ui-10` the approval card shows "Still reading N more..." while leave emails are read; `ai-1` the model name no longer truncates in the status chip.
+- **Windows:** a window reopened at a remembered position is now kept fully on screen (a remembered rectangle used to pass a check that only kept 80 px of the title bar reachable).
+- **See-through windows (found by QA, not caused by these phases):** release 6.0.2 made hardware acceleration the default and removed the window blur but left window bodies 90% opaque in that mode, so text of windows behind showed through. Window bodies are now opaque in both modes (`tokens.css`).
+
+Not changed: every download opens the native Save-as dialog because the desktop shell has no `will-download` handler (existing behaviour; a safe improvement is to pre-fill the name and folder, or save to Downloads and show it). Layout restore (`ux-6`) still uses the looser on-screen check. After the fixes, the full typecheck, formatting and test run are clean (3629 of 3629 tests); the fixes have not been re-run in the live harness.
+
+QA could not prove: the 10 MB cap on dropped Staff files (`q-3`), that the saved examples really reach the prompt (`ai-6`, only a unit test), a physical keypress for the hotkey (`q-15`), and a failed (not cancelled) prompt outcome (`ui-1`).
+
 ## Before release
 
-Nothing in phases 1 to 4 has been looked at in a running app, and lint has not run. Before release: install the missing lint plugin and run `pnpm check`; run the app against a throwaway data folder and walk each changed screen (Phase 1 to 4 tables above), with light, dark and Deloitte looks and a narrow window; and check the dock with labels on, the snap preview, the layouts dialog, the Notes preview and the Ctrl+Shift+Space hotkey on a real desktop.
+Install the missing lint plugin and run `pnpm check` (lint has never run on these branches). Re-run the live QA against the fixes: its harness is in `C:\Projects\pmo-qa` and uses a throwaway profile; never start the app against the real OneDrive folders. The gaps listed under "Not finished, found while building" are still open.
 
 ## Rules every item must respect
 
@@ -122,68 +136,68 @@ Everything else is independent and can be built in any order.
 
 ### Phase 1: Foundation (next 2 to 4 weeks), 9 items
 
-| ID     | Item                                                             | Area               | Priority | Effort | Status                                                |
-| ------ | ---------------------------------------------------------------- | ------------------ | -------- | ------ | ----------------------------------------------------- |
-| `ui-1` | [Recent prompts as chips on an empty command bar](#ui-1)         | UI polish          | Medium   | 1      | **Built** (`phase-1-foundation`), not seen in the app |
-| `ui-2` | [Plain-language Tasks engine start errors](#ui-2)                | UI polish          | High     | 2      | **Built** (`phase-1-foundation`), not seen in the app |
-| `ui-3` | [Tooltip on truncated template names](#ui-3)                     | UI polish          | Medium   | 1      | **Built** (`phase-1-foundation`), not seen in the app |
-| `ui-7` | [Notes text filter, and open the chosen note from Ctrl+K](#ui-7) | UI polish          | Medium   | 2      | **Built** (`phase-1-foundation`), not seen in the app |
-| `pm-9` | [Optional Project field on RAID, changes and SLA](#pm-9)         | Project management | Medium   | 2      | **Built** (`phase-1-foundation`), not seen in the app |
-| `ai-1` | [Show the model name on the status chip and pill](#ai-1)         | AI and automation  | Medium   | 1      | **Built** (`phase-1-foundation`), not seen in the app |
-| `q-3`  | [Drop a roster file onto the Staff import box](#q-3)             | Quality of life    | Medium   | 1      | **Built** (`phase-1-foundation`), not seen in the app |
-| `q-6`  | ["Draft kept" in the Template editor](#q-6)                      | Quality of life    | Low      | 1      | **Built** (`phase-1-foundation`), not seen in the app |
-| `q-7`  | ["3 days" snooze preset](#q-7)                                   | Quality of life    | Low      | 2      | **Built** (`phase-1-foundation`), not seen in the app |
+| ID     | Item                                                             | Area               | Priority | Effort | Status                                                   |
+| ------ | ---------------------------------------------------------------- | ------------------ | -------- | ------ | -------------------------------------------------------- |
+| `ui-1` | [Recent prompts as chips on an empty command bar](#ui-1)         | UI polish          | Medium   | 1      | **Built** (`phase-1-foundation`), live-tested 2026-11-05 |
+| `ui-2` | [Plain-language Tasks engine start errors](#ui-2)                | UI polish          | High     | 2      | **Built** (`phase-1-foundation`), live-tested 2026-11-05 |
+| `ui-3` | [Tooltip on truncated template names](#ui-3)                     | UI polish          | Medium   | 1      | **Built** (`phase-1-foundation`), live-tested 2026-11-05 |
+| `ui-7` | [Notes text filter, and open the chosen note from Ctrl+K](#ui-7) | UI polish          | Medium   | 2      | **Built** (`phase-1-foundation`), live-tested 2026-11-05 |
+| `pm-9` | [Optional Project field on RAID, changes and SLA](#pm-9)         | Project management | Medium   | 2      | **Built** (`phase-1-foundation`), live-tested 2026-11-05 |
+| `ai-1` | [Show the model name on the status chip and pill](#ai-1)         | AI and automation  | Medium   | 1      | **Built** (`phase-1-foundation`), live-tested 2026-11-05 |
+| `q-3`  | [Drop a roster file onto the Staff import box](#q-3)             | Quality of life    | Medium   | 1      | **Built** (`phase-1-foundation`), live-tested 2026-11-05 |
+| `q-6`  | ["Draft kept" in the Template editor](#q-6)                      | Quality of life    | Low      | 1      | **Built** (`phase-1-foundation`), live-tested 2026-11-05 |
+| `q-7`  | ["3 days" snooze preset](#q-7)                                   | Quality of life    | Low      | 2      | **Built** (`phase-1-foundation`), live-tested 2026-11-05 |
 
 ### Phase 2: Build (next 1 to 2 months), 16 items
 
-| ID      | Item                                                   | Area                 | Priority | Effort | Status                                           |
-| ------- | ------------------------------------------------------ | -------------------- | -------- | ------ | ------------------------------------------------ |
-| `ui-5`  | [Optional "Show dock labels" setting](#ui-5)           | UI polish            | Low      | 2      | **Built** (`phase-2-build`), not seen in the app |
-| `ui-8`  | [Filter box for Toolkit tools](#ui-8)                  | UI polish            | Medium   | 1      | **Built** (`phase-2-build`), not seen in the app |
-| `ui-10` | [Progress and dismiss on the leave-email card](#ui-10) | UI polish            | Low      | 2      | **Built** (`phase-2-build`), not seen in the app |
-| `ux-2`  | [Help entry inside each app window](#ux-2)             | User experience      | Low      | 2      | **Built** (`phase-2-build`), not seen in the app |
-| `pm-2`  | [Status report adds top risks and late changes](#pm-2) | Project management   | Medium   | 3      | **Built** (`phase-2-build`), not seen in the app |
-| `pm-5`  | [Bulk "make to-dos" for late RAID items](#pm-5)        | Project management   | Medium   | 3      | **Built** (`phase-2-build`), not seen in the app |
-| `pgm-1` | [Portfolio RAG tile on the Dashboard](#pgm-1)          | Programme management | Medium   | 3      | **Built** (`phase-2-build`), not seen in the app |
-| `ops-1` | [PMO health scorecard](#ops-1)                         | PMO operations       | Low      | 2      | **Built** (`phase-2-build`), not seen in the app |
-| `ops-2` | [One timesheet chaser draft per person](#ops-2)        | PMO operations       | Medium   | 2      | **Built** (`phase-2-build`), not seen in the app |
-| `ops-4` | [Milestone dates on vendor contracts](#ops-4)          | PMO operations       | Medium   | 4      | **Built** (`phase-2-build`), not seen in the app |
-| `q-2`   | [Undo toast when offboarding staff](#q-2)              | Quality of life      | Low      | 2      | **Built** (`phase-2-build`), not seen in the app |
-| `q-8`   | [Reopen last session's apps at launch](#q-8)           | Quality of life      | Medium   | 2      | **Built** (`phase-2-build`), not seen in the app |
-| `q-9`   | [Pin favourite Toolkit tools](#q-9)                    | Quality of life      | Low      | 1      | **Built** (`phase-2-build`), not seen in the app |
-| `q-10`  | [Duplicate for to-dos and register records](#q-10)     | Quality of life      | Medium   | 2      | **Built** (`phase-2-build`), not seen in the app |
-| `q-11`  | [Copy a register record as email text](#q-11)          | Quality of life      | Medium   | 2      | **Built** (`phase-2-build`), not seen in the app |
-| `q-13`  | [Show desktop and tidy windows](#q-13)                 | Quality of life      | Low      | 2      | **Built** (`phase-2-build`), not seen in the app |
+| ID      | Item                                                   | Area                 | Priority | Effort | Status                                              |
+| ------- | ------------------------------------------------------ | -------------------- | -------- | ------ | --------------------------------------------------- |
+| `ui-5`  | [Optional "Show dock labels" setting](#ui-5)           | UI polish            | Low      | 2      | **Built** (`phase-2-build`), live-tested 2026-11-05 |
+| `ui-8`  | [Filter box for Toolkit tools](#ui-8)                  | UI polish            | Medium   | 1      | **Built** (`phase-2-build`), live-tested 2026-11-05 |
+| `ui-10` | [Progress and dismiss on the leave-email card](#ui-10) | UI polish            | Low      | 2      | **Built** (`phase-2-build`), live-tested 2026-11-05 |
+| `ux-2`  | [Help entry inside each app window](#ux-2)             | User experience      | Low      | 2      | **Built** (`phase-2-build`), live-tested 2026-11-05 |
+| `pm-2`  | [Status report adds top risks and late changes](#pm-2) | Project management   | Medium   | 3      | **Built** (`phase-2-build`), live-tested 2026-11-05 |
+| `pm-5`  | [Bulk "make to-dos" for late RAID items](#pm-5)        | Project management   | Medium   | 3      | **Built** (`phase-2-build`), live-tested 2026-11-05 |
+| `pgm-1` | [Portfolio RAG tile on the Dashboard](#pgm-1)          | Programme management | Medium   | 3      | **Built** (`phase-2-build`), live-tested 2026-11-05 |
+| `ops-1` | [PMO health scorecard](#ops-1)                         | PMO operations       | Low      | 2      | **Built** (`phase-2-build`), live-tested 2026-11-05 |
+| `ops-2` | [One timesheet chaser draft per person](#ops-2)        | PMO operations       | Medium   | 2      | **Built** (`phase-2-build`), live-tested 2026-11-05 |
+| `ops-4` | [Milestone dates on vendor contracts](#ops-4)          | PMO operations       | Medium   | 4      | **Built** (`phase-2-build`), live-tested 2026-11-05 |
+| `q-2`   | [Undo toast when offboarding staff](#q-2)              | Quality of life      | Low      | 2      | **Built** (`phase-2-build`), live-tested 2026-11-05 |
+| `q-8`   | [Reopen last session's apps at launch](#q-8)           | Quality of life      | Medium   | 2      | **Built** (`phase-2-build`), live-tested 2026-11-05 |
+| `q-9`   | [Pin favourite Toolkit tools](#q-9)                    | Quality of life      | Low      | 1      | **Built** (`phase-2-build`), live-tested 2026-11-05 |
+| `q-10`  | [Duplicate for to-dos and register records](#q-10)     | Quality of life      | Medium   | 2      | **Built** (`phase-2-build`), live-tested 2026-11-05 |
+| `q-11`  | [Copy a register record as email text](#q-11)          | Quality of life      | Medium   | 2      | **Built** (`phase-2-build`), live-tested 2026-11-05 |
+| `q-13`  | [Show desktop and tidy windows](#q-13)                 | Quality of life      | Low      | 2      | **Built** (`phase-2-build`), live-tested 2026-11-05 |
 
 ### Phase 3: Scale (next quarter), 15 items
 
-| ID      | Item                                                  | Area                 | Priority | Effort | Status                                           |
-| ------- | ----------------------------------------------------- | -------------------- | -------- | ------ | ------------------------------------------------ |
-| `ui-16` | [Live snap preview while dragging a window](#ui-16)   | UI polish            | Medium   | 2      | **Built** (`phase-3-scale`), not seen in the app |
-| `pm-7`  | [AI-drafted impact note on change requests](#pm-7)    | Project management   | Low      | 3      | **Built** (`phase-3-scale`), not seen in the app |
-| `pgm-4` | [Weekly pack: status, changes and late risks](#pgm-4) | Programme management | Medium   | 3      | **Built** (`phase-3-scale`), not seen in the app |
-| `ops-6` | [Calendar file export for governance events](#ops-6)  | PMO operations       | Medium   | 2      | **Built** (`phase-3-scale`), not seen in the app |
-| `ops-3` | [Local change history per register record](#ops-3)    | PMO operations       | Low      | 3      | **Built** (`phase-3-scale`), not seen in the app |
-| `ops-5` | [AI suggestion for the lesson Category](#ops-5)       | PMO operations       | Low      | 3      | **Built** (`phase-3-scale`), not seen in the app |
-| `ai-3`  | [Template targets for Toolkit drafts](#ai-3)          | AI and automation    | Medium   | 3      | **Built** (`phase-3-scale`), not seen in the app |
-| `q-1`   | [Copy a template's wording](#q-1)                     | Quality of life      | Low      | 1      | **Built** (`phase-3-scale`), not seen in the app |
-| `q-15`  | [Global quick-capture hotkey](#q-15)                  | Quality of life      | Medium   | 3      | **Built** (`phase-3-scale`), not seen in the app |
-| `q-16`  | [Bulk select in registers and Staff](#q-16)           | Quality of life      | Medium   | 3      | **Built** (`phase-3-scale`), not seen in the app |
-| `q-17`  | ["Since you last opened" recap](#q-17)                | Quality of life      | Medium   | 3      | **Built** (`phase-3-scale`), not seen in the app |
-| `q-19`  | [Export the to-do list to Excel or CSV](#q-19)        | Quality of life      | Low      | 2      | **Built** (`phase-3-scale`), not seen in the app |
-| `q-20`  | [Slash shortcuts in the command bar](#q-20)           | Quality of life      | Low      | 2      | **Built** (`phase-3-scale`), not seen in the app |
-| `q-21`  | [Keyboard navigation in more lists](#q-21)            | Quality of life      | Low      | 3      | **Built** (`phase-3-scale`), not seen in the app |
-| `q-22`  | [Recent items in the dock right-click menu](#q-22)    | Quality of life      | Low      | 3      | **Built** (`phase-3-scale`), not seen in the app |
+| ID      | Item                                                  | Area                 | Priority | Effort | Status                                              |
+| ------- | ----------------------------------------------------- | -------------------- | -------- | ------ | --------------------------------------------------- |
+| `ui-16` | [Live snap preview while dragging a window](#ui-16)   | UI polish            | Medium   | 2      | **Built** (`phase-3-scale`), live-tested 2026-11-05 |
+| `pm-7`  | [AI-drafted impact note on change requests](#pm-7)    | Project management   | Low      | 3      | **Built** (`phase-3-scale`), live-tested 2026-11-05 |
+| `pgm-4` | [Weekly pack: status, changes and late risks](#pgm-4) | Programme management | Medium   | 3      | **Built** (`phase-3-scale`), live-tested 2026-11-05 |
+| `ops-6` | [Calendar file export for governance events](#ops-6)  | PMO operations       | Medium   | 2      | **Built** (`phase-3-scale`), live-tested 2026-11-05 |
+| `ops-3` | [Local change history per register record](#ops-3)    | PMO operations       | Low      | 3      | **Built** (`phase-3-scale`), live-tested 2026-11-05 |
+| `ops-5` | [AI suggestion for the lesson Category](#ops-5)       | PMO operations       | Low      | 3      | **Built** (`phase-3-scale`), live-tested 2026-11-05 |
+| `ai-3`  | [Template targets for Toolkit drafts](#ai-3)          | AI and automation    | Medium   | 3      | **Built** (`phase-3-scale`), live-tested 2026-11-05 |
+| `q-1`   | [Copy a template's wording](#q-1)                     | Quality of life      | Low      | 1      | **Built** (`phase-3-scale`), live-tested 2026-11-05 |
+| `q-15`  | [Global quick-capture hotkey](#q-15)                  | Quality of life      | Medium   | 3      | **Built** (`phase-3-scale`), live-tested 2026-11-05 |
+| `q-16`  | [Bulk select in registers and Staff](#q-16)           | Quality of life      | Medium   | 3      | **Built** (`phase-3-scale`), live-tested 2026-11-05 |
+| `q-17`  | ["Since you last opened" recap](#q-17)                | Quality of life      | Medium   | 3      | **Built** (`phase-3-scale`), live-tested 2026-11-05 |
+| `q-19`  | [Export the to-do list to Excel or CSV](#q-19)        | Quality of life      | Low      | 2      | **Built** (`phase-3-scale`), live-tested 2026-11-05 |
+| `q-20`  | [Slash shortcuts in the command bar](#q-20)           | Quality of life      | Low      | 2      | **Built** (`phase-3-scale`), live-tested 2026-11-05 |
+| `q-21`  | [Keyboard navigation in more lists](#q-21)            | Quality of life      | Low      | 3      | **Built** (`phase-3-scale`), live-tested 2026-11-05 |
+| `q-22`  | [Recent items in the dock right-click menu](#q-22)    | Quality of life      | Low      | 3      | **Built** (`phase-3-scale`), live-tested 2026-11-05 |
 
 ### Phase 4: Later (only if needed), 5 items
 
-| ID      | Item                                               | Area              | Priority | Effort | Status                                           |
-| ------- | -------------------------------------------------- | ----------------- | -------- | ------ | ------------------------------------------------ |
-| `ui-18` | [Add an item straight from a Toolkit tile](#ui-18) | UI polish         | Low      | 3      | **Built** (`phase-4-later`), not seen in the app |
-| `ui-20` | [Notes: links, code blocks and tables](#ui-20)     | UI polish         | Low      | 3      | **Built** (`phase-4-later`), not seen in the app |
-| `ux-6`  | [Named workspace layouts](#ux-6)                   | User experience   | Low      | 3      | **Built** (`phase-4-later`), not seen in the app |
-| `ai-6`  | [Saved-examples library for prompts](#ai-6)        | AI and automation | Low      | 3      | **Built** (`phase-4-later`), not seen in the app |
-| `q-18`  | [Holiday-aware due dates](#q-18)                   | Quality of life   | Medium   | 4      | **Built** (`phase-4-later`), not seen in the app |
+| ID      | Item                                               | Area              | Priority | Effort | Status                                              |
+| ------- | -------------------------------------------------- | ----------------- | -------- | ------ | --------------------------------------------------- |
+| `ui-18` | [Add an item straight from a Toolkit tile](#ui-18) | UI polish         | Low      | 3      | **Built** (`phase-4-later`), live-tested 2026-11-05 |
+| `ui-20` | [Notes: links, code blocks and tables](#ui-20)     | UI polish         | Low      | 3      | **Built** (`phase-4-later`), live-tested 2026-11-05 |
+| `ux-6`  | [Named workspace layouts](#ux-6)                   | User experience   | Low      | 3      | **Built** (`phase-4-later`), live-tested 2026-11-05 |
+| `ai-6`  | [Saved-examples library for prompts](#ai-6)        | AI and automation | Low      | 3      | **Built** (`phase-4-later`), live-tested 2026-11-05 |
+| `q-18`  | [Holiday-aware due dates](#q-18)                   | Quality of life   | Medium   | 4      | **Built** (`phase-4-later`), live-tested 2026-11-05 |
 
 ## Item details
 

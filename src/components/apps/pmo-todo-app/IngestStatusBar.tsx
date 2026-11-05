@@ -171,7 +171,27 @@ export function PmoToolbar({
                 status.busy && "motion-safe:animate-blink",
               )}
             />
-            <span className="hidden min-w-0 truncate @xl:inline">{chipText}</span>
+            {/* The label gives way first (it truncates); the model name and the countdown
+                never do. A scan note replaces the whole chip and may truncate. */}
+            {scanNote ? (
+              <span className="hidden min-w-0 truncate @xl:inline">{scanNote}</span>
+            ) : (
+              <span className="hidden min-w-0 items-baseline gap-1.5 @xl:flex">
+                <span className="min-w-0 truncate">{status.chipParts.label}</span>
+                {status.chipParts.model && (
+                  <span className="shrink-0 whitespace-nowrap">
+                    <span aria-hidden>· </span>
+                    {status.chipParts.model}
+                  </span>
+                )}
+                {status.chipParts.extra && (
+                  <span className="shrink-0 whitespace-nowrap tabular-nums">
+                    <span aria-hidden>· </span>
+                    {status.chipParts.extra}
+                  </span>
+                )}
+              </span>
+            )}
             {/* While the model is waking or working the chip needs the room. */}
             {!status.busy && (
               <span className="text-ink-muted hidden shrink-0 text-[12px] font-medium @6xl:inline">

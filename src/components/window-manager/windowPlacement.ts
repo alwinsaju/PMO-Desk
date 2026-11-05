@@ -5,7 +5,7 @@
  */
 import {
   defaultWindowGeometry,
-  fitRectToViewport,
+  fitRectInsideViewport,
   type FitConfig,
   type GeometryConfig,
   type Rect,
@@ -44,7 +44,8 @@ export function startingGeometry(input: StartingGeometryInput): WindowGeometry {
   const { appId, viewport, config } = input;
   const saved = isRemembered(appId) ? input.remembered[appId] : undefined;
   if (saved && viewport && !input.sameAppOpen) {
-    const fitted = fitRectToViewport(saved, viewport, input.fit, config.minSize);
+    // Wholly inside the usable area: the screen may be narrower than when it was saved.
+    const fitted = fitRectInsideViewport(saved, viewport, input.fit, config.minSize);
     return {
       position: { x: fitted.x, y: fitted.y },
       size: { width: fitted.width, height: fitted.height },

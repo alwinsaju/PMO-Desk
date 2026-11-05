@@ -246,7 +246,10 @@ export interface SlashSuggestion {
 
 /** Suggestions while "/" is being typed: commands that start with the typed word (all of
  *  them for a bare "/"), else the closest spelling. Nothing once arguments are typed. */
-export function slashSuggestions(typed: string, limit = 8): SlashSuggestion[] {
+export function slashSuggestions(
+  typed: string,
+  limit = SLASH_COMMANDS.length,
+): SlashSuggestion[] {
   const text = typed.trimStart();
   const match = /^\/([a-z0-9?-]*)(\s[\s\S]*)?$/i.exec(text);
   if (!match || match[2] !== undefined) return [];

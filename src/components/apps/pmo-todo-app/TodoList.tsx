@@ -47,6 +47,9 @@ import {
   type ChipTone,
 } from "./parts";
 import { SnoozeMenu } from "./SnoozeMenu";
+import { todoBulkSelection } from "./bulkSelection";
+import { SKIPPED_HOLIDAY_NOTE, quickAddToast } from "./quickAddView";
+import { withoutIds } from "@/lib/ui/multiSelect";
 import { isTypingTarget, listKeyAction } from "./listKeys";
 import { continueRecurrence } from "./recurHelper";
 import { BulkBar, ListTools } from "./ListTools";
@@ -126,7 +129,8 @@ export function TodoList({
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
   const [planOpen, setPlanOpen] = useState(false);
   const [notesOpen, setNotesOpen] = useState(false);
-  const selectedTodos = state.todos.filter((t) => selectedIds.has(t.id));
+  // A bulk action reaches only the ticked to-dos that are on screen; the rest are counted.
+  const bulk = todoBulkSelection(visible, state.todos, selectedIds);
   const toggleSelected = (id: string) =>
     setSelectedIds((current) => {
       const next = new Set(current);
@@ -290,11 +294,13 @@ export function TodoList({
           />
         }
       />
-      {selectedTodos.length > 0 && (
+      {(bulk.todos.length > 0 || bulk.hidden > 0) && (
         <BulkBar
-          selected={selectedTodos}
+          selected={bulk.todos}
+          summary={bulk.text}
           state={state}
           onClear={() => setSelectedIds(new Set())}
+          onDone={(ids) => setSelectedIds((current) => withoutIds(current, ids))}
           onSettled={onSettled}
         />
       )}
@@ -390,9 +396,7 @@ function QuickAddBar({
       toast({
         key: "quick-add",
         tone: "success",
-        message: parsed.dueAt
-          ? `Added "${parsed.title}", due ${formatDay(parsed.dueAt, today)}.`
-          : `Added "${parsed.title}".`,
+        message: quickAddToast(parsed, today),
       });
     } catch {
       setError("Could not reach the app server.");
@@ -430,7 +434,7 @@ function QuickAddBar({
                 title={`${formatDay(parsed.movedFrom, today)} is one of your holidays.`}
               >
                 {" "}
-                (skipped a holiday)
+                {SKIPPED_HOLIDAY_NOTE}
               </span>
             )}
             {lookAlike && (

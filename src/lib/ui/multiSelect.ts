@@ -50,9 +50,10 @@ export function selectionView<T extends { id: string }>(
   return { visible, hidden };
 }
 
-/** "3 selected" or "3 selected (2 more hidden by the filter)". */
-export function selectedText(visible: number, hidden: number): string {
+/** "3 selected" or "3 selected (2 more hidden by the filter, not included)".
+ *  `word` is the state word ("selected" by default; the to-do list says "ticked"). */
+export function selectedText(visible: number, hidden: number, word = "selected"): string {
   return hidden > 0
-    ? `${visible} selected (${hidden} more hidden by the filter, not included)`
-    : `${visible} selected`;
+    ? `${visible} ${word} (${hidden} more hidden by the filter, not included)`
+    : `${visible} ${word}`;
 }

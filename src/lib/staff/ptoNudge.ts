@@ -12,7 +12,14 @@ export function unseenIds(alert: PtoAlert, seen: readonly string[]): string[] {
 }
 
 export type PtoNudgeCopy =
-  | { kind: "approve"; title: string; lines: string[] }
+  | {
+      kind: "approve";
+      title: string;
+      lines: string[];
+      /** A small extra line while the reader is still working, so the approval card does not
+       *  hide that more leave emails are on their way. */
+      reading?: string;
+    }
   | { kind: "reading"; title: string; lines: string[] };
 
 const MAX_LINES = 3;
@@ -48,6 +55,9 @@ export function describePtoAlert(
           ? "I read a leave email. It needs your approval."
           : `I read ${items.length} leave emails. They need your approval.`,
       lines,
+      ...(alert.reading && !readingDismissed
+        ? { reading: `Still reading ${Math.max(1, alert.waiting)} more...` }
+        : {}),
     };
   }
   if (alert.reading && !readingDismissed) {

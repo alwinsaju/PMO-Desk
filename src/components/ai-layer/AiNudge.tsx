@@ -142,6 +142,12 @@ export function AiNudge({
                 {line}
               </p>
             ))}
+            {copy.kind === "approve" && copy.reading && (
+              <p className="text-ink-muted mt-1 flex items-center gap-1.5 text-[12px] leading-snug">
+                <CircleNotchIcon size={12} aria-hidden className="animate-spin" />
+                {copy.reading}
+              </p>
+            )}
             {copy.kind === "approve" && (
               <div className="mt-2.5 flex items-center gap-2">
                 <Button size="sm" onClick={review}>

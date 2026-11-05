@@ -117,3 +117,58 @@ test("recordText: no attention line without an alert; untitled record", () => {
   assert.ok(text.startsWith("RAID log: (untitled)"));
   assert.ok(!text.includes("Needs attention"));
 });
+
+test("duplicateValues: the raised-on date is reset to today, other dates stay", () => {
+  const copy = duplicateValues(raid, record, "2026-11-05");
+  assert.equal(copy.raisedOn, "2026-11-05");
+  assert.equal(copy.dueDate, "2026-11-01");
+  assert.equal(record.values.raisedOn, "2026-10-01", "the original is not changed");
+  // The copy is not already "Open 35 days" (the original, with no review date, is).
+  const ctx = { today: "2026-11-05", config: {} };
+  const noReview = (values) => ({ values: { ...values, dueDate: "" } });
+  assert.equal(recordAlert(raid, noReview(record.values), ctx)?.text, "Open 35 days");
+  assert.equal(recordAlert(raid, noReview(copy), ctx), null);
+});
+
+test("duplicateValues: SLA received and lesson date reset; due, target and meeting dates do not", () => {
+  const sla = registerById("sla");
+  const slaCopy = duplicateValues(
+    sla,
+    { values: { title: "T", received: "2026-10-01", resolvedOn: "2026-10-03" } },
+    "2026-11-05",
+  );
+  assert.equal(slaCopy.received, "2026-11-05");
+  assert.equal(slaCopy.resolvedOn, "2026-10-03");
+  const lessons = registerById("lessons");
+  assert.equal(
+    duplicateValues(
+      lessons,
+      { values: { project: "P", date: "2026-01-02" } },
+      "2026-11-05",
+    ).date,
+    "2026-11-05",
+  );
+  const changes = registerById("changes");
+  assert.equal(
+    duplicateValues(
+      changes,
+      { values: { title: "C", targetDate: "2026-12-01" } },
+      "2026-11-05",
+    ).targetDate,
+    "2026-12-01",
+  );
+  const minutes = registerById("minutes");
+  assert.equal(
+    duplicateValues(minutes, { values: { title: "M", date: "2026-10-10" } }, "2026-11-05")
+      .date,
+    "2026-10-10",
+  );
+});
+
+test("duplicateValues: without a today it uses the machine's local date", () => {
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  const local = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  const copy = duplicateValues(raid, record);
+  assert.equal(copy.raisedOn, local);
+});

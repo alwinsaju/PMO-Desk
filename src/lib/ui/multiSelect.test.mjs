@@ -68,5 +68,10 @@ describe("selectedText", () => {
   it("mentions hidden rows only when there are some", () => {
     assert.equal(selectedText(3, 0), "3 selected");
     assert.match(selectedText(3, 2), /3 selected \(2 more hidden by the filter/);
+    assert.equal(selectedText(2, 0, "ticked"), "2 ticked");
+    assert.equal(
+      selectedText(1, 1, "ticked"),
+      "1 ticked (1 more hidden by the filter, not included)",
+    );
   });
 });

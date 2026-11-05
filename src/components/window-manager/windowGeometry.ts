@@ -98,6 +98,29 @@ export function fitRectToViewport(
   return clampToViewport(sized, viewport, config);
 }
 
+/** Brings a window that is being put back (a remembered rectangle, a saved layout) wholly
+ *  inside the usable area: the viewport minus the keep-clear insets. It is shrunk to fit
+ *  (never below `min`) and moved so no edge hangs off-screen. Unlike `fitRectToViewport`,
+ *  which only keeps the title bar reachable (right for a window a person dragged), this is for
+ *  windows the person did not just place. Returns `rect` itself when nothing changes. */
+export function fitRectInsideViewport(
+  rect: Rect,
+  viewport: Viewport,
+  config: FitConfig,
+  min: { width: number; height: number },
+): Rect {
+  const { insets } = config;
+  const areaW = Math.max(0, viewport.width - insets.side * 2);
+  const areaH = Math.max(0, viewport.height - insets.top - insets.bottom);
+  const width = Math.min(rect.width, Math.max(min.width, areaW));
+  const height = Math.min(rect.height, Math.max(min.height, areaH));
+  const x = Math.round(clamp(rect.x, insets.side, insets.side + areaW - width));
+  const y = Math.round(clamp(rect.y, insets.top, insets.top + areaH - height));
+  return x === rect.x && y === rect.y && width === rect.width && height === rect.height
+    ? rect
+    : { x, y, width, height };
+}
+
 /** The rect a maximised window fills: the viewport minus the keep-clear
  *  insets (dock above, command bar and presence avatars below). */
 export function maximizedRect(

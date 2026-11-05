@@ -1,6 +1,7 @@
 // Making to-dos from several register records at once (late RAID items). Pure: the real to-do
 // creation and the saving of each record's to-do id are passed in, so the rules are tested with
 // fakes. A record that already has a `todoId` is never given a second to-do.
+import { formatDate, formatDayMonth, isIsoDate, todayIso } from "../staff/dates.ts";
 import { recordAlert, type AlertContext } from "./alerts.ts";
 import { isOpen, recordTitle } from "./records.ts";
 import { todoSeed, type TodoSeed } from "./reports.ts";
@@ -91,11 +92,25 @@ export async function makeTodosFor(
   return result;
 }
 
-/** One line per record for the confirmation: its title and who and when it is for. */
-export function confirmLine(def: RegisterDef, record: RegisterRecord): string {
+/** A date the way the rest of the Toolkit says it: "20 Oct", with the year ("20 Oct 2027") when it is not in this year. Anything that is not a date is left as typed. */
+function shortDate(iso: string, today: string): string {
+  if (!isIsoDate(iso)) return iso;
+  return iso.slice(0, 4) === today.slice(0, 4) ? formatDayMonth(iso) : formatDate(iso);
+}
+
+/** One line per record for the confirmation: its title and who and when it is for. `today` (yyyy-mm-dd, default the machine's today) decides whether the year is shown. */
+export function confirmLine(
+  def: RegisterDef,
+  record: RegisterRecord,
+  today: string = todayIso(),
+): string {
   const owner = def.ownerKey ? String(record.values[def.ownerKey] ?? "") : "";
   const due = def.dueKey ? String(record.values[def.dueKey] ?? "") : "";
-  return [recordTitle(def, record), owner && `owner ${owner}`, due && `review ${due}`]
+  return [
+    recordTitle(def, record),
+    owner && `owner ${owner}`,
+    due && `review ${shortDate(due, today)}`,
+  ]
     .filter(Boolean)
     .join(", ");
 }

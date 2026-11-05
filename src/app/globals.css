@@ -482,9 +482,10 @@ body {
    shadow — put `shadow-window` / `shadow-window-focus` on the OUTER element,
    since this one is `overflow-hidden`. */
 @utility glass-win {
-  /* No backdrop-filter here: the fill is 90-97% opaque, so a 40px live blur of
-     a window-sized area was nearly invisible but re-computed whenever anything
-     behind it changed. */
+  /* No backdrop-filter here: a 40px live blur of a window-sized area was
+     re-computed whenever anything behind it changed. The body is painted
+     opaque in tokens.css (the --color-win tint over a solid base), so no text
+     of windows behind shows through. */
   background-color: var(--color-win);
   border: 1px solid var(--color-glass-edge);
 }
@@ -514,8 +515,8 @@ body {
    src/lib/displayFx.ts). The lean values above are the default; with a working
    GPU these restore the heavier frosted look that was cut for software
    rendering (commits ac7820f, f077446). Windows (`glass-win`) stay unblurred in
-   rich mode too: their fill is 90-97% opaque, so a window-sized live blur only
-   cost frames while dragging. The wallpaper's rich half is next to
+   rich mode too, and opaque (tokens.css): a window-sized live blur only cost
+   frames while dragging. The wallpaper's rich half is next to
    the wallpaper rules below. */
 :root[data-fx="rich"] .glass {
   -webkit-backdrop-filter: blur(30px) saturate(1.7);

@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from "react";
 import { ArrowLeftIcon, FileTextIcon, PlusIcon } from "@phosphor-icons/react";
 import { Badge, Button, Tooltip } from "@/components/ui";
 import { cn } from "@/lib/cn";
@@ -122,6 +129,9 @@ export function TemplatesApp({ windowId }: { windowId: string }) {
   const [newCount, setNewCount] = useState(0);
   // Only matters in a narrow window, where the list and the editor take turns.
   const [listOpen, setListOpen] = useState(true);
+  // E or Enter on a row asks the editor to take focus once it shows that template.
+  const [focusEditor, setFocusEditor] = useState(false);
+  const switchFocusRef = useRef(false);
 
   const templates = useMemo(
     () => (library.status === "ready" ? library.templates : []),
@@ -193,12 +203,16 @@ export function TemplatesApp({ windowId }: { windowId: string }) {
     if (selection === null && firstId) setSelection({ type: "saved", id: firstId });
   }, [selection, firstId]);
 
-  const select = (next: Selection) => {
-    if (dirty) setSwitchTo(next);
-    else go(next);
+  /** `focusEditor`: after picking it, move focus into the editor's first field (E or Enter on a row). */
+  const select = (next: Selection, focusEditor = false) => {
+    if (dirty) {
+      switchFocusRef.current = focusEditor;
+      setSwitchTo(next);
+    } else go(next, focusEditor);
   };
 
-  const go = (next: Selection) => {
+  const go = (next: Selection, focusEditor = false) => {
+    if (focusEditor) setFocusEditor(true);
     if (next.type === "saved") {
       // Dock menu > Recent (q-22).
       const opened = templates.find((t) => t.id === next.id);
@@ -313,8 +327,33 @@ export function TemplatesApp({ windowId }: { windowId: string }) {
   };
 
   const confirmSwitch = () => {
-    if (switchTo) go(switchTo);
+    if (switchTo) go(switchTo, switchFocusRef.current);
+    switchFocusRef.current = false;
     setSwitchTo(null);
+  };
+
+  /** E or Enter on a list row: pick it and move focus into the editor. Every other key
+   *  (J/K, Home/End, arrows) goes to the shared row navigation unchanged. */
+  const onListKey = (event: KeyboardEvent<HTMLUListElement>) => {
+    const row = event.target as HTMLElement;
+    const templateId = row.dataset?.templateId;
+    const plain = !event.ctrlKey && !event.altKey && !event.metaKey && !event.shiftKey;
+    if (
+      templateId &&
+      plain &&
+      (event.key === "Enter" || event.key.toLowerCase() === "e")
+    ) {
+      event.preventDefault();
+      select({ type: "saved", id: templateId }, true);
+      return;
+    }
+    handleRowKey(
+      event,
+      Array.from(
+        event.currentTarget.querySelectorAll<HTMLElement>("[data-template-item]"),
+      ),
+      row.closest("li")?.querySelector<HTMLElement>("[data-template-item]") ?? null,
+    );
   };
 
   return (
@@ -391,22 +430,7 @@ export function TemplatesApp({ windowId }: { windowId: string }) {
               )}
             </div>
             <ScrollBody className="px-3 pb-4">
-              <ul
-                className="flex flex-col gap-1.5"
-                onKeyDown={(event) =>
-                  handleRowKey(
-                    event,
-                    Array.from(
-                      event.currentTarget.querySelectorAll<HTMLElement>(
-                        "[data-template-item]",
-                      ),
-                    ),
-                    (event.target as HTMLElement)
-                      .closest("li")
-                      ?.querySelector<HTMLElement>("[data-template-item]") ?? null,
-                  )
-                }
-              >
+              <ul className="flex flex-col gap-1.5" onKeyDown={onListKey}>
                 {selection?.type === "new" && (
                   <li>
                     <div className="bg-accent-soft text-accent-ink rounded-control px-3 py-2.5 text-[13.5px] font-semibold">
@@ -427,6 +451,7 @@ export function TemplatesApp({ windowId }: { windowId: string }) {
                       <button
                         type="button"
                         data-template-item
+                        data-template-id={template.id}
                         onClick={() => select({ type: "saved", id: template.id })}
                         aria-current={active ? "true" : undefined}
                         className={cn(
@@ -562,6 +587,8 @@ export function TemplatesApp({ windowId }: { windowId: string }) {
                 onDelete={() => void remove()}
                 onOpenExtras={() => setExtrasOpen(true)}
                 onOpenVersions={() => setVersionsOpen(true)}
+                focusRequested={focusEditor}
+                onFocusHandled={() => setFocusEditor(false)}
               />
             )}
           </section>

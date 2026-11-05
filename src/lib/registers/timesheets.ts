@@ -160,17 +160,51 @@ export interface PersonChaser {
   body: string;
 }
 
+/** Who the signed-in person is: the names and email addresses in the PMO To-Do settings. */
+export interface SelfIdentity {
+  names: readonly string[];
+  emails: readonly string[];
+}
+
+/**
+ * True when this row is the signed-in person: the email is one of theirs, or the whole name is
+ * one of theirs ("Qa Tester" or "Tester, Qa"), compared without regard to case or extra spaces.
+ * A first name on its own never matches a longer name: "Qa" in the settings does not make
+ * "Qa Tester" or "Qa Smith" you.
+ */
+export function isSelf(
+  person: { person: string; email: string },
+  self: SelfIdentity,
+): boolean {
+  const email = person.email.trim().toLowerCase();
+  if (email !== "" && self.emails.some((e) => e.trim().toLowerCase() === email)) {
+    return true;
+  }
+  const name = norm(person.person);
+  if (name === "") return false;
+  return self.names.some((n) => {
+    const mine = norm(n);
+    if (mine === "") return false;
+    const [first = "", ...rest] = mine.split(" ");
+    const flipped = rest.length ? `${rest.join(" ")}, ${first}` : mine;
+    return name === mine || name === flipped;
+  });
+}
+
 /** One chaser per person who is missing a timesheet: the same wording, addressed to them alone
- *  (a person is listed once, in the order given). Text only; nothing here sends it. */
+ *  (a person is listed once, in the order given). With `self`, the signed-in person is left out:
+ *  you do not chase yourself. Text only; nothing here sends it. */
 export function personChasers(
   monday: string,
   missing: readonly { person: string; email: string }[],
   me: string,
   fill?: FillText,
+  self?: SelfIdentity,
 ): PersonChaser[] {
   const seen = new Set<string>();
   const out: PersonChaser[] = [];
   for (const m of missing) {
+    if (self && isSelf(m, self)) continue;
     const key = m.person.toLowerCase().trim();
     if (seen.has(key)) continue;
     seen.add(key);
