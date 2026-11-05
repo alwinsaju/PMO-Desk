@@ -127,6 +127,29 @@ export function unknownPlaceholders(
   return placeholdersIn(...texts).filter((name) => !allowed.has(name));
 }
 
+const ANY_BRACES = /\{\{([^{}]*)\}\}/g;
+const VALID_TAG = [
+  /^[a-z][a-z0-9_]*$/,
+  /^(?:else|\/if)$/,
+  /^#if\s+[a-z][a-z0-9_]*(?:\s*(?:>=|<=|!=|>|<|=)\s*[^\s}]+)?$/,
+  /^>\s*[a-z][a-z0-9_]*$/,
+];
+
+/** `{{...}}` pieces in `texts` that can never be filled in because the name is not written the way
+ *  placeholders are (lower-case letters, numbers and underscores): `{{Name}}`, `{{first name}}`. */
+export function malformedPlaceholders(texts: readonly string[]): string[] {
+  const found: string[] = [];
+  for (const text of texts) {
+    for (const match of text.matchAll(ANY_BRACES)) {
+      const inner = match[1].trim();
+      if (!inner || VALID_TAG.some((valid) => valid.test(inner))) continue;
+      const shown = inner.length > 30 ? `${inner.slice(0, 29)}…` : inner;
+      if (!found.includes(shown)) found.push(shown);
+    }
+  }
+  return found.slice(0, 5);
+}
+
 /**
  * Resolves the `{{#if}}` blocks, then replaces each `{{name}}` with its value. One pass, so a value that
  * itself contains `{{x}}` is never expanded again. A name with no value is left exactly as typed, so a

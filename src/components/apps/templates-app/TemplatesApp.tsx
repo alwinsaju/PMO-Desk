@@ -36,11 +36,31 @@ import {
   createTemplate,
   deleteTemplate,
   fetchLibrary,
+  restoreBuiltInTemplates,
   saveTemplate,
+  undeleteTemplate,
   type LibraryPayload,
 } from "./api";
+import { NEW_DRAFT_ID, clearDraft } from "./draftAutosave";
 import { TemplateEditor } from "./TemplateEditor";
-import { blankDraft, copyOf, draftOf, restoreInput, type Draft } from "./templateForm";
+import {
+  blankDraft,
+  copyOf,
+  draftOf,
+  importSummary,
+  restoreSummary,
+  undoNotice,
+  type Draft,
+} from "./templateForm";
+
+/** Forgets a kept (unsaved) draft; storage that is blocked is simply skipped. */
+function forgetDraft(slot: string) {
+  try {
+    clearDraft(window.localStorage, slot);
+  } catch {
+    // Nothing to forget.
+  }
+}
 
 type Filter = "all" | TemplateKind;
 
@@ -49,7 +69,7 @@ type Selection = { type: "saved"; id: string } | { type: "new"; n: number; seed:
 
 type Library =
   | { status: "loading" }
-  | { status: "error"; reason: string }
+  | { status: "error"; reason: string; corrupt: boolean }
   | ({ status: "ready" } & LibraryPayload);
 
 /** Reads the library once, and again when the window is focused (an edit elsewhere
@@ -68,14 +88,19 @@ function useLibrary() {
               targets: reply.targets,
               starters: reply.starters,
               dir: reply.dir,
+              warning: reply.warning,
             }
-          : { status: "error", reason: reply.reason },
+          : { status: "error", reason: reply.reason, corrupt: reply.code === "corrupt" },
       );
     } catch {
       setLibrary((previous) =>
         previous.status === "ready"
           ? previous
-          : { status: "error", reason: "Could not reach the app server." },
+          : {
+              status: "error",
+              reason: "Could not reach the app server.",
+              corrupt: false,
+            },
       );
     }
   }, []);
@@ -183,14 +208,28 @@ export function TemplatesApp({ windowId }: { windowId: string }) {
     );
     if (!result.ok) return setPackNote(result.reason);
     let made = 0;
+    const failures: string[] = [];
     for (const input of result.templates) {
       const reply = await createTemplate(input).catch(() => null);
       if (reply && reply.ok) made += 1;
+      else failures.push(reply ? reply.reason : "Could not reach the app server.");
     }
     await reload();
-    setPackNote(
-      `Imported ${made} template${made === 1 ? "" : "s"}${result.skipped.length ? `; skipped ${result.skipped.join(", ")}` : ""}. None is used anywhere until you choose.`,
-    );
+    setPackNote(importSummary(made, failures, result.skipped));
+  };
+
+  const restoreBuiltIn = async () => {
+    try {
+      const reply = await restoreBuiltInTemplates();
+      if (!reply.ok) {
+        setPackNote(reply.reason);
+        return;
+      }
+      await reload();
+      setPackNote(restoreSummary(reply));
+    } catch {
+      setPackNote("Could not reach the app server.");
+    }
   };
   const selected =
     selection?.type === "saved"
@@ -211,7 +250,12 @@ export function TemplatesApp({ windowId }: { windowId: string }) {
     } else go(next, focusEditor);
   };
 
+  // Bumped by every `go`, so choosing the template that is already open still starts its form afresh
+  // (that is what "Discard changes" in the dialog relies on).
+  const [formEpoch, setFormEpoch] = useState(0);
+
   const go = (next: Selection, focusEditor = false) => {
+    setFormEpoch((n) => n + 1);
     if (focusEditor) setFocusEditor(true);
     if (next.type === "saved") {
       // Dock menu > Recent (q-22).
@@ -272,6 +316,7 @@ export function TemplatesApp({ windowId }: { windowId: string }) {
         setFields(reply.fields ?? null);
         return;
       }
+      if (selection?.type === "new") forgetDraft(NEW_DRAFT_ID);
       await reload();
       setSelection({ type: "saved", id: reply.template.id });
       setDirty(false);
@@ -311,22 +356,28 @@ export function TemplatesApp({ windowId }: { windowId: string }) {
     }
   };
 
-  /** Puts a deleted template back (as a new copy of everything the person could set) and opens it. */
+  /** Puts a deleted template back as it was (same version history) and opens it. Places another
+   *  template took meanwhile stay with that one. */
   const restore = async (gone: Template) => {
     try {
-      const reply = await createTemplate(restoreInput(gone));
+      const reply = await undeleteTemplate(gone);
       if (!reply.ok) {
         toast({ tone: "danger", message: reply.reason });
         return;
       }
       await reload();
       go({ type: "saved", id: reply.template.id });
+      if (reply.leftBehind.length > 0) {
+        setNotice(undoNotice(reply.template.name, reply.leftBehind));
+      }
     } catch {
       toast({ tone: "danger", message: "Could not reach the app server." });
     }
   };
 
   const confirmSwitch = () => {
+    // Discarding means the kept draft goes too, or it would come back the next time this opens.
+    if (selection) forgetDraft(selection.type === "saved" ? selection.id : NEW_DRAFT_ID);
     if (switchTo) go(switchTo, switchFocusRef.current);
     switchFocusRef.current = false;
     setSwitchTo(null);
@@ -364,15 +415,29 @@ export function TemplatesApp({ windowId }: { windowId: string }) {
       {library.status === "loading" && <PanelMessage>Loading templates…</PanelMessage>}
       {library.status === "error" && (
         <PanelMessage>
-          {library.reason}{" "}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => void reload()}
-            className="ml-1"
-          >
-            Try again
-          </Button>
+          <p>{library.reason}</p>
+          {library.corrupt && (
+            <p className="text-ink-muted mt-1 text-[13px]">
+              Nothing has been changed. Restoring the built-in templates keeps a copy of
+              the unreadable file next to it (library.json.bak) and starts a fresh
+              library.
+            </p>
+          )}
+          <div className="mt-3 flex flex-wrap justify-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => void reload()}>
+              Try again
+            </Button>
+            {library.corrupt && (
+              <Button size="sm" onClick={() => void restoreBuiltIn()}>
+                Restore built-in templates
+              </Button>
+            )}
+          </div>
+          {packNote && (
+            <p className="text-ink-muted mt-2 text-[12.5px]" role="status">
+              {packNote}
+            </p>
+          )}
         </PanelMessage>
       )}
       {library.status === "ready" && (
@@ -501,7 +566,9 @@ export function TemplatesApp({ windowId }: { windowId: string }) {
                 })}
                 {visible.length === 0 && selection?.type !== "new" && (
                   <li className="text-ink-muted px-3 py-6 text-center text-[13px]">
-                    No templates of this type yet.
+                    {templates.length === 0
+                      ? "There are no templates. Use Restore built-in below to get the starting set back."
+                      : "No templates of this type yet."}
                   </li>
                 )}
               </ul>
@@ -515,6 +582,14 @@ export function TemplatesApp({ windowId }: { windowId: string }) {
                   data-testid="pack-export"
                 >
                   Export pack
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => void restoreBuiltIn()}
+                  data-testid="restore-built-in"
+                >
+                  Restore built-in
                 </Button>
                 <Button size="sm" variant="ghost" asChild>
                   <label className="cursor-pointer">
@@ -557,6 +632,11 @@ export function TemplatesApp({ windowId }: { windowId: string }) {
                 All templates
               </Button>
             </div>
+            {library.warning && (
+              <Note tone="warning" role="status" className="mx-5 mt-1 mb-2 shrink-0">
+                {library.warning}
+              </Note>
+            )}
             {notice && (
               <Note tone="accent" role="status" className="mx-5 mt-1 mb-2 shrink-0">
                 {notice}
@@ -574,7 +654,7 @@ export function TemplatesApp({ windowId }: { windowId: string }) {
             )}
             {(selection?.type === "new" || selected) && (
               <TemplateEditor
-                key={selection?.type === "new" ? `new-${selection.n}` : selected?.id}
+                key={`${selection?.type === "new" ? `new-${selection.n}` : selected?.id}:${formEpoch}`}
                 template={selected}
                 seed={selection?.type === "new" ? selection.seed : draftOf(selected!)}
                 templates={templates}

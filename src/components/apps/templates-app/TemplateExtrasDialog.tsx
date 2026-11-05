@@ -17,6 +17,7 @@ import { renderFields, snippetsFrom, stripBold } from "@/lib/templates/render";
 import { sampleValues } from "@/lib/templates/targets";
 import type { Template, TemplateInput, TemplateVariant } from "@/lib/templates/types";
 import { saveTemplate } from "./api";
+import { tagsSavedMessage } from "./templateForm";
 import { Field, TextArea } from "../pmo-todo-app/parts";
 
 const inputOf = (t: Template, extra: Partial<TemplateInput> = {}): TemplateInput => ({
@@ -56,6 +57,8 @@ export function TemplateExtrasDialog({
   const [message, setMessage] = useState<string | null>(null);
   const [myEmail, setMyEmail] = useState("");
 
+  // Only when the dialog opens (or another template is shown): a save reloads `template`, and
+  // resetting then would wipe the "saved" message at once.
   useEffect(() => {
     if (!open) return;
     setTags((template.tags ?? []).join(", "));
@@ -64,11 +67,15 @@ export function TemplateExtrasDialog({
     void fetchState()
       .then((s) => setMyEmail(s.config.me.emails[0] ?? ""))
       .catch(() => setMyEmail(""));
-  }, [open, template]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- see above
+  }, [open, template.id]);
 
   const snippets = useMemo(() => snippetsFrom(templates), [templates]);
 
-  const persist = async (extra: Partial<TemplateInput>, done: string) => {
+  const persist = async (
+    extra: Partial<TemplateInput>,
+    done: string | ((saved: Template) => string),
+  ) => {
     setBusy(true);
     setMessage(null);
     const reply = await saveTemplate(template.id, inputOf(template, extra)).catch(
@@ -79,7 +86,8 @@ export function TemplateExtrasDialog({
       setMessage(reply ? reply.reason : "Could not reach the app server.");
       return;
     }
-    setMessage(done);
+    setMessage(typeof done === "string" ? done : done(reply.template));
+    if (extra.tags) setTags((reply.template.tags ?? []).join(", "));
     onChanged();
   };
 
@@ -117,7 +125,9 @@ export function TemplateExtrasDialog({
                 variant="outline"
                 disabled={busy}
                 onClick={() =>
-                  void persist({ tags: cleanTags(tags.split(",")) }, "Tags saved.")
+                  void persist({ tags: cleanTags(tags.split(",")) }, (saved) =>
+                    tagsSavedMessage(tags.split(","), saved.tags ?? []),
+                  )
                 }
               >
                 Save tags

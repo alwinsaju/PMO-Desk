@@ -66,6 +66,22 @@ export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [
         keys: "Ctrl+Enter",
         action: "Tick or untick the checklist item under the cursor",
       },
+      { keys: "Ctrl+Z", action: "Undo, including formatting buttons" },
+      { keys: "Ctrl+Y or Ctrl+Shift+Z", action: "Redo" },
+    ],
+  },
+  {
+    title: "Browser",
+    shortcuts: [
+      { keys: "Ctrl+L", action: "Go to the address bar" },
+      { keys: "Alt+Left / Right", action: "Back / forward" },
+      { keys: "F5 or Ctrl+R", action: "Reload the page" },
+      { keys: "Ctrl+T", action: "New tab" },
+      { keys: "Ctrl+Page Down / Up", action: "Next / previous tab" },
+      {
+        keys: "Ctrl+W (with several tabs)",
+        action: "Close the tab (the window when one tab is left)",
+      },
     ],
   },
   {

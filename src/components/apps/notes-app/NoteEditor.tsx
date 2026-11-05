@@ -10,6 +10,7 @@ import {
 } from "react";
 import {
   CheckIcon,
+  WarningIcon,
   CodeBlockIcon,
   LinkIcon,
   ListBulletsIcon,
@@ -20,10 +21,20 @@ import {
 } from "@phosphor-icons/react";
 import { Button, IconButton } from "@/components/ui";
 import { applyFormat, toggleCheck, type NoteFormat } from "./noteFormat";
+import { cn } from "@/lib/cn";
+import { useSaveStatus } from "@/lib/uiState/useSaveStatus";
+import {
+  emptyHistory,
+  historyKey,
+  recordChange,
+  redo,
+  undo,
+  type ChangeKind,
+  type NoteHistory,
+  type Snapshot,
+} from "./noteHistory";
 import { NotePreview } from "./NotePreview";
-import { wordCount } from "./notesLogic";
-
-const SAVING_MS = 700;
+import { noteSaveIndicator, wordCount } from "./notesLogic";
 
 const FORMATS: { kind: NoteFormat; label: string; Glyph: typeof TextBIcon }[] = [
   { kind: "heading", label: "Heading", Glyph: TextHIcon },
@@ -47,12 +58,22 @@ export function NoteEditor({
   editorRef: RefObject<HTMLTextAreaElement | null>;
   onChange: (content: string) => void;
 }) {
-  const [saving, setSaving] = useState(false);
   const [mode, setMode] = useState<"edit" | "preview">("edit");
   const previewing = mode === "preview";
-  const timer = useRef<number | undefined>(undefined);
   const selection = useRef<{ start: number; end: number } | null>(null);
-  useEffect(() => () => window.clearTimeout(timer.current), []);
+  const indicator = noteSaveIndicator(useSaveStatus("notes"));
+
+  // Own undo history: the browser's is lost whenever a toolbar action rewrites the text.
+  const history = useRef<NoteHistory>(emptyHistory());
+  const lastEmitted = useRef(content);
+  const lastSelection = useRef({ start: 0, end: 0 });
+  useEffect(() => {
+    // Text that changed from outside (Restore previous version, the assistant) starts a fresh history.
+    if (content !== lastEmitted.current) {
+      history.current = emptyHistory();
+      lastEmitted.current = content;
+    }
+  }, [content]);
 
   // The new text is in the box only after React renders it; then the selection can be put back.
   useLayoutEffect(() => {
@@ -71,24 +92,66 @@ export function NoteEditor({
     wasPreviewing.current = previewing;
   }, [previewing, editorRef]);
 
-  const change = (next: string) => {
+  const snapshot = (el: HTMLTextAreaElement): Snapshot => ({
+    text: el.value,
+    start: el.selectionStart,
+    end: el.selectionEnd,
+  });
+
+  const change = (next: string, kind: ChangeKind, before: Snapshot) => {
+    history.current = recordChange(history.current, before, kind, Date.now());
+    lastEmitted.current = next;
     onChange(next);
-    setSaving(true);
-    window.clearTimeout(timer.current);
-    timer.current = window.setTimeout(() => setSaving(false), SAVING_MS);
   };
+
+  const step = (direction: "undo" | "redo") => {
+    const el = editorRef.current;
+    if (!el) return;
+    const result = (direction === "undo" ? undo : redo)(history.current, snapshot(el));
+    if (!result) return;
+    history.current = result.history;
+    lastEmitted.current = result.snapshot.text;
+    selection.current = { start: result.snapshot.start, end: result.snapshot.end };
+    onChange(result.snapshot.text);
+  };
+
+  // Undo from the right-click menu arrives as an input event, not a key press.
+  const stepRef = useRef(step);
+  useLayoutEffect(() => {
+    stepRef.current = step;
+  });
+  useEffect(() => {
+    const el = editorRef.current;
+    if (!el || previewing) return;
+    const onBeforeInput = (event: InputEvent) => {
+      if (event.inputType !== "historyUndo" && event.inputType !== "historyRedo") return;
+      event.preventDefault();
+      stepRef.current(event.inputType === "historyUndo" ? "undo" : "redo");
+    };
+    el.addEventListener("beforeinput", onBeforeInput);
+    return () => el.removeEventListener("beforeinput", onBeforeInput);
+  }, [previewing, editorRef]);
 
   const format = (kind: NoteFormat) => {
     const el = editorRef.current;
     if (!el) return;
+    const before = snapshot(el);
     const edit = applyFormat(el.value, el.selectionStart, el.selectionEnd, kind);
+    if (edit.text === el.value) {
+      el.setSelectionRange(edit.start, edit.end);
+      return;
+    }
     selection.current = { start: edit.start, end: edit.end };
-    change(edit.text);
+    change(edit.text, "format", before);
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     const el = event.currentTarget;
-    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "b") {
+    const historyAction = historyKey(event);
+    if (historyAction) {
+      event.preventDefault();
+      step(historyAction);
+    } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "b") {
       event.preventDefault();
       format("bold");
     } else if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
@@ -99,8 +162,9 @@ export function NoteEditor({
       const flipped = toggleCheck(el.value.slice(from, to));
       if (flipped === null) return;
       event.preventDefault();
+      const before = snapshot(el);
       selection.current = { start: el.selectionStart, end: el.selectionEnd };
-      change(el.value.slice(0, from) + flipped + el.value.slice(to));
+      change(el.value.slice(0, from) + flipped + el.value.slice(to), "format", before);
     }
   };
 
@@ -147,7 +211,18 @@ export function NoteEditor({
         <textarea
           ref={editorRef}
           value={content}
-          onChange={(event) => change(event.target.value)}
+          onChange={(event) =>
+            change(event.target.value, "type", {
+              text: content,
+              ...lastSelection.current,
+            })
+          }
+          onSelect={(event) => {
+            lastSelection.current = {
+              start: event.currentTarget.selectionStart,
+              end: event.currentTarget.selectionEnd,
+            };
+          }}
           onKeyDown={onKeyDown}
           placeholder="Start typing…"
           aria-label="Note content"
@@ -161,15 +236,22 @@ export function NoteEditor({
         {!previewing && (
           <span className="hidden sm:inline">Ctrl+Enter ticks a checklist item</span>
         )}
-        <span role="status" data-testid="note-saved" className="flex items-center gap-1">
-          {saving ? (
-            "Saving…"
-          ) : (
-            <>
-              <CheckIcon size={12} weight="bold" aria-hidden />
-              Saved
-            </>
+        <span
+          role="status"
+          data-testid="note-saved"
+          title={indicator.detail}
+          className={cn(
+            "flex items-center gap-1",
+            indicator.kind === "error" && "text-red font-semibold",
           )}
+        >
+          {indicator.kind === "error" ? (
+            <WarningIcon size={12} weight="bold" aria-hidden />
+          ) : indicator.kind === "saved" ? (
+            <CheckIcon size={12} weight="bold" aria-hidden />
+          ) : null}
+          {indicator.text}
+          {indicator.detail && <span className="sr-only">. {indicator.detail}</span>}
         </span>
       </div>
     </>

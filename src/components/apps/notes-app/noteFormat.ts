@@ -84,7 +84,35 @@ const LINK_TEXT = "link text";
 const LINK_URL = "https://";
 const WRITTEN_LINK = /^\[([^[\]\n]*)\]\([^()\s]*\)$/;
 
+/** The written link `[text](address)` that holds the whole selection, if any. */
+function enclosingLink(
+  text: string,
+  start: number,
+  end: number,
+): { from: number; to: number; label: string } | null {
+  const lineStart = text.lastIndexOf("\n", start - 1) + 1;
+  const nl = text.indexOf("\n", start);
+  const lineEnd = nl === -1 ? text.length : nl;
+  for (const match of text
+    .slice(lineStart, lineEnd)
+    .matchAll(/\[([^[\]\n]*)\]\(([^()\s]*)\)/g)) {
+    const from = lineStart + match.index;
+    const to = from + match[0].length;
+    if (start >= from && end <= to) return { from, to, label: match[1] };
+  }
+  return null;
+}
+
 function toggleLink(text: string, start: number, end: number): TextEdit {
+  const inside = enclosingLink(text, start, end);
+  // Pressing Link again on a link takes it back to its words instead of nesting another.
+  if (inside) {
+    return {
+      text: text.slice(0, inside.from) + inside.label + text.slice(inside.to),
+      start: inside.from,
+      end: inside.from + inside.label.length,
+    };
+  }
   const selected = text.slice(start, end);
   const edit = (inserted: string, from: number, to: number, at = end): TextEdit => ({
     text: text.slice(0, start) + inserted + text.slice(at),
@@ -132,7 +160,42 @@ function placeBlock(
 
 const FENCE = "```";
 
+/** The fenced block holding the selection, as the character range of its opening and closing lines. */
+function enclosingCodeBlock(
+  text: string,
+  start: number,
+  end: number,
+): { from: number; to: number; body: string } | null {
+  const fences: { from: number; to: number }[] = [];
+  let at = 0;
+  for (const line of text.split("\n")) {
+    if (line.startsWith(FENCE)) fences.push({ from: at, to: at + line.length });
+    at += line.length + 1;
+  }
+  for (let i = 0; i + 1 < fences.length; i += 2) {
+    const open = fences[i];
+    const close = fences[i + 1];
+    if (start >= open.from && end <= close.to) {
+      return {
+        from: open.from,
+        to: close.to,
+        body: text.slice(open.to + 1, close.from - 1),
+      };
+    }
+  }
+  return null;
+}
+
 function insertCodeBlock(text: string, start: number, end: number): TextEdit {
+  // Pressing Code block again inside a block removes the fences instead of nesting.
+  const inside = enclosingCodeBlock(text, start, end);
+  if (inside) {
+    return {
+      text: text.slice(0, inside.from) + inside.body + text.slice(inside.to),
+      start: inside.from,
+      end: inside.from + inside.body.length,
+    };
+  }
   const selected = text.slice(start, end);
   const consumedBreak = selected.endsWith("\n");
   const body = consumedBreak ? selected.slice(0, -1) : selected;
@@ -155,7 +218,10 @@ const TABLE_SKELETON = [
   "|  |  |  |",
 ].join("\n");
 
-function insertTable(text: string, end: number): TextEdit {
+function insertTable(text: string, start: number, end: number): TextEdit {
+  // Inside a table already: pressing Table again leaves it alone rather than adding a second one.
+  const lineStart = text.lastIndexOf("\n", start - 1) + 1;
+  if (text.startsWith("|", lineStart)) return { text, start, end };
   // Placed after the selection, which is left as it is.
   const from = 2;
   return placeBlock(text, end, end, TABLE_SKELETON, {
@@ -181,7 +247,7 @@ export function applyFormat(
     case "code":
       return insertCodeBlock(text, a, b);
     case "table":
-      return insertTable(text, b);
+      return insertTable(text, a, b);
     default:
       return formatLines(text, a, b, kind);
   }

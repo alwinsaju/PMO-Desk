@@ -10,6 +10,7 @@ import {
   reportHealth,
   signoffPipeline,
   todayList,
+  todaySummary,
   weekOverWeek,
   workloadByOwner,
 } from "./insights.ts";
@@ -90,7 +91,7 @@ describe("today list", () => {
       items.map((i) => i.kind),
       ["overdue", "task", "leave", "due-today", "review", "away"],
     );
-    assert.match(items[0].text, /Overdue 3 day\(s\): Late one/);
+    assert.match(items[0].text, /Overdue by 3 days: Late one/);
     assert.equal(items[2].appId, "staff");
   });
   it("adds a chase for a quiet sign-off and honours the limit", () => {
@@ -109,6 +110,42 @@ describe("today list", () => {
   });
   it("is empty when nothing needs you", () => {
     assert.deepEqual(todayList(base), []);
+  });
+  it("puts the most overdue first and says 1 day, not 1 day(s)", () => {
+    const items = todayList({
+      ...base,
+      todos: [
+        todo({ id: "a", title: "Yesterday", dueAt: "2026-10-29" }),
+        todo({ id: "b", title: "Ancient", dueAt: "2020-01-01" }),
+        todo({ id: "c", title: "Last week", dueAt: "2026-10-23" }),
+      ],
+    });
+    assert.deepEqual(
+      items.map((i) => i.text.split(": ")[1]),
+      ["Ancient", "Last week", "Yesterday"],
+    );
+    assert.match(items[2].text, /^Overdue by 1 day: /);
+  });
+  it("reports the true total and how many rows are hidden", () => {
+    const todos = Array.from({ length: 14 }, (_, i) =>
+      todo({
+        id: `t${i}`,
+        title: `Late ${i}`,
+        dueAt: `2026-10-${String(1 + i).padStart(2, "0")}`,
+      }),
+    );
+    const summary = todaySummary({ ...base, todos, pendingLeave: 1 }, 10);
+    assert.equal(summary.items.length, 10);
+    assert.equal(summary.total, 15);
+    assert.equal(summary.more, 5);
+    assert.equal(summary.items[0].text.includes("Late 0"), true);
+    assert.deepEqual(todaySummary(base), { items: [], total: 0, more: 0 });
+  });
+  it("briefing counts the real total, not just the rows it prints", () => {
+    const items = [{ kind: "overdue", text: "a", appId: "pmo-todo" }];
+    assert.match(briefingText(items, "Hi", 14), /14 things for today/);
+    assert.match(briefingText(items), /1 thing for today/);
+    assert.match(briefingText([], "Hi", 0), /Nothing needs you/);
   });
 });
 

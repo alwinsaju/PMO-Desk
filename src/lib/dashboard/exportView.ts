@@ -1,6 +1,7 @@
 "use client";
 
 import { getDesktopBridge } from "@/lib/pmo/desktopBridge";
+import { exportOutcome, type ExportOutcome } from "./exportOutcome";
 
 const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -26,6 +27,10 @@ export async function captureTall(el: HTMLElement): Promise<Uint8Array | null> {
   const view = getDesktopBridge()?.view;
   if (!view) return null;
   const scroller = scrollerOf(el);
+  // The scroll bar would otherwise be photographed into every slice; hidden before measuring
+  // because it changes the width the content lays out in.
+  const barWas = scroller?.style.scrollbarWidth ?? "";
+  if (scroller) scroller.style.scrollbarWidth = "none";
   const frame = (scroller ?? el).getBoundingClientRect();
   const total = scroller ? scroller.scrollHeight : el.scrollHeight;
   const step = Math.floor(frame.height);
@@ -56,7 +61,10 @@ export async function captureTall(el: HTMLElement): Promise<Uint8Array | null> {
       });
     }
   } finally {
-    if (scroller) scroller.scrollTop = start;
+    if (scroller) {
+      scroller.scrollTop = start;
+      scroller.style.scrollbarWidth = barWas;
+    }
   }
   if (slices.length === 0) return null;
   const scale = slices[0].bitmap.width / frame.width;
@@ -72,14 +80,19 @@ export async function captureTall(el: HTMLElement): Promise<Uint8Array | null> {
   return blob ? new Uint8Array(await blob.arrayBuffer()) : null;
 }
 
-/** Captures `el` whole and saves it as a PNG or PDF through the shell's save dialog; resolves to the path. */
+/** Captures `el` whole and saves it as a PNG or PDF through the shell's save dialog. */
 export async function exportElement(
   el: HTMLElement,
   format: "png" | "pdf",
   name: string,
-): Promise<string | null> {
+): Promise<ExportOutcome> {
   const view = getDesktopBridge()?.view;
-  if (!view) return null;
-  const png = await captureTall(el);
-  return png ? view.save(format, name, png) : null;
+  if (!view) return { status: "failed" };
+  try {
+    const png = await captureTall(el);
+    if (!png) return exportOutcome(false, null);
+    return exportOutcome(true, await view.save(format, name, png));
+  } catch {
+    return { status: "failed" };
+  }
 }

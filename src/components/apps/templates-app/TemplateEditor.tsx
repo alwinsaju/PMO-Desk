@@ -56,6 +56,7 @@ import {
   TextArea,
 } from "../pmo-todo-app/parts";
 import {
+  NEW_DRAFT_ID,
   clearDraft,
   isDraftKept,
   loadDraft,
@@ -72,6 +73,7 @@ import {
   previewBodyOf,
   previewOf,
   problems,
+  saveBlockedMessage,
   toInput,
   toggleWrap,
   withKind,
@@ -88,12 +90,20 @@ const browserStorage = (): DraftStorage | null => {
   }
 };
 
-/** A draft kept from an unsaved edit of this template, if it still applies and differs. */
-function restoredDraft(template: Template | null): Draft | null {
-  if (!template) return null;
+/** A draft kept from an unsaved edit of this template (or of a new one), if it still applies and
+ *  differs. A new form that starts from something (a copy) is not replaced by an old new-template draft. */
+function restoredDraft(template: Template | null, seed: Draft): Draft | null {
+  if (!template) {
+    if (isDirty(seed, null)) return null;
+    const kept = loadDraft(browserStorage(), NEW_DRAFT_ID, "", Date.now());
+    return kept && kept.kind === seed.kind && isDirty(kept, null) ? kept : null;
+  }
   const kept = loadDraft(browserStorage(), template.id, template.updatedAt, Date.now());
   return kept && isDirty(kept, template) ? kept : null;
 }
+
+/** Where an edit is kept: the template's id, or one shared slot for a template not saved yet. */
+const draftSlot = (template: Template | null) => template?.id ?? NEW_DRAFT_ID;
 
 interface TemplateEditorProps {
   /** The template being edited; null for a new one (then `seed` is the starting form). */
@@ -144,9 +154,9 @@ export function TemplateEditor({
   focusRequested = false,
   onFocusHandled,
 }: TemplateEditorProps) {
-  const [draft, setDraft] = useState<Draft>(() => restoredDraft(template) ?? seed);
+  const [draft, setDraft] = useState<Draft>(() => restoredDraft(template, seed) ?? seed);
   // A draft kept from an earlier, unsaved edit was put back; say so and let it be dropped.
-  const [restored, setRestored] = useState(() => draft !== seed && template !== null);
+  const [restored, setRestored] = useState(() => draft !== seed);
   const [attempted, setAttempted] = useState(false);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const nameRef = useRef<HTMLInputElement>(null);
@@ -171,19 +181,25 @@ export function TemplateEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once, for the draft the form started with
   }, []);
   useEffect(() => {
-    if (!template) return;
     const storage = browserStorage();
     if (isDirty(draft, template)) {
-      saveDraft(storage, template.id, draft, template.updatedAt, Date.now());
+      saveDraft(
+        storage,
+        draftSlot(template),
+        draft,
+        template?.updatedAt ?? "",
+        Date.now(),
+      );
     } else {
-      clearDraft(storage, template.id);
+      clearDraft(storage, draftSlot(template));
     }
   }, [draft, template]);
 
   const discardRestored = () => {
-    if (template) clearDraft(browserStorage(), template.id);
+    clearDraft(browserStorage(), draftSlot(template));
     setDraft(seed);
     setRestored(false);
+    setAttempted(false);
     onDirtyChange(false);
   };
 
@@ -227,6 +243,8 @@ export function TemplateEditor({
     setAttempted(true);
     if (Object.keys(errors).length === 0) onSave(toInput(draft));
   };
+  // Beside Save, where it is always in view: why a Save was refused (this form's own check or the server's).
+  const refusal = error ?? (attempted ? saveBlockedMessage(errors) : null);
 
   // Copies what is typed now (unsaved edits included) with its {{placeholders}}, not the example preview.
   const copyWording = async () => {
@@ -295,7 +313,7 @@ export function TemplateEditor({
           data-testid="template-draft-kept"
           className="text-ink-muted flex items-center gap-1 text-[12px]"
         >
-          {isDraftKept(template !== null, dirty) && (
+          {isDraftKept(true, dirty) && (
             <>
               <CheckIcon size={12} weight="bold" aria-hidden />
               Draft kept
@@ -336,6 +354,14 @@ export function TemplateEditor({
                 Restore original wording
               </DropdownMenuItem>
             )}
+            <DropdownMenuItem
+              disabled={busy || !dirty}
+              onSelect={discardRestored}
+              data-testid="template-discard"
+            >
+              <ArrowCounterClockwiseIcon size={14} />
+              Discard changes
+            </DropdownMenuItem>
             {template && (
               <DropdownMenuItem disabled={busy} onSelect={onDuplicate}>
                 <CopyIcon size={14} />
@@ -358,6 +384,15 @@ export function TemplateEditor({
             )}
           </DropdownMenuContent>
         </DropdownMenu>
+        {refusal && (
+          <p
+            role="alert"
+            data-testid="template-refusal"
+            className="text-red w-full text-[12.5px] leading-snug"
+          >
+            {refusal}
+          </p>
+        )}
       </header>
 
       <ScrollBody className="@container px-5 py-4">
@@ -369,11 +404,6 @@ export function TemplateEditor({
             <Button variant="ghost" size="sm" onClick={discardRestored}>
               Discard them
             </Button>
-          </Note>
-        )}
-        {error && (
-          <Note tone="danger" role="alert" className="mb-4">
-            {error}
           </Note>
         )}
         <div className="grid grid-cols-1 gap-6 @3xl:grid-cols-[minmax(0,1fr)_minmax(0,22rem)]">

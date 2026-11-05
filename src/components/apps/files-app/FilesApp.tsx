@@ -16,6 +16,7 @@ import { SampleFilesBanner } from "./SampleFilesBanner";
 import { fileSystemRoot } from "./mockFileSystem";
 import type { FileSystemFolder } from "./mockFileSystem";
 import { FILE_ROW_GRID, FileRow } from "./FileRow";
+import { filesKey, sampleHint } from "./filesHints";
 
 /**
  * Root Files window — matches the `AppComponent` contract
@@ -33,6 +34,8 @@ import { FILE_ROW_GRID, FileRow } from "./FileRow";
 export function FilesApp({ windowId }: { windowId: string }) {
   const [path, setPath] = useState<FileSystemFolder[]>([fileSystemRoot]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // These are sample files: say so when something that cannot work here is tried.
+  const [hint, setHint] = useState<string | null>(null);
 
   const currentFolder = path[path.length - 1];
   useWindowContext(windowId, path.length > 1 ? currentFolder.name : null);
@@ -45,11 +48,13 @@ export function FilesApp({ windowId }: { windowId: string }) {
   function openFolder(folder: FileSystemFolder) {
     setPath((prev) => [...prev, folder]);
     setSelectedId(null);
+    setHint(null);
   }
 
   function goUp() {
     setPath((prev) => (prev.length > 1 ? prev.slice(0, -1) : prev));
     setSelectedId(null);
+    setHint(null);
   }
 
   function goToIndex(index: number) {
@@ -172,6 +177,17 @@ export function FilesApp({ windowId }: { windowId: string }) {
              *  the instant the new ones mount, same as before this existed. */}
             <motion.ul
               key={currentFolder.id}
+              onKeyDown={(event) => {
+                const action = filesKey(event);
+                if (!action) return;
+                event.preventDefault();
+                if (action === "up") goUp();
+                else setHint(sampleHint(action));
+              }}
+              onContextMenu={(event) => {
+                event.preventDefault();
+                setHint(sampleHint("context-menu"));
+              }}
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ duration: 0.15, ease: easeStandard }}
@@ -185,6 +201,7 @@ export function FilesApp({ windowId }: { windowId: string }) {
                   onSelect={() => setSelectedId(node.id)}
                   onActivate={() => {
                     if (node.type === "folder") openFolder(node);
+                    else setHint(sampleHint("open-file"));
                   }}
                 />
               ))}
@@ -207,8 +224,11 @@ export function FilesApp({ windowId }: { windowId: string }) {
         <span className="shrink-0">
           {children.length} item{children.length === 1 ? "" : "s"}
         </span>
+        <span role="status" className="text-ink-soft min-w-0 flex-1 truncate">
+          {hint}
+        </span>
         {selectedNode && (
-          <span className="min-w-0 flex-1 truncate text-right">
+          <span className="min-w-0 truncate text-right">
             {selectedNode.name}
             {selectedNode.type === "file" && ` — ${selectedNode.sizeLabel}`}
           </span>

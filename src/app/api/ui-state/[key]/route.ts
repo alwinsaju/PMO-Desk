@@ -2,10 +2,10 @@ import { NextResponse } from "next/server";
 import { guardApiRequest } from "@/lib/security/apiGuard";
 import { BodyTooLargeError, readTextBounded } from "@/lib/security/boundedBody";
 import {
-  MAX_BODY_BYTES,
   isUiStateKey,
+  maxBodyBytesFor,
   parsePutBody,
-  readUiState,
+  readUiStateWithTime,
   removeUiState,
   writeUiState,
 } from "@/lib/uiState/server";
@@ -29,12 +29,13 @@ async function gate(request: Request, context: Context): Promise<string | NextRe
   return key;
 }
 
-/** GET /api/ui-state/<key> -> { ok: true, value: object | array | null }. */
+/** GET /api/ui-state/<key> -> { ok: true, value: object | array | null, updatedAt: ms | null }. */
 export async function GET(request: Request, context: Context) {
   const key = await gate(request, context);
   if (typeof key !== "string") return key;
   try {
-    return NextResponse.json({ ok: true, value: await readUiState(key) });
+    const { value, updatedAt } = await readUiStateWithTime(key);
+    return NextResponse.json({ ok: true, value, updatedAt });
   } catch (error) {
     console.error("[ui-state] read failed:", error);
     return NextResponse.json(
@@ -45,21 +46,25 @@ export async function GET(request: Request, context: Context) {
 }
 
 /** PUT (or POST, which is all sendBeacon can send) /api/ui-state/<key> { value }
- *  -> { ok: true }. Body is capped at 1 MB. */
+ *  -> { ok: true }. Body is capped per key (1 MB, 16 MB for notes). */
 async function save(request: Request, context: Context) {
   const key = await gate(request, context);
   if (typeof key !== "string") return key;
+  const maxBytes = maxBodyBytesFor(key);
   let text: string;
   try {
-    text = await readTextBounded(request, MAX_BODY_BYTES);
+    text = await readTextBounded(request, maxBytes);
   } catch (error) {
     if (!(error instanceof BodyTooLargeError)) throw error;
     return NextResponse.json(
-      { ok: false, reason: "The saved state is too large (limit 1 MB)." },
+      {
+        ok: false,
+        reason: `The saved state is too large (limit ${Math.round(maxBytes / (1024 * 1024))} MB).`,
+      },
       { status: 413 },
     );
   }
-  const parsed = parsePutBody(text);
+  const parsed = parsePutBody(text, maxBytes);
   if (!parsed.ok) {
     return NextResponse.json(
       { ok: false, reason: parsed.reason },

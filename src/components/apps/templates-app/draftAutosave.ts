@@ -18,6 +18,9 @@ interface Stored {
   savedAt: number;
 }
 
+/** The key under which an unsaved NEW template is kept (it has no id yet). */
+export const NEW_DRAFT_ID = "new-template";
+
 const key = (templateId: string) => `${PREFIX}${templateId}`;
 
 const text = (value: unknown, max: number): string | null =>
@@ -105,7 +108,8 @@ export function loadDraft(
       return null;
     }
     const draft = parseDraft(stored.draft);
-    if (!draft || draft.id !== templateId) {
+    const expectedId = templateId === NEW_DRAFT_ID ? null : templateId;
+    if (!draft || draft.id !== expectedId) {
       storage.removeItem(key(templateId));
       return null;
     }

@@ -1,10 +1,14 @@
 // Pure note logic (no React, no zustand) so it is unit-testable; notesStore.ts
 // applies these functions to state.
+import type { SaveStatus } from "@/lib/uiState/saveStatus";
 
 export interface Note {
   id: string;
   content: string;
-  updatedLabel: string;
+  /** When the note was last changed, as an ISO date-time; shown as a date at render. */
+  updatedAt?: string;
+  /** Fixed text used by sample notes and by notes saved before `updatedAt` existed. */
+  updatedLabel?: string;
   /** Demo note shipped with the app; removed by "Clear samples". */
   sample?: boolean;
   /** Earlier bodies replaced by the AI assistant, oldest first. */
@@ -87,8 +91,57 @@ export function noteListEntry(content: string): { title: string; preview: string
 }
 
 /** The date shown for a note; samples have none, so they never look stale. */
-export function noteDateLabel(note: Pick<Note, "sample" | "updatedLabel">): string {
-  return note.sample ? "" : note.updatedLabel;
+export function noteDateLabel(
+  note: Pick<Note, "sample" | "updatedAt" | "updatedLabel">,
+  now: Date = new Date(),
+): string {
+  if (note.sample) return "";
+  if (note.updatedAt) {
+    const formatted = formatNoteDate(note.updatedAt, now);
+    if (formatted) return formatted;
+  }
+  // Older notes were stamped with a fixed "Just now" that never changed: no date is known.
+  if (!note.updatedLabel || note.updatedLabel === LEGACY_NOW_LABEL) return "Date unknown";
+  return note.updatedLabel;
+}
+
+const LEGACY_NOW_LABEL = "Just now";
+const MONTHS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+const DAY_MS = 86_400_000;
+
+function startOfDay(date: Date): number {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+}
+
+/** "Just now", "Today, 14:05", "Yesterday, 09:30", "Nov 5, 14:05" or "Nov 5, 2025"; null if `iso` is not a date. */
+export function formatNoteDate(iso: string, now: Date): string | null {
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return null;
+  const time = `${String(at.getHours()).padStart(2, "0")}:${String(at.getMinutes()).padStart(2, "0")}`;
+  const days = Math.round((startOfDay(now) - startOfDay(at)) / DAY_MS);
+  if (days === 0) {
+    return Math.abs(now.getTime() - at.getTime()) < 60_000
+      ? "Just now"
+      : `Today, ${time}`;
+  }
+  if (days === 1) return `Yesterday, ${time}`;
+  const day = `${MONTHS[at.getMonth()]} ${at.getDate()}`;
+  return at.getFullYear() === now.getFullYear()
+    ? `${day}, ${time}`
+    : `${day}, ${at.getFullYear()}`;
 }
 
 /** Pushes `previous` onto the history, capped to the newest MAX_REVISIONS. */
@@ -102,21 +155,24 @@ export function pushRevision(
 }
 
 /** AI-authored update: replaces the body but keeps the previous one. */
-export function updateNoteByAssistant(note: Note, content: string, label: string): Note {
+export function updateNoteByAssistant(note: Note, content: string, at: string): Note {
   if (note.content === content) return note;
+  const { updatedLabel, ...rest } = note;
+  void updatedLabel;
   return {
-    ...note,
+    ...rest,
     content,
-    updatedLabel: label,
+    updatedAt: at,
     revisions: pushRevision(note.revisions, note.content),
   };
 }
 
 /** Human edit: replaces the body; an edited sample stops being a sample. */
-export function updateNoteByUser(note: Note, content: string, label: string): Note {
-  const { sample, ...rest } = note;
+export function updateNoteByUser(note: Note, content: string, at: string): Note {
+  const { sample, updatedLabel, ...rest } = note;
   void sample;
-  return { ...rest, content, updatedLabel: label };
+  void updatedLabel;
+  return { ...rest, content, updatedAt: at };
 }
 
 export function canRestoreRevision(
@@ -126,13 +182,15 @@ export function canRestoreRevision(
 }
 
 /** Brings back the newest saved body (itself not kept as a revision). */
-export function restorePreviousRevision(note: Note, label: string): Note {
+export function restorePreviousRevision(note: Note, at: string): Note {
   const revisions = note.revisions ?? [];
   if (revisions.length === 0) return note;
+  const { updatedLabel, ...rest } = note;
+  void updatedLabel;
   return {
-    ...note,
+    ...rest,
     content: revisions[revisions.length - 1],
-    updatedLabel: label,
+    updatedAt: at,
     revisions: revisions.slice(0, -1),
   };
 }
@@ -162,11 +220,27 @@ export function noteTags(content: string): string[] {
   return [...found];
 }
 
+/** Tags and searchable text per note object. A note is replaced, never changed in
+ *  place, so an untouched note is not re-scanned on every keystroke in another one. */
+const derived = new WeakMap<object, { tags: string[]; text: string }>();
+
+function derive(note: Pick<Note, "content">): { tags: string[]; text: string } {
+  let entry = derived.get(note);
+  if (!entry) {
+    entry = {
+      tags: noteTags(note.content),
+      text: withoutMarkers(note.content).toLowerCase(),
+    };
+    derived.set(note, entry);
+  }
+  return entry;
+}
+
 /** Every tag in use with how many notes carry it, most used first. */
 export function tagCounts(notes: readonly Note[]): { tag: string; count: number }[] {
   const counts = new Map<string, number>();
   for (const note of notes) {
-    for (const tag of noteTags(note.content)) counts.set(tag, (counts.get(tag) ?? 0) + 1);
+    for (const tag of derive(note).tags) counts.set(tag, (counts.get(tag) ?? 0) + 1);
   }
   return [...counts]
     .map(([tag, count]) => ({ tag, count }))
@@ -174,7 +248,7 @@ export function tagCounts(notes: readonly Note[]): { tag: string; count: number 
 }
 
 export function filterByTag(notes: readonly Note[], tag: string | null): Note[] {
-  return tag ? notes.filter((n) => noteTags(n.content).includes(tag)) : [...notes];
+  return tag ? notes.filter((n) => derive(n).tags.includes(tag)) : [...notes];
 }
 
 /** True when every word typed is in the note's title or body, ignoring case and formatting
@@ -182,8 +256,22 @@ export function filterByTag(notes: readonly Note[], tag: string | null): Note[] 
 export function noteMatchesText(note: Pick<Note, "content">, query: string): boolean {
   const words = query.toLowerCase().split(/\s+/).filter(Boolean);
   if (words.length === 0) return true;
-  const text = withoutMarkers(note.content).toLowerCase();
+  const { text } = derive(note);
   return words.every((word) => text.includes(word));
+}
+
+/** How many list rows to draw at first and per "Show more"; thousands of rows make the window crawl. */
+export const LIST_PAGE_SIZE = 100;
+
+/** The first `limit` notes of the ordered list, widened to include the selected one. */
+export function visibleNotes<T extends Pick<Note, "id">>(
+  ordered: readonly T[],
+  limit: number,
+  selectedId: string | null,
+): { shown: T[]; hidden: number } {
+  const at = selectedId === null ? -1 : ordered.findIndex((n) => n.id === selectedId);
+  const count = Math.min(ordered.length, Math.max(limit, at + 1));
+  return { shown: ordered.slice(0, count), hidden: ordered.length - count };
 }
 
 /** Notes carrying `tag` (when set) whose text matches `query` (when not blank); both must hold. */
@@ -193,6 +281,41 @@ export function filterNotes(
   query: string,
 ): Note[] {
   return filterByTag(notes, tag).filter((n) => noteMatchesText(n, query));
+}
+
+export interface SaveIndicator {
+  kind: "saving" | "saved" | "error";
+  text: string;
+  /** Plain-language explanation, shown as a tooltip and read out by screen readers. */
+  detail?: string;
+}
+
+/** What the editor footer says about saving; "Saved" only once the server has the text. */
+export function noteSaveIndicator(status: SaveStatus): SaveIndicator {
+  if (status.state === "saving") return { kind: "saving", text: "Saving…" };
+  if (status.state === "saved") return { kind: "saved", text: "Saved" };
+  if (status.failure === "too-large") {
+    return {
+      kind: "error",
+      text: "Not saved: too big",
+      detail:
+        "Your notes are too big to save. Shorten the longest note or delete old ones. Your latest changes are kept in this window.",
+    };
+  }
+  if (status.failure === "rejected") {
+    return {
+      kind: "error",
+      text: "Not saved",
+      detail:
+        "PMO Desk could not save your notes. Your latest changes are kept on this computer and will be tried again after your next edit.",
+    };
+  }
+  return {
+    kind: "error",
+    text: status.willRetry ? "Not saved yet, retrying" : "Not saved",
+    detail:
+      "PMO Desk can't reach its data folder right now. Your changes are kept and will be saved as soon as it can.",
+  };
 }
 
 export function wordCount(content: string): number {

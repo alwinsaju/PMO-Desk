@@ -10,13 +10,16 @@ import {
   unknownPlaceholders,
 } from "./render.ts";
 import {
+  addMissingStarters,
   checkInput,
   createTemplate,
   deleteTemplate,
   emptyLibrary,
   parseLibrary,
+  parseLibraryDetailed,
   starterLibrary,
   templateFor,
+  undeleteTemplate,
   updateTemplate,
 } from "./library.ts";
 import { STARTERS } from "./starters.ts";
@@ -131,6 +134,42 @@ describe("checking an edit", () => {
     const bad = checkInput(input({ body: "{{total}} {{oops}}" }));
     assert.match(bad.errors.body, /\{\{oops\}\} is not available/);
     assert.equal(checkInput(input({ body: "{{oops}}", usedBy: [] })).ok, true);
+  });
+
+  it("names the one place when only one is chosen, and says 'every place' for several", () => {
+    const one = checkInput(input({ body: "{{total}} {{oops}}" }));
+    assert.match(one.errors.body, /not available in Aging/);
+    const both = ["task:weekly-aging-report", "task:weekly-backlog-report"];
+    const many = checkInput(input({ usedBy: both, body: "{{date_full}}" }));
+    assert.match(many.errors.body, /not available in every place/);
+  });
+
+  it("flags placeholders written wrongly, which could never be filled", () => {
+    for (const body of ["Hi {{Name}}", "Hi {{first name}}", "{{total}} {{a-b}}"]) {
+      const bad = checkInput(input({ body }));
+      assert.equal(bad.ok, false, body);
+      assert.match(bad.errors.body, /can never be filled in/, body);
+    }
+    // Even when the template is used nowhere.
+    assert.equal(checkInput(input({ body: "Hi {{Name}}", usedBy: [] })).ok, false);
+    // The real syntax still passes.
+    const fine =
+      "{{#if total > 0}}{{total}}{{else}}none{{/if}} {{> signature}} {{ total }}";
+    assert.equal(checkInput(input({ body: fine })).ok, true);
+  });
+
+  it("checks the other wordings too", () => {
+    const wording = (body, label = "Client") => ({
+      id: "client",
+      label,
+      subject: "",
+      body,
+    });
+    const unknown = checkInput(input({ variants: [wording("Dear {{nonexistent}}")] }));
+    assert.match(unknown.errors.variants, /“Client”.*\{\{nonexistent\}\}/);
+    const malformed = checkInput(input({ variants: [wording("Dear {{Name}}")] }));
+    assert.match(malformed.errors.variants, /can never be filled in/);
+    assert.equal(checkInput(input({ variants: [wording("Dear {{total}}")] })).ok, true);
   });
 
   it("only allows what every chosen place can fill", () => {
@@ -298,6 +337,74 @@ describe("reading a saved library", () => {
     });
     assert.equal(library.templates.length, 1);
     assert.deepEqual(library.templates[0].usedBy, ["task:weekly-aging-report"]);
+  });
+
+  it("gives a place claimed twice to the first template and counts what was left out", () => {
+    const parsed = parseLibraryDetailed({
+      templates: [
+        saved({ id: "tpl_aaaaaaaaaaaa", name: "First" }),
+        saved({ id: "tpl_bbbbbbbbbbbb", name: "Second" }),
+        saved({ id: "bad" }),
+        saved({ id: "tpl_aaaaaaaaaaaa", name: "Same id twice" }),
+      ],
+    });
+    assert.equal(parsed.library.templates.length, 2);
+    assert.deepEqual(parsed.library.templates[0].usedBy, ["task:weekly-aging-report"]);
+    assert.deepEqual(parsed.library.templates[1].usedBy, []);
+    assert.equal(parsed.dropped, 2);
+    assert.equal(parsed.conflicts, 1);
+    assert.equal(parseLibraryDetailed({ templates: [saved()] }).dropped, 0);
+  });
+});
+
+describe("built-in templates and undo", () => {
+  it("adds only the missing built-ins, and only into places nobody uses", () => {
+    const full = starterLibrary(NOW);
+    const aging = full.templates.find((t) => t.starterId === "aging-report-email");
+    const thin = { ...full, templates: full.templates.filter((t) => t !== aging) };
+    const taken = {
+      ...thin,
+      templates: [
+        ...thin.templates,
+        { ...aging, id: "tpl_cccccccccccc", starterId: undefined, name: "Mine" },
+      ],
+    };
+    const { library, added } = addMissingStarters(taken, LATER);
+    assert.equal(added.length, 1);
+    assert.equal(added[0].starterId, "aging-report-email");
+    assert.deepEqual(added[0].usedBy, []);
+    assert.equal(library.templates.length, taken.templates.length + 1);
+    assert.equal(addMissingStarters(full, LATER).added.length, 0);
+    assert.equal(addMissingStarters(emptyLibrary(), LATER).added.length, STARTERS.length);
+  });
+
+  it("puts a deleted template back with its id and history, leaving taken places alone", () => {
+    const made = createTemplate(emptyLibrary(), must(input()), NOW, "tpl_aaaaaaaaaaaa");
+    const gone = {
+      ...made.template,
+      history: [
+        { at: NOW, name: "Old", description: "", subject: "", to: "", cc: "", body: "x" },
+      ],
+    };
+    const other = createTemplate(
+      emptyLibrary(),
+      must(input({ name: "Other" })),
+      NOW,
+      "tpl_bbbbbbbbbbbb",
+    );
+    const back = undeleteTemplate(other.library, gone, LATER);
+    assert.equal(back.template.id, "tpl_aaaaaaaaaaaa");
+    assert.equal(back.template.history.length, 1);
+    assert.deepEqual(back.template.usedBy, []);
+    assert.deepEqual(back.leftBehind, ["task:weekly-aging-report"]);
+    assert.equal(
+      templateFor(back.library, "task:weekly-aging-report").id,
+      "tpl_bbbbbbbbbbbb",
+    );
+    assert.match(undeleteTemplate(back.library, gone, LATER).error, /already back/);
+    const free = undeleteTemplate(emptyLibrary(), gone, LATER);
+    assert.deepEqual(free.template.usedBy, ["task:weekly-aging-report"]);
+    assert.deepEqual(free.leftBehind, []);
   });
 });
 

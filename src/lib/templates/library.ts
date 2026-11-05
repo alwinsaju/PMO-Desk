@@ -2,7 +2,12 @@
 // edit, creating and updating (a target has at most one template per kind, so
 // claiming it takes it from the previous one), deleting and looking up the
 // template a target uses. No files here; server.ts stores the result.
-import { oneLine, tidyText, unknownPlaceholders } from "./render.ts";
+import {
+  malformedPlaceholders,
+  oneLine,
+  tidyText,
+  unknownPlaceholders,
+} from "./render.ts";
 import { STARTERS } from "./starters.ts";
 import { allowedPlaceholders, targetByKey, targetLabel } from "./targets.ts";
 import {
@@ -25,13 +30,35 @@ export const newTemplateId = (): string =>
   `tpl_${globalThis.crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`;
 
 export type TemplateErrors = Partial<
-  Record<"name" | "kind" | "subject" | "to" | "cc" | "body" | "usedBy", string>
+  Record<
+    "name" | "kind" | "subject" | "to" | "cc" | "body" | "usedBy" | "variants",
+    string
+  >
 >;
 
 export type Checked =
   { ok: true; value: TemplateInput } | { ok: false; errors: TemplateErrors };
 
 const text = (value: unknown): string => (typeof value === "string" ? value : "");
+
+const list = (names: readonly string[]) => names.map((n) => `{{${n}}}`).join(", ");
+
+function malformedMessage(found: readonly string[]): string {
+  return `${found.length === 1 ? "A placeholder" : "Some placeholders"} (${found.map((n) => `{{${n}}}`).join(", ")}) can never be filled in. Use lower-case letters, numbers and underscores, like {{first_name}}.`;
+}
+
+function unknownMessage(unknown: readonly string[], where: string): string {
+  return `${list(unknown)} ${unknown.length === 1 ? "is" : "are"} not available ${where}.`;
+}
+
+/** "in Aging Report · Email draft" for one place, "in every place this template is used" for several. */
+function placeSentence(usedBy: readonly string[]): string {
+  if (usedBy.length === 1) {
+    const target = targetByKey(usedBy[0]);
+    if (target) return `in ${targetLabel(target)}`;
+  }
+  return "in every place this template is used";
+}
 
 /** Up to LIMITS.tags short, distinct labels (case-insensitive), each with no line breaks. */
 export function cleanTags(raw: unknown): string[] {
@@ -136,11 +163,26 @@ export function checkInput(raw: unknown): Checked {
   }
 
   const allowed = allowedPlaceholders(usedBy);
-  if (allowed && !errors.body && !errors.subject) {
-    const unknown = unknownPlaceholders([subject, to, cc, body], allowed);
-    if (unknown.length > 0) {
-      const list = unknown.map((n) => `{{${n}}}`).join(", ");
-      errors.body = `${list} ${unknown.length === 1 ? "is" : "are"} not available in every place this template is used.`;
+  const where = placeSentence(usedBy);
+  if (!errors.body && !errors.subject) {
+    const malformed = malformedPlaceholders([subject, to, cc, body]);
+    if (malformed.length > 0) errors.body = malformedMessage(malformed);
+    else if (allowed) {
+      const unknown = unknownPlaceholders([subject, to, cc, body], allowed);
+      if (unknown.length > 0) errors.body = unknownMessage(unknown, where);
+    }
+  }
+  if (source.variants !== undefined) {
+    for (const variant of cleanVariants(source.variants)) {
+      const texts = [variant.subject, variant.body];
+      const malformed = malformedPlaceholders(texts);
+      const unknown = allowed ? unknownPlaceholders(texts, allowed) : [];
+      if (malformed.length > 0) {
+        errors.variants = `In the other wording “${variant.label}”: ${malformedMessage(malformed)}`;
+      } else if (unknown.length > 0) {
+        errors.variants = `In the other wording “${variant.label}”: ${unknownMessage(unknown, where)}`;
+      }
+      if (errors.variants) break;
     }
   }
 
@@ -303,20 +345,88 @@ export function templateFor(
   return library.templates.find((tpl) => tpl.usedBy.includes(targetKey)) ?? null;
 }
 
+/** Adds each built-in template the library no longer has (by its `starterId`). A restored one takes
+ *  only the places nobody uses now, so nothing is taken from a template that has them. */
+export function addMissingStarters(
+  library: TemplateLibrary,
+  now: string,
+): { library: TemplateLibrary; added: Template[] } {
+  const held = new Set(library.templates.flatMap((tpl) => tpl.usedBy));
+  const have = new Set(library.templates.map((tpl) => tpl.starterId).filter(Boolean));
+  const added: Template[] = [];
+  for (const starter of STARTERS) {
+    if (have.has(starter.starterId)) continue;
+    if (library.templates.length + added.length >= LIMITS.templates) break;
+    const usedBy = starter.usedBy.filter((key) => !held.has(key));
+    for (const key of usedBy) held.add(key);
+    added.push({
+      ...starter,
+      usedBy,
+      id: newTemplateId(),
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+  return { library: { ...library, templates: [...library.templates, ...added] }, added };
+}
+
+/** Puts back a deleted template exactly as it was (same id, dates and version history). It takes
+ *  only the places nobody has now; `leftBehind` are those that stay with their new template. */
+export function undeleteTemplate(
+  library: TemplateLibrary,
+  gone: Template,
+  now: string,
+): (Change & { leftBehind: string[] }) | { error: string } {
+  if (library.templates.some((tpl) => tpl.id === gone.id)) {
+    return { error: "That template is already back." };
+  }
+  if (library.templates.length >= LIMITS.templates) {
+    return { error: `The library holds at most ${LIMITS.templates} templates.` };
+  }
+  const held = new Set(library.templates.flatMap((tpl) => tpl.usedBy));
+  const usedBy = gone.usedBy.filter((key) => !held.has(key));
+  const template: Template = { ...gone, usedBy, updatedAt: now };
+  return {
+    library: { ...library, templates: [...library.templates, template] },
+    template,
+    displaced: [],
+    leftBehind: gone.usedBy.filter((key) => held.has(key)),
+  };
+}
+
 /**
  * Reads whatever library.json held into a library. Lenient on purpose: a template
  * is kept as long as it has an id, a name and a kind, with its text cleaned up
  * but never judged (a placeholder that a target dropped must not delete the
  * template); targets that no longer exist are removed from `usedBy`. `null` =
- * not a library at all.
+ * not a library at all. Each place keeps one template: if a hand-edited file gives
+ * the same place to two, the first one in the file keeps it.
  */
 export function parseLibrary(raw: unknown): TemplateLibrary | null {
+  return parseLibraryDetailed(raw)?.library ?? null;
+}
+
+export interface ParsedLibrary {
+  library: TemplateLibrary;
+  /** Entries left out because they had no usable id, name or kind. */
+  dropped: number;
+  /** Places taken off a later template because an earlier one already had them. */
+  conflicts: number;
+}
+
+export function parseLibraryDetailed(raw: unknown): ParsedLibrary | null {
   if (typeof raw !== "object" || raw === null) return null;
   const list = (raw as { templates?: unknown }).templates;
   if (!Array.isArray(list)) return null;
   const templates: Template[] = [];
+  const claimed = new Set<string>();
+  let dropped = 0;
+  let conflicts = 0;
   for (const item of list) {
-    if (typeof item !== "object" || item === null) continue;
+    if (typeof item !== "object" || item === null) {
+      dropped += 1;
+      continue;
+    }
     const record = item as Record<string, unknown>;
     const id = text(record.id);
     const name = oneLine(text(record.name)).slice(0, LIMITS.name);
@@ -324,16 +434,20 @@ export function parseLibrary(raw: unknown): TemplateLibrary | null {
     if (
       !TEMPLATE_ID.test(id) ||
       !name ||
-      !TEMPLATE_KINDS.includes(kind as TemplateKind)
+      !TEMPLATE_KINDS.includes(kind as TemplateKind) ||
+      templates.some((tpl) => tpl.id === id)
     ) {
+      dropped += 1;
       continue;
     }
     const usedBy = (Array.isArray(record.usedBy) ? record.usedBy : []).filter(
       (key, at, all): key is string =>
         typeof key === "string" &&
         all.indexOf(key) === at &&
-        targetByKey(key)?.kind === kind,
+        targetByKey(key)?.kind === kind &&
+        (!claimed.has(key) || (conflicts++, false)),
     );
+    for (const key of usedBy) claimed.add(key);
     const starterId = text(record.starterId);
     templates.push({
       id,
@@ -357,5 +471,5 @@ export function parseLibrary(raw: unknown): TemplateLibrary | null {
       updatedAt: text(record.updatedAt) || text(record.createdAt),
     });
   }
-  return { version: LIBRARY_VERSION, templates };
+  return { library: { version: LIBRARY_VERSION, templates }, dropped, conflicts };
 }

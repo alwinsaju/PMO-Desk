@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   clearDraft,
+  NEW_DRAFT_ID,
   DRAFT_MAX_AGE_MS,
   isDraftKept,
   loadDraft,
@@ -50,6 +51,15 @@ describe("draft autosave", () => {
     saveDraft(storage, "tpl_1", draft(), "v1", 1_000);
     assert.equal(loadDraft(storage, "tpl_1", "v1", 1_000 + DRAFT_MAX_AGE_MS + 1), null);
     assert.equal(storage.map.size, 0);
+  });
+
+  it("keeps an unsaved NEW template (no id yet) under its own key", () => {
+    const storage = fakeStorage();
+    saveDraft(storage, NEW_DRAFT_ID, draft({ id: null, name: "Wip" }), "", 1_000);
+    assert.equal(loadDraft(storage, NEW_DRAFT_ID, "", 2_000).name, "Wip");
+    assert.equal(loadDraft(storage, NEW_DRAFT_ID, "", 2_000).id, null);
+    clearDraft(storage, NEW_DRAFT_ID);
+    assert.equal(loadDraft(storage, NEW_DRAFT_ID, "", 3_000), null);
   });
 
   it("clears on request and keeps drafts of different templates apart", () => {

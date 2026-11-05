@@ -17,11 +17,12 @@ import {
   type PlaceholderDef,
   type TemplateTarget,
 } from "../../../lib/templates/targets.ts";
-import type {
-  Template,
-  TemplateInput,
-  TemplateKind,
-  TemplateVersion,
+import {
+  LIMITS,
+  type Template,
+  type TemplateInput,
+  type TemplateKind,
+  type TemplateVersion,
 } from "../../../lib/templates/types.ts";
 import { recipientsProblem } from "../../../lib/templates/recipients.ts";
 
@@ -281,4 +282,76 @@ export function problems(draft: Draft): TemplateErrors {
     }
   }
   return errors;
+}
+
+const FIELD_ORDER = [
+  "name",
+  "kind",
+  "subject",
+  "to",
+  "cc",
+  "body",
+  "usedBy",
+  "variants",
+] as const;
+
+/** The line shown next to Save when Save is pressed but something stops it, so the reason is in view
+ *  even when the field itself has scrolled away. Null when nothing stops it. */
+export function saveBlockedMessage(errors: TemplateErrors): string | null {
+  for (const field of FIELD_ORDER) {
+    if (errors[field]) return `Not saved yet: ${errors[field]}`;
+  }
+  return null;
+}
+
+/** What to tell the person after tags are saved: how many are kept, and why some were cut. */
+export function tagsSavedMessage(
+  typed: readonly string[],
+  kept: readonly string[],
+): string {
+  const asked = new Set(typed.map((t) => t.trim().toLowerCase()).filter(Boolean)).size;
+  if (kept.length === 0) return "Tags cleared.";
+  if (asked > kept.length) {
+    return `Tags saved. ${kept.length} kept: a template has at most ${LIMITS.tags} tags of ${LIMITS.tag} characters.`;
+  }
+  const cut = typed.some((t) => t.trim().length > LIMITS.tag);
+  return cut
+    ? `Tags saved. Long tags are shortened to ${LIMITS.tag} characters.`
+    : "Tags saved.";
+}
+
+/** After Undo of a delete: which places stayed with the template that took them. */
+export function undoNotice(name: string, leftBehind: readonly string[]): string {
+  return leftBehind.length === 0
+    ? `Brought back “${name}”.`
+    : `Brought back “${name}”. ${leftBehind.length === 1 ? "One place now uses" : `${leftBehind.length} places now use`} another template, so ${leftBehind.length === 1 ? "it stays" : "they stay"} with that one. Choose them in “Used by” to move ${leftBehind.length === 1 ? "it" : "them"} back.`;
+}
+
+/** The note after importing a pack: how many came in, which were skipped on purpose and why any failed. */
+export function importSummary(
+  made: number,
+  failures: readonly string[],
+  skipped: readonly string[],
+): string {
+  const parts = [`Imported ${made} template${made === 1 ? "" : "s"}`];
+  if (skipped.length > 0) parts.push(`skipped ${skipped.join(", ")}`);
+  let text = `${parts.join("; ")}.`;
+  if (failures.length > 0) {
+    const reasons = [...new Set(failures)].slice(0, 2).join(" ");
+    text += ` ${failures.length} could not be added. ${reasons}`;
+  }
+  return `${text} None is used anywhere until you choose.`;
+}
+
+/** The note after "Restore built-in templates". */
+export function restoreSummary(result: {
+  added: number;
+  rebuilt: boolean;
+  backup: string | null;
+}): string {
+  if (result.rebuilt) {
+    return `Started a fresh library with the ${result.added} built-in templates.${result.backup ? ` The unreadable file is kept as ${result.backup}.` : ""}`;
+  }
+  if (result.added === 0) return "All the built-in templates are already there.";
+  return `Added back ${result.added} built-in template${result.added === 1 ? "" : "s"}. Places another template uses stay with it.`;
 }
