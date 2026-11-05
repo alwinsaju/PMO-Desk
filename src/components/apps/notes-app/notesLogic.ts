@@ -325,6 +325,14 @@ export function wordCount(content: string): number {
   return words ? words.length : 0;
 }
 
+/** Above this the browser's spell checker is turned off for the note: checking a very
+ *  long text keeps the app busy (about 36 s to quit at 600 KB, minutes at 1.5 MB). */
+export const SPELLCHECK_MAX_CHARS = 50_000;
+
+export function spellcheckEnabled(content: string): boolean {
+  return content.length <= SPELLCHECK_MAX_CHARS;
+}
+
 export function removeNote(
   notes: Note[],
   id: string,

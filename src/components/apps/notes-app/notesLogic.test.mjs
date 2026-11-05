@@ -30,6 +30,8 @@ import {
   updateNoteByUser,
   visibleNotes,
   wordCount,
+  SPELLCHECK_MAX_CHARS,
+  spellcheckEnabled,
 } from "./notesLogic.ts";
 
 const AT = "2026-11-05T09:30:00.000Z";
@@ -416,5 +418,13 @@ describe("text filter", () => {
       filterNotes(notes, "home", "").map((n) => n.id),
       ["b"],
     );
+  });
+});
+
+describe("spellcheckEnabled", () => {
+  it("keeps the spell checker for normal notes and turns it off for huge ones", () => {
+    assert.equal(spellcheckEnabled("a short note"), true);
+    assert.equal(spellcheckEnabled("x".repeat(SPELLCHECK_MAX_CHARS)), true);
+    assert.equal(spellcheckEnabled("x".repeat(SPELLCHECK_MAX_CHARS + 1)), false);
   });
 });

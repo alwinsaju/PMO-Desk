@@ -34,7 +34,7 @@ import {
   type Snapshot,
 } from "./noteHistory";
 import { NotePreview } from "./NotePreview";
-import { noteSaveIndicator, wordCount } from "./notesLogic";
+import { noteSaveIndicator, spellcheckEnabled, wordCount } from "./notesLogic";
 
 const FORMATS: { kind: NoteFormat; label: string; Glyph: typeof TextBIcon }[] = [
   { kind: "heading", label: "Heading", Glyph: TextHIcon },
@@ -226,6 +226,7 @@ export function NoteEditor({
           onKeyDown={onKeyDown}
           placeholder="Start typing…"
           aria-label="Note content"
+          spellCheck={spellcheckEnabled(content)}
           className="text-ink placeholder:text-ink-faint px-gutter min-h-0 flex-1 resize-none bg-transparent pt-1.5 pb-3 text-[16px] leading-[1.7] outline-none"
         />
       )}

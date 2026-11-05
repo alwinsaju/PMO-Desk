@@ -19,6 +19,9 @@ const nextConfig = {
   devIndicators: false,
   // No "X-Powered-By: Next.js" header: it tells a visitor nothing they need.
   poweredByHeader: false,
+  // Notes can be saved up to 16 MB (src/lib/uiState/server.ts); Next's default buffers
+  // only 10 MB of a request body for middleware and would cut a larger save short.
+  experimental: { middlewareClientMaxBodySize: "20mb" },
   // Nothing uses the image optimizer; turning it off removes its attack surface.
   images: { unoptimized: true },
   async headers() {
